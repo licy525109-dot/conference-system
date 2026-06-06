@@ -72,8 +72,8 @@ export class RegistrationService {
     const sku = await this.getOrderableSku(request.conferenceId, request.skuId);
     const fields = await this.getEnabledFormFields(request.conferenceId);
     const validatedFormData = validateFormData(fields, formData);
-    const attendeeName = readRequiredFormString(validatedFormData, "name");
-    const phone = readRequiredFormString(validatedFormData, "phone");
+    const attendeeName = readOptionalFormString(validatedFormData, "name") ?? currentUser.nickname ?? "未填写";
+    const phone = readOptionalFormString(validatedFormData, "phone") ?? "";
     const amount = calculateAmount(sku.priceCent, request.quantity);
     const expiredAt = new Date(this.getCurrentTime().getTime() + ORDER_EXPIRES_IN_MS);
     const snapshot = {
@@ -413,10 +413,10 @@ function getOptionValues(value: Prisma.JsonValue | null): string[] {
   });
 }
 
-function readRequiredFormString(formData: RegistrationFormData, field: "name" | "phone"): string {
+function readOptionalFormString(formData: RegistrationFormData, field: "name" | "phone"): string | null {
   const value = formData[field];
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new BadRequestException(`${field} is required`);
+    return null;
   }
 
   return value;

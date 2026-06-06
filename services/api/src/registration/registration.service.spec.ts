@@ -179,6 +179,37 @@ describe("RegistrationService create order", () => {
     assert.equal(getSku("active-sku").soldCount, soldCountBefore);
   });
 
+  it("creates an order when the configured form does not include phone", async () => {
+    const prisma = createPrismaMock({ formFieldKeys: ["name"] });
+    const service = createService(prisma, ["REG2026060600NOHONE"]);
+
+    const response = await service.createOrder(
+      {
+        conferenceId: "published-conf",
+        skuId: "active-sku",
+        quantity: 1,
+        formData: {
+          name: "李四"
+        }
+      },
+      currentUser
+    );
+
+    assert.equal(response.data.orderNo, "REG2026060600NOHONE");
+    assert.equal(prisma.orders[0]?.attendeeName, "李四");
+    assert.equal(prisma.orders[0]?.phone, "");
+    assert.deepEqual(prisma.orders[0]?.registrationSnapshotJson, {
+      conferenceId: "published-conf",
+      skuId: "active-sku",
+      skuName: "Active SKU",
+      attendeeName: "李四",
+      phone: "",
+      formData: {
+        name: "李四"
+      }
+    });
+  });
+
   it("re-reads SKU price when creating an order", async () => {
     const prisma = createPrismaMock({
       skuOverrides: {
@@ -358,6 +389,7 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
   const registrations: unknown[] = [];
   const payments: unknown[] = [];
 
+  const configuredFormDefinitions = applyFormFieldKeyFilter(formDefinitions, options.formFieldKeys);
   const mock: PrismaMockShape = {
     orders,
     orderItems,
@@ -392,7 +424,7 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
     },
     formDefinition: {
       findFirst: async (args: FormDefinitionFindFirstArgs) => {
-        const formDefinition = formDefinitions.find(
+        const formDefinition = configuredFormDefinitions.find(
           (item) =>
             item.conferenceId === args.where.conferenceId &&
             item.conferenceStatus === args.where.conference.status
@@ -633,6 +665,7 @@ function getSku(id: string) {
 
 interface PrismaMockOptions {
   conflictingOrderNos?: string[];
+  formFieldKeys?: string[];
   skuOverrides?: Record<string, Partial<(typeof skus)[number]>>;
 }
 
@@ -740,4 +773,19 @@ interface OrderItemRecord {
   unitPriceCent: number;
   quantity: number;
   totalAmountCent: number;
+}
+
+function applyFormFieldKeyFilter(
+  definitions: typeof formDefinitions,
+  fieldKeys: string[] | undefined
+): typeof formDefinitions {
+  if (!fieldKeys) {
+    return definitions;
+  }
+
+  const allowed = new Set(fieldKeys);
+  return definitions.map((definition) => ({
+    ...definition,
+    fields: definition.fields.filter((field) => allowed.has(field.fieldKey))
+  }));
 }
