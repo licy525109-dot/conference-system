@@ -3,6 +3,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export interface JwtPayload {
   sub: string;
   openid: string | null;
+  type?: "user" | "admin";
+  username?: string;
   iat: number;
 }
 
@@ -45,6 +47,8 @@ export function verifyJwt(token: string, secret: string): JwtPayload | null {
     return {
       sub: payload.sub,
       openid: typeof payload.openid === "string" ? payload.openid : null,
+      type: payload.type === "admin" || payload.type === "user" ? payload.type : undefined,
+      username: typeof payload.username === "string" ? payload.username : undefined,
       iat: payload.iat
     };
   } catch {

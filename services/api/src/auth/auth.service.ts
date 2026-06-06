@@ -59,6 +59,10 @@ export class AuthService {
       throw new UnauthorizedException("Invalid bearer token");
     }
 
+    if (payload.type && payload.type !== "user") {
+      throw new UnauthorizedException("Invalid bearer token");
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: {
@@ -80,6 +84,7 @@ export class AuthService {
       {
         sub: user.id,
         openid: user.openid,
+        type: "user",
         iat: Math.floor(Date.now() / 1000)
       },
       this.getJwtSecret()

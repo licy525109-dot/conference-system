@@ -125,6 +125,7 @@ model ConferencePage {
   id           String     @id @default(cuid())
   conferenceId String     @unique
   contentJson  Json
+  styleJson    Json?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   conference   Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
