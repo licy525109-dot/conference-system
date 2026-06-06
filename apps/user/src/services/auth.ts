@@ -15,19 +15,24 @@ export interface LoginResponse {
 
 export { getStoredUser, getToken, setAuthSession } from "./session";
 
-export async function mockLogin(): Promise<LoginResponse> {
-  // TODO: Replace mock code with platform-isolated wx.login/code2Session flow when real WeChat login is enabled.
+export async function loginWithWechat(): Promise<LoginResponse> {
+  const code = await getPlatformLoginCode();
+  const payload: { code: string; nickname?: string } = { code };
+
+  // #ifndef MP-WEIXIN
+  payload.nickname = MOCK_LOGIN_NICKNAME;
+  // #endif
+
   const data = await request<LoginResponse>("/auth/wechat/login", {
     method: "POST",
-    data: {
-      code: MOCK_LOGIN_CODE,
-      nickname: MOCK_LOGIN_NICKNAME
-    },
+    data: payload,
     auth: false
   });
   setAuthSession(data.token, data.user);
   return data;
 }
+
+export const mockLogin = loginWithWechat;
 
 export async function ensureLogin(): Promise<string> {
   const existingToken = getToken();
@@ -35,7 +40,7 @@ export async function ensureLogin(): Promise<string> {
     return existingToken;
   }
 
-  const login = await mockLogin();
+  const login = await loginWithWechat();
   return login.token;
 }
 
@@ -45,4 +50,30 @@ export async function getMe(): Promise<CurrentUser> {
     auth: true
   });
   return data.user;
+}
+
+function getPlatformLoginCode(): Promise<string> {
+  // #ifdef MP-WEIXIN
+  return getMiniProgramLoginCode();
+  // #endif
+
+  return Promise.resolve(MOCK_LOGIN_CODE);
+}
+
+function getMiniProgramLoginCode(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    uni.login({
+      success: (result) => {
+        if (result.code) {
+          resolve(result.code);
+          return;
+        }
+
+        reject(new Error("wx.login did not return code"));
+      },
+      fail: (error) => {
+        reject(new Error(error.errMsg || "wx.login failed"));
+      }
+    });
+  });
 }

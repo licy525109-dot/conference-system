@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, InternalServerErrorException, Unauthor
 import { PrismaService } from "../prisma.service";
 import { CurrentUser } from "./current-user";
 import { signJwt, verifyJwt } from "./jwt";
+import { WechatAuthService, WechatSession } from "./wechat-auth.service";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -16,7 +17,10 @@ export interface LoginResponse {
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wechatAuthService: WechatAuthService = new WechatAuthService()
+  ) {}
 
   async wechatLogin(input: unknown): Promise<ApiResponse<LoginResponse>> {
     if (!isRecord(input)) {
@@ -26,18 +30,39 @@ export class AuthService {
     const code = readRequiredString(input, "code");
     const nickname = readOptionalString(input, "nickname");
 
-    if (this.getWechatLoginMode() !== "mock") {
-      throw new BadRequestException("Only mock WeChat login is available in this environment");
+    const loginMode = this.getWechatLoginMode();
+    if (loginMode === "mock") {
+      return this.loginWithWechatSession(
+        {
+          openid: `mock_${code}`,
+          sessionKey: "",
+          unionid: null
+        },
+        nickname
+      );
     }
 
-    const openid = `mock_${code}`;
+    if (loginMode === "real") {
+      const session = await this.wechatAuthService.code2Session(code);
+      return this.loginWithWechatSession(session, nickname);
+    }
+
+    throw new BadRequestException("WECHAT_LOGIN_MODE must be mock or real");
+  }
+
+  private async loginWithWechatSession(
+    session: WechatSession,
+    nickname: string | null
+  ): Promise<ApiResponse<LoginResponse>> {
     const user = await this.prisma.user.upsert({
-      where: { openid },
+      where: { openid: session.openid },
       update: {
-        nickname
+        ...(nickname !== null ? { nickname } : {}),
+        ...(session.unionid ? { unionid: session.unionid } : {})
       },
       create: {
-        openid,
+        openid: session.openid,
+        unionid: session.unionid,
         nickname
       },
       select: {

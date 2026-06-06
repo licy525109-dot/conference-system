@@ -1,12 +1,13 @@
 import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BadRequestException, ExecutionContext, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ExecutionContext, InternalServerErrorException, UnauthorizedException } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { RequestWithCurrentUser } from "./current-user";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { WechatAuthService } from "./wechat-auth.service";
 
 describe("AuthService mock WeChat login", () => {
   it("creates a user and returns a token", async () => {
@@ -92,11 +93,90 @@ describe("AuthService mock WeChat login", () => {
 
     await assert.rejects(() => guard.canActivate(createExecutionContext({ headers: {} })), UnauthorizedException);
   });
+
+  it("real mode returns a configuration error when AppID or AppSecret is missing", async () => {
+    withRealAuthEnvWithoutCredentials();
+    const service = new AuthService(createPrismaMock());
+
+    await assert.rejects(
+      () =>
+        service.wechatLogin({
+          code: "wx-code"
+        }),
+      InternalServerErrorException
+    );
+  });
+
+  it("real mode upserts user from code2Session and never returns session_key", async () => {
+    withRealAuthEnv();
+    const prisma = createPrismaMock();
+    const service = new AuthService(prisma, createWechatAuthMock({
+      openid: "real-openid-001",
+      sessionKey: "SESSION_KEY_SHOULD_NOT_LEAK",
+      unionid: "union-001"
+    }));
+
+    const response = await service.wechatLogin({
+      code: "wx-code-001"
+    });
+
+    assert.equal(response.code, "OK");
+    assert.equal(response.data.user.openid, "real-openid-001");
+    assert.equal(prisma.users.length, 1);
+    assert.equal(prisma.users[0]?.unionid, "union-001");
+    assert.equal(JSON.stringify(response).includes("SESSION_KEY_SHOULD_NOT_LEAK"), false);
+    assert.equal(JSON.stringify(response).includes("session_key"), false);
+  });
+
+  it("code2Session errcode fails login", async () => {
+    withRealAuthEnv();
+    class ErrcodeWechatAuthService extends WechatAuthService {
+      protected override async fetchCode2Session(): Promise<Record<string, unknown>> {
+        return {
+          errcode: 40029,
+          errmsg: "invalid code"
+        };
+      }
+    }
+
+    const service = new AuthService(createPrismaMock(), new ErrcodeWechatAuthService());
+
+    await assert.rejects(
+      () =>
+        service.wechatLogin({
+          code: "bad-code"
+        }),
+      BadRequestException
+    );
+  });
 });
 
 function withAuthEnv(): void {
   process.env.WECHAT_LOGIN_MODE = "mock";
   process.env.JWT_SECRET = "test_jwt_secret";
+}
+
+function withRealAuthEnv(): void {
+  process.env.WECHAT_LOGIN_MODE = "real";
+  process.env.JWT_SECRET = "test_jwt_secret";
+  process.env.WECHAT_APP_ID = "test_app_id";
+  process.env.WECHAT_APP_SECRET = "test_app_secret";
+}
+
+function withRealAuthEnvWithoutCredentials(): void {
+  process.env.WECHAT_LOGIN_MODE = "real";
+  process.env.JWT_SECRET = "test_jwt_secret";
+  delete process.env.WECHAT_APP_ID;
+  delete process.env.WECHAT_APP_SECRET;
+}
+
+function createWechatAuthMock(session: { openid: string; sessionKey: string; unionid: string | null }): WechatAuthService {
+  return {
+    code2Session: async (code: string) => {
+      assert.equal(code, "wx-code-001");
+      return session;
+    }
+  } as WechatAuthService;
 }
 
 function createPrismaMock() {
@@ -109,13 +189,19 @@ function createPrismaMock() {
       upsert: async (args: UserUpsertArgs) => {
         const existing = users.find((user) => user.openid === args.where.openid);
         if (existing) {
-          existing.nickname = args.update.nickname;
+          if ("nickname" in args.update) {
+            existing.nickname = args.update.nickname ?? null;
+          }
+          if (typeof args.update.unionid === "string") {
+            existing.unionid = args.update.unionid;
+          }
           return selectUser(existing);
         }
 
         const user: UserRecord = {
           id: `user-${nextUserNumber++}`,
           openid: args.create.openid,
+          unionid: args.create.unionid ?? null,
           nickname: args.create.nickname
         };
         users.push(user);
@@ -150,6 +236,7 @@ function createExecutionContext(request: unknown): ExecutionContext {
 interface UserRecord {
   id: string;
   openid: string;
+  unionid: string | null;
   nickname: string | null;
 }
 
@@ -158,10 +245,12 @@ interface UserUpsertArgs {
     openid: string;
   };
   update: {
-    nickname: string | null;
+    nickname?: string | null;
+    unionid?: string;
   };
   create: {
     openid: string;
+    unionid?: string | null;
     nickname: string | null;
   };
 }
