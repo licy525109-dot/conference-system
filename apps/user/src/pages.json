@@ -5,6 +5,30 @@
       "style": {
         "navigationBarTitleText": "会议报名"
       }
+    },
+    {
+      "path": "pages/conference/detail",
+      "style": {
+        "navigationBarTitleText": "会议详情"
+      }
+    },
+    {
+      "path": "pages/registration/form",
+      "style": {
+        "navigationBarTitleText": "会议报名"
+      }
+    },
+    {
+      "path": "pages/payment/result",
+      "style": {
+        "navigationBarTitleText": "支付结果"
+      }
+    },
+    {
+      "path": "pages/registrations/my",
+      "style": {
+        "navigationBarTitleText": "我的报名"
+      }
     }
   ],
   "globalStyle": {
