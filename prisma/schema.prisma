@@ -208,6 +208,7 @@ model Order {
   skuId                    String
   originAmountCent         Int
   payableAmountCent        Int
+  paidAmountCent           Int?
   status                   OrderStatus     @default(PENDING)
   submittedFormJson        Json
   registrationSnapshotJson Json?

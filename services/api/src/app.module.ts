@@ -2,10 +2,12 @@ import { Module } from "@nestjs/common";
 import { AuthModule } from "./auth/auth.module";
 import { ConferencesModule } from "./conferences/conferences.module";
 import { HealthController } from "./health.controller";
+import { PaymentsModule } from "./payments/payments.module";
 import { RegistrationModule } from "./registration/registration.module";
+import { RegistrationsModule } from "./registrations/registrations.module";
 
 @Module({
-  imports: [AuthModule, ConferencesModule, RegistrationModule],
+  imports: [AuthModule, ConferencesModule, PaymentsModule, RegistrationModule, RegistrationsModule],
   controllers: [HealthController]
 })
 export class AppModule {}
