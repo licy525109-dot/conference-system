@@ -15,8 +15,15 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "prisma:migrate": "pnpm --filter @conference/api prisma:migrate",
-    "prisma:studio": "pnpm --filter @conference/api prisma:studio",
-    "prisma:seed": "pnpm --filter @conference/api prisma:seed"
+    "prisma:generate": "mkdir -p .cache .tmp && XDG_CACHE_HOME=$PWD/.cache TMPDIR=$PWD/.tmp dotenv -e .env.local -- pnpm --filter @conference/api prisma:generate",
+    "prisma:migrate": "mkdir -p .cache .tmp && XDG_CACHE_HOME=$PWD/.cache TMPDIR=$PWD/.tmp dotenv -e .env.local -- pnpm --filter @conference/api prisma:migrate",
+    "prisma:studio": "mkdir -p .cache .tmp && XDG_CACHE_HOME=$PWD/.cache TMPDIR=$PWD/.tmp dotenv -e .env.local -- pnpm --filter @conference/api prisma:studio",
+    "prisma:seed": "pnpm seed",
+    "seed": "mkdir -p .cache .tmp && XDG_CACHE_HOME=$PWD/.cache TMPDIR=$PWD/.tmp dotenv -e .env.local -- pnpm --filter @conference/api seed"
+  },
+  "devDependencies": {
+    "@prisma/client": "^6.19.3",
+    "dotenv-cli": "^8.0.0",
+    "tsx": "^4.20.6"
   }
 }

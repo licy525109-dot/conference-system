@@ -6,3 +6,318 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum ConferenceStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  ARCHIVED
+}
+
+enum RegistrationSkuStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  CLOSED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  MOCK
+  WECHAT
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CLOSED
+}
+
+enum RegistrationStatus {
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+}
+
+enum FormFieldType {
+  TEXT
+  TEXTAREA
+  PHONE
+  EMAIL
+  SELECT
+  RADIO
+  CHECKBOX
+  DATE
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  SYSTEM
+}
+
+model User {
+  id            String         @id @default(cuid())
+  openid        String?        @unique
+  unionid       String?
+  nickname      String?
+  phone         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  orders        Order[]
+  registrations Registration[]
+
+  @@index([createdAt])
+  @@map("users")
+}
+
+model AdminUser {
+  id           String     @id @default(cuid())
+  username     String     @unique
+  passwordHash String
+  displayName  String?
+  enabled      Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  auditLogs    AuditLog[]
+
+  @@index([enabled])
+  @@index([createdAt])
+  @@map("admin_users")
+}
+
+model Conference {
+  id                     String             @id @default(cuid())
+  title                  String
+  slug                   String             @unique
+  coverImageUrl          String?
+  summary                String?
+  location               String?
+  startsAt               DateTime
+  endsAt                 DateTime
+  registrationStartsAt   DateTime?
+  registrationEndsAt     DateTime?
+  status                 ConferenceStatus   @default(DRAFT)
+  sortOrder              Int                @default(0)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  page                   ConferencePage?
+  skus                   RegistrationSku[]
+  formDefinition         FormDefinition?
+  orders                 Order[]
+  registrations          Registration[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([status, sortOrder])
+  @@map("conferences")
+}
+
+model ConferencePage {
+  id           String     @id @default(cuid())
+  conferenceId String     @unique
+  contentJson  Json
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  conference   Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@index([conferenceId])
+  @@index([createdAt])
+  @@map("conference_pages")
+}
+
+model RegistrationSku {
+  id            String                @id @default(cuid())
+  conferenceId  String
+  name          String
+  description   String?
+  priceCent     Int
+  stock         Int                   @default(0)
+  soldCount     Int                   @default(0)
+  status        RegistrationSkuStatus @default(ACTIVE)
+  sortOrder     Int                   @default(0)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  conference    Conference            @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  orders        Order[]
+  orderItems    OrderItem[]
+  registrations Registration[]
+
+  @@unique([conferenceId, name])
+  @@index([conferenceId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([conferenceId, status, sortOrder])
+  @@map("registration_skus")
+}
+
+model FormDefinition {
+  id           String      @id @default(cuid())
+  conferenceId String      @unique
+  title        String?
+  description  String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  conference   Conference  @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  fields       FormField[]
+
+  @@index([conferenceId])
+  @@index([createdAt])
+  @@map("form_definitions")
+}
+
+model FormField {
+  id               String         @id @default(cuid())
+  formDefinitionId String
+  label            String
+  fieldKey         String
+  type             FormFieldType
+  required         Boolean        @default(false)
+  placeholder      String?
+  optionsJson      Json?
+  validationJson   Json?
+  sortOrder        Int            @default(0)
+  enabled          Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  formDefinition   FormDefinition @relation(fields: [formDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([formDefinitionId, fieldKey])
+  @@index([formDefinitionId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([formDefinitionId, sortOrder])
+  @@map("form_fields")
+}
+
+model Order {
+  id                String         @id @default(cuid())
+  orderNo           String         @unique
+  userId            String?
+  conferenceId      String
+  skuId             String
+  originAmountCent  Int
+  payableAmountCent Int
+  status            OrderStatus    @default(PENDING)
+  submittedFormJson Json
+  attendeeName      String?
+  phone             String?
+  paidAt            DateTime?
+  closedAt          DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  user              User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  conference        Conference     @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
+  sku               RegistrationSku @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  items             OrderItem[]
+  payments          Payment[]
+  registration      Registration?
+
+  @@index([userId])
+  @@index([conferenceId])
+  @@index([skuId])
+  @@index([orderNo])
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([conferenceId, status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String          @id @default(cuid())
+  orderId         String
+  skuId           String
+  skuName         String
+  unitPriceCent   Int
+  quantity        Int             @default(1)
+  totalAmountCent Int
+  createdAt       DateTime        @default(now())
+  order           Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku             RegistrationSku @relation(fields: [skuId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([skuId])
+  @@index([createdAt])
+  @@map("order_items")
+}
+
+model Payment {
+  id            String          @id @default(cuid())
+  orderId       String
+  provider      PaymentProvider @default(MOCK)
+  status        PaymentStatus   @default(PENDING)
+  outTradeNo    String          @unique
+  transactionId String?         @unique
+  amountCent    Int
+  notifyRawId   String?
+  paidAt        DateTime?
+  failedReason  String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([outTradeNo])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model Registration {
+  id             String             @id @default(cuid())
+  registrationNo String             @unique
+  userId         String?
+  conferenceId   String
+  skuId          String
+  orderId        String             @unique
+  attendeeName   String
+  phone          String
+  formDataJson   Json
+  paidAmountCent Int
+  status         RegistrationStatus @default(CONFIRMED)
+  confirmedAt    DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  user           User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  conference     Conference         @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
+  sku            RegistrationSku    @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  order          Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([conferenceId])
+  @@index([skuId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([conferenceId, createdAt])
+  @@map("registrations")
+}
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  adminUserId  String?
+  action       AuditAction
+  entityType   String
+  entityId     String?
+  summary      String?
+  metadataJson Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime    @default(now())
+  adminUser    AdminUser?  @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+
+  @@index([adminUserId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

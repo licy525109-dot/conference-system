@@ -1,5 +1,7 @@
 node_modules
 .pnpm-store
+.cache
+.tmp
 .DS_Store
 .env
 .env.*
