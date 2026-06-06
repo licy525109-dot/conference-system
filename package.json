@@ -2,7 +2,7 @@
   "name": "conference-system",
   "private": true,
   "version": "0.1.0",
-  "packageManager": "pnpm@latest",
+  "packageManager": "pnpm@11.5.2",
   "scripts": {
     "dev:api": "pnpm --filter @conference/api dev",
     "dev:user:h5": "pnpm --filter @conference/user dev:h5",
