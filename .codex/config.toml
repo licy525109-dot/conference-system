@@ -14,7 +14,7 @@ project_root_markers = ["pnpm-workspace.yaml", "package.json", ".git"]
 [sandbox_workspace_write]
 # Keep false by default. If you explicitly want Codex to run pnpm install or fetch packages,
 # temporarily set this to true and switch back to false afterwards.
-network_access = false
+network_access = true
 exclude_tmpdir_env_var = true
 exclude_slash_tmp = true
 
