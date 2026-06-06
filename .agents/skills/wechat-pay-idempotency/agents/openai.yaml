@@ -1,0 +1,6 @@
+interface:
+  display_name: "WeChat Pay Idempotency"
+  short_description: "Use this skill when implementing or reviewing WeChat Pay API v3 prepay, notify, amount verification, signing, "
+  brand_color: "#2563EB"
+policy:
+  allow_implicit_invocation: true

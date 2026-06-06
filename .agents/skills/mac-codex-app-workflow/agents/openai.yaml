@@ -1,0 +1,6 @@
+interface:
+  display_name: "Mac Codex App Workflow"
+  short_description: "Use this skill when working in Codex App on macOS, including Local vs Worktree choice, integrated terminal, pr"
+  brand_color: "#2563EB"
+policy:
+  allow_implicit_invocation: true

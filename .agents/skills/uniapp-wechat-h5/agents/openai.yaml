@@ -1,0 +1,6 @@
+interface:
+  display_name: "UniApp WeChat + H5"
+  short_description: "Use this skill when implementing uni-app user pages for H5 and WeChat Mini Program, including routing, API cli"
+  brand_color: "#2563EB"
+policy:
+  allow_implicit_invocation: true

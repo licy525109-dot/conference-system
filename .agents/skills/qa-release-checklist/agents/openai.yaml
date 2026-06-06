@@ -1,0 +1,6 @@
+interface:
+  display_name: "QA Release Checklist"
+  short_description: "Use this skill for code review, pre-release checks, security checks, payment checks, privacy checks, and MVP a"
+  brand_color: "#2563EB"
+policy:
+  allow_implicit_invocation: true

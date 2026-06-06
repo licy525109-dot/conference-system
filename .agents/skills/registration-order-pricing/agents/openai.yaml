@@ -1,0 +1,6 @@
+interface:
+  display_name: "Registration Order Pricing"
+  short_description: "Use this skill when implementing or reviewing registration SKU price, quote, order creation, amount calculatio"
+  brand_color: "#2563EB"
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,33 @@
+# Project-level Codex configuration for Mac + Codex App.
+# The Codex App, IDE extension, and CLI share the same configuration layers.
+# Keep secrets out of this file.
+
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+model_verbosity = "medium"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "cached"
+project_doc_max_bytes = 120000
+project_root_markers = ["pnpm-workspace.yaml", "package.json", ".git"]
+
+[sandbox_workspace_write]
+# Keep false by default. If you explicitly want Codex to run pnpm install or fetch packages,
+# temporarily set this to true and switch back to false afterwards.
+network_access = false
+exclude_tmpdir_env_var = true
+exclude_slash_tmp = true
+
+[shell_environment_policy]
+inherit = "core"
+include_only = [
+  "PATH",
+  "HOME",
+  "SHELL",
+  "USER",
+  "TMPDIR",
+  "PNPM_HOME",
+  "NODE_ENV",
+  "DATABASE_URL",
+  "REDIS_URL"
+]

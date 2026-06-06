@@ -1,0 +1,6 @@
+interface:
+  display_name: "Deployment Observability MVP"
+  short_description: "Use this skill when preparing local or production deployment, environment variables, logging, health checks, d"
+  brand_color: "#2563EB"
+policy:
+  allow_implicit_invocation: true

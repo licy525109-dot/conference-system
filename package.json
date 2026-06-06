@@ -1,0 +1,18 @@
+{
+  "name": "conference-system",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@latest",
+  "scripts": {
+    "dev:api": "pnpm --filter @conference/api dev",
+    "dev:user:h5": "pnpm --filter @conference/user dev:h5",
+    "dev:user:mp-weixin": "pnpm --filter @conference/user dev:mp-weixin",
+    "dev:admin": "pnpm --filter @conference/admin dev",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "prisma:migrate": "pnpm --filter @conference/api prisma:migrate",
+    "prisma:studio": "pnpm --filter @conference/api prisma:studio",
+    "prisma:seed": "pnpm --filter @conference/api prisma:seed"
+  }
+}
