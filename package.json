@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "packageManager": "pnpm@11.5.2",
   "scripts": {
-    "dev:api": "PORT=${PORT:-3001} pnpm --filter @conference/api dev",
+    "dev:api": "PORT=${PORT:-3001} dotenv -e .env.local -- pnpm --filter @conference/api dev",
     "dev:user:h5": "pnpm --filter @conference/user dev:h5",
     "dev:user:mp-weixin": "pnpm --filter @conference/user dev:mp-weixin",
     "dev:admin": "pnpm --filter @conference/admin dev",
