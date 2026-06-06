@@ -724,7 +724,7 @@ cp .env.example .env
 
 ```env
 NODE_ENV=development
-API_PORT=3000
+API_PORT=3001
 DATABASE_URL="postgresql://conference:conference_dev_password@localhost:5432/conference_dev?schema=public"
 REDIS_URL="redis://localhost:6379"
 JWT_SECRET="replace-with-local-dev-secret"
@@ -841,8 +841,8 @@ pnpm prisma:studio
 
 ```bash
 pnpm dev:api
-curl http://localhost:3000/api/health
-curl http://localhost:3000/api/conferences
+curl http://localhost:3001/api/health
+curl http://localhost:3001/api/conferences
 ```
 
 ---
@@ -1021,7 +1021,7 @@ WECHAT_PAY_NOTIFY_URL="https://api.yourdomain.com/api/payments/wechat/notify"
 
 ```bash
 pnpm dev:api
-curl http://localhost:3000/api/health
+curl http://localhost:3001/api/health
 ```
 
 检查：
