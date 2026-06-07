@@ -11,6 +11,10 @@ export interface WechatPayConfig {
 }
 
 export function isWechatPayEnabled(): boolean {
+  if (process.env.WECHAT_PAY_MODE === "mock" || process.env.WECHAT_PAY_ENABLED === "false") {
+    return false;
+  }
+
   return process.env.WECHAT_PAY_MODE === "real" || process.env.WECHAT_PAY_ENABLED === "true";
 }
 

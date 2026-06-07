@@ -15,7 +15,7 @@
 
     <view class="actions">
       <button v-if="paymentStatus?.status !== 'PAID'" class="primary-button" :disabled="confirming" @click="confirmPay">
-        {{ confirming ? "确认中..." : "开发环境 mock 支付成功" }}
+        {{ confirming ? "确认中..." : paymentActionLabel }}
       </button>
       <button class="ghost-button" @click="loadStatus">刷新状态</button>
       <button class="ghost-button" @click="goMyRegistrations">我的报名</button>
@@ -27,7 +27,7 @@
 import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
 import { ensureLogin } from "@/services/auth";
-import { confirmMockPayment, getPaymentStatus, type PaymentStatusResponse } from "@/services/payment";
+import { getPaymentActionLabel, getPaymentStatus, startOrderPayment, type PaymentStatusResponse } from "@/services/payment";
 import { formatDateTime } from "@/utils/date";
 
 const orderNo = ref("");
@@ -35,6 +35,7 @@ const paymentStatus = ref<PaymentStatusResponse | null>(null);
 const loading = ref(false);
 const confirming = ref(false);
 const error = ref("");
+const paymentActionLabel = getPaymentActionLabel();
 
 const statusText = computed(() => {
   if (paymentStatus.value?.status === "PAID") {
@@ -76,12 +77,12 @@ async function confirmPay() {
 
   try {
     await ensureLogin();
-    await confirmMockPayment(orderNo.value);
+    paymentStatus.value = await startOrderPayment(orderNo.value);
     await loadStatus();
-    uni.showToast({ title: "支付成功", icon: "success" });
+    uni.showToast({ title: "支付已确认", icon: "success" });
   } catch (err) {
     uni.showToast({
-      title: err instanceof Error ? err.message : "mock 支付失败",
+      title: err instanceof Error ? err.message : "支付失败",
       icon: "none"
     });
   } finally {
