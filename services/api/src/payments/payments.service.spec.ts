@@ -63,6 +63,21 @@ describe("PaymentsService mock confirm", () => {
     assert.equal(prisma.skus[0]?.soldCount, 1);
   });
 
+  it("does not increment soldCount when registration creation hits an orderId unique conflict", async () => {
+    withMockPaymentMode();
+    const prisma = createPrismaMock({
+      initialSoldCount: 1,
+      simulateRegistrationCreateConflict: true
+    });
+    const service = createService(prisma);
+
+    const response = await service.confirmMockPayment({ orderNo: "REG001" }, currentUser);
+
+    assert.equal(response.data.registrationId, "registration-race");
+    assert.equal(prisma.registrations.length, 1);
+    assert.equal(prisma.skus[0]?.soldCount, 1);
+  });
+
   it("hides orders that do not belong to current user", async () => {
     withMockPaymentMode();
     const service = createService(createPrismaMock());
@@ -136,6 +151,8 @@ describe("PaymentsService payment status", () => {
         orderNo: "REG001",
         status: OrderStatus.PAID,
         paidAt: now.toISOString(),
+        paymentProvider: PaymentProvider.MOCK,
+        paymentStatus: PaymentStatus.SUCCESS,
         registrationId: "registration-1"
       }
     });
@@ -169,7 +186,7 @@ function createService(prisma: PrismaService): PaymentsService {
   return new TestPaymentsService(prisma);
 }
 
-function createPrismaMock() {
+function createPrismaMock(options: PrismaMockOptions = {}) {
   const orders: OrderRecord[] = [
     createOrder("REG001", currentUser.id, OrderStatus.PENDING),
     createOrder("REG_OTHER_USER", "user-2", OrderStatus.PENDING),
@@ -185,7 +202,7 @@ function createPrismaMock() {
   ];
   const payments: PaymentRecord[] = [];
   const registrations: RegistrationRecord[] = [];
-  const skus: SkuRecord[] = [{ id: "sku-1", soldCount: 0 }];
+  const skus: SkuRecord[] = [{ id: "sku-1", soldCount: options.initialSoldCount ?? 0 }];
 
   const mock: PrismaMockShape = {
     orders,
@@ -195,7 +212,11 @@ function createPrismaMock() {
     order: {
       findFirst: async (args: OrderFindFirstArgs) => {
         const order = findOwnedOrder(orders, args.where.orderNo, args.where.userId);
-        return order ? toOrderRead(order, registrations) : null;
+        return order ? toOrderRead(order, registrations, payments) : null;
+      },
+      findUnique: async (args: OrderFindUniqueArgs) => {
+        const order = orders.find((item) => item.orderNo === args.where.orderNo);
+        return order ? toOrderRead(order, registrations, payments) : null;
       },
       update: async (args: OrderUpdateArgs) => {
         const order = orders.find((item) => item.id === args.where.id);
@@ -225,6 +246,14 @@ function createPrismaMock() {
         return registration ? { id: registration.id } : null;
       },
       create: async (args: RegistrationCreateArgs) => {
+        if (options.simulateRegistrationCreateConflict) {
+          registrations.push({
+            id: "registration-race",
+            ...args.data
+          });
+          throw { code: "P2002" };
+        }
+
         if (registrations.some((item) => item.orderId === args.data.orderId)) {
           throw { code: "P2002" };
         }
@@ -281,7 +310,7 @@ function findOwnedOrder(orders: OrderRecord[], orderNo: string, userId: string):
   return orders.find((order) => order.orderNo === orderNo && order.userId === userId);
 }
 
-function toOrderRead(order: OrderRecord, registrations: RegistrationRecord[]) {
+function toOrderRead(order: OrderRecord, registrations: RegistrationRecord[], payments: PaymentRecord[] = []) {
   const registration = registrations.find((item) => item.orderId === order.id);
   return {
     id: order.id,
@@ -294,8 +323,14 @@ function toOrderRead(order: OrderRecord, registrations: RegistrationRecord[]) {
     expiredAt: order.expiredAt,
     registrationSnapshotJson: order.registrationSnapshotJson,
     paidAt: order.paidAt,
+    payments: payments.filter((payment) => payment.orderId === order.id).map((payment) => ({ provider: payment.provider, status: payment.status })),
     registration: registration ? { id: registration.id } : null
   };
+}
+
+interface PrismaMockOptions {
+  initialSoldCount?: number;
+  simulateRegistrationCreateConflict?: boolean;
 }
 
 interface PrismaMockShape {
@@ -305,6 +340,7 @@ interface PrismaMockShape {
   skus: SkuRecord[];
   order: {
     findFirst(args: OrderFindFirstArgs): Promise<ReturnType<typeof toOrderRead> | null>;
+    findUnique(args: OrderFindUniqueArgs): Promise<ReturnType<typeof toOrderRead> | null>;
     update(args: OrderUpdateArgs): Promise<void>;
   };
   payment: {
@@ -369,6 +405,12 @@ interface OrderFindFirstArgs {
   where: {
     orderNo: string;
     userId: string;
+  };
+}
+
+interface OrderFindUniqueArgs {
+  where: {
+    orderNo: string;
   };
 }
 
