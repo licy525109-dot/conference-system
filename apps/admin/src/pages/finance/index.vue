@@ -3,11 +3,11 @@
     <AdminPageHeader
       title="财务与对账"
       eyebrow="扩展能力"
-      badge="对账辅助"
+      badge="灰度辅助"
       badge-tone="warning"
-      subtitle="基于本地订单与支付记录做只读汇总和差异扫描，不调用微信账单下载。"
+      subtitle="对账辅助 / 灰度能力，基于本地订单与支付记录做只读汇总和差异扫描，不调用微信账单下载。"
     >
-      <AdminFeatureBadge label="对账辅助，不等同完整财务系统" description="第一版只服务运营核对，不作为正式财务结算依据。" tone="warning" />
+      <AdminFeatureBadge label="对账辅助 / 灰度能力，不等同完整财务系统" description="第一版只服务运营核对，不作为正式财务结算依据。" tone="warning" />
       <template #actions>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <el-button type="primary" @click="scan">生成对账批次</el-button>

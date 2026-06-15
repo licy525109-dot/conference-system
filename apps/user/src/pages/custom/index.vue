@@ -9,18 +9,28 @@
       @retry="loadPage"
       @secondary="goHome"
     />
-    <PageRenderer v-else-if="cmsPage" :components="cmsPage.version.components" :theme="theme" @open-conference="goDetail" />
+    <template v-else-if="cmsPage">
+      <ExtensionStatusNotice
+        v-if="extensionNotice"
+        :status="extensionNotice.status"
+        :title="extensionNotice.title"
+        :description="extensionNotice.description"
+        :tone="extensionNotice.tone"
+      />
+      <PageRenderer :components="cmsPage.version.components" :theme="theme" @open-conference="goDetail" />
+    </template>
     <EmptyState v-else title="页面尚未发布" description="该页面内容暂未开放，请返回首页查看会议。" mark="页" action-text="返回首页" @action="goHome" />
     <CustomTabbar :active-page-key="pageKey" />
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { onLoad, onShareAppMessage } from "@dcloudio/uni-app";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
+import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
@@ -31,6 +41,7 @@ const cmsPage = ref<PublishedPage | null>(null);
 const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const loading = ref(false);
 const error = ref("");
+const extensionNotice = computed(() => extensionNoticeFor(pageKey.value));
 
 onLoad((query) => {
   pageKey.value = String(query?.pageKey || "custom:");
@@ -62,10 +73,40 @@ function goDetail(id: string) {
     url: `/pages/conference/detail?id=${encodeURIComponent(id)}`
   });
 }
+
+function extensionNoticeFor(key: string):
+  | { status: string; title: string; description: string; tone: "info" | "warning" | "neutral" }
+  | null {
+  const normalized = key.replace(/^custom:/, "");
+  const map: Record<string, { status: string; title: string; description: string; tone: "info" | "warning" | "neutral" }> = {
+    "member-center": {
+      status: "扩展能力",
+      title: "会员权益展示中",
+      description: "会员权益暂不参与会议报名定价，报名金额仍以提交订单时系统计算结果为准。",
+      tone: "warning"
+    },
+    cart: {
+      status: "主线提醒",
+      title: "会议报名结算优先",
+      description: "购物车商品支付后续开放，请优先完成会议报名缴费主流程。",
+      tone: "info"
+    },
+    mall: {
+      status: "商城试运行",
+      title: "商品支付后续开放",
+      description: "商城内容可展示和加入购物车，暂不提供完整商品支付和履约。",
+      tone: "warning"
+    }
+  };
+  return map[normalized] ?? null;
+}
 </script>
 
 <style scoped>
 .page {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
   padding-bottom: 164rpx;
 }
 </style>

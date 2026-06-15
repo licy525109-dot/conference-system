@@ -3,11 +3,11 @@
     <AdminPageHeader
       title="商城订单"
       eyebrow="扩展能力"
-      badge="后续开放"
-      badge-tone="neutral"
-      subtitle="商城订单为独立预留链路，当前不接会议报名支付。"
+      badge="灰度中"
+      badge-tone="warning"
+      subtitle="商城订单为独立预留链路，商品支付和履约后续完善，当前不接会议报名支付。"
     >
-      <AdminFeatureBadge label="后续开放" description="不与会议订单支付状态混用。" tone="neutral" />
+      <AdminFeatureBadge label="商城能力灰度中" description="不与会议订单支付状态混用，不作为完整电商履约后台。" tone="warning" />
       <template #actions>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </template>
