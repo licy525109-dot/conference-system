@@ -22,7 +22,9 @@ export function clearAdminToken(): void {
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  headers.set("content-type", "application/json");
+  if (!(options.body instanceof FormData)) {
+    headers.set("content-type", "application/json");
+  }
   const token = getAdminToken();
   if (token) {
     headers.set("authorization", `Bearer ${token}`);
@@ -41,10 +43,10 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   throw new Error(body.message || `请求失败 (${response.status})`);
 }
 
-export function toQuery(params: Record<string, string | number | undefined>): string {
+export function toQuery(params: Record<string, string | number | boolean | undefined | null>): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (typeof value !== "undefined" && value !== "") {
+    if (typeof value !== "undefined" && value !== null && value !== "") {
       query.set(key, String(value));
     }
   }

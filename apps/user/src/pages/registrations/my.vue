@@ -2,7 +2,10 @@
   <view class="page">
     <view class="topbar">
       <text class="title">我的报名</text>
-      <button class="ghost-button compact" @click="loadRegistrations">刷新</button>
+      <view class="topbar-actions">
+        <button class="ghost-button compact" @click="goHome">返回首页</button>
+        <button class="ghost-button compact" @click="loadRegistrations">刷新</button>
+      </view>
     </view>
 
     <view v-if="loading" class="state">加载报名记录中...</view>
@@ -28,16 +31,21 @@
         </view>
       </view>
     </view>
+    <WechatProfilePrompt />
+    <CustomTabbar active-page-key="my-registrations" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { ensureLogin } from "@/services/auth";
+import CustomTabbar from "@/components/CustomTabbar.vue";
+import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
+import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getMyRegistrations } from "@/services/registration";
 import type { MyRegistrationItem } from "@/services/registration-types";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
+import { goHome } from "@/utils/navigation";
 
 const items = ref<MyRegistrationItem[]>([]);
 const loading = ref(false);
@@ -55,7 +63,13 @@ async function loadRegistrations() {
     await ensureLogin();
     items.value = await getMyRegistrations();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "报名记录加载失败";
+    console.error("[MY_REGISTRATIONS_LOAD_ERROR]", err);
+    if (isAuthSessionExpiredError(err)) {
+      clearExpiredAuthSession();
+      error.value = EXPIRED_LOGIN_REENTRY_MESSAGE;
+    } else {
+      error.value = "报名记录加载失败，请稍后重试";
+    }
   } finally {
     loading.value = false;
   }
@@ -75,6 +89,11 @@ async function loadRegistrations() {
   justify-content: space-between;
   gap: 20rpx;
   margin-bottom: 24rpx;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 12rpx;
 }
 
 .title {

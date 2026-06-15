@@ -1,16 +1,39 @@
-import { apiRequest, setAdminToken, toQuery } from "./api";
+import { API_BASE_URL } from "../config";
+import { apiRequest, getAdminToken, setAdminToken, toQuery } from "./api";
 import type {
   AdminOrder,
   AdminOrderDetail,
   AdminRegistration,
   AdminRegistrationDetail,
+  AdminAccount,
   AdminUser,
   ApiList,
+  ActiveTheme,
+  AdminAppUser,
   Conference,
+  ComponentPreset,
   Coupon,
+  PageTemplate,
+  PageVersion,
+  DashboardOverview,
+  FinanceBatch,
+  FinanceOverview,
+  FinancePayment,
   FormField,
+  MaterialAsset,
+  MaterialCategory,
+  MallOrder,
+  MemberLevel,
+  Permission,
+  Product,
+  ProductCategory,
+  ProductSku,
   PromotionRule,
-  Sku
+  Role,
+  Sku,
+  TabBarConfig,
+  ThemePreset,
+  UserMembership
 } from "./types";
 
 export async function loginAdmin(username: string, password: string): Promise<AdminUser> {
@@ -24,6 +47,10 @@ export async function loginAdmin(username: string, password: string): Promise<Ad
 
 export function getAdminMe(): Promise<{ admin: AdminUser }> {
   return apiRequest<{ admin: AdminUser }>("/admin/auth/me");
+}
+
+export function getDashboardOverview(params: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
+  return apiRequest<DashboardOverview>(`/admin/dashboard/overview${toQuery(params)}`);
 }
 
 export function listConferences(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
@@ -163,4 +190,317 @@ export function updatePromotionRule(id: string, input: Record<string, unknown>) 
     method: "PATCH",
     body: JSON.stringify(input)
   });
+}
+
+export function listAccounts() {
+  return apiRequest<{ items: AdminAccount[] }>("/admin/accounts");
+}
+
+export function createAccount(input: Record<string, unknown>) {
+  return apiRequest<AdminAccount>("/admin/accounts", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateAccount(id: string, input: Record<string, unknown>) {
+  return apiRequest<AdminAccount>(`/admin/accounts/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listPermissions() {
+  return apiRequest<{ items: Permission[] }>("/admin/permissions");
+}
+
+export function listRoles() {
+  return apiRequest<{ items: Role[] }>("/admin/roles");
+}
+
+export function createRole(input: Record<string, unknown>) {
+  return apiRequest<Role>("/admin/roles", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateRole(id: string, input: Record<string, unknown>) {
+  return apiRequest<Role>(`/admin/roles/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listMaterialCategories() {
+  return apiRequest<{ items: MaterialCategory[] }>("/admin/material-categories");
+}
+
+export function createMaterialCategory(input: Record<string, unknown>) {
+  return apiRequest<MaterialCategory>("/admin/material-categories", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listMaterials(params: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  categoryId?: string;
+  usage?: string;
+  enabled?: boolean;
+}) {
+  return apiRequest<ApiList<MaterialAsset>>(`/admin/materials${toQuery(params)}`);
+}
+
+export function createMaterial(input: {
+  name: string;
+  usage: string;
+  categoryId?: string;
+  fileType?: string;
+  url?: string;
+  remark?: string;
+  file?: File;
+  onProgress?: (percent: number) => void;
+}) {
+  if (input.file) {
+    const formData = new FormData();
+    formData.set("file", input.file);
+    formData.set("name", input.name);
+    formData.set("usage", input.usage);
+    if (input.categoryId) formData.set("categoryId", input.categoryId);
+    if (input.remark) formData.set("remark", input.remark);
+    return uploadMaterialWithProgress(formData, input.onProgress);
+  }
+
+  return apiRequest<MaterialAsset>("/admin/materials", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+function uploadMaterialWithProgress(formData: FormData, onProgress?: (percent: number) => void): Promise<MaterialAsset> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE_URL}/admin/materials`);
+    const token = getAdminToken();
+    if (token) {
+      xhr.setRequestHeader("authorization", `Bearer ${token}`);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+      }
+    };
+    xhr.onload = () => {
+      const body = parseApiBody<MaterialAsset>(xhr.responseText);
+      if (xhr.status >= 200 && xhr.status < 300 && body.code === "OK" && body.data) {
+        onProgress?.(100);
+        resolve(body.data);
+        return;
+      }
+      reject(new Error(body.message || `上传失败 (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error("网络异常，素材上传失败"));
+    xhr.send(formData);
+  });
+}
+
+function parseApiBody<T>(text: string): { code?: string; message?: string; data?: T } {
+  try {
+    return JSON.parse(text) as { code?: string; message?: string; data?: T };
+  } catch {
+    return {};
+  }
+}
+
+export function updateMaterial(id: string, input: Record<string, unknown>) {
+  return apiRequest<MaterialAsset>(`/admin/materials/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function disableMaterial(id: string) {
+  return apiRequest<MaterialAsset>(`/admin/materials/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+export function listPages() {
+  return apiRequest<{ items: PageTemplate[] }>("/admin/pages");
+}
+
+export function createPage(input: Record<string, unknown>) {
+  return apiRequest<PageTemplate>("/admin/pages", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updatePage(id: string, input: Record<string, unknown>) {
+  return apiRequest<PageTemplate>(`/admin/pages/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function rollbackPage(id: string, input: Record<string, unknown> = {}) {
+  return apiRequest<PageVersion>(`/admin/pages/${encodeURIComponent(id)}/rollback`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function getPageVersion(id: string) {
+  return apiRequest<PageVersion>(`/admin/page-versions/${encodeURIComponent(id)}`);
+}
+
+export function updatePageVersion(id: string, input: Record<string, unknown>) {
+  return apiRequest<PageVersion>(`/admin/page-versions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function publishPageVersion(id: string) {
+  return apiRequest<PageVersion>(`/admin/page-versions/${encodeURIComponent(id)}/publish`, {
+    method: "POST"
+  });
+}
+
+export function listComponentPresets() {
+  return apiRequest<{ items: ComponentPreset[] }>("/admin/component-presets");
+}
+
+export function getTheme() {
+  return apiRequest<ActiveTheme>("/admin/theme");
+}
+
+export function updateTheme(input: Record<string, unknown>) {
+  return apiRequest<ActiveTheme>("/admin/theme", {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listThemePresets() {
+  return apiRequest<{ items: ThemePreset[] }>("/admin/theme-presets");
+}
+
+export function createThemePreset(input: Record<string, unknown>) {
+  return apiRequest<ThemePreset>("/admin/theme-presets", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateThemePreset(id: string, input: Record<string, unknown>) {
+  return apiRequest<ThemePreset>(`/admin/theme-presets/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function getTabbar() {
+  return apiRequest<TabBarConfig>("/admin/tabbar");
+}
+
+export function updateTabbar(input: Record<string, unknown>) {
+  return apiRequest<TabBarConfig>("/admin/tabbar", {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listUsers(params: { page?: number; pageSize?: number; keyword?: string }) {
+  return apiRequest<ApiList<AdminAppUser>>(`/admin/users${toQuery(params)}`);
+}
+
+export function listMemberLevels() {
+  return apiRequest<{ items: MemberLevel[] }>("/admin/member-levels");
+}
+
+export function createMemberLevel(input: Record<string, unknown>) {
+  return apiRequest<MemberLevel>("/admin/member-levels", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateMemberLevel(id: string, input: Record<string, unknown>) {
+  return apiRequest<MemberLevel>(`/admin/member-levels/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listMemberships(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
+  return apiRequest<ApiList<UserMembership>>(`/admin/memberships${toQuery(params)}`);
+}
+
+export function assignMembership(input: Record<string, unknown>) {
+  return apiRequest<UserMembership>("/admin/memberships", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function getFinanceOverview() {
+  return apiRequest<FinanceOverview>("/admin/finance/overview");
+}
+
+export function listFinancePayments(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
+  return apiRequest<ApiList<FinancePayment>>(`/admin/finance/payments${toQuery(params)}`);
+}
+
+export function listFinanceBatches() {
+  return apiRequest<{ items: FinanceBatch[] }>("/admin/finance/reconciliation-batches");
+}
+
+export function createFinanceBatch() {
+  return apiRequest<FinanceBatch>("/admin/finance/reconciliation-batches", {
+    method: "POST"
+  });
+}
+
+export function listProductCategories() {
+  return apiRequest<{ items: ProductCategory[] }>("/admin/mall/categories");
+}
+
+export function createProductCategory(input: Record<string, unknown>) {
+  return apiRequest<ProductCategory>("/admin/mall/categories", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listProducts(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
+  return apiRequest<ApiList<Product>>(`/admin/mall/products${toQuery(params)}`);
+}
+
+export function createProduct(input: Record<string, unknown>) {
+  return apiRequest<Product>("/admin/mall/products", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateProduct(id: string, input: Record<string, unknown>) {
+  return apiRequest<Product>(`/admin/mall/products/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function createProductSku(productId: string, input: Record<string, unknown>) {
+  return apiRequest<ProductSku>(`/admin/mall/products/${encodeURIComponent(productId)}/skus`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listMallOrders(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
+  return apiRequest<ApiList<MallOrder>>(`/admin/mall/orders${toQuery(params)}`);
 }

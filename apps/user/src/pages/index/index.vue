@@ -11,9 +11,17 @@
     <view v-if="loading" class="state">加载会议中...</view>
     <view v-else-if="error" class="state error">
       <text>{{ error }}</text>
-      <button class="primary-button compact" @click="loadConferences">重试</button>
+      <button class="primary-button compact" @click="retryLoadConferences">重试</button>
     </view>
     <view v-else-if="conferences.length === 0" class="state">暂无可报名会议</view>
+
+    <PageRenderer
+      v-else-if="cmsPage"
+      :components="cmsPage.version.components"
+      :theme="theme"
+      :conferences="conferences"
+      @open-conference="goDetail"
+    />
 
     <view v-else class="list">
       <view v-for="conference in conferences" :key="conference.id" class="conference-card">
@@ -28,34 +36,92 @@
         <button class="primary-button" @click="goDetail(conference.id)">查看详情</button>
       </view>
     </view>
+    <WechatProfilePrompt />
+    <CustomTabbar active-page-key="home" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { onLoad } from "@dcloudio/uni-app";
+import { onLoad, onShareAppMessage, onShow } from "@dcloudio/uni-app";
+import CustomTabbar from "@/components/CustomTabbar.vue";
+import PageRenderer from "@/components/PageRenderer.vue";
+import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
+import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
 import { getConferences, type ConferenceListItem } from "@/services/conference";
+import { ApiRequestError } from "@/services/request";
 import { formatDateTime } from "@/utils/date";
+
+const HOME_REFRESH_INTERVAL_MS = 30 * 1000;
 
 const loading = ref(false);
 const error = ref("");
 const conferences = ref<ConferenceListItem[]>([]);
+const cmsPage = ref<PublishedPage | null>(null);
+const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
+let hasLoadedOnce = false;
+let lastLoadAt = 0;
 
 onLoad(() => {
   void loadConferences();
 });
+
+onShow(() => {
+  if (loading.value) {
+    return;
+  }
+
+  const shouldLoad = !hasLoadedOnce || Boolean(error.value) || Date.now() - lastLoadAt > HOME_REFRESH_INTERVAL_MS;
+  if (shouldLoad) {
+    void loadConferences();
+  }
+});
+
+onShareAppMessage(() => buildPageShare(cmsPage.value, "/pages/index/index", "会议报名"));
 
 async function loadConferences() {
   loading.value = true;
   error.value = "";
 
   try {
-    conferences.value = await getConferences();
+    const [items, page, themeConfig] = await Promise.all([getConferences(), getPublishedPage("home"), getAppTheme()]);
+    conferences.value = items;
+    cmsPage.value = page;
+    theme.value = themeConfig;
+    applyPageTitle(page, "会议报名");
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "会议加载失败";
+    logConferenceLoadError(err);
+    error.value = "会议加载失败，请稍后重试";
   } finally {
+    hasLoadedOnce = true;
+    lastLoadAt = Date.now();
     loading.value = false;
   }
+}
+
+function logConferenceLoadError(err: unknown): void {
+  if (err instanceof ApiRequestError) {
+    console.error("[CONFERENCE_LOAD_ERROR]", {
+      method: err.method,
+      url: err.url,
+      statusCode: err.statusCode,
+      API_BASE_URL: err.apiBaseUrl,
+      message: err.responseMessage || err.message,
+      errMsg: err.errMsg,
+      responseData: err.responseData,
+      error: err
+    });
+    return;
+  }
+
+  console.error("[CONFERENCE_LOAD_ERROR]", {
+    message: err instanceof Error ? err.message : String(err),
+    error: err
+  });
+}
+
+function retryLoadConferences() {
+  void loadConferences();
 }
 
 function goDetail(id: string) {

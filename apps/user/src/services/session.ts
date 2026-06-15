@@ -12,6 +12,11 @@ export function setAuthSession(token: string, user: CurrentUser): void {
   uni.setStorageSync(USER_STORAGE_KEY, user);
 }
 
+export function clearAuthSession(): void {
+  uni.removeStorageSync(TOKEN_STORAGE_KEY);
+  uni.removeStorageSync(USER_STORAGE_KEY);
+}
+
 export function getStoredUser(): CurrentUser | null {
   const user = uni.getStorageSync(USER_STORAGE_KEY);
   return user && typeof user === "object" ? (user as CurrentUser) : null;

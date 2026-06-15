@@ -102,6 +102,10 @@ model User {
   orders           Order[]
   registrations    Registration[]
   couponRedemptions CouponRedemption[]
+  memberships      UserMembership[]
+  cartItems        CartItem[]
+  registrationCartItems RegistrationCartItem[]
+  mallOrders       MallOrder[]
 
   @@index([createdAt])
   @@index([lastActiveAt])
@@ -117,10 +121,71 @@ model AdminUser {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   auditLogs    AuditLog[]
+  roles        AdminUserRole[]
 
   @@index([enabled])
   @@index([createdAt])
   @@map("admin_users")
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  name        String
+  description String?
+  system      Boolean          @default(false)
+  enabled     Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       AdminUserRole[]
+  permissions RolePermission[]
+
+  @@index([enabled])
+  @@index([createdAt])
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  name        String
+  description String?
+  group       String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  roles       RolePermission[]
+
+  @@index([group])
+  @@index([createdAt])
+  @@map("permissions")
+}
+
+model AdminUserRole {
+  id          String    @id @default(cuid())
+  adminUserId String
+  roleId      String
+  createdAt   DateTime  @default(now())
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  role        Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([adminUserId, roleId])
+  @@index([adminUserId])
+  @@index([roleId])
+  @@map("admin_user_roles")
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
 }
 
 model Conference {
@@ -148,6 +213,7 @@ model Conference {
   registrations        Registration[]
   coupons              Coupon[]
   promotionRules       PromotionRule[]
+  registrationCartItems RegistrationCartItem[]
 
   @@index([status])
   @@index([createdAt])
@@ -169,6 +235,559 @@ model ConferencePage {
   @@map("conference_pages")
 }
 
+model MaterialCategory {
+  id          String          @id @default(cuid())
+  name        String
+  code        String          @unique
+  description String?
+  sortOrder   Int             @default(0)
+  enabled     Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  assets      MaterialAsset[]
+
+  @@index([enabled])
+  @@index([sortOrder])
+  @@index([createdAt])
+  @@map("material_categories")
+}
+
+model MaterialAsset {
+  id          String            @id @default(cuid())
+  categoryId  String?
+  name        String
+  usage       String
+  fileType    String
+  url         String
+  sizeBytes   Int?
+  width       Int?
+  height      Int?
+  enabled     Boolean           @default(true)
+  remark      String?
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  category    MaterialCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([categoryId])
+  @@index([usage])
+  @@index([enabled])
+  @@index([createdAt])
+  @@map("material_assets")
+}
+
+model PageTemplate {
+  id                 String           @id @default(cuid())
+  pageKey            String           @unique
+  title              String
+  description        String?
+  pageType           String           @default("CUSTOM")
+  enabled            Boolean          @default(true)
+  sortOrder          Int              @default(0)
+  publishedVersionId String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  versions           PageVersion[]
+  publishLogs        PagePublishLog[]
+
+  @@index([pageType])
+  @@index([enabled])
+  @@index([sortOrder])
+  @@index([createdAt])
+  @@map("page_templates")
+}
+
+model PageVersion {
+  id          String           @id @default(cuid())
+  templateId  String
+  versionNo   Int
+  status      String           @default("DRAFT")
+  title       String
+  components  Json
+  themeJson   Json?
+  createdBy   String?
+  publishedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  template    PageTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  publishLogs PagePublishLog[]
+
+  @@unique([templateId, versionNo])
+  @@index([templateId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("page_versions")
+}
+
+model ComponentPreset {
+  id                String   @id @default(cuid())
+  type              String   @unique
+  name              String
+  group             String
+  description       String?
+  schemaJson        Json
+  defaultConfigJson Json
+  enabled           Boolean  @default(true)
+  system            Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([group])
+  @@index([enabled])
+  @@index([sortOrder])
+  @@map("component_presets")
+}
+
+model ThemePreset {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  configJson  Json
+  system      Boolean  @default(false)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([createdAt])
+  @@map("theme_presets")
+}
+
+model ActiveThemeConfig {
+  id            String   @id @default(cuid())
+  scope         String   @unique @default("global")
+  themePresetId String?
+  configJson    Json
+  publishedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([themePresetId])
+  @@map("active_theme_configs")
+}
+
+model TabBarConfig {
+  id        String       @id @default(cuid())
+  scope     String       @unique @default("global")
+  enabled   Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  items     TabBarItem[]
+
+  @@map("tabbar_configs")
+}
+
+model TabBarItem {
+  id              String       @id @default(cuid())
+  configId        String
+  title           String
+  iconUrl         String?
+  selectedIconUrl String?
+  pageKey         String
+  path            String
+  visible         Boolean      @default(true)
+  sortOrder       Int          @default(0)
+  requireLogin    Boolean      @default(false)
+  badgeText       String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  config          TabBarConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId])
+  @@index([visible])
+  @@index([sortOrder])
+  @@map("tabbar_items")
+}
+
+model PagePublishLog {
+  id         String       @id @default(cuid())
+  templateId String
+  versionId  String?
+  action     String
+  summary    String?
+  createdBy  String?
+  createdAt  DateTime     @default(now())
+  template   PageTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  version    PageVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+
+  @@index([templateId])
+  @@index([versionId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("page_publish_logs")
+}
+
+model MemberLevel {
+  id                String           @id @default(cuid())
+  code              String           @unique
+  name              String
+  description       String?
+  rank              Int              @default(0)
+  priceCent         Int              @default(0)
+  discountPercent   Int?
+  enabled           Boolean          @default(true)
+  benefitsJson      Json?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  benefits          MemberBenefit[]
+  memberships       UserMembership[]
+  priceRules        MembershipPriceRule[]
+
+  @@index([enabled])
+  @@index([rank])
+  @@map("member_levels")
+}
+
+model MemberBenefit {
+  id          String      @id @default(cuid())
+  levelId     String
+  title       String
+  description String?
+  type        String
+  configJson  Json?
+  enabled     Boolean     @default(true)
+  sortOrder   Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  level       MemberLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+
+  @@index([levelId])
+  @@index([enabled])
+  @@index([sortOrder])
+  @@map("member_benefits")
+}
+
+model UserMembership {
+  id        String      @id @default(cuid())
+  userId    String
+  levelId   String
+  status    String      @default("ACTIVE")
+  startsAt  DateTime    @default(now())
+  endsAt    DateTime?
+  source    String?
+  remark    String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level     MemberLevel @relation(fields: [levelId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([levelId])
+  @@index([status])
+  @@index([endsAt])
+  @@map("user_memberships")
+}
+
+model MembershipOrder {
+  id              String   @id @default(cuid())
+  orderNo         String   @unique
+  userId          String?
+  levelId         String
+  amountCent      Int
+  status          String   @default("PENDING")
+  paidAt          DateTime?
+  snapshotJson    Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([levelId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("membership_orders")
+}
+
+model MembershipPriceRule {
+  id              String       @id @default(cuid())
+  levelId         String
+  conferenceId    String?
+  skuId           String?
+  discountPercent Int?
+  discountCent    Int?
+  enabled         Boolean      @default(true)
+  startAt         DateTime?
+  endAt           DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  level           MemberLevel  @relation(fields: [levelId], references: [id], onDelete: Cascade)
+
+  @@index([levelId])
+  @@index([conferenceId])
+  @@index([skuId])
+  @@index([enabled])
+  @@map("membership_price_rules")
+}
+
+model FinanceReconciliationBatch {
+  id          String                      @id @default(cuid())
+  batchNo     String                      @unique
+  status      String                      @default("CREATED")
+  source      String                      @default("LOCAL")
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  summaryJson Json?
+  createdBy   String?
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  items       FinanceReconciliationItem[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("finance_reconciliation_batches")
+}
+
+model FinanceReconciliationItem {
+  id              String                     @id @default(cuid())
+  batchId         String
+  orderNo         String?
+  outTradeNo      String?
+  transactionId   String?
+  localAmountCent Int?
+  remoteAmountCent Int?
+  type            String
+  status          String                     @default("OPEN")
+  detailJson      Json?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  batch           FinanceReconciliationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@index([type])
+  @@index([status])
+  @@index([orderNo])
+  @@index([outTradeNo])
+  @@map("finance_reconciliation_items")
+}
+
+model WechatBillImport {
+  id          String   @id @default(cuid())
+  fileName    String
+  status      String   @default("UPLOADED")
+  rowCount    Int      @default(0)
+  errorJson   Json?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("wechat_bill_imports")
+}
+
+model RefundRecord {
+  id          String   @id @default(cuid())
+  orderNo     String?
+  amountCent  Int
+  status      String   @default("RESERVED")
+  reason      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orderNo])
+  @@index([status])
+  @@map("refund_records")
+}
+
+model InvoiceRecord {
+  id          String   @id @default(cuid())
+  orderNo     String?
+  title       String
+  amountCent  Int
+  status      String   @default("RESERVED")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orderNo])
+  @@index([status])
+  @@map("invoice_records")
+}
+
+model ProductCategory {
+  id          String    @id @default(cuid())
+  name        String
+  code        String    @unique
+  description String?
+  enabled     Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@index([enabled])
+  @@index([sortOrder])
+  @@map("product_categories")
+}
+
+model Product {
+  id              String          @id @default(cuid())
+  categoryId      String?
+  title           String
+  subtitle        String?
+  descriptionJson Json?
+  coverImageUrl   String?
+  status          String          @default("DRAFT")
+  sortOrder       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  category        ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  skus            ProductSku[]
+  images          ProductImage[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([sortOrder])
+  @@map("products")
+}
+
+model ProductSku {
+  id            String          @id @default(cuid())
+  productId     String
+  name          String
+  priceCent     Int
+  stock         Int             @default(0)
+  soldCount     Int             @default(0)
+  status        String          @default("ACTIVE")
+  specsJson     Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  product       Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems     CartItem[]
+  mallOrderItems MallOrderItem[]
+
+  @@index([productId])
+  @@index([status])
+  @@map("product_skus")
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  alt       String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([sortOrder])
+  @@map("product_images")
+}
+
+model CartItem {
+  id        String     @id @default(cuid())
+  userId    String
+  skuId     String
+  quantity  Int        @default(1)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sku       ProductSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skuId])
+  @@index([userId])
+  @@index([skuId])
+  @@map("cart_items")
+}
+
+model RegistrationCartItem {
+  id            String          @id @default(cuid())
+  userId        String
+  conferenceId  String
+  skuId         String
+  quantity      Int             @default(1)
+  couponCode    String?
+  attendeesJson Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conference    Conference      @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  sku           RegistrationSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([conferenceId])
+  @@index([skuId])
+  @@map("registration_cart_items")
+}
+
+model MallOrder {
+  id              String          @id @default(cuid())
+  orderNo         String          @unique
+  userId          String?
+  originAmountCent Int
+  discountAmountCent Int          @default(0)
+  payableAmountCent Int
+  paidAmountCent  Int?
+  status          String          @default("PENDING")
+  receiverName    String?
+  receiverPhone   String?
+  receiverAddress String?
+  remark          String?
+  paidAt          DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items           MallOrderItem[]
+  shipments       MallShipment[]
+  afterSales      MallAfterSale[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("mall_orders")
+}
+
+model MallOrderItem {
+  id              String     @id @default(cuid())
+  orderId         String
+  skuId           String
+  productTitle    String
+  skuName         String
+  unitPriceCent   Int
+  quantity        Int
+  totalAmountCent Int
+  createdAt       DateTime   @default(now())
+  order           MallOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku             ProductSku @relation(fields: [skuId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([skuId])
+  @@map("mall_order_items")
+}
+
+model MallShipment {
+  id             String    @id @default(cuid())
+  orderId        String
+  company        String?
+  trackingNo     String?
+  status         String    @default("PENDING")
+  shippedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  order          MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+  @@map("mall_shipments")
+}
+
+model MallAfterSale {
+  id        String    @id @default(cuid())
+  orderId   String
+  type      String
+  status    String    @default("PENDING")
+  reason    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  order     MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+  @@map("mall_after_sales")
+}
+
 model RegistrationSku {
   id            String                @id @default(cuid())
   conferenceId  String
@@ -188,6 +807,7 @@ model RegistrationSku {
   orderItems    OrderItem[]
   registrations Registration[]
   attendees     RegistrationAttendee[]
+  cartItems     RegistrationCartItem[]
 
   @@unique([conferenceId, name])
   @@index([conferenceId])

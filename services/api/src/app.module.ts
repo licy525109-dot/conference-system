@@ -1,14 +1,18 @@
 import { Module } from "@nestjs/common";
 import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
+import { CartModule } from "./cart/cart.module";
+import { CmsModule } from "./cms/cms.module";
 import { ConferencesModule } from "./conferences/conferences.module";
 import { HealthController } from "./health.controller";
+import { MallModule } from "./mall/mall.module";
+import { MemberModule } from "./member/member.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { RegistrationModule } from "./registration/registration.module";
 import { RegistrationsModule } from "./registrations/registrations.module";
 
 @Module({
-  imports: [AdminModule, AuthModule, ConferencesModule, PaymentsModule, RegistrationModule, RegistrationsModule],
+  imports: [AdminModule, AuthModule, CartModule, CmsModule, ConferencesModule, MallModule, MemberModule, PaymentsModule, RegistrationModule, RegistrationsModule],
   controllers: [HealthController]
 })
 export class AppModule {}

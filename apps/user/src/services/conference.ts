@@ -9,6 +9,7 @@ export interface ConferenceListItem {
   location: string | null;
   startsAt: string;
   endsAt: string;
+  registrationCount?: number;
 }
 
 export interface RegistrationSku {
@@ -54,7 +55,9 @@ export interface ConferenceForm {
 }
 
 export async function getConferences(): Promise<ConferenceListItem[]> {
-  const data = await request<{ items: ConferenceListItem[] }>("/conferences");
+  const data = await request<{ items: ConferenceListItem[] }>("/conferences", {
+    auth: false
+  });
   return data.items;
 }
 
