@@ -1,18 +1,30 @@
 <template>
-  <view class="page">
-    <view v-if="loading" class="state">加载商品详情中...</view>
-    <view v-else-if="error" class="state error">
-      <text>{{ error }}</text>
-      <button class="primary-button compact" @click="load">重试</button>
-    </view>
+  <view class="page ui-page">
+    <LoadingState v-if="loading" title="加载商品详情中" description="正在读取商品图片、规格和库存。" />
+    <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回商城" @retry="load" @secondary="goMall" />
     <template v-else-if="product">
-      <image v-if="heroImage" class="hero" :src="heroImage" mode="aspectFill" />
-      <view v-else class="hero empty">暂无图片</view>
+      <view class="hero-card ui-card">
+        <image v-if="heroImage" class="hero" :src="heroImage" mode="aspectFill" />
+        <view v-else class="hero empty">暂无图片</view>
+        <view class="headline">
+          <StatusTag label="商城试运行" tone="warning" />
+          <text class="title">{{ product.title }}</text>
+          <text class="subtitle">{{ product.subtitle || product.category?.name || "会议相关商品" }}</text>
+          <text class="price-range">{{ priceRangeText }}</text>
+        </view>
+      </view>
+
+      <ExtensionStatusNotice
+        status="商品支付后续开放"
+        title="当前仅支持加入购物车"
+        description="商品详情用于展示和收藏，暂不提供立即购买、商品支付、发货履约入口。"
+        tone="warning"
+      />
+
       <view class="content">
-        <text class="title">{{ product.title }}</text>
-        <text class="subtitle">{{ product.subtitle || product.category?.name || "会议相关商品" }}</text>
         <view class="sku-list">
           <text class="section-title">规格</text>
+          <EmptyState v-if="product.skus.length === 0" title="暂无可选规格" description="商品规格完善后可加入购物车。" mark="规" />
           <view
             v-for="sku in product.skus"
             :key="sku.id"
@@ -22,25 +34,34 @@
             <view>
               <text class="sku-name">{{ sku.name }}</text>
               <text class="muted">库存 {{ sku.stock - sku.soldCount }}</text>
+              <StatusTag :label="skuAvailable(sku) ? '可加入购物车' : '库存不足'" :tone="skuAvailable(sku) ? 'info' : 'neutral'" />
             </view>
             <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
           </view>
         </view>
-        <view class="quantity-box">
+        <view class="quantity-box ui-card">
           <text class="section-title">数量</text>
           <view class="quantity-control">
-            <button class="qty-button" @click="changeQuantity(-1)">-</button>
+            <button class="qty-button" :disabled="!canAddProduct" @click="changeQuantity(-1)">-</button>
             <text class="qty-value">{{ quantity }}</text>
-            <button class="qty-button" @click="changeQuantity(1)">+</button>
+            <button class="qty-button" :disabled="!canAddProduct" @click="changeQuantity(1)">+</button>
           </view>
         </view>
-        <view class="notice">商品可先加入购物车统一管理；商品支付链路后续开放，不会影响会议报名支付。</view>
+        <view class="description-card ui-card">
+          <text class="section-title">商品说明</text>
+          <text class="muted">{{ descriptionText }}</text>
+        </view>
       </view>
     </template>
+    <EmptyState v-else title="商品不存在" description="该商品可能已下架或暂未开放展示。" mark="商" action-text="返回商城" @action="goMall" />
 
-    <view class="bottom-actions">
-      <button class="ghost-button" @click="goCart">购物车</button>
-      <button class="primary-button" :disabled="adding || !selectedSkuId" @click="addToCart">
+    <view v-if="product" class="bottom-actions">
+      <view class="bottom-copy">
+        <text class="bottom-title">商品支付后续开放</text>
+        <text class="bottom-note">加入购物车不会进入商品支付</text>
+      </view>
+      <button class="ui-button-secondary action-button" @click="goCart">购物车</button>
+      <button class="ui-button-primary action-button" :disabled="adding || !canAddProduct" @click="addToCart">
         {{ adding ? "加入中..." : "加入购物车" }}
       </button>
     </view>
@@ -50,8 +71,13 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
+import EmptyState from "@/components/ui/EmptyState.vue";
+import ErrorState from "@/components/ui/ErrorState.vue";
+import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
+import LoadingState from "@/components/ui/LoadingState.vue";
+import StatusTag from "@/components/ui/StatusTag.vue";
 import { addProductCartItem } from "@/services/cart";
-import { getProductDetail, type Product } from "@/services/mall";
+import { getProductDetail, type Product, type ProductSku } from "@/services/mall";
 
 const productId = ref("");
 const product = ref<Product | null>(null);
@@ -61,6 +87,16 @@ const selectedSkuId = ref("");
 const quantity = ref(1);
 const adding = ref(false);
 const heroImage = computed(() => product.value?.coverImageUrl || product.value?.images[0]?.url || "");
+const selectedSku = computed(() => product.value?.skus.find((item) => item.id === selectedSkuId.value) ?? null);
+const canAddProduct = computed(() => Boolean(selectedSku.value && skuAvailable(selectedSku.value)));
+const priceRangeText = computed(() => {
+  const prices = product.value?.skus.map((sku) => sku.priceCent) ?? [];
+  if (prices.length === 0) return "暂无价格";
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return min === max ? `¥${formatCent(min)}` : `¥${formatCent(min)} 起`;
+});
+const descriptionText = computed(() => toDescriptionText(product.value?.descriptionJson) || "商品详情仍在完善中，可先加入购物车关注后续开放。");
 
 onLoad((query) => {
   productId.value = typeof query?.id === "string" ? query.id : "";
@@ -95,8 +131,8 @@ function changeQuantity(delta: number) {
 }
 
 async function addToCart() {
-  if (!selectedSkuId.value) {
-    uni.showToast({ title: "请选择商品规格", icon: "none" });
+  if (!canAddProduct.value || !selectedSkuId.value) {
+    uni.showToast({ title: selectedSkuId.value ? "当前规格库存不足" : "请选择商品规格", icon: "none" });
     return;
   }
   adding.value = true;
@@ -113,51 +149,81 @@ async function addToCart() {
 
 function maxQuantity() {
   const sku = product.value?.skus.find((item) => item.id === selectedSkuId.value);
-  return Math.max(1, (sku?.stock ?? 1) - (sku?.soldCount ?? 0));
+  return Math.max(0, (sku?.stock ?? 0) - (sku?.soldCount ?? 0));
+}
+
+function skuAvailable(sku: ProductSku) {
+  return sku.stock - sku.soldCount > 0;
 }
 
 function goCart() {
   uni.navigateTo({ url: "/pages/cart/index" });
 }
 
+function goMall() {
+  uni.navigateTo({ url: "/pages/mall/index" });
+}
+
 function formatCent(value: number) {
   return (value / 100).toFixed(2);
+}
+
+function toDescriptionText(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(toDescriptionText).filter(Boolean).join("\n");
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [record.title, record.text, record.content, record.description, record.blocks].map(toDescriptionText).filter(Boolean).join("\n");
+  }
+  return "";
 }
 </script>
 
 <style scoped>
 .page {
-  min-height: 100vh;
-  padding-bottom: 140rpx;
-  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+  padding-bottom: 214rpx;
+}
+
+.hero-card {
+  overflow: hidden;
 }
 
 .hero {
   width: 100%;
-  height: 520rpx;
-  background: #e8eef8;
+  height: 420rpx;
+  background: var(--ui-color-primary-soft);
 }
 
 .hero.empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #627087;
+  color: var(--ui-color-muted);
   font-size: 28rpx;
+}
+
+.headline {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  padding: 28rpx;
 }
 
 .content {
   display: flex;
   flex-direction: column;
   gap: 20rpx;
-  padding: 28rpx;
 }
 
 .title,
 .section-title,
 .sku-name {
   display: block;
-  color: #172033;
+  color: var(--ui-color-text);
   font-weight: 800;
 }
 
@@ -169,7 +235,7 @@ function formatCent(value: number) {
 .subtitle,
 .muted {
   display: block;
-  color: #627087;
+  color: var(--ui-color-muted);
   font-size: 25rpx;
   line-height: 1.45;
 }
@@ -186,30 +252,27 @@ function formatCent(value: number) {
   justify-content: space-between;
   gap: 20rpx;
   padding: 24rpx;
-  border: 1px solid #dce3ef;
-  border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface);
+  box-shadow: var(--ui-shadow-card);
 }
 
 .sku-card.selected {
-  border-color: #2452a8;
-  background: #eef4ff;
+  border-color: var(--ui-color-primary);
+  background: var(--ui-color-primary-soft);
 }
 
+.price-range,
 .price {
-  color: #2452a8;
+  color: var(--ui-color-primary);
   font-size: 31rpx;
   font-weight: 800;
 }
 
-.notice {
-  padding: 22rpx;
-  border: 1px solid #dce3ef;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #41516a;
-  font-size: 25rpx;
-  line-height: 1.5;
+.description-card,
+.quantity-box {
+  padding: 24rpx;
 }
 
 .quantity-box {
@@ -217,10 +280,6 @@ function formatCent(value: number) {
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
-  padding: 24rpx;
-  border: 1px solid #dce3ef;
-  border-radius: 8px;
-  background: #ffffff;
 }
 
 .quantity-control {
@@ -233,16 +292,21 @@ function formatCent(value: number) {
   width: 58rpx;
   height: 58rpx;
   padding: 0;
-  border-radius: 8px;
-  background: #2452a8;
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-primary);
   color: #ffffff;
   font-size: 30rpx;
   line-height: 58rpx;
 }
 
+.qty-button[disabled] {
+  background: #d8e0eb;
+  color: #ffffff;
+}
+
 .qty-value {
   min-width: 44rpx;
-  color: #172033;
+  color: var(--ui-color-text);
   font-size: 29rpx;
   font-weight: 800;
   text-align: center;
@@ -254,48 +318,33 @@ function formatCent(value: number) {
   right: 0;
   bottom: 0;
   display: grid;
-  grid-template-columns: 1fr 1.5fr;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 16rpx;
-  padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
-  border-top: 1px solid #dce3ef;
-  background: #ffffff;
-}
-
-.primary-button,
-.ghost-button {
-  min-height: 80rpx;
-  border-radius: 8px;
-  font-size: 28rpx;
-  line-height: 80rpx;
-}
-
-.primary-button {
-  background: #2452a8;
-  color: #ffffff;
-}
-
-.ghost-button {
-  border: 1px solid #ccd7e6;
-  background: #ffffff;
-  color: #2452a8;
-}
-
-.compact {
-  width: 176rpx;
-}
-
-.state {
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 20rpx;
-  padding: 160rpx 24rpx;
-  color: #627087;
-  font-size: 28rpx;
-  text-align: center;
+  padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ui-color-border);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--ui-shadow-bottom);
 }
 
-.error {
-  color: #b42318;
+.bottom-title,
+.bottom-note {
+  display: block;
+}
+
+.bottom-title {
+  color: var(--ui-color-text);
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.bottom-note {
+  margin-top: 4rpx;
+  color: var(--ui-color-muted);
+  font-size: 21rpx;
+}
+
+.action-button {
+  min-width: 178rpx;
 }
 </style>

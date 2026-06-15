@@ -5,9 +5,9 @@
       eyebrow="扩展能力"
       badge="后续开放"
       badge-tone="neutral"
-      subtitle="维护会员等级、价格和展示权益；第一版不参与会议订单价格计算。"
+      subtitle="维护会员等级、价格和展示权益；会员能力后续才参与报名定价，第一版不改变会议订单金额。"
     >
-      <AdminFeatureBadge label="后续开放" description="会员权益只做预留展示，不影响报名规格和订单金额。" tone="neutral" />
+      <AdminFeatureBadge label="扩展能力 / 后续参与报名定价" description="会员权益只做预留展示，不影响报名规格、quote 和订单金额。" tone="warning" />
       <template #actions>
         <el-button type="primary" @click="openCreate">新增等级</el-button>
       </template>

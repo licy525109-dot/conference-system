@@ -3,11 +3,11 @@
     <AdminPageHeader
       title="商城商品"
       eyebrow="扩展能力"
-      badge="后续开放"
-      badge-tone="neutral"
-      subtitle="商品与 SKU 独立于会议报名订单，第一版不接会议支付与履约。"
+      badge="灰度中"
+      badge-tone="warning"
+      subtitle="商城能力灰度中，商品支付和履约后续完善；商品与 SKU 独立于会议报名订单。"
     >
-      <AdminFeatureBadge label="后续开放" description="商城能力为预留链路，不进入当前报名缴费主线。" tone="neutral" />
+      <AdminFeatureBadge label="商城能力灰度中" description="当前不伪装成完整电商后台，商品支付和履约后续完善。" tone="warning" />
       <template #actions>
         <el-button @click="categoryVisible = true">新增分类</el-button>
         <el-button type="primary" @click="openCreate">新增商品</el-button>

@@ -1,14 +1,22 @@
 <template>
-  <view class="page">
-    <view class="topbar">
+  <view class="page ui-page">
+    <view class="topbar ui-card">
       <view>
-        <text class="eyebrow">个人中心</text>
+        <text class="eyebrow">扩展能力</text>
         <text class="title">会员与账号</text>
+        <text class="subtitle">会员权益用于展示和后续运营，不参与当前会议报名价格计算。</text>
       </view>
-      <button class="ghost-button compact" @click="goHome">首页</button>
+      <button class="ui-button-secondary ui-button-compact" @click="goHome">首页</button>
     </view>
 
-    <view class="profile-card">
+    <ExtensionStatusNotice
+      status="后续参与定价"
+      title="会员权益展示中"
+      description="当前报名缴费金额仍以提交订单时系统计算结果为准，会员等级不会自动抵扣报名费。"
+      tone="warning"
+    />
+
+    <view class="profile-card ui-card">
       <image v-if="user?.wechatAvatarUrl" class="avatar" :src="user.wechatAvatarUrl" mode="aspectFill" />
       <view v-else class="avatar placeholder">{{ displayName.slice(0, 1) }}</view>
       <view>
@@ -17,33 +25,50 @@
       </view>
     </view>
 
-    <view v-if="loading" class="state">加载会员信息中...</view>
-    <view v-else-if="error" class="state error">
-      <text>{{ error }}</text>
-      <button class="primary-button compact" @click="load">重试</button>
-    </view>
+    <LoadingState v-if="loading" title="加载会员信息中" description="正在读取账号、会员等级和权益说明。" />
+    <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="load" @secondary="goHome" />
 
     <view v-else class="section">
-      <view class="member-card">
-        <text class="section-title">当前会员</text>
+      <view class="member-card ui-card">
+        <view class="section-head">
+          <text class="section-title">当前会员</text>
+          <StatusTag :label="membership ? '已可用' : '普通用户'" :tone="membership ? 'success' : 'neutral'" />
+        </view>
         <template v-if="membership">
           <text class="member-name">{{ membership.level.name }}</text>
           <text class="muted">有效期至：{{ membership.endsAt ? formatDate(membership.endsAt) : "长期有效" }}</text>
+          <text class="muted">权益展示已开通，报名定价仍以后端订单计算为准。</text>
         </template>
         <template v-else>
           <text class="member-name">普通用户</text>
-          <text class="muted">会员体系第一版仅展示权益，报名价格仍以后端订单重算为准。</text>
+          <text class="muted">暂无会员等级。会议报名价格不会因会员状态自动变化。</text>
         </template>
       </view>
 
       <view class="levels">
         <text class="section-title">可选等级</text>
+        <EmptyState
+          v-if="levels.length === 0"
+          title="暂无会员等级"
+          description="会员等级和权益会在后续运营中逐步开放。"
+          mark="会"
+        />
         <view v-for="level in levels" :key="level.id" class="level-card">
           <view>
-            <text class="level-name">{{ level.name }}</text>
+            <view class="level-title-row">
+              <text class="level-name">{{ level.name }}</text>
+              <StatusTag label="仅展示" tone="info" />
+            </view>
             <text class="muted">{{ level.description || "会员权益后续逐步开放" }}</text>
+            <view v-if="level.benefits?.length" class="benefits">
+              <text v-for="benefit in level.benefits" :key="benefit.id" class="benefit">{{ benefit.title }}</text>
+            </view>
+            <text v-else class="benefit muted-benefit">权益说明待完善</text>
           </view>
-          <text class="price">¥{{ formatCent(level.priceCent) }}</text>
+          <view class="level-side">
+            <text class="price">¥{{ formatCent(level.priceCent) }}</text>
+            <text v-if="level.discountPercent" class="muted discount">展示折扣 {{ formatDiscount(level.discountPercent) }}</text>
+          </view>
         </view>
       </view>
     </view>
@@ -56,6 +81,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
+import EmptyState from "@/components/ui/EmptyState.vue";
+import ErrorState from "@/components/ui/ErrorState.vue";
+import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
+import LoadingState from "@/components/ui/LoadingState.vue";
+import StatusTag from "@/components/ui/StatusTag.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { ensureLogin, getStoredUser, type CurrentUser } from "@/services/auth";
 import { getMemberLevels, getMyMembership, type CurrentMembership, type MemberLevel } from "@/services/member";
@@ -94,18 +124,21 @@ function formatCent(value: number) {
 function formatDate(value: string) {
   return value.slice(0, 10);
 }
+
+function formatDiscount(value: number) {
+  return `${(value / 100).toFixed(2)}%`;
+}
 </script>
 
 <style scoped>
 .page {
-  min-height: 100vh;
-  padding: 28rpx 28rpx 140rpx;
-  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
 }
 
 .topbar,
-.profile-card,
-.level-card {
+.profile-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -113,31 +146,42 @@ function formatDate(value: string) {
 }
 
 .topbar {
-  margin-bottom: 24rpx;
+  padding: 28rpx;
 }
 
 .eyebrow,
 .muted {
   display: block;
-  color: #627087;
+  color: var(--ui-color-muted);
   font-size: 24rpx;
+}
+
+.eyebrow {
+  color: var(--ui-color-primary);
+  font-weight: 800;
 }
 
 .title {
   display: block;
   margin-top: 8rpx;
-  color: #172033;
+  color: var(--ui-color-text);
   font-size: 42rpx;
-  font-weight: 800;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.subtitle {
+  display: block;
+  margin-top: 10rpx;
+  color: var(--ui-color-muted);
+  font-size: 25rpx;
+  line-height: 1.5;
 }
 
 .profile-card,
 .member-card,
 .level-card {
   padding: 28rpx;
-  border: 1px solid #dce3ef;
-  border-radius: 8px;
-  background: #ffffff;
 }
 
 .profile-card {
@@ -148,14 +192,14 @@ function formatDate(value: string) {
   width: 96rpx;
   height: 96rpx;
   border-radius: 48rpx;
-  background: #e8eef8;
+  background: var(--ui-color-primary-soft);
 }
 
 .placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #2452a8;
+  color: var(--ui-color-primary);
   font-weight: 800;
 }
 
@@ -164,7 +208,7 @@ function formatDate(value: string) {
 .level-name,
 .section-title {
   display: block;
-  color: #172033;
+  color: var(--ui-color-text);
   font-weight: 800;
 }
 
@@ -176,7 +220,14 @@ function formatDate(value: string) {
   display: flex;
   flex-direction: column;
   gap: 20rpx;
-  margin-top: 20rpx;
+}
+
+.section-head,
+.level-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
 }
 
 .member-name {
@@ -190,47 +241,52 @@ function formatDate(value: string) {
   gap: 16rpx;
 }
 
+.level-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface);
+  box-shadow: var(--ui-shadow-card);
+}
+
+.benefits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 14rpx;
+}
+
+.benefit {
+  display: inline-flex;
+  padding: 8rpx 14rpx;
+  border-radius: 999px;
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-muted);
+  font-size: 22rpx;
+  line-height: 1.2;
+}
+
+.muted-benefit {
+  margin-top: 12rpx;
+}
+
+.level-side {
+  flex: 0 0 164rpx;
+  text-align: right;
+}
+
 .price {
-  color: #2452a8;
+  display: block;
+  color: var(--ui-color-primary);
   font-size: 30rpx;
   font-weight: 800;
 }
 
-.primary-button,
-.ghost-button {
-  min-height: 72rpx;
-  border-radius: 8px;
-  font-size: 27rpx;
-  line-height: 72rpx;
-}
-
-.primary-button {
-  background: #2452a8;
-  color: #ffffff;
-}
-
-.ghost-button {
-  border: 1px solid #ccd7e6;
-  background: #ffffff;
-  color: #2452a8;
-}
-
-.compact {
-  width: 176rpx;
-}
-
-.state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20rpx;
-  padding: 96rpx 24rpx;
-  color: #627087;
-  font-size: 28rpx;
-  text-align: center;
-}
-
-.error {
-  color: #b42318;
+.discount {
+  margin-top: 6rpx;
+  font-size: 22rpx;
 }
 </style>
