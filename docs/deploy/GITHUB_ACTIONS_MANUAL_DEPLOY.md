@@ -35,27 +35,38 @@ Do not put real secret values in workflow YAML files.
 Before running `Manual Baota Deploy`:
 
 1. Review `scripts/deploy/baota-deploy.example.sh`.
-2. Copy the reviewed script to the server:
+2. Preferred: copy the reviewed non-interactive CI script to the server:
+
+   ```bash
+   /www/scripts/conference-system-deploy-ci.sh
+   ```
+
+   This script must be safe for non-interactive CI use and must not prompt for `deploy`.
+
+3. Fallback: if the CI-specific script is not available, copy the reviewed script to the legacy server path:
 
    ```bash
    /www/scripts/conference-system-deploy.sh
    ```
 
-3. Make it executable:
+   The workflow will run it as `CONFIRM_DEPLOY=YES /www/scripts/conference-system-deploy.sh`.
+
+4. Make the selected server script executable:
 
    ```bash
+   chmod +x /www/scripts/conference-system-deploy-ci.sh
+   # or
    chmod +x /www/scripts/conference-system-deploy.sh
    ```
 
-4. Confirm the server script still uses API health check:
+5. Confirm the server script still uses API health check:
 
    ```bash
    curl http://127.0.0.1:3001/api/health
    ```
 
-5. Configure GitHub Secrets.
-6. Trigger the workflow manually.
-7. Enter `deploy` in the confirmation input.
+6. Configure GitHub Secrets.
+7. Trigger the workflow manually. No interactive `deploy` input is required after SSH connects.
 
 Before running `Manual Mini Program Preview`:
 
@@ -72,7 +83,8 @@ If Baota deployment fails before rsync:
 
 - Check workflow logs.
 - Check SSH connectivity and required Secrets.
-- Check whether `/www/scripts/conference-system-deploy.sh` exists and is executable.
+- Check whether `/www/scripts/conference-system-deploy-ci.sh` exists and is executable.
+- If using the fallback path, check whether `/www/scripts/conference-system-deploy.sh` exists and is executable.
 - No server rollback may be needed if static files were not updated.
 
 If deployment fails after rsync:
@@ -96,7 +108,7 @@ Options:
 - Rename workflow files so GitHub no longer detects them.
 - Restrict repository Actions permissions.
 - Remove required Secrets.
-- Keep the confirmation input different from the required value.
+- Remove or disable `/www/scripts/conference-system-deploy-ci.sh` and `/www/scripts/conference-system-deploy.sh` on the server.
 
 Do not add a `push` trigger as a shortcut.
 
@@ -118,8 +130,10 @@ Manual review remains required because:
 
 - Does not check out or build code on GitHub runner.
 - Connects to the server over SSH.
-- Requires the reviewed server script path.
-- Fails clearly if the server script is missing or not executable.
+- Prefers `/www/scripts/conference-system-deploy-ci.sh`.
+- Falls back to `CONFIRM_DEPLOY=YES /www/scripts/conference-system-deploy.sh`.
+- Does not require an interactive `deploy` prompt after SSH connects.
+- Fails clearly if neither server script exists or is executable.
 - Does not contain real server host, username, SSH key, or deployment commands.
 
 `miniprogram-preview.manual.yml`:
