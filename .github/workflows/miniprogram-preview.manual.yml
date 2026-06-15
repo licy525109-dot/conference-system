@@ -1,0 +1,131 @@
+name: Manual Mini Program Preview
+
+# Manual only.
+# No push trigger.
+# Secrets required for preview/upload: MP_APPID, MP_PRIVATE_KEY.
+# Review scripts/miniprogram/upload-preview.example.js before enabling real preview/upload.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_mode:
+        description: "dry-run, preview, or upload"
+        required: true
+        default: "dry-run"
+        type: choice
+        options:
+          - dry-run
+          - preview
+          - upload
+      version:
+        description: "Mini Program version shown in WeChat"
+        required: true
+        default: "0.0.0-preview"
+      desc:
+        description: "Preview/upload description"
+        required: true
+        default: "conference-system manual preview"
+      confirm_upload:
+        description: "Required only when run_mode is upload"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  miniprogram-preview:
+    name: Build mp-weixin and optionally run miniprogram-ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build WeChat Mini Program
+        run: pnpm build:user:mp-weixin
+
+      - name: Dry run notice
+        if: ${{ inputs.run_mode == 'dry-run' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Dry run completed. The mp-weixin build finished, but miniprogram-ci was not executed."
+          echo "To run preview/upload, configure MP_APPID and MP_PRIVATE_KEY GitHub Secrets, then manually trigger this workflow."
+
+      - name: Refuse unconfirmed upload
+        if: ${{ inputs.run_mode == 'upload' && inputs.confirm_upload != true }}
+        shell: bash
+        run: |
+          echo "Upload mode requires confirm_upload=true. Prefer preview for first runs." >&2
+          exit 1
+
+      - name: Validate miniprogram secrets
+        if: ${{ inputs.run_mode != 'dry-run' }}
+        shell: bash
+        env:
+          MP_APPID: ${{ secrets.MP_APPID }}
+          MP_PRIVATE_KEY: ${{ secrets.MP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$MP_APPID" ]]; then
+            echo "Missing required GitHub Secret: MP_APPID" >&2
+            exit 1
+          fi
+          if [[ -z "$MP_PRIVATE_KEY" ]]; then
+            echo "Missing required GitHub Secret: MP_PRIVATE_KEY" >&2
+            exit 1
+          fi
+
+      - name: Install miniprogram-ci outside the repository
+        if: ${{ inputs.run_mode != 'dry-run' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/miniprogram-ci" miniprogram-ci
+
+      - name: Write private key to temporary file
+        if: ${{ inputs.run_mode != 'dry-run' }}
+        shell: bash
+        env:
+          MP_PRIVATE_KEY: ${{ secrets.MP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$MP_PRIVATE_KEY" > "$RUNNER_TEMP/mp-private.key"
+
+      - name: Run miniprogram-ci template
+        if: ${{ inputs.run_mode != 'dry-run' }}
+        shell: bash
+        env:
+          NODE_PATH: ${{ runner.temp }}/miniprogram-ci/node_modules
+          MP_APPID: ${{ secrets.MP_APPID }}
+          MP_PRIVATE_KEY_PATH: ${{ runner.temp }}/mp-private.key
+          MP_PROJECT_PATH: apps/user/dist/build/mp-weixin
+          MP_VERSION: ${{ inputs.version }}
+          MP_DESC: ${{ inputs.desc }}
+          MP_CI_MODE: ${{ inputs.run_mode }}
+          MP_CONFIRM_UPLOAD: ${{ inputs.confirm_upload == true && 'YES' || '' }}
+        run: |
+          set -euo pipefail
+          node scripts/miniprogram/upload-preview.example.js
+
+      - name: Remove temporary private key
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/mp-private.key"
