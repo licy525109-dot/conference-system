@@ -49,6 +49,15 @@
         </view>
       </view>
 
+      <view v-else-if="component.type === 'carousel'" class="cms-carousel">
+        <swiper v-if="stringListConfig(component, 'images').length > 0" class="cms-swiper" indicator-dots circular autoplay>
+          <swiper-item v-for="image in stringListConfig(component, 'images')" :key="image">
+            <image class="cms-swiper__image" :src="image" mode="aspectFill" />
+          </swiper-item>
+        </swiper>
+        <view v-else class="cms-empty cms-empty-card">暂无轮播图片</view>
+      </view>
+
       <view v-else-if="component.type === 'registration-button'" class="cms-register">
         <button class="cms-button" :style="textStyle(component)" @click="$emit('register')">{{ stringConfig(component, "text") || "立即报名" }}</button>
       </view>
@@ -69,6 +78,47 @@
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "视频" }}</text>
         <video v-if="stringConfig(component, 'url')" class="cms-video" :src="stringConfig(component, 'url')" />
         <view v-else class="cms-empty">视频地址未配置</view>
+      </view>
+
+      <view v-else-if="component.type === 'speaker-cards'" class="cms-section">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "嘉宾阵容" }}</text>
+        <view v-if="speakerItems(component).length === 0" class="cms-empty">嘉宾信息待公布</view>
+        <view v-else class="cms-speakers">
+          <view v-for="speaker in speakerItems(component)" :key="speaker.name + speaker.role" class="cms-speaker">
+            <image v-if="speaker.avatarUrl" class="cms-speaker__avatar" :src="speaker.avatarUrl" mode="aspectFill" />
+            <view v-else class="cms-speaker__avatar cms-speaker__avatar--text">{{ speaker.initial }}</view>
+            <view class="cms-speaker__body">
+              <text class="cms-speaker__name" :style="textStyle(component)">{{ speaker.name }}</text>
+              <text v-if="speaker.role" class="cms-speaker__role">{{ speaker.role }}</text>
+              <text v-if="speaker.bio" class="cms-speaker__bio">{{ speaker.bio }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'schedule-timeline'" class="cms-section">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会议日程" }}</text>
+        <view v-if="scheduleItems(component).length === 0" class="cms-empty">日程安排待公布</view>
+        <view v-else class="cms-timeline">
+          <view v-for="item in scheduleItems(component)" :key="item.time + item.title" class="cms-timeline__item">
+            <text class="cms-timeline__time">{{ item.time || "待定" }}</text>
+            <view class="cms-timeline__content">
+              <text class="cms-timeline__title" :style="textStyle(component)">{{ item.title }}</text>
+              <text v-if="item.description" class="cms-timeline__desc">{{ item.description }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'countdown'" class="cms-section">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "距离开始" }}</text>
+        <view v-if="countdownParts(component)" class="cms-countdown">
+          <view v-for="part in countdownParts(component)" :key="part.label" class="cms-countdown__item">
+            <text class="cms-countdown__value">{{ part.value }}</text>
+            <text class="cms-countdown__label">{{ part.label }}</text>
+          </view>
+        </view>
+        <view v-else class="cms-empty">倒计时时间待配置</view>
       </view>
 
       <view v-else-if="component.type === 'notice' || component.type === 'promotion-bar'" class="cms-notice" :style="textStyle(component)">
@@ -106,6 +156,38 @@
         <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "text") }}</text>
       </view>
 
+      <view v-else-if="component.type === 'map-contact'" class="cms-section cms-map-contact">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会场与联系" }}</text>
+        <view class="cms-map-contact__body">
+          <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "address") || conference?.location || "会议地址待公布" }}</text>
+          <button v-if="stringConfig(component, 'phone')" class="cms-button cms-button--outline" @click="callPhone(stringConfig(component, 'phone'))">
+            联系会务组：{{ stringConfig(component, "phone") }}
+          </button>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'sponsor-wall'" class="cms-section">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "合作伙伴" }}</text>
+        <view v-if="sponsorItems(component).length === 0" class="cms-empty">合作伙伴待公布</view>
+        <view v-else class="cms-sponsors">
+          <view v-for="sponsor in sponsorItems(component)" :key="sponsor.name + sponsor.logoUrl" class="cms-sponsor">
+            <image v-if="sponsor.logoUrl" class="cms-sponsor__logo" :src="sponsor.logoUrl" mode="aspectFit" />
+            <text v-else class="cms-sponsor__name">{{ sponsor.name }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'faq'" class="cms-section">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "常见问题" }}</text>
+        <view v-if="faqItems(component).length === 0" class="cms-empty">常见问题待补充</view>
+        <view v-else class="cms-faq">
+          <view v-for="item in faqItems(component)" :key="item.question" class="cms-faq__item">
+            <text class="cms-faq__question" :style="textStyle(component)">{{ item.question }}</text>
+            <text v-if="item.answer" class="cms-faq__answer">{{ item.answer }}</text>
+          </view>
+        </view>
+      </view>
+
       <view v-else-if="component.type === 'contact-card'" class="cms-section cms-contact">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "咨询报名" }}</text>
         <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "text") || "如需团体报名，请联系会务组。" }}</text>
@@ -124,9 +206,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { CmsComponent, ThemeConfig } from "@/services/cms";
 import type { ConferenceDetail, ConferenceListItem } from "@/services/conference";
+import { isCmsComponentUserRenderable, isCmsRegistrationCta } from "@/utils/cmsComponents";
 import { formatDateTime } from "@/utils/date";
 
 defineEmits<{
@@ -139,9 +222,19 @@ const props = defineProps<{
   theme: ThemeConfig;
   conferences?: ConferenceListItem[];
   conference?: ConferenceDetail | null;
+  suppressRegistrationCta?: boolean;
 }>();
 
-const visibleComponents = computed(() => props.components.filter((item) => item.enabled).sort((a, b) => a.sortOrder - b.sortOrder));
+const nowTimestamp = ref(Date.now());
+let countdownTimer: ReturnType<typeof setInterval> | undefined;
+
+const visibleComponents = computed(() =>
+  props.components
+    .filter((item) => item.enabled)
+    .filter((item) => isCmsComponentUserRenderable(item.type))
+    .filter((item) => !(props.suppressRegistrationCta && isCmsRegistrationCta(item.type)))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+);
 const conferences = computed(() => props.conferences ?? []);
 const rootStyle = computed(() => ({
   "--cms-primary": props.theme.primaryColor,
@@ -153,7 +246,17 @@ const rootStyle = computed(() => ({
   "--cms-title-size": `${props.theme.titleFontSize}rpx`
 }));
 
-onMounted(loadCustomFonts);
+onMounted(() => {
+  loadCustomFonts();
+  countdownTimer = setInterval(() => {
+    nowTimestamp.value = Date.now();
+  }, 1000);
+});
+onUnmounted(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+  }
+});
 watch(() => props.components, loadCustomFonts, { deep: true });
 
 function stringConfig(component: CmsComponent, key: string): string {
@@ -174,6 +277,138 @@ function booleanConfig(component: CmsComponent, key: string, fallback = false): 
 function arrayConfig(component: CmsComponent, key: string): unknown[] {
   const value = component.config?.[key];
   return Array.isArray(value) ? value : [];
+}
+
+interface SpeakerItem {
+  name: string;
+  role: string;
+  bio: string;
+  avatarUrl: string;
+  initial: string;
+}
+
+interface ScheduleItem {
+  time: string;
+  title: string;
+  description: string;
+}
+
+interface FaqItem {
+  question: string;
+  answer: string;
+}
+
+interface SponsorItem {
+  name: string;
+  logoUrl: string;
+}
+
+interface CountdownPart {
+  label: string;
+  value: string;
+}
+
+function stringListConfig(component: CmsComponent, key: string): string[] {
+  return arrayConfig(component, key).map((item) => String(item).trim()).filter(Boolean);
+}
+
+function speakerItems(component: CmsComponent): SpeakerItem[] {
+  return arrayConfig(component, "speakers").map((item) => {
+    if (isRecord(item)) {
+      const name = firstString(item, ["name", "title", "speakerName"]) || "嘉宾";
+      return {
+        name,
+        role: firstString(item, ["role", "position", "subtitle", "company", "title"]) || "",
+        bio: firstString(item, ["bio", "description", "text", "summary"]) || "",
+        avatarUrl: firstString(item, ["avatarUrl", "avatar", "imageUrl", "photoUrl"]) || "",
+        initial: name.slice(0, 1)
+      };
+    }
+
+    const parts = splitConfigLine(String(item));
+    const name = parts[0] || "嘉宾";
+    return {
+      name,
+      role: parts[1] || "",
+      bio: parts.slice(2).join(" "),
+      avatarUrl: firstImageUrl(parts),
+      initial: name.slice(0, 1)
+    };
+  });
+}
+
+function scheduleItems(component: CmsComponent): ScheduleItem[] {
+  return arrayConfig(component, "items").map((item) => {
+    if (isRecord(item)) {
+      return {
+        time: firstString(item, ["time", "startAt", "period"]) || "",
+        title: firstString(item, ["title", "topic", "name", "text"]) || "日程安排",
+        description: firstString(item, ["description", "desc", "speaker", "location"]) || ""
+      };
+    }
+
+    const parts = splitConfigLine(String(item));
+    return {
+      time: parts[0] || "",
+      title: parts[1] || parts[0] || "日程安排",
+      description: parts.slice(2).join(" ")
+    };
+  });
+}
+
+function faqItems(component: CmsComponent): FaqItem[] {
+  return arrayConfig(component, "items").map((item) => {
+    if (isRecord(item)) {
+      return {
+        question: firstString(item, ["question", "title", "q"]) || "常见问题",
+        answer: firstString(item, ["answer", "content", "text", "a"]) || ""
+      };
+    }
+
+    const parts = splitConfigLine(String(item));
+    return {
+      question: parts[0] || "常见问题",
+      answer: parts.slice(1).join(" ")
+    };
+  });
+}
+
+function sponsorItems(component: CmsComponent): SponsorItem[] {
+  return arrayConfig(component, "sponsors").map((item) => {
+    if (isRecord(item)) {
+      return {
+        name: firstString(item, ["name", "title"]) || "合作伙伴",
+        logoUrl: firstString(item, ["logoUrl", "imageUrl", "logo"]) || ""
+      };
+    }
+
+    const text = String(item).trim();
+    return looksLikeImageUrl(text) ? { name: "合作伙伴", logoUrl: text } : { name: text || "合作伙伴", logoUrl: "" };
+  });
+}
+
+function countdownParts(component: CmsComponent): CountdownPart[] | null {
+  const target = parseTargetTime(stringConfig(component, "targetAt"));
+  if (!target) return null;
+  const remainingSeconds = Math.max(0, Math.floor((target - nowTimestamp.value) / 1000));
+  const days = Math.floor(remainingSeconds / 86400);
+  const hours = Math.floor((remainingSeconds % 86400) / 3600);
+  const minutes = Math.floor((remainingSeconds % 3600) / 60);
+  const seconds = remainingSeconds % 60;
+  return [
+    { label: "天", value: String(days).padStart(2, "0") },
+    { label: "时", value: String(hours).padStart(2, "0") },
+    { label: "分", value: String(minutes).padStart(2, "0") },
+    { label: "秒", value: String(seconds).padStart(2, "0") }
+  ];
+}
+
+function callPhone(phone: string) {
+  if (!phone) return;
+  uni.makePhoneCall({
+    phoneNumber: phone,
+    fail: () => undefined
+  });
 }
 
 function limitedConferences(component: CmsComponent): ConferenceListItem[] {
@@ -339,6 +574,38 @@ function titleFor(type: string): string {
     "tag-filter": "热门主题"
   };
   return map[type] ?? "内容";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return "";
+}
+
+function splitConfigLine(value: string): string[] {
+  return value.split(/[\n|｜,，;；]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function firstImageUrl(items: string[]): string {
+  return items.find(looksLikeImageUrl) || "";
+}
+
+function looksLikeImageUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value) || /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(value);
+}
+
+function parseTargetTime(value: string): number | null {
+  if (!value.trim()) return null;
+  const normalized = value.includes("T") ? value : value.replace(/-/g, "/");
+  const timestamp = new Date(normalized).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
 }
 </script>
 
@@ -521,6 +788,12 @@ function titleFor(type: string): string {
   line-height: 78rpx;
 }
 
+.cms-button--outline {
+  border: 1px solid var(--ui-color-border);
+  background: var(--ui-color-surface);
+  color: var(--cms-primary);
+}
+
 .cms-tabs {
   display: flex;
   gap: 12rpx;
@@ -554,6 +827,31 @@ function titleFor(type: string): string {
   right: 32rpx;
   bottom: 128rpx;
   z-index: 20;
+}
+
+.cms-carousel {
+  margin-top: 22rpx;
+}
+
+.cms-swiper {
+  height: 320rpx;
+  overflow: hidden;
+  border-radius: var(--cms-radius);
+  background: var(--ui-color-surface-muted);
+}
+
+.cms-swiper__image {
+  width: 100%;
+  height: 320rpx;
+  background: var(--ui-color-surface-muted);
+}
+
+.cms-empty-card {
+  margin-top: 22rpx;
+  padding: 28rpx;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--cms-radius);
+  background: var(--cms-card);
 }
 
 .cms-grid {
@@ -618,6 +916,160 @@ function titleFor(type: string): string {
 
 .cms-live {
   border: 1px solid rgba(31, 95, 191, 0.22);
+}
+
+.cms-speakers,
+.cms-timeline,
+.cms-faq,
+.cms-map-contact__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 18rpx;
+}
+
+.cms-speaker,
+.cms-faq__item,
+.cms-timeline__item {
+  border-radius: var(--cms-radius);
+  background: var(--ui-color-surface-muted);
+}
+
+.cms-speaker {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  padding: 20rpx;
+}
+
+.cms-speaker__avatar {
+  width: 88rpx;
+  height: 88rpx;
+  flex: 0 0 88rpx;
+  border-radius: 50%;
+  background: var(--ui-color-primary-soft);
+}
+
+.cms-speaker__avatar--text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cms-primary);
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.cms-speaker__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cms-speaker__name,
+.cms-timeline__title,
+.cms-faq__question,
+.cms-sponsor__name {
+  display: block;
+  color: var(--ui-color-text);
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.cms-speaker__role,
+.cms-speaker__bio,
+.cms-timeline__desc,
+.cms-faq__answer {
+  display: block;
+  margin-top: 6rpx;
+  color: var(--ui-color-muted);
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.cms-timeline {
+  position: relative;
+}
+
+.cms-timeline__item {
+  display: flex;
+  gap: 18rpx;
+  padding: 18rpx;
+}
+
+.cms-timeline__time {
+  width: 120rpx;
+  flex: 0 0 120rpx;
+  color: var(--cms-primary);
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.cms-timeline__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.cms-countdown {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.cms-countdown__item {
+  min-height: 104rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--cms-radius);
+  background: var(--ui-color-primary-soft);
+}
+
+.cms-countdown__value {
+  color: var(--cms-primary);
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.cms-countdown__label {
+  margin-top: 4rpx;
+  color: var(--ui-color-muted);
+  font-size: 22rpx;
+}
+
+.cms-sponsors {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.cms-sponsor {
+  min-height: 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16rpx;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--cms-radius);
+  background: var(--ui-color-surface-muted);
+  box-sizing: border-box;
+}
+
+.cms-sponsor__logo {
+  width: 100%;
+  height: 64rpx;
+}
+
+.cms-sponsor__name {
+  color: var(--ui-color-muted);
+  font-size: 24rpx;
+  text-align: center;
+}
+
+.cms-faq__item {
+  padding: 20rpx;
 }
 
 .cms-contact .cms-button {

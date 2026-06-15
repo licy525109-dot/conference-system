@@ -57,6 +57,7 @@
           :components="cmsPage.version.components"
           :theme="theme"
           :conference="conference"
+          suppress-registration-cta
           @register="goRegisterFirst"
         />
         <text v-else class="body-text">{{ contentText }}</text>
