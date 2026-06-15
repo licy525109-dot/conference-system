@@ -1,0 +1,91 @@
+name: Manual Baota Deploy
+
+# Manual only.
+# No push trigger.
+# Secrets required: BAOTA_HOST, BAOTA_PORT, BAOTA_USER, BAOTA_SSH_KEY.
+# Review scripts/deploy/baota-deploy.example.sh before first run, then copy it to the server path below.
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_script:
+        description: "Reviewed deploy script path on the Baota server"
+        required: true
+        default: "/www/scripts/conference-system-deploy.sh"
+      confirm:
+        description: "Type deploy to confirm the manual deployment"
+        required: true
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Run reviewed Baota deploy script
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require manual confirmation
+        shell: bash
+        env:
+          CONFIRM_INPUT: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIRM_INPUT" != "deploy" ]]; then
+            echo "Manual deploy requires confirm=deploy." >&2
+            exit 1
+          fi
+
+      - name: Validate required secrets
+        shell: bash
+        env:
+          BAOTA_HOST: ${{ secrets.BAOTA_HOST }}
+          BAOTA_PORT: ${{ secrets.BAOTA_PORT }}
+          BAOTA_USER: ${{ secrets.BAOTA_USER }}
+          BAOTA_SSH_KEY: ${{ secrets.BAOTA_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          for name in BAOTA_HOST BAOTA_PORT BAOTA_USER BAOTA_SSH_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required GitHub Secret: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Prepare SSH key
+        shell: bash
+        env:
+          BAOTA_SSH_KEY: ${{ secrets.BAOTA_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$BAOTA_SSH_KEY" > "$RUNNER_TEMP/ssh/baota_key"
+          chmod 600 "$RUNNER_TEMP/ssh/baota_key"
+
+      - name: Execute server deployment script
+        shell: bash
+        env:
+          BAOTA_HOST: ${{ secrets.BAOTA_HOST }}
+          BAOTA_PORT: ${{ secrets.BAOTA_PORT }}
+          BAOTA_USER: ${{ secrets.BAOTA_USER }}
+          SERVER_SCRIPT: ${{ inputs.server_script }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SERVER_SCRIPT" =~ ^/www/scripts/[A-Za-z0-9._/-]+$ ]]; then
+            echo "server_script must be an absolute path under /www/scripts/ and contain only safe path characters." >&2
+            exit 1
+          fi
+          SSH_OPTS=(
+            -i "$RUNNER_TEMP/ssh/baota_key"
+            -p "$BAOTA_PORT"
+            -o StrictHostKeyChecking=accept-new
+            -o IdentitiesOnly=yes
+          )
+          ssh "${SSH_OPTS[@]}" "${BAOTA_USER}@${BAOTA_HOST}" \
+            "test -x '${SERVER_SCRIPT}' || { echo 'Deploy script missing or not executable: ${SERVER_SCRIPT}' >&2; exit 127; }; CONFIRM_DEPLOY=YES '${SERVER_SCRIPT}'"
+
+      - name: Remove SSH key
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/ssh/baota_key"
