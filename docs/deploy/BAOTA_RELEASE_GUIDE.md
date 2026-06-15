@@ -54,6 +54,18 @@ curl http://127.0.0.1:3001/api/health
 
 The example script `scripts/deploy/baota-deploy.example.sh` follows this flow and refuses backend/migration deltas by default.
 
+For GitHub Actions manual deployment, prefer installing a reviewed non-interactive wrapper at:
+
+```bash
+/www/scripts/conference-system-deploy-ci.sh
+```
+
+If the CI wrapper is not available, the manual workflow can fall back to:
+
+```bash
+CONFIRM_DEPLOY=YES /www/scripts/conference-system-deploy.sh
+```
+
 Frontend-only releases do not require:
 
 - Prisma migrate
