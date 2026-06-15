@@ -18,3 +18,20 @@ services/**/dist
 *.p12
 apiclient_*.pem
 unpackage
+
+# runtime uploads / assets
+uploads/
+services/api/uploads/
+apps/admin/dist.zip
+
+# server-only deploy files
+docker-compose.prod.yml
+docker-compose.prod.yml.bak.*
+start-api.sh
+
+# macOS archive noise
+__MACOSX/
+**/__MACOSX/
+
+# build cache
+*.tsbuildinfo

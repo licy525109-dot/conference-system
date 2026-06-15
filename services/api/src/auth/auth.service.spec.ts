@@ -71,20 +71,81 @@ describe("AuthService mock WeChat login", () => {
     };
 
     const allowed = await guard.canActivate(createExecutionContext(request));
-    const me = controller.me(request);
+    const me = await controller.me(request);
 
     assert.equal(allowed, true);
-    assert.deepEqual(me, {
-      code: "OK",
-      message: "ok",
-      data: {
-        user: {
-          id: login.data.user.id,
-          openid: "mock_dev-user-001",
-          nickname: "测试用户"
-        }
-      }
+    assert.equal(me.code, "OK");
+    assert.equal(me.data.user.id, login.data.user.id);
+    assert.equal(me.data.user.openid, "mock_dev-user-001");
+    assert.equal(me.data.user.nickname, "测试用户");
+    assert.equal(me.data.user.wechatNickname, null);
+    assert.equal(me.data.user.wechatAvatarUrl, null);
+    assert.equal(typeof me.data.user.registeredAt, "string");
+    assert.equal(typeof me.data.user.lastActiveAt, "string");
+  });
+
+  it("updates the current user's WeChat profile", async () => {
+    withAuthEnv();
+    const prisma = createPrismaMock();
+    const service = new AuthService(prisma);
+    const login = await service.wechatLogin({
+      code: "dev-user-001",
+      nickname: "测试用户"
     });
+
+    const response = await service.updateWechatProfile(login.data.user, {
+      wechatNickname: "微信昵称",
+      wechatAvatarUrl: "https://guanchaohuiji.com/uploads/wechat-avatars/avatar.webp"
+    });
+
+    assert.equal(response.data.user.wechatNickname, "微信昵称");
+    assert.equal(response.data.user.wechatAvatarUrl, "https://guanchaohuiji.com/uploads/wechat-avatars/avatar.webp");
+    assert.equal(prisma.users[0]?.profileUpdatedAt instanceof Date, true);
+  });
+
+  it("rejects invalid WeChat profile values", async () => {
+    withAuthEnv();
+    const service = new AuthService(createPrismaMock());
+
+    await assert.rejects(
+      () =>
+        service.updateWechatProfile(
+          {
+            id: "user-1",
+            openid: "mock_dev-user-001",
+            nickname: "测试用户"
+          },
+          {
+            wechatNickname: "a".repeat(33),
+            wechatAvatarUrl: "javascript:alert(1)"
+          }
+        ),
+      BadRequestException
+    );
+  });
+
+  it("rejects non-image avatar uploads", async () => {
+    withAuthEnv();
+    const service = new AuthService(createPrismaMock());
+
+    await assert.rejects(
+      () =>
+        service.saveWechatAvatar(
+          {
+            id: "user-1",
+            openid: "mock_dev-user-001",
+            nickname: "测试用户"
+          },
+          {
+            buffer: Buffer.from("not-image"),
+            originalname: "avatar.txt",
+            mimetype: "text/plain",
+            size: 9
+          },
+          "https://guanchaohuiji.com"
+        ),
+      BadRequestException
+    );
   });
 
   it("returns 401 when bearer token is missing", async () => {
@@ -195,14 +256,23 @@ function createPrismaMock() {
           if (typeof args.update.unionid === "string") {
             existing.unionid = args.update.unionid;
           }
+          if (args.update.lastActiveAt instanceof Date) {
+            existing.lastActiveAt = args.update.lastActiveAt;
+          }
           return selectUser(existing);
         }
 
+        const now = new Date("2026-06-08T09:00:00.000Z");
         const user: UserRecord = {
           id: `user-${nextUserNumber++}`,
           openid: args.create.openid,
           unionid: args.create.unionid ?? null,
-          nickname: args.create.nickname
+          nickname: args.create.nickname,
+          wechatNickname: null,
+          wechatAvatarUrl: null,
+          profileUpdatedAt: null,
+          createdAt: now,
+          lastActiveAt: args.create.lastActiveAt ?? null
         };
         users.push(user);
         return selectUser(user);
@@ -210,6 +280,25 @@ function createPrismaMock() {
       findUnique: async (args: UserFindUniqueArgs) => {
         const user = users.find((item) => item.id === args.where.id);
         return user ? selectUser(user) : null;
+      },
+      update: async (args: UserUpdateArgs) => {
+        const user = users.find((item) => item.id === args.where.id);
+        if (!user) {
+          throw new Error("missing user");
+        }
+        if ("wechatNickname" in args.data) {
+          user.wechatNickname = args.data.wechatNickname ?? null;
+        }
+        if ("wechatAvatarUrl" in args.data) {
+          user.wechatAvatarUrl = args.data.wechatAvatarUrl ?? null;
+        }
+        if (args.data.profileUpdatedAt instanceof Date) {
+          user.profileUpdatedAt = args.data.profileUpdatedAt;
+        }
+        if (args.data.lastActiveAt instanceof Date) {
+          user.lastActiveAt = args.data.lastActiveAt;
+        }
+        return selectUser(user);
       }
     }
   };
@@ -221,7 +310,11 @@ function selectUser(user: UserRecord) {
   return {
     id: user.id,
     openid: user.openid,
-    nickname: user.nickname
+    nickname: user.nickname,
+    wechatNickname: user.wechatNickname,
+    wechatAvatarUrl: user.wechatAvatarUrl,
+    createdAt: user.createdAt,
+    lastActiveAt: user.lastActiveAt
   };
 }
 
@@ -238,6 +331,11 @@ interface UserRecord {
   openid: string;
   unionid: string | null;
   nickname: string | null;
+  wechatNickname: string | null;
+  wechatAvatarUrl: string | null;
+  profileUpdatedAt: Date | null;
+  createdAt: Date;
+  lastActiveAt: Date | null;
 }
 
 interface UserUpsertArgs {
@@ -247,16 +345,30 @@ interface UserUpsertArgs {
   update: {
     nickname?: string | null;
     unionid?: string;
+    lastActiveAt?: Date;
   };
   create: {
     openid: string;
     unionid?: string | null;
     nickname: string | null;
+    lastActiveAt?: Date;
   };
 }
 
 interface UserFindUniqueArgs {
   where: {
     id: string;
+  };
+}
+
+interface UserUpdateArgs {
+  where: {
+    id: string;
+  };
+  data: {
+    wechatNickname?: string | null;
+    wechatAvatarUrl?: string | null;
+    profileUpdatedAt?: Date;
+    lastActiveAt?: Date;
   };
 }

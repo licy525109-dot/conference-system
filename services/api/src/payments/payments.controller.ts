@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, HttpCode, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Headers, HttpCode, HttpException, HttpStatus, Post, Req, UseGuards } from "@nestjs/common";
 import { RequestWithCurrentUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PaymentsService } from "./payments.service";
@@ -24,11 +24,15 @@ export class PaymentsController {
   @Post("wechat/prepay")
   @UseGuards(JwtAuthGuard)
   async prepayWechat(@Body() body: unknown, @Req() request: RequestWithCurrentUser) {
-    return {
-      code: "OK",
-      message: "ok",
-      data: await this.wechatPayService.prepay(body, request.currentUser)
-    };
+    try {
+      return {
+        code: "OK",
+        message: "ok",
+        data: await this.wechatPayService.prepay(body, request.currentUser)
+      };
+    } catch (error) {
+      throw normalizeWechatPrepayException(error);
+    }
   }
 
   @Post("wechat/notify")
@@ -52,4 +56,63 @@ export class PaymentsController {
       }
     });
   }
+}
+
+function normalizeWechatPrepayException(error: unknown): HttpException {
+  if (error instanceof HttpException) {
+    const statusCode = error.getStatus();
+    const response = error.getResponse();
+    if (isRecord(response)) {
+      const message = readResponseMessage(response) ?? error.message;
+      return new HttpException(
+        {
+          code: typeof response.code === "string" ? response.code : buildErrorCode(statusCode),
+          message,
+          statusCode,
+          detail: response.detail ?? message
+        },
+        statusCode
+      );
+    }
+
+    return new HttpException(
+      {
+        code: buildErrorCode(statusCode),
+        message: typeof response === "string" ? response : error.message,
+        statusCode,
+        detail: typeof response === "string" ? response : error.message
+      },
+      statusCode
+    );
+  }
+
+  return new HttpException(
+    {
+      code: "WECHAT_PAY_PREPAY_ERROR",
+      message: "WeChat Pay prepay request failed",
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      detail: error instanceof Error ? error.message : "WeChat Pay prepay request failed"
+    },
+    HttpStatus.INTERNAL_SERVER_ERROR
+  );
+}
+
+function readResponseMessage(response: Record<string, unknown>): string | undefined {
+  if (typeof response.message === "string") {
+    return response.message;
+  }
+
+  if (Array.isArray(response.message)) {
+    return response.message.join("; ");
+  }
+
+  return undefined;
+}
+
+function buildErrorCode(statusCode: number): string {
+  return `WECHAT_PAY_PREPAY_${statusCode}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

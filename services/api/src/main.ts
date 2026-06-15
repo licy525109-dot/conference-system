@@ -1,8 +1,19 @@
 import { NestFactory } from "@nestjs/core";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { AppModule } from "./app.module";
+
+const express = require("express") as { static: (root: string) => unknown };
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  const uploadsRoot = join(process.cwd(), "uploads");
+  if (!existsSync(uploadsRoot)) {
+    mkdirSync(uploadsRoot, { recursive: true });
+  }
+
+  app.use("/uploads", express.static(uploadsRoot));
+  app.use("/api/uploads", express.static(uploadsRoot));
   app.setGlobalPrefix("api");
   app.enableCors();
 

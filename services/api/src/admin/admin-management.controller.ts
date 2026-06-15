@@ -33,6 +33,11 @@ export class AdminManagementController {
     return this.adminManagementService.updateConferenceStatus(id, body, request.currentAdmin!);
   }
 
+  @Patch("conferences/:id/check-in-config")
+  updateConferenceCheckInConfig(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.updateConferenceCheckInConfig(id, body, request.currentAdmin!);
+  }
+
   @Get("conferences/:conferenceId/skus")
   listSkus(@Param("conferenceId") conferenceId: string) {
     return this.adminManagementService.listSkus(conferenceId);
@@ -86,5 +91,45 @@ export class AdminManagementController {
   @Get("registrations/:id")
   getRegistration(@Param("id") id: string) {
     return this.adminManagementService.getRegistration(id);
+  }
+
+  @Patch("registrations/:id/remark")
+  updateRegistrationRemark(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.updateRegistrationRemark(id, body, request.currentAdmin!);
+  }
+
+  @Post("registration-attendees/:id/check-in")
+  checkInRegistrationAttendee(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.checkInRegistrationAttendee(id, request.currentAdmin!);
+  }
+
+  @Get("coupons")
+  listCoupons(@Query() query: Record<string, unknown>) {
+    return this.adminManagementService.listCoupons(query);
+  }
+
+  @Post("coupons")
+  createCoupon(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.createCoupon(body, request.currentAdmin!);
+  }
+
+  @Patch("coupons/:id")
+  updateCoupon(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.updateCoupon(id, body, request.currentAdmin!);
+  }
+
+  @Get("promotion-rules")
+  listPromotionRules(@Query() query: Record<string, unknown>) {
+    return this.adminManagementService.listPromotionRules(query);
+  }
+
+  @Post("promotion-rules")
+  createPromotionRule(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.createPromotionRule(body, request.currentAdmin!);
+  }
+
+  @Patch("promotion-rules/:id")
+  updatePromotionRule(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.updatePromotionRule(id, body, request.currentAdmin!);
   }
 }

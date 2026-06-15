@@ -2,7 +2,14 @@ import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { OrderStatus, PaymentProvider, PaymentStatus, RegistrationStatus } from "@prisma/client";
+import {
+  CheckInStatus,
+  CouponRedemptionStatus,
+  OrderStatus,
+  PaymentProvider,
+  PaymentStatus,
+  RegistrationStatus
+} from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { PaymentsService } from "./payments.service";
@@ -40,6 +47,8 @@ describe("PaymentsService mock confirm", () => {
     assert.equal(prisma.payments[0]?.status, PaymentStatus.SUCCESS);
     assert.equal(prisma.registrations.length, 1);
     assert.equal(prisma.registrations[0]?.status, RegistrationStatus.CONFIRMED);
+    assert.equal(prisma.registrationAttendees.length, 1);
+    assert.equal(prisma.registrationAttendees[0]?.checkInStatus, CheckInStatus.NOT_REQUIRED);
     assert.equal(prisma.registrations[0]?.attendeeName, "快照姓名");
     assert.equal(prisma.registrations[0]?.phone, "13900000000");
     assert.deepEqual(prisma.registrations[0]?.formDataJson, {
@@ -59,8 +68,42 @@ describe("PaymentsService mock confirm", () => {
 
     assert.equal(first.data.registrationId, second.data.registrationId);
     assert.equal(prisma.registrations.length, 1);
+    assert.equal(prisma.registrationAttendees.length, 1);
     assert.equal(prisma.payments.length, 1);
     assert.equal(prisma.skus[0]?.soldCount, 1);
+  });
+
+  it("creates a pending check-in attendee when conference check-in is enabled", async () => {
+    withMockPaymentMode();
+    const prisma = createPrismaMock({ checkInEnabled: true });
+    const service = createService(prisma);
+
+    await service.confirmMockPayment({ orderNo: "REG001" }, currentUser);
+
+    assert.equal(prisma.registrationAttendees.length, 1);
+    assert.equal(prisma.registrationAttendees[0]?.checkInStatus, CheckInStatus.PENDING);
+  });
+
+  it("marks pending coupon redemptions used without recalculating the paid amount", async () => {
+    withMockPaymentMode();
+    const prisma = createPrismaMock({
+      couponRedemptions: [
+        {
+          couponId: "coupon-1",
+          orderId: "order-REG001",
+          userId: currentUser.id,
+          status: CouponRedemptionStatus.PENDING,
+          usedAt: null
+        }
+      ]
+    });
+    const service = createService(prisma);
+
+    await service.confirmMockPayment({ orderNo: "REG001" }, currentUser);
+
+    assert.equal(prisma.orders[0]?.paidAmountCent, 100000);
+    assert.equal(prisma.couponRedemptions[0]?.status, CouponRedemptionStatus.USED);
+    assert.equal(prisma.couponRedemptions[0]?.usedAt?.toISOString(), now.toISOString());
   });
 
   it("does not increment soldCount when registration creation hits an orderId unique conflict", async () => {
@@ -202,21 +245,25 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
   ];
   const payments: PaymentRecord[] = [];
   const registrations: RegistrationRecord[] = [];
+  const registrationAttendees: RegistrationAttendeeRecord[] = [];
+  const couponRedemptions: CouponRedemptionRecord[] = [...(options.couponRedemptions ?? [])];
   const skus: SkuRecord[] = [{ id: "sku-1", soldCount: options.initialSoldCount ?? 0 }];
 
   const mock: PrismaMockShape = {
     orders,
     payments,
     registrations,
+    registrationAttendees,
+    couponRedemptions,
     skus,
     order: {
       findFirst: async (args: OrderFindFirstArgs) => {
         const order = findOwnedOrder(orders, args.where.orderNo, args.where.userId);
-        return order ? toOrderRead(order, registrations, payments) : null;
+        return order ? toOrderRead(order, registrations, registrationAttendees, payments, options.checkInEnabled ?? false) : null;
       },
       findUnique: async (args: OrderFindUniqueArgs) => {
         const order = orders.find((item) => item.orderNo === args.where.orderNo);
-        return order ? toOrderRead(order, registrations, payments) : null;
+        return order ? toOrderRead(order, registrations, registrationAttendees, payments, options.checkInEnabled ?? false) : null;
       },
       update: async (args: OrderUpdateArgs) => {
         const order = orders.find((item) => item.id === args.where.id);
@@ -266,11 +313,29 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
         return { id: created.id };
       }
     },
+    registrationAttendee: {
+      create: async (args: RegistrationAttendeeCreateArgs) => {
+        registrationAttendees.push({
+          id: `registration-attendee-${registrationAttendees.length + 1}`,
+          ...args.data
+        });
+      }
+    },
     registrationSku: {
       update: async (args: SkuUpdateArgs) => {
         const sku = skus.find((item) => item.id === args.where.id);
         assert.ok(sku);
         sku.soldCount += args.data.soldCount.increment;
+      }
+    },
+    couponRedemption: {
+      updateMany: async (args: CouponRedemptionUpdateManyArgs) => {
+        for (const redemption of couponRedemptions) {
+          if (redemption.orderId === args.where.orderId && redemption.status === args.where.status) {
+            redemption.status = args.data.status;
+            redemption.usedAt = args.data.usedAt;
+          }
+        }
       }
     },
     $transaction: async <TResult>(operation: (tx: PrismaMockShape) => Promise<TResult>) => operation(mock)
@@ -310,7 +375,13 @@ function findOwnedOrder(orders: OrderRecord[], orderNo: string, userId: string):
   return orders.find((order) => order.orderNo === orderNo && order.userId === userId);
 }
 
-function toOrderRead(order: OrderRecord, registrations: RegistrationRecord[], payments: PaymentRecord[] = []) {
+function toOrderRead(
+  order: OrderRecord,
+  registrations: RegistrationRecord[],
+  registrationAttendees: RegistrationAttendeeRecord[],
+  payments: PaymentRecord[] = [],
+  checkInEnabled = false
+) {
   const registration = registrations.find((item) => item.orderId === order.id);
   return {
     id: order.id,
@@ -323,20 +394,38 @@ function toOrderRead(order: OrderRecord, registrations: RegistrationRecord[], pa
     expiredAt: order.expiredAt,
     registrationSnapshotJson: order.registrationSnapshotJson,
     paidAt: order.paidAt,
+    conference: {
+      checkInEnabled
+    },
     payments: payments.filter((payment) => payment.orderId === order.id).map((payment) => ({ provider: payment.provider, status: payment.status })),
-    registration: registration ? { id: registration.id } : null
+    registration: registration
+      ? {
+          id: registration.id,
+          skuId: registration.skuId,
+          attendeeName: registration.attendeeName,
+          phone: registration.phone,
+          formDataJson: registration.formDataJson,
+          attendees: registrationAttendees
+            .filter((attendee) => attendee.registrationId === registration.id)
+            .map((attendee) => ({ id: attendee.id }))
+        }
+      : null
   };
 }
 
 interface PrismaMockOptions {
   initialSoldCount?: number;
   simulateRegistrationCreateConflict?: boolean;
+  checkInEnabled?: boolean;
+  couponRedemptions?: CouponRedemptionRecord[];
 }
 
 interface PrismaMockShape {
   orders: OrderRecord[];
   payments: PaymentRecord[];
   registrations: RegistrationRecord[];
+  registrationAttendees: RegistrationAttendeeRecord[];
+  couponRedemptions: CouponRedemptionRecord[];
   skus: SkuRecord[];
   order: {
     findFirst(args: OrderFindFirstArgs): Promise<ReturnType<typeof toOrderRead> | null>;
@@ -350,8 +439,14 @@ interface PrismaMockShape {
     findUnique(args: RegistrationFindUniqueArgs): Promise<{ id: string } | null>;
     create(args: RegistrationCreateArgs): Promise<{ id: string }>;
   };
+  registrationAttendee: {
+    create(args: RegistrationAttendeeCreateArgs): Promise<void>;
+  };
   registrationSku: {
     update(args: SkuUpdateArgs): Promise<void>;
+  };
+  couponRedemption: {
+    updateMany(args: CouponRedemptionUpdateManyArgs): Promise<void>;
   };
   $transaction<TResult>(operation: (tx: PrismaMockShape) => Promise<TResult>): Promise<TResult>;
 }
@@ -396,9 +491,29 @@ interface RegistrationRecord {
   confirmedAt: Date;
 }
 
+interface RegistrationAttendeeRecord {
+  id: string;
+  registrationId: string;
+  skuId: string;
+  name: string;
+  phone: string;
+  company?: string;
+  title?: string;
+  formDataJson: unknown;
+  checkInStatus: CheckInStatus;
+}
+
 interface SkuRecord {
   id: string;
   soldCount: number;
+}
+
+interface CouponRedemptionRecord {
+  couponId: string;
+  orderId: string;
+  userId: string | null;
+  status: CouponRedemptionStatus;
+  usedAt: Date | null;
 }
 
 interface OrderFindFirstArgs {
@@ -439,6 +554,10 @@ interface RegistrationCreateArgs {
   data: Omit<RegistrationRecord, "id">;
 }
 
+interface RegistrationAttendeeCreateArgs {
+  data: Omit<RegistrationAttendeeRecord, "id">;
+}
+
 interface SkuUpdateArgs {
   where: {
     id: string;
@@ -447,5 +566,16 @@ interface SkuUpdateArgs {
     soldCount: {
       increment: number;
     };
+  };
+}
+
+interface CouponRedemptionUpdateManyArgs {
+  where: {
+    orderId: string;
+    status: CouponRedemptionStatus;
+  };
+  data: {
+    status: CouponRedemptionStatus;
+    usedAt: Date;
   };
 }

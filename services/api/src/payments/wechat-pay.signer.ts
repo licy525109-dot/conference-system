@@ -27,14 +27,13 @@ export class WechatPaySigner {
     const message = `${input.method}\n${input.urlPathWithQuery}\n${timestamp}\n${nonce}\n${input.body}\n`;
     const signature = this.sign(message, input.config.privateKeyPem);
 
-    return [
-      "WECHATPAY2-SHA256-RSA2048",
+    return `WECHATPAY2-SHA256-RSA2048 ${[
       `mchid="${input.config.mchId}"`,
       `nonce_str="${nonce}"`,
-      `signature="${signature}"`,
       `timestamp="${timestamp}"`,
-      `serial_no="${input.config.mchSerialNo}"`
-    ].join(",");
+      `serial_no="${input.config.mchSerialNo}"`,
+      `signature="${signature}"`
+    ].join(",")}`;
   }
 
   createRequestPaymentParams(input: {

@@ -1,7 +1,10 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   AuditAction,
+  CheckInStatus,
   ConferenceStatus,
+  CouponType,
+  DiscountType,
   FormFieldType,
   OrderStatus,
   Prisma,
@@ -75,6 +78,8 @@ export class AdminManagementService {
         startsAt: startAt,
         endsAt: endAt,
         location: request.location,
+        groupRegistrationEnabled: request.groupRegistrationEnabled ?? true,
+        maxTicketsPerOrder: request.maxTicketsPerOrder,
         status: request.status ?? ConferenceStatus.DRAFT,
         sortOrder: request.sortOrder ?? 0,
         page: {
@@ -125,6 +130,10 @@ export class AdminManagementService {
         ...(typeof request.startAt !== "undefined" ? { startsAt: request.startAt } : {}),
         ...(typeof request.endAt !== "undefined" ? { endsAt: request.endAt } : {}),
         ...(typeof request.location !== "undefined" ? { location: request.location } : {}),
+        ...(typeof request.groupRegistrationEnabled !== "undefined"
+          ? { groupRegistrationEnabled: request.groupRegistrationEnabled }
+          : {}),
+        ...(typeof request.maxTicketsPerOrder !== "undefined" ? { maxTicketsPerOrder: request.maxTicketsPerOrder } : {}),
         ...(typeof request.status !== "undefined" ? { status: request.status } : {}),
         ...(typeof request.sortOrder !== "undefined" ? { sortOrder: request.sortOrder } : {}),
         ...(typeof request.contentJson !== "undefined" || typeof request.styleJson !== "undefined"
@@ -177,6 +186,25 @@ export class AdminManagementService {
 
     await this.writeAudit(admin, AuditAction.UPDATE, "Conference", conference.id, "Update conference status", {
       status
+    });
+
+    return ok(formatConferenceDetail(conference));
+  }
+
+  async updateConferenceCheckInConfig(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const body = readObject(input);
+    if (typeof body.checkInEnabled !== "boolean") {
+      throw new BadRequestException("checkInEnabled must be a boolean");
+    }
+
+    const conference = await this.prisma.conference.update({
+      where: { id },
+      data: { checkInEnabled: body.checkInEnabled },
+      select: conferenceDetailSelect
+    });
+
+    await this.writeAudit(admin, AuditAction.UPDATE, "Conference", conference.id, "Update check-in config", {
+      checkInEnabled: conference.checkInEnabled
     });
 
     return ok(formatConferenceDetail(conference));
@@ -418,6 +446,305 @@ export class AdminManagementService {
     return ok(formatRegistrationDetail(registration));
   }
 
+  async updateRegistrationRemark(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const adminRemark = readRegistrationRemark(input);
+    const registration = await this.prisma.registration.update({
+      where: { id },
+      data: {
+        adminRemark,
+        remarkUpdatedAt: new Date(),
+        remarkUpdatedBy: admin.id
+      },
+      select: registrationDetailSelect
+    });
+
+    await this.writeAudit(admin, AuditAction.UPDATE, "Registration", registration.id, "Update registration remark", {
+      registrationNo: registration.registrationNo
+    });
+
+    return ok(formatRegistrationDetail(registration));
+  }
+
+  async checkInRegistrationAttendee(id: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const attendee = await this.prisma.registrationAttendee.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        checkInStatus: true,
+        registration: {
+          select: {
+            id: true,
+            registrationNo: true,
+            status: true,
+            order: {
+              select: {
+                status: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!attendee) {
+      throw new NotFoundException("Registration attendee not found");
+    }
+
+    if (attendee.registration.status !== RegistrationStatus.CONFIRMED || attendee.registration.order.status !== OrderStatus.PAID) {
+      throw new ConflictException("只能核销已支付确认的参会人");
+    }
+
+    if (attendee.checkInStatus === CheckInStatus.CHECKED_IN) {
+      throw new ConflictException("该参会人已核销");
+    }
+
+    if (attendee.checkInStatus !== CheckInStatus.PENDING) {
+      throw new ConflictException("当前参会人不可核销");
+    }
+
+    const updated = await this.prisma.registrationAttendee.update({
+      where: { id },
+      data: {
+        checkInStatus: CheckInStatus.CHECKED_IN,
+        checkedInAt: new Date(),
+        checkedInBy: admin.id
+      },
+      select: attendeeSelect
+    });
+
+    await this.writeAudit(admin, AuditAction.UPDATE, "RegistrationAttendee", updated.id, "Check in attendee", {
+      registrationNo: attendee.registration.registrationNo
+    });
+
+    return ok(formatAttendee(updated));
+  }
+
+  async listCoupons(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
+    const pagination = parsePagination(query);
+    const conferenceId = readOptionalString(query, "conferenceId");
+    const enabled = readOptionalBoolean(query, "enabled");
+    const keyword = readOptionalString(query, "keyword");
+    const where: Prisma.CouponWhereInput = {
+      ...(conferenceId ? { conferenceId } : {}),
+      ...(typeof enabled === "boolean" ? { enabled } : {}),
+      ...(keyword
+        ? {
+            OR: [
+              { code: { contains: keyword, mode: "insensitive" } },
+              { name: { contains: keyword, mode: "insensitive" } }
+            ]
+          }
+        : {})
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.coupon.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }],
+        skip: pagination.skip,
+        take: pagination.pageSize,
+        select: couponSelect
+      }),
+      this.prisma.coupon.count({ where })
+    ]);
+
+    return ok({
+      items: items.map(formatCoupon),
+      total,
+      page: pagination.page,
+      pageSize: pagination.pageSize
+    });
+  }
+
+  async createCoupon(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const request = parseCouponInput(input, false);
+    const code = ensureDefined(request.code, "code").toUpperCase();
+    const name = ensureDefined(request.name, "name");
+    const type = ensureDefined(request.type, "type");
+    validateCouponDiscountInput(type, request);
+
+    const data: Prisma.CouponUncheckedCreateInput = {
+      code,
+      name,
+      type,
+      discountAmountCent: request.discountAmountCent,
+      discountPercent: request.discountPercent,
+      maxDiscountCent: request.maxDiscountCent,
+      minAmountCent: request.minAmountCent,
+      minQuantity: request.minQuantity,
+      totalLimit: request.totalLimit,
+      perUserLimit: request.perUserLimit,
+      enabled: request.enabled ?? true,
+      startAt: request.startAt,
+      endAt: request.endAt,
+      stackableWithPromotion: request.stackableWithPromotion ?? false,
+      conferenceId: request.conferenceId,
+      allowedSkuIds: toNullableJsonInput(request.allowedSkuIds)
+    };
+
+    const coupon = await catchUniqueConstraint(
+      this.prisma.coupon.create({
+        data,
+        select: couponSelect
+      }),
+      "coupon code already exists"
+    );
+
+    await this.writeAudit(admin, AuditAction.CREATE, "Coupon", coupon.id, "Create coupon", {
+      code: coupon.code
+    });
+
+    return ok(formatCoupon(coupon));
+  }
+
+  async updateCoupon(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const existing = await this.prisma.coupon.findUnique({
+      where: { id },
+      select: { id: true, type: true }
+    });
+    if (!existing) {
+      throw new NotFoundException("Coupon not found");
+    }
+
+    const request = parseCouponInput(input, true);
+    const nextType = request.type ?? existing.type;
+    validateCouponDiscountInput(nextType, request, true);
+    const data: Prisma.CouponUncheckedUpdateInput = {
+      ...(typeof request.code !== "undefined" ? { code: request.code.toUpperCase() } : {}),
+      ...(typeof request.name !== "undefined" ? { name: request.name } : {}),
+      ...(typeof request.type !== "undefined" ? { type: request.type } : {}),
+      ...(typeof request.discountAmountCent !== "undefined" ? { discountAmountCent: request.discountAmountCent } : {}),
+      ...(typeof request.discountPercent !== "undefined" ? { discountPercent: request.discountPercent } : {}),
+      ...(typeof request.maxDiscountCent !== "undefined" ? { maxDiscountCent: request.maxDiscountCent } : {}),
+      ...(typeof request.minAmountCent !== "undefined" ? { minAmountCent: request.minAmountCent } : {}),
+      ...(typeof request.minQuantity !== "undefined" ? { minQuantity: request.minQuantity } : {}),
+      ...(typeof request.totalLimit !== "undefined" ? { totalLimit: request.totalLimit } : {}),
+      ...(typeof request.perUserLimit !== "undefined" ? { perUserLimit: request.perUserLimit } : {}),
+      ...(typeof request.enabled !== "undefined" ? { enabled: request.enabled } : {}),
+      ...(typeof request.startAt !== "undefined" ? { startAt: request.startAt } : {}),
+      ...(typeof request.endAt !== "undefined" ? { endAt: request.endAt } : {}),
+      ...(typeof request.stackableWithPromotion !== "undefined"
+        ? { stackableWithPromotion: request.stackableWithPromotion }
+        : {}),
+      ...(typeof request.conferenceId !== "undefined" ? { conferenceId: request.conferenceId } : {}),
+      ...(typeof request.allowedSkuIds !== "undefined" ? { allowedSkuIds: toNullableJsonInput(request.allowedSkuIds) } : {})
+    };
+
+    const coupon = await catchUniqueConstraint(
+      this.prisma.coupon.update({
+        where: { id },
+        data,
+        select: couponSelect
+      }),
+      "coupon code already exists"
+    );
+
+    await this.writeAudit(admin, AuditAction.UPDATE, "Coupon", coupon.id, "Update coupon", {
+      code: coupon.code
+    });
+
+    return ok(formatCoupon(coupon));
+  }
+
+  async listPromotionRules(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
+    const pagination = parsePagination(query);
+    const conferenceId = readOptionalString(query, "conferenceId");
+    const enabled = readOptionalBoolean(query, "enabled");
+    const keyword = readOptionalString(query, "keyword");
+    const where: Prisma.PromotionRuleWhereInput = {
+      ...(conferenceId ? { conferenceId } : {}),
+      ...(typeof enabled === "boolean" ? { enabled } : {}),
+      ...(keyword ? { name: { contains: keyword, mode: "insensitive" } } : {})
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.promotionRule.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }],
+        skip: pagination.skip,
+        take: pagination.pageSize,
+        select: promotionRuleSelect
+      }),
+      this.prisma.promotionRule.count({ where })
+    ]);
+
+    return ok({
+      items: items.map(formatPromotionRule),
+      total,
+      page: pagination.page,
+      pageSize: pagination.pageSize
+    });
+  }
+
+  async createPromotionRule(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const request = parsePromotionRuleInput(input, false);
+    validatePromotionRuleInput(request);
+    const name = ensureDefined(request.name, "name");
+    const discountAmountCent = ensureDefined(request.discountAmountCent, "discountAmountCent");
+
+    const data: Prisma.PromotionRuleUncheckedCreateInput = {
+      name,
+      type: DiscountType.FULL_REDUCTION,
+      conferenceId: request.conferenceId,
+      allowedSkuIds: toNullableJsonInput(request.allowedSkuIds),
+      minAmountCent: request.minAmountCent,
+      minQuantity: request.minQuantity,
+      discountAmountCent,
+      enabled: request.enabled ?? true,
+      startAt: request.startAt,
+      endAt: request.endAt,
+      stackableWithCoupon: request.stackableWithCoupon ?? false
+    };
+
+    const rule = await this.prisma.promotionRule.create({
+      data,
+      select: promotionRuleSelect
+    });
+
+    await this.writeAudit(admin, AuditAction.CREATE, "PromotionRule", rule.id, "Create promotion rule", {
+      name: rule.name
+    });
+
+    return ok(formatPromotionRule(rule));
+  }
+
+  async updatePromotionRule(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const existing = await this.prisma.promotionRule.findUnique({
+      where: { id },
+      select: { id: true }
+    });
+    if (!existing) {
+      throw new NotFoundException("Promotion rule not found");
+    }
+
+    const request = parsePromotionRuleInput(input, true);
+    validatePromotionRuleInput(request);
+    const data: Prisma.PromotionRuleUncheckedUpdateInput = {
+      ...(typeof request.name !== "undefined" ? { name: request.name } : {}),
+      ...(typeof request.conferenceId !== "undefined" ? { conferenceId: request.conferenceId } : {}),
+      ...(typeof request.allowedSkuIds !== "undefined" ? { allowedSkuIds: toNullableJsonInput(request.allowedSkuIds) } : {}),
+      ...(typeof request.minAmountCent !== "undefined" ? { minAmountCent: request.minAmountCent } : {}),
+      ...(typeof request.minQuantity !== "undefined" ? { minQuantity: request.minQuantity } : {}),
+      ...(typeof request.discountAmountCent !== "undefined" ? { discountAmountCent: request.discountAmountCent } : {}),
+      ...(typeof request.enabled !== "undefined" ? { enabled: request.enabled } : {}),
+      ...(typeof request.startAt !== "undefined" ? { startAt: request.startAt } : {}),
+      ...(typeof request.endAt !== "undefined" ? { endAt: request.endAt } : {}),
+      ...(typeof request.stackableWithCoupon !== "undefined" ? { stackableWithCoupon: request.stackableWithCoupon } : {})
+    };
+
+    const rule = await this.prisma.promotionRule.update({
+      where: { id },
+      data,
+      select: promotionRuleSelect
+    });
+
+    await this.writeAudit(admin, AuditAction.UPDATE, "PromotionRule", rule.id, "Update promotion rule", {
+      name: rule.name
+    });
+
+    return ok(formatPromotionRule(rule));
+  }
+
   private async generateConferenceSlug(title: string): Promise<string> {
     const base = title
       .trim()
@@ -508,6 +835,9 @@ const conferenceDetailSelect = {
   ...conferenceListSelect,
   registrationStartsAt: true,
   registrationEndsAt: true,
+  checkInEnabled: true,
+  groupRegistrationEnabled: true,
+  maxTicketsPerOrder: true,
   page: {
     select: {
       contentJson: true,
@@ -548,12 +878,22 @@ const formFieldSelect = {
   updatedAt: true
 } satisfies Prisma.FormFieldSelect;
 
+const adminUserProfileSelect = {
+  id: true,
+  openid: true,
+  wechatNickname: true,
+  wechatAvatarUrl: true,
+  createdAt: true,
+  lastActiveAt: true
+} satisfies Prisma.UserSelect;
+
 const orderListSelect = {
   id: true,
   orderNo: true,
   conferenceId: true,
   skuId: true,
   originAmountCent: true,
+  discountAmountCent: true,
   payableAmountCent: true,
   paidAmountCent: true,
   status: true,
@@ -562,8 +902,19 @@ const orderListSelect = {
   expiredAt: true,
   paidAt: true,
   createdAt: true,
+  user: { select: adminUserProfileSelect },
   conference: { select: { title: true } },
-  sku: { select: { name: true } }
+  sku: { select: { name: true } },
+  payments: {
+    orderBy: [{ createdAt: "desc" }],
+    take: 1,
+    select: {
+      provider: true,
+      status: true,
+      outTradeNo: true,
+      transactionId: true
+    }
+  }
 } satisfies Prisma.OrderSelect;
 
 const orderDetailSelect = {
@@ -577,6 +928,19 @@ const orderDetailSelect = {
       unitPriceCent: true,
       quantity: true,
       totalAmountCent: true
+    }
+  },
+  discounts: {
+    orderBy: [{ createdAt: "asc" }],
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      amountCent: true,
+      couponId: true,
+      promotionRuleId: true,
+      snapshotJson: true,
+      createdAt: true
     }
   },
   payments: {
@@ -611,15 +975,105 @@ const registrationListSelect = {
   paidAmountCent: true,
   status: true,
   confirmedAt: true,
+  adminRemark: true,
+  remarkUpdatedAt: true,
+  remarkUpdatedBy: true,
   createdAt: true,
+  attendees: {
+    select: {
+      checkInStatus: true
+    }
+  },
+  user: { select: adminUserProfileSelect },
   conference: { select: { title: true } },
   sku: { select: { name: true } },
   order: { select: { orderNo: true } }
 } satisfies Prisma.RegistrationSelect;
 
+const attendeeSelect = {
+  id: true,
+  skuId: true,
+  name: true,
+  phone: true,
+  company: true,
+  title: true,
+  formDataJson: true,
+  checkInStatus: true,
+  checkedInAt: true,
+  checkedInBy: true,
+  adminRemark: true,
+  createdAt: true,
+  sku: { select: { name: true } }
+} satisfies Prisma.RegistrationAttendeeSelect;
+
+const couponSelect = {
+  id: true,
+  code: true,
+  name: true,
+  type: true,
+  discountAmountCent: true,
+  discountPercent: true,
+  maxDiscountCent: true,
+  minAmountCent: true,
+  minQuantity: true,
+  totalLimit: true,
+  perUserLimit: true,
+  enabled: true,
+  startAt: true,
+  endAt: true,
+  stackableWithPromotion: true,
+  conferenceId: true,
+  allowedSkuIds: true,
+  createdAt: true,
+  updatedAt: true
+} satisfies Prisma.CouponSelect;
+
+const promotionRuleSelect = {
+  id: true,
+  name: true,
+  type: true,
+  conferenceId: true,
+  allowedSkuIds: true,
+  minAmountCent: true,
+  minQuantity: true,
+  discountAmountCent: true,
+  enabled: true,
+  startAt: true,
+  endAt: true,
+  stackableWithCoupon: true,
+  createdAt: true,
+  updatedAt: true
+} satisfies Prisma.PromotionRuleSelect;
+
 const registrationDetailSelect = {
   ...registrationListSelect,
-  formDataJson: true
+  formDataJson: true,
+  attendees: {
+    orderBy: [{ createdAt: "asc" }],
+    select: attendeeSelect
+  },
+  order: {
+    select: {
+      orderNo: true,
+      status: true,
+      payableAmountCent: true,
+      paidAmountCent: true,
+      paidAt: true,
+      payments: {
+        orderBy: [{ createdAt: "desc" }],
+        select: {
+          id: true,
+          provider: true,
+          status: true,
+          outTradeNo: true,
+          transactionId: true,
+          amountCent: true,
+          paidAt: true,
+          createdAt: true
+        }
+      }
+    }
+  }
 } satisfies Prisma.RegistrationSelect;
 
 interface ConferenceListShape {
@@ -645,6 +1099,9 @@ interface ConferenceListShape {
 interface ConferenceDetailShape extends ConferenceListShape {
   registrationStartsAt?: Date | null;
   registrationEndsAt?: Date | null;
+  checkInEnabled?: boolean;
+  groupRegistrationEnabled?: boolean;
+  maxTicketsPerOrder?: number | null;
   page?: {
     contentJson: Prisma.JsonValue;
     styleJson: Prisma.JsonValue | null;
@@ -674,12 +1131,16 @@ function formatConferenceDetail(conference: ConferenceDetailShape) {
     ...formatConferenceListItem(conference),
     registrationStartsAt: conference.registrationStartsAt?.toISOString() ?? null,
     registrationEndsAt: conference.registrationEndsAt?.toISOString() ?? null,
+    checkInEnabled: conference.checkInEnabled ?? false,
+    groupRegistrationEnabled: conference.groupRegistrationEnabled ?? true,
+    maxTicketsPerOrder: conference.maxTicketsPerOrder ?? null,
     contentJson: conference.page?.contentJson ?? {},
     styleJson: conference.page?.styleJson ?? null
   };
 }
 
 function formatOrderListItem(order: Prisma.OrderGetPayload<{ select: typeof orderListSelect }>) {
+  const latestPayment = order.payments[0] ?? null;
   return {
     id: order.id,
     orderNo: order.orderNo,
@@ -688,9 +1149,15 @@ function formatOrderListItem(order: Prisma.OrderGetPayload<{ select: typeof orde
     skuId: order.skuId,
     skuName: order.sku.name,
     originAmountCent: order.originAmountCent,
+    discountAmountCent: order.discountAmountCent,
     payableAmountCent: order.payableAmountCent,
     paidAmountCent: order.paidAmountCent,
     status: order.status,
+    paymentStatus: latestPayment?.status ?? null,
+    paymentProvider: latestPayment?.provider ?? null,
+    outTradeNo: latestPayment?.outTradeNo ?? null,
+    transactionId: latestPayment?.transactionId ?? null,
+    user: formatUserProfile(order.user),
     attendeeName: order.attendeeName,
     phone: order.phone,
     expiredAt: order.expiredAt?.toISOString() ?? null,
@@ -705,6 +1172,10 @@ function formatOrderDetail(order: Prisma.OrderGetPayload<{ select: typeof orderD
     submittedFormJson: order.submittedFormJson,
     registrationSnapshotJson: order.registrationSnapshotJson,
     items: order.items,
+    discounts: order.discounts.map((discount) => ({
+      ...discount,
+      createdAt: discount.createdAt.toISOString()
+    })),
     payments: order.payments.map((payment) => ({
       ...payment,
       paidAt: payment.paidAt?.toISOString() ?? null,
@@ -715,6 +1186,7 @@ function formatOrderDetail(order: Prisma.OrderGetPayload<{ select: typeof orderD
 }
 
 function formatRegistrationListItem(registration: Prisma.RegistrationGetPayload<{ select: typeof registrationListSelect }>) {
+  const checkInProgress = summarizeCheckIn(registration.attendees);
   return {
     id: registration.id,
     registrationNo: registration.registrationNo,
@@ -726,8 +1198,14 @@ function formatRegistrationListItem(registration: Prisma.RegistrationGetPayload<
     phone: registration.phone,
     paidAmountCent: registration.paidAmountCent,
     status: registration.status,
+    user: formatUserProfile(registration.user),
     orderNo: registration.order.orderNo,
     confirmedAt: registration.confirmedAt.toISOString(),
+    adminRemark: registration.adminRemark,
+    remarkUpdatedAt: registration.remarkUpdatedAt?.toISOString() ?? null,
+    remarkUpdatedBy: registration.remarkUpdatedBy,
+    attendeeCount: registration.attendees.length || 1,
+    checkInProgress,
     createdAt: registration.createdAt.toISOString()
   };
 }
@@ -737,7 +1215,82 @@ function formatRegistrationDetail(
 ) {
   return {
     ...formatRegistrationListItem(registration),
-    formDataJson: registration.formDataJson
+    formDataJson: registration.formDataJson,
+    attendees: registration.attendees.map(formatAttendee),
+    order: {
+      ...registration.order,
+      paidAt: registration.order.paidAt?.toISOString() ?? null,
+      payments: registration.order.payments.map((payment) => ({
+        ...payment,
+        paidAt: payment.paidAt?.toISOString() ?? null,
+        createdAt: payment.createdAt.toISOString()
+      }))
+    }
+  };
+}
+
+function formatAttendee(attendee: Prisma.RegistrationAttendeeGetPayload<{ select: typeof attendeeSelect }>) {
+  return {
+    id: attendee.id,
+    skuId: attendee.skuId,
+    skuName: attendee.sku.name,
+    name: attendee.name,
+    phone: attendee.phone,
+    company: attendee.company,
+    title: attendee.title,
+    formDataJson: attendee.formDataJson,
+    checkInStatus: attendee.checkInStatus,
+    checkedInAt: attendee.checkedInAt?.toISOString() ?? null,
+    checkedInBy: attendee.checkedInBy,
+    adminRemark: attendee.adminRemark,
+    createdAt: attendee.createdAt.toISOString()
+  };
+}
+
+function formatCoupon(coupon: Prisma.CouponGetPayload<{ select: typeof couponSelect }>) {
+  return {
+    ...coupon,
+    allowedSkuIds: readAllowedStringArray(coupon.allowedSkuIds),
+    startAt: coupon.startAt?.toISOString() ?? null,
+    endAt: coupon.endAt?.toISOString() ?? null,
+    createdAt: coupon.createdAt.toISOString(),
+    updatedAt: coupon.updatedAt.toISOString(),
+    redemptionCount: 0
+  };
+}
+
+function formatPromotionRule(rule: Prisma.PromotionRuleGetPayload<{ select: typeof promotionRuleSelect }>) {
+  return {
+    ...rule,
+    allowedSkuIds: readAllowedStringArray(rule.allowedSkuIds),
+    startAt: rule.startAt?.toISOString() ?? null,
+    endAt: rule.endAt?.toISOString() ?? null,
+    createdAt: rule.createdAt.toISOString(),
+    updatedAt: rule.updatedAt.toISOString()
+  };
+}
+
+function summarizeCheckIn(attendees: Array<{ checkInStatus: CheckInStatus }>) {
+  return {
+    total: attendees.length,
+    checkedIn: attendees.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN).length,
+    pending: attendees.filter((item) => item.checkInStatus === CheckInStatus.PENDING).length,
+    notRequired: attendees.filter((item) => item.checkInStatus === CheckInStatus.NOT_REQUIRED).length
+  };
+}
+
+function formatUserProfile(user: Prisma.UserGetPayload<{ select: typeof adminUserProfileSelect }> | null) {
+  if (!user) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    openid: user.openid,
+    wechatNickname: user.wechatNickname,
+    wechatAvatarUrl: user.wechatAvatarUrl,
+    registeredAt: user.createdAt.toISOString(),
+    lastActiveAt: user.lastActiveAt?.toISOString() ?? null
   };
 }
 
@@ -756,6 +1309,8 @@ function parseConferenceInput(input: unknown, partial: boolean) {
     endAt,
     location: readOptionalString(body, "location"),
     status: readOptionalEnum(body, "status", ConferenceStatus),
+    groupRegistrationEnabled: readOptionalBoolean(body, "groupRegistrationEnabled"),
+    maxTicketsPerOrder: readOptionalNullableNonNegativeInt(body, "maxTicketsPerOrder"),
     sortOrder: readOptionalNonNegativeInt(body, "sortOrder"),
     contentJson: readOptionalJsonObject(body, "contentJson"),
     styleJson: readOptionalJsonObject(body, "styleJson")
@@ -842,6 +1397,93 @@ function parseRegistrationWhere(query: Record<string, unknown>): Prisma.Registra
   };
 }
 
+function readRegistrationRemark(input: unknown): string | null {
+  const body = readObject(input);
+  const value = body.adminRemark;
+  if (value === null || typeof value === "undefined") {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    throw new BadRequestException("adminRemark must be a string");
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length > 2000) {
+    throw new BadRequestException("adminRemark is too long");
+  }
+
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseCouponInput(input: unknown, partial: boolean) {
+  const body = readObject(input);
+  return {
+    code: partial ? readOptionalString(body, "code") : readRequiredString(body, "code"),
+    name: partial ? readOptionalString(body, "name") : readRequiredString(body, "name"),
+    type: partial ? readOptionalEnum(body, "type", CouponType) : readRequiredEnum(body, "type", CouponType),
+    discountAmountCent: readOptionalNullableNonNegativeInt(body, "discountAmountCent"),
+    discountPercent: readOptionalNullableBasisPoints(body, "discountPercent"),
+    maxDiscountCent: readOptionalNullableNonNegativeInt(body, "maxDiscountCent"),
+    minAmountCent: readOptionalNullableNonNegativeInt(body, "minAmountCent"),
+    minQuantity: readOptionalNullableNonNegativeInt(body, "minQuantity"),
+    totalLimit: readOptionalNullableNonNegativeInt(body, "totalLimit"),
+    perUserLimit: readOptionalNullableNonNegativeInt(body, "perUserLimit"),
+    enabled: readOptionalBoolean(body, "enabled"),
+    startAt: readOptionalNullableDate(body, "startAt"),
+    endAt: readOptionalNullableDate(body, "endAt"),
+    stackableWithPromotion: readOptionalBoolean(body, "stackableWithPromotion"),
+    conferenceId: readOptionalNullableString(body, "conferenceId"),
+    allowedSkuIds: readOptionalNullableStringArray(body, "allowedSkuIds")
+  };
+}
+
+function parsePromotionRuleInput(input: unknown, partial: boolean) {
+  const body = readObject(input);
+  return {
+    name: partial ? readOptionalString(body, "name") : readRequiredString(body, "name"),
+    conferenceId: readOptionalNullableString(body, "conferenceId"),
+    allowedSkuIds: readOptionalNullableStringArray(body, "allowedSkuIds"),
+    minAmountCent: readOptionalNullableNonNegativeInt(body, "minAmountCent"),
+    minQuantity: readOptionalNullableNonNegativeInt(body, "minQuantity"),
+    discountAmountCent: partial
+      ? readOptionalNonNegativeInt(body, "discountAmountCent")
+      : readRequiredNonNegativeInt(body, "discountAmountCent"),
+    enabled: readOptionalBoolean(body, "enabled"),
+    startAt: readOptionalNullableDate(body, "startAt"),
+    endAt: readOptionalNullableDate(body, "endAt"),
+    stackableWithCoupon: readOptionalBoolean(body, "stackableWithCoupon")
+  };
+}
+
+function validateCouponDiscountInput(
+  type: CouponType,
+  request: ReturnType<typeof parseCouponInput>,
+  partial = false
+): void {
+  if (type === CouponType.AMOUNT && !partial && typeof request.discountAmountCent !== "number") {
+    throw new BadRequestException("discountAmountCent is required for amount coupon");
+  }
+  if (type === CouponType.PERCENT && !partial && typeof request.discountPercent !== "number") {
+    throw new BadRequestException("discountPercent is required for percent coupon");
+  }
+  if (typeof request.startAt !== "undefined" && typeof request.endAt !== "undefined" && request.startAt && request.endAt) {
+    ensureDateRange(request.startAt, request.endAt);
+  }
+}
+
+function validatePromotionRuleInput(request: ReturnType<typeof parsePromotionRuleInput>): void {
+  if (typeof request.startAt !== "undefined" && typeof request.endAt !== "undefined" && request.startAt && request.endAt) {
+    ensureDateRange(request.startAt, request.endAt);
+  }
+}
+
+function ensureDateRange(startAt: Date, endAt: Date): void {
+  if (startAt > endAt) {
+    throw new BadRequestException("startAt must be before endAt");
+  }
+}
+
 function parsePagination(query: Record<string, unknown>) {
   const page = parsePositiveInt(query.page, DEFAULT_PAGE);
   const pageSize = Math.min(parsePositiveInt(query.pageSize, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
@@ -884,6 +1526,16 @@ function readOptionalString(input: Record<string, unknown>, field: string): stri
     throw new BadRequestException(`${field} must be a string`);
   }
   return value.trim();
+}
+
+function readOptionalNullableString(input: Record<string, unknown>, field: string): string | null | undefined {
+  if (!Object.hasOwn(input, field)) {
+    return undefined;
+  }
+  if (input[field] === null || input[field] === "") {
+    return null;
+  }
+  return readOptionalString(input, field);
 }
 
 function readRequiredDate(input: Record<string, unknown>, field: string): Date {
@@ -936,6 +1588,55 @@ function readOptionalNonNegativeInt(input: Record<string, unknown>, field: strin
     throw new BadRequestException(`${field} must be a non-negative integer`);
   }
   return value;
+}
+
+function readOptionalNullableNonNegativeInt(input: Record<string, unknown>, field: string): number | null | undefined {
+  if (!Object.hasOwn(input, field)) {
+    return undefined;
+  }
+  if (input[field] === null || input[field] === "") {
+    return null;
+  }
+  return readOptionalNonNegativeInt(input, field);
+}
+
+function readOptionalNullableBasisPoints(input: Record<string, unknown>, field: string): number | null | undefined {
+  if (!Object.hasOwn(input, field)) {
+    return undefined;
+  }
+  if (input[field] === null || input[field] === "") {
+    return null;
+  }
+  const value = input[field];
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 10000) {
+    throw new BadRequestException(`${field} must be an integer between 1 and 10000`);
+  }
+  return value;
+}
+
+function readOptionalNullableStringArray(input: Record<string, unknown>, field: string): Prisma.InputJsonArray | null | undefined {
+  if (!Object.hasOwn(input, field)) {
+    return undefined;
+  }
+  const value = input[field];
+  if (value === null || value === "") {
+    return null;
+  }
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new BadRequestException(`${field} must be an array of strings`);
+  }
+  return value;
+}
+
+function readAllowedStringArray(value: Prisma.JsonValue | null): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function toNullableJsonInput(value: Prisma.InputJsonArray | null | undefined) {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  return value === null ? Prisma.DbNull : value;
 }
 
 function ensureDefined<T>(value: T | undefined, field: string): T {

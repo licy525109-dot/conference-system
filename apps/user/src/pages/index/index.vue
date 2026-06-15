@@ -32,7 +32,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { ref } from "vue";
+import { onLoad } from "@dcloudio/uni-app";
 import { getConferences, type ConferenceListItem } from "@/services/conference";
 import { formatDateTime } from "@/utils/date";
 
@@ -40,7 +41,7 @@ const loading = ref(false);
 const error = ref("");
 const conferences = ref<ConferenceListItem[]>([]);
 
-onMounted(() => {
+onLoad(() => {
   void loadConferences();
 });
 

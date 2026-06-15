@@ -32,7 +32,9 @@ export interface WechatNotifySuccessResponse {
 }
 
 const JSAPI_PREPAY_URL = "https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi";
+const JSAPI_PREPAY_URL_PATH = "/v3/pay/transactions/jsapi";
 const WECHAT_PAY_HTTP_TIMEOUT_MS = 5000;
+const WECHAT_PAY_PREPAY_FAILED_CODE = "WECHAT_PAY_PREPAY_FAILED";
 
 @Injectable()
 export class WechatPayService {
@@ -95,7 +97,7 @@ export class WechatPayService {
 
     const openid = order.user?.openid;
     if (!openid || openid.startsWith("mock_")) {
-      throw new ConflictException("A real WeChat openid is required for WeChat Pay");
+      throw new ConflictException("当前订单未绑定有效微信身份，请重新下单支付。");
     }
 
     const config = readWechatPayConfig();
@@ -156,54 +158,70 @@ export class WechatPayService {
       throw new ForbiddenException("Real WeChat Pay notify is disabled");
     }
 
-    const config = readWechatPayConfig();
-    this.notifyVerifier.verifySignature({
-      headers: input.headers,
-      rawBody: input.rawBody
-    });
+    const notifyContext: WechatNotifyLogContext = {
+      headerSerialSuffix: input.headers.serial.slice(-6)
+    };
 
-    const body = readNotifyBody(input.body);
-    const decrypted = this.notifyVerifier.decryptResource(body.resource, config.apiV3Key);
-    const transaction = parseTransaction(decrypted);
+    try {
+      const config = readWechatPayConfig();
+      this.notifyVerifier.verifySignature({
+        headers: input.headers,
+        rawBody: input.rawBody
+      });
 
-    if (transaction.tradeState !== "SUCCESS") {
-      throw new BadRequestException("WeChat Pay notify trade_state is not SUCCESS");
-    }
+      const body = readNotifyBody(input.body);
+      notifyContext.notifyId = body.id;
+      notifyContext.eventType = body.eventType;
+      notifyContext.resourceType = body.resourceType;
 
-    const payment = await this.prisma.payment.findUnique({
-      where: { outTradeNo: transaction.outTradeNo },
-      select: {
-        outTradeNo: true,
-        order: {
-          select: {
-            orderNo: true,
-            payableAmountCent: true
+      const decrypted = this.notifyVerifier.decryptResource(body.resource, config.apiV3Key);
+      const transaction = parseTransaction(decrypted);
+      notifyContext.outTradeNo = transaction.outTradeNo;
+      notifyContext.transactionId = transaction.transactionId;
+      notifyContext.tradeState = transaction.tradeState;
+
+      if (transaction.tradeState !== "SUCCESS") {
+        throw new BadRequestException("WeChat Pay notify trade_state is not SUCCESS");
+      }
+
+      const payment = await this.prisma.payment.findUnique({
+        where: { outTradeNo: transaction.outTradeNo },
+        select: {
+          outTradeNo: true,
+          order: {
+            select: {
+              orderNo: true,
+              payableAmountCent: true
+            }
           }
         }
+      });
+
+      if (!payment) {
+        throw new NotFoundException("Payment out_trade_no not found");
       }
-    });
 
-    if (!payment) {
-      throw new NotFoundException("Payment out_trade_no not found");
-    }
-
-    if (transaction.amountTotal !== payment.order.payableAmountCent) {
-      throw new ConflictException("WeChat Pay amount does not match order payable amount");
-    }
-
-    await this.paymentSuccessService.processPaymentSuccess({
-      provider: PaymentProvider.WECHAT,
-      orderNo: payment.order.orderNo,
-      outTradeNo: transaction.outTradeNo,
-      transactionId: transaction.transactionId,
-      paidAmountCent: transaction.amountTotal,
-      paidAt: transaction.successTime ?? this.getCurrentTime(),
-      rawSummary: {
-        id: body.id,
-        event_type: body.eventType,
-        resource_type: body.resourceType
+      if (transaction.amountTotal !== payment.order.payableAmountCent) {
+        throw new ConflictException("WeChat Pay amount does not match order payable amount");
       }
-    });
+
+      await this.paymentSuccessService.processPaymentSuccess({
+        provider: PaymentProvider.WECHAT,
+        orderNo: payment.order.orderNo,
+        outTradeNo: transaction.outTradeNo,
+        transactionId: transaction.transactionId,
+        paidAmountCent: transaction.amountTotal,
+        paidAt: transaction.successTime ?? this.getCurrentTime(),
+        rawSummary: {
+          id: body.id,
+          event_type: body.eventType,
+          resource_type: body.resourceType
+        }
+      });
+    } catch (error) {
+      logWechatNotifyError(error, notifyContext);
+      throw error;
+    }
 
     return {
       code: "SUCCESS",
@@ -222,7 +240,7 @@ export class WechatPayService {
     const body = JSON.stringify(input.body);
     const authorization = this.signer.createAuthorization({
       method: "POST",
-      urlPathWithQuery: "/v3/pay/transactions/jsapi",
+      urlPathWithQuery: JSAPI_PREPAY_URL_PATH,
       body,
       config: input.config
     });
@@ -243,22 +261,31 @@ export class WechatPayService {
 
       const payload = (await response.json().catch(() => ({}))) as unknown;
       if (!response.ok) {
-        throw new BadGatewayException("WeChat Pay prepay request failed");
+        throw new WechatPayPrepayHttpError(response.status, payload);
       }
 
       if (!isRecord(payload) || typeof payload.prepay_id !== "string" || payload.prepay_id.length === 0) {
-        throw new BadGatewayException("WeChat Pay prepay response is invalid");
+        throw new WechatPayPrepayHttpError(response.status, payload, "WeChat Pay prepay response is invalid");
       }
 
       return payload.prepay_id;
     } catch (error) {
+      logWechatPrepayError(error);
       if (error instanceof BadGatewayException) {
         throw error;
       }
       if (isAbortError(error)) {
-        throw new GatewayTimeoutException("WeChat Pay prepay request timed out");
+        throw new GatewayTimeoutException({
+          code: WECHAT_PAY_PREPAY_FAILED_CODE,
+          message: "WeChat Pay prepay request timed out",
+          statusCode: 504,
+          detail: readErrorMessage(error) ?? "WeChat Pay prepay request timed out"
+        });
       }
-      throw new BadGatewayException("WeChat Pay prepay request failed");
+      if (error instanceof WechatPayPrepayHttpError) {
+        throw new BadGatewayException(buildWechatPrepayErrorResponse(error, "WeChat Pay prepay request failed"));
+      }
+      throw new BadGatewayException(buildWechatPrepayErrorResponse(error, "WeChat Pay prepay request failed"));
     } finally {
       clearTimeout(timeout);
     }
@@ -345,9 +372,145 @@ function isAbortError(error: unknown): boolean {
   return isRecord(error) && error.name === "AbortError";
 }
 
+function logWechatPrepayError(error: unknown): void {
+  const record = isRecord(error) ? error : {};
+  const response = isRecord(record.response) ? record.response : {};
+
+  console.error(
+    JSON.stringify({
+      event: "WECHAT_PAY_PREPAY_ERROR",
+      "error.name": readErrorName(error),
+      "error.message": readErrorMessage(error),
+      "error.code": readUnknownString(record.code),
+      "error.status": readUnknownNumber(record.status),
+      "error.response.status": readUnknownNumber(response.status),
+      "error.response.data": sanitizeWechatPayLogValue(response.data),
+      "error.stack": readUnknownString(record.stack)
+    })
+  );
+}
+
+function logWechatNotifyError(error: unknown, context: WechatNotifyLogContext): void {
+  const record = isRecord(error) ? error : {};
+  console.error(
+    JSON.stringify({
+      event: "WECHAT_PAY_NOTIFY_ERROR",
+      notifyId: context.notifyId ?? null,
+      eventType: context.eventType ?? null,
+      resourceType: context.resourceType ?? null,
+      outTradeNo: context.outTradeNo ?? null,
+      transactionId: context.transactionId ?? null,
+      tradeState: context.tradeState ?? null,
+      headerSerialSuffix: context.headerSerialSuffix || null,
+      "error.name": readErrorName(error),
+      "error.message": readErrorMessage(error),
+      "error.code": readUnknownString(record.code),
+      "error.status": readUnknownNumber(record.status),
+      "error.stack": readUnknownString(record.stack)
+    })
+  );
+}
+
+function buildWechatPrepayErrorResponse(error: unknown, fallbackMessage: string) {
+  const record = isRecord(error) ? error : {};
+  const response = isRecord(record.response) ? record.response : {};
+  const responseData = response.data;
+  const detail = readWechatPayResponseMessage(responseData) ?? readErrorMessage(error) ?? fallbackMessage;
+
+  return {
+    code: WECHAT_PAY_PREPAY_FAILED_CODE,
+    message: fallbackMessage,
+    statusCode: 502,
+    detail: sanitizeWechatPayLogValue(detail)
+  };
+}
+
+function readWechatPayResponseMessage(value: unknown): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return readUnknownString(value.message) ?? readUnknownString(value.code);
+}
+
+function readErrorName(error: unknown): string | undefined {
+  return isRecord(error) ? readUnknownString(error.name) : undefined;
+}
+
+function readErrorMessage(error: unknown): string | undefined {
+  return isRecord(error) ? readUnknownString(error.message) : undefined;
+}
+
+function readUnknownString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function readUnknownNumber(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function sanitizeWechatPayLogValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeWechatPayLogValue(item));
+  }
+
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entryValue]) => [
+        key,
+        isSensitiveLogKey(key) ? "[REDACTED]" : sanitizeWechatPayLogValue(entryValue)
+      ])
+    );
+  }
+
+  return value;
+}
+
+function isSensitiveLogKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return (
+    normalized.includes("secret") ||
+    normalized.includes("api_v3_key") ||
+    normalized.includes("apikey") ||
+    normalized.includes("privatekey") ||
+    normalized.includes("private_key") ||
+    normalized === "openid" ||
+    normalized === "authorization"
+  );
+}
+
+class WechatPayPrepayHttpError extends Error {
+  readonly code = "WECHAT_PAY_PREPAY_HTTP_ERROR";
+  readonly status: number;
+  readonly response: {
+    status: number;
+    data: unknown;
+  };
+
+  constructor(status: number, data: unknown, message = "WeChat Pay prepay request failed") {
+    super(readWechatPayResponseMessage(data) ?? message);
+    this.name = "WechatPayPrepayHttpError";
+    this.status = status;
+    this.response = {
+      status,
+      data
+    };
+  }
+}
+
 interface NotifyBody {
   id: string | undefined;
   eventType: string | undefined;
   resourceType: string | undefined;
   resource: WechatPayEncryptedResource;
+}
+
+interface WechatNotifyLogContext {
+  notifyId?: string;
+  eventType?: string;
+  resourceType?: string;
+  outTradeNo?: string;
+  transactionId?: string;
+  tradeState?: string;
+  headerSerialSuffix: string;
 }

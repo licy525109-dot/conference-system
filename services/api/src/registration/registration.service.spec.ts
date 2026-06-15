@@ -1,8 +1,16 @@
 import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BadRequestException, ConflictException, NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { ConferenceStatus, FormFieldType, OrderStatus, RegistrationSkuStatus } from "@prisma/client";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import {
+  ConferenceStatus,
+  CouponRedemptionStatus,
+  CouponType,
+  DiscountType,
+  FormFieldType,
+  OrderStatus,
+  RegistrationSkuStatus
+} from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { RegistrationService } from "./registration.service";
@@ -12,6 +20,11 @@ const currentUser: CurrentUser = {
   id: "user-1",
   openid: "mock_dev-user-001",
   nickname: "测试用户"
+};
+const realCurrentUser: CurrentUser = {
+  id: "user-real-1",
+  openid: "real-openid-001",
+  nickname: "真实用户"
 };
 
 describe("RegistrationService quote", () => {
@@ -78,13 +91,108 @@ describe("RegistrationService quote", () => {
     );
   });
 
-  it("rejects quantity values other than 1", async () => {
+  it("quotes quantity values greater than 1 from server-side SKU price", async () => {
     const service = createService(createPrismaMock());
 
-    await assert.rejects(
-      () => service.quote({ conferenceId: "published-conf", skuId: "active-sku", quantity: 2 }),
-      BadRequestException
+    const response = await service.quote({ conferenceId: "published-conf", skuId: "active-sku", quantity: 2 });
+
+    assert.equal(response.data.quantity, 2);
+    assert.equal(response.data.originAmountCent, 200000);
+    assert.equal(response.data.payableAmountCent, 200000);
+  });
+
+  it("quotes multiple SKU items", async () => {
+    const service = createService(createPrismaMock());
+
+    const response = await service.quote({
+      conferenceId: "published-conf",
+      items: [
+        { skuId: "active-sku", quantity: 2 },
+        { skuId: "active-sku-b", quantity: 1 }
+      ]
+    });
+
+    assert.equal(response.data.originAmountCent, 270000);
+    assert.equal(response.data.payableAmountCent, 270000);
+    assert.equal(response.data.items?.length, 2);
+  });
+
+  it("applies the best full-reduction promotion by quantity", async () => {
+    const service = createService(
+      createPrismaMock({
+        promotionRules: [
+          promotionRule({
+            id: "promo-qty",
+            name: "满 2 张减 300",
+            minQuantity: 2,
+            discountAmountCent: 30000
+          })
+        ]
+      })
     );
+
+    const response = await service.quote({
+      conferenceId: "published-conf",
+      items: [{ skuId: "active-sku", quantity: 2 }]
+    });
+
+    assert.equal(response.data.originAmountCent, 200000);
+    assert.equal(response.data.discountAmountCent, 30000);
+    assert.equal(response.data.payableAmountCent, 170000);
+    assert.equal(response.data.discounts?.[0]?.title, "满 2 张减 300");
+  });
+
+  it("counts only allowed SKU items for SKU-scoped promotions", async () => {
+    const service = createService(
+      createPrismaMock({
+        promotionRules: [
+          promotionRule({
+            id: "promo-scoped",
+            name: "B 票满 2 张减 100",
+            allowedSkuIds: ["active-sku-b"],
+            minQuantity: 2,
+            discountAmountCent: 10000
+          })
+        ]
+      })
+    );
+
+    const response = await service.quote({
+      conferenceId: "published-conf",
+      items: [
+        { skuId: "active-sku", quantity: 2 },
+        { skuId: "active-sku-b", quantity: 1 }
+      ]
+    });
+
+    assert.equal(response.data.discountAmountCent, 0);
+    assert.equal(response.data.payableAmountCent, 270000);
+  });
+
+  it("rejects invalid, disabled, not-started, expired, and limited coupons", async () => {
+    const service = createService(
+      createPrismaMock({
+        coupons: [
+          coupon({ id: "coupon-disabled", code: "DISABLED", enabled: false }),
+          coupon({ id: "coupon-future", code: "FUTURE", startAt: new Date("2026-06-07T00:00:00.000Z") }),
+          coupon({ id: "coupon-expired", code: "EXPIRED", endAt: new Date("2026-06-05T00:00:00.000Z") }),
+          coupon({ id: "coupon-limited", code: "LIMITED", totalLimit: 1 })
+        ],
+        couponRedemptions: [
+          {
+            couponId: "coupon-limited",
+            userId: "other-user",
+            status: CouponRedemptionStatus.USED
+          }
+        ]
+      })
+    );
+
+    await assert.rejects(() => service.quote({ conferenceId: "published-conf", skuId: "active-sku", quantity: 1, couponCode: "NOPE" }), BadRequestException);
+    await assert.rejects(() => service.quote({ conferenceId: "published-conf", skuId: "active-sku", quantity: 1, couponCode: "DISABLED" }), BadRequestException);
+    await assert.rejects(() => service.quote({ conferenceId: "published-conf", skuId: "active-sku", quantity: 1, couponCode: "FUTURE" }), BadRequestException);
+    await assert.rejects(() => service.quote({ conferenceId: "published-conf", skuId: "active-sku", quantity: 1, couponCode: "EXPIRED" }), BadRequestException);
+    await assert.rejects(() => service.createOrder({ ...validOrderInput(), couponCode: "LIMITED" }, currentUser), BadRequestException);
   });
 
   it("rejects client-supplied amount fields", async () => {
@@ -126,6 +234,46 @@ describe("RegistrationService create order", () => {
     const service = createService(createPrismaMock());
 
     await assert.rejects(() => service.createOrder(validOrderInput(), undefined), UnauthorizedException);
+  });
+
+  it("rejects mock openid users from creating orders when real WeChat mode is enabled", async () => {
+    const originalLoginMode = process.env.WECHAT_LOGIN_MODE;
+    const originalPayMode = process.env.WECHAT_PAY_MODE;
+    process.env.WECHAT_LOGIN_MODE = "real";
+    process.env.WECHAT_PAY_MODE = "mock";
+    const prisma = createPrismaMock();
+    const service = createService(prisma);
+
+    try {
+      await assert.rejects(
+        () => service.createOrder(validOrderInput(), currentUser),
+        (error: unknown) => {
+          assert.ok(error instanceof ForbiddenException);
+          assert.equal(error.message, "登录状态已过期，请重新进入小程序后下单。");
+          return true;
+        }
+      );
+      assert.equal(prisma.orders.length, 0);
+    } finally {
+      restoreEnv("WECHAT_LOGIN_MODE", originalLoginMode);
+      restoreEnv("WECHAT_PAY_MODE", originalPayMode);
+    }
+  });
+
+  it("allows real openid users to create orders when real WeChat mode is enabled", async () => {
+    const originalLoginMode = process.env.WECHAT_LOGIN_MODE;
+    process.env.WECHAT_LOGIN_MODE = "real";
+    const prisma = createPrismaMock();
+    const service = createService(prisma, ["REG202606060REAL"]);
+
+    try {
+      const response = await service.createOrder(validOrderInput(), realCurrentUser);
+
+      assert.equal(response.data.orderNo, "REG202606060REAL");
+      assert.equal(prisma.orders[0]?.userId, realCurrentUser.id);
+    } finally {
+      restoreEnv("WECHAT_LOGIN_MODE", originalLoginMode);
+    }
   });
 
   it("creates a pending order and order item without creating payment or registration", async () => {
@@ -227,6 +375,99 @@ describe("RegistrationService create order", () => {
     assert.equal(prisma.orderItems[0]?.unitPriceCent, 123456);
   });
 
+  it("creates a multi-ticket order with attendee snapshots", async () => {
+    const prisma = createPrismaMock();
+    const service = createService(prisma, ["REG202606060MULTI"]);
+
+    const response = await service.createOrder(
+      {
+        conferenceId: "published-conf",
+        items: [
+          { skuId: "active-sku", quantity: 2 },
+          { skuId: "active-sku-b", quantity: 1 }
+        ],
+        attendees: [
+          { skuId: "active-sku", name: "张三", phone: "13800000000", company: "公司A", position: "经理" },
+          { skuId: "active-sku", name: "李四", phone: "13800000001", company: "公司A", position: "主管" },
+          { skuId: "active-sku-b", name: "王五", phone: "13800000002", company: "公司B", position: "总监" }
+        ]
+      },
+      currentUser
+    );
+
+    assert.equal(response.data.quantity, 3);
+    assert.equal(response.data.payableAmountCent, 270000);
+    assert.equal(prisma.orderItems.length, 2);
+    assert.equal(prisma.orderItems[0]?.quantity, 2);
+    assert.equal(prisma.orderItems[1]?.quantity, 1);
+    assert.equal((prisma.orders[0]?.registrationSnapshotJson as { attendees?: unknown[] }).attendees?.length, 3);
+  });
+
+  it("uses the better coupon when coupon and promotion are not stackable and writes discount snapshots", async () => {
+    const prisma = createPrismaMock({
+      promotionRules: [
+        promotionRule({
+          id: "promo-small",
+          name: "满减 100",
+          discountAmountCent: 10000,
+          stackableWithCoupon: false
+        })
+      ],
+      coupons: [
+        coupon({
+          id: "coupon-better",
+          code: "BETTER",
+          discountAmountCent: 20000,
+          stackableWithPromotion: false
+        })
+      ]
+    });
+    const service = createService(prisma, ["REG202606060DISC"]);
+
+    const response = await service.createOrder({ ...validOrderInput(), couponCode: "BETTER" }, currentUser);
+
+    assert.equal(response.data.discountAmountCent, 20000);
+    assert.equal(response.data.payableAmountCent, 80000);
+    assert.equal(prisma.orderDiscounts.length, 1);
+    assert.equal(prisma.orderDiscounts[0]?.type, DiscountType.COUPON);
+    assert.equal(prisma.orderDiscounts[0]?.amountCent, 20000);
+    assert.deepEqual((prisma.orderDiscounts[0]?.snapshotJson as { code?: string }).code, "BETTER");
+    assert.equal(prisma.couponRedemptions[0]?.status, CouponRedemptionStatus.PENDING);
+  });
+
+  it("stacks coupon and promotion only when both sides allow stacking", async () => {
+    const service = createService(
+      createPrismaMock({
+        promotionRules: [
+          promotionRule({
+            id: "promo-stack",
+            name: "满减 100",
+            discountAmountCent: 10000,
+            stackableWithCoupon: true
+          })
+        ],
+        coupons: [
+          coupon({
+            id: "coupon-stack",
+            code: "STACK",
+            discountAmountCent: 15000,
+            stackableWithPromotion: true
+          })
+        ]
+      })
+    );
+
+    const response = await service.quote({
+      conferenceId: "published-conf",
+      items: [{ skuId: "active-sku", quantity: 1 }],
+      couponCode: "STACK"
+    });
+
+    assert.equal(response.data.discountAmountCent, 25000);
+    assert.equal(response.data.payableAmountCent, 75000);
+    assert.equal(response.data.discounts?.length, 2);
+  });
+
   it("rejects client-supplied payableAmountCent", async () => {
     const service = createService(createPrismaMock());
 
@@ -272,7 +513,7 @@ describe("RegistrationService create order", () => {
     );
   });
 
-  it("rejects quantity values other than 1", async () => {
+  it("rejects orders when attendee count does not match quantity", async () => {
     const service = createService(createPrismaMock());
 
     await assert.rejects(
@@ -378,6 +619,15 @@ function validOrderInput(formDataOverrides: Record<string, unknown> = {}) {
   };
 }
 
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+
+  process.env[name] = value;
+}
+
 function createPrismaMock(options: PrismaMockOptions = {}) {
   const localSkus = skus.map((sku) => ({
     ...sku,
@@ -386,6 +636,8 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
   const conflictingOrderNos = new Set(options.conflictingOrderNos ?? []);
   const orders: OrderRecord[] = [];
   const orderItems: OrderItemRecord[] = [];
+  const orderDiscounts: OrderDiscountRecord[] = [];
+  const couponRedemptions: CouponRedemptionRecord[] = [...(options.couponRedemptions ?? [])];
   const registrations: unknown[] = [];
   const payments: unknown[] = [];
 
@@ -393,6 +645,8 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
   const mock: PrismaMockShape = {
     orders,
     orderItems,
+    orderDiscounts,
+    couponRedemptions,
     registrations,
     payments,
     lastConferenceFindFirstArgs: undefined as ConferenceFindFirstArgs | undefined,
@@ -404,7 +658,13 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
           (item) => item.id === args.where.id && item.status === args.where.status
         );
 
-        return conference ? { id: conference.id } : null;
+        return conference
+          ? {
+              id: conference.id,
+              groupRegistrationEnabled: true,
+              maxTicketsPerOrder: null
+            }
+          : null;
       }
     },
     registrationSku: {
@@ -470,6 +730,44 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
         });
       }
     },
+    orderDiscount: {
+      create: async (args: OrderDiscountCreateArgs) => {
+        orderDiscounts.push({
+          id: `order-discount-${orderDiscounts.length + 1}`,
+          ...args.data
+        });
+      }
+    },
+    promotionRule: {
+      findMany: async () => options.promotionRules ?? []
+    },
+    coupon: {
+      findUnique: async (args: CouponFindUniqueArgs) => {
+        const code = String(args.where.code).trim().toUpperCase();
+        return (options.coupons ?? []).find((item) => item.code === code) ?? null;
+      }
+    },
+    couponRedemption: {
+      count: async (args: CouponRedemptionCountArgs) =>
+        couponRedemptions.filter((item) => {
+          if (item.couponId !== args.where.couponId) {
+            return false;
+          }
+          if (args.where.userId && item.userId !== args.where.userId) {
+            return false;
+          }
+          const statusFilter = args.where.status;
+          return statusFilter.in.includes(item.status);
+        }).length,
+      create: async (args: CouponRedemptionCreateArgs) => {
+        couponRedemptions.push({
+          couponId: args.data.couponId,
+          userId: args.data.userId,
+          orderId: args.data.orderId,
+          status: CouponRedemptionStatus.PENDING
+        });
+      }
+    },
     registration: {
       create: async () => {
         registrations.push({});
@@ -505,6 +803,17 @@ const skus = [
     conferenceId: "published-conf",
     name: "Active SKU",
     priceCent: 100000,
+    stock: 100,
+    soldCount: 0,
+    status: RegistrationSkuStatus.ACTIVE,
+    saleStartAt: null,
+    saleEndAt: null
+  },
+  {
+    id: "active-sku-b",
+    conferenceId: "published-conf",
+    name: "Active SKU B",
+    priceCent: 70000,
     stock: 100,
     soldCount: 0,
     status: RegistrationSkuStatus.ACTIVE,
@@ -657,6 +966,44 @@ const formDefinitions = [
   }
 ];
 
+function promotionRule(overrides: Partial<PromotionRuleRecord> = {}): PromotionRuleRecord {
+  return {
+    id: "promotion-1",
+    name: "满减",
+    discountAmountCent: 10000,
+    minAmountCent: null,
+    minQuantity: null,
+    allowedSkuIds: null,
+    startAt: null,
+    endAt: null,
+    stackableWithCoupon: false,
+    ...overrides
+  };
+}
+
+function coupon(overrides: Partial<CouponRecord> = {}): CouponRecord {
+  return {
+    id: "coupon-1",
+    name: "测试优惠券",
+    type: CouponType.AMOUNT,
+    discountAmountCent: 10000,
+    discountPercent: null,
+    maxDiscountCent: null,
+    minAmountCent: null,
+    minQuantity: null,
+    totalLimit: null,
+    perUserLimit: null,
+    enabled: true,
+    startAt: null,
+    endAt: null,
+    stackableWithPromotion: false,
+    conferenceId: null,
+    allowedSkuIds: null,
+    ...overrides,
+    code: (overrides.code ?? "COUPON").toUpperCase()
+  };
+}
+
 function getSku(id: string) {
   const sku = skus.find((item) => item.id === id);
   assert.ok(sku);
@@ -667,11 +1014,16 @@ interface PrismaMockOptions {
   conflictingOrderNos?: string[];
   formFieldKeys?: string[];
   skuOverrides?: Record<string, Partial<(typeof skus)[number]>>;
+  promotionRules?: PromotionRuleRecord[];
+  coupons?: CouponRecord[];
+  couponRedemptions?: CouponRedemptionRecord[];
 }
 
 interface PrismaMockShape {
   orders: OrderRecord[];
   orderItems: OrderItemRecord[];
+  orderDiscounts: OrderDiscountRecord[];
+  couponRedemptions: CouponRedemptionRecord[];
   registrations: unknown[];
   payments: unknown[];
   lastConferenceFindFirstArgs: ConferenceFindFirstArgs | undefined;
@@ -690,6 +1042,19 @@ interface PrismaMockShape {
   };
   orderItem: {
     create(args: OrderItemCreateArgs): Promise<void>;
+  };
+  orderDiscount: {
+    create(args: OrderDiscountCreateArgs): Promise<void>;
+  };
+  promotionRule: {
+    findMany(): Promise<PromotionRuleRecord[]>;
+  };
+  coupon: {
+    findUnique(args: CouponFindUniqueArgs): Promise<CouponRecord | null>;
+  };
+  couponRedemption: {
+    count(args: CouponRedemptionCountArgs): Promise<number>;
+    create(args: CouponRedemptionCreateArgs): Promise<void>;
   };
   registration: {
     create(): Promise<never>;
@@ -746,6 +1111,34 @@ interface OrderItemCreateArgs {
   data: Omit<OrderItemRecord, "id">;
 }
 
+interface OrderDiscountCreateArgs {
+  data: Omit<OrderDiscountRecord, "id">;
+}
+
+interface CouponFindUniqueArgs {
+  where: {
+    code: string;
+  };
+}
+
+interface CouponRedemptionCountArgs {
+  where: {
+    couponId: string;
+    userId?: string;
+    status: {
+      in: CouponRedemptionStatus[];
+    };
+  };
+}
+
+interface CouponRedemptionCreateArgs {
+  data: {
+    couponId: string;
+    userId: string;
+    orderId: string;
+  };
+}
+
 interface OrderRecord extends OrderRecordData {
   id: string;
 }
@@ -756,6 +1149,7 @@ interface OrderRecordData {
   conferenceId: string;
   skuId: string;
   originAmountCent: number;
+  discountAmountCent: number;
   payableAmountCent: number;
   status: OrderStatus;
   submittedFormJson: Record<string, unknown>;
@@ -773,6 +1167,56 @@ interface OrderItemRecord {
   unitPriceCent: number;
   quantity: number;
   totalAmountCent: number;
+}
+
+interface OrderDiscountRecord {
+  id: string;
+  orderId: string;
+  type: DiscountType;
+  title: string;
+  amountCent: number;
+  couponId?: string;
+  promotionRuleId?: string;
+  snapshotJson?: unknown;
+}
+
+interface CouponRedemptionRecord {
+  couponId: string;
+  userId: string | null;
+  orderId?: string;
+  status: CouponRedemptionStatus;
+}
+
+interface PromotionRuleRecord {
+  id: string;
+  name: string;
+  discountAmountCent: number;
+  minAmountCent: number | null;
+  minQuantity: number | null;
+  allowedSkuIds: unknown;
+  startAt: Date | null;
+  endAt: Date | null;
+  stackableWithCoupon: boolean;
+}
+
+interface CouponRecord {
+  id: string;
+  code: string;
+  name: string;
+  type: CouponType;
+  discountAmountCent: number | null;
+  discountPercent: number | null;
+  maxDiscountCent: number | null;
+  minAmountCent: number | null;
+  minQuantity: number | null;
+  totalLimit: number | null;
+  perUserLimit: number | null;
+  enabled: boolean;
+  startAt: Date | null;
+  endAt: Date | null;
+  stackableWithPromotion: boolean;
+  conferenceId: string | null;
+  allowedSkuIds: unknown;
 }
 
 function applyFormFieldKeyFilter(

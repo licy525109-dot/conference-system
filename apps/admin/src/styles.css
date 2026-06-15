@@ -83,3 +83,57 @@ body {
 .search {
   width: 260px;
 }
+
+.detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.detail-stack h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.wechat-user {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #24324a;
+  line-height: 1.7;
+}
+
+.json-block {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #dce3ef;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #24324a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ellipsis-text {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.muted-text {
+  color: #6b7280;
+  font-size: 13px;
+}

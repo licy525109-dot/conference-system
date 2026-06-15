@@ -1,11 +1,21 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException
 } from "@nestjs/common";
-import { ConferenceStatus, FormFieldType, OrderStatus, Prisma, RegistrationSkuStatus } from "@prisma/client";
+import {
+  CouponRedemptionStatus,
+  CouponType,
+  DiscountType,
+  ConferenceStatus,
+  FormFieldType,
+  OrderStatus,
+  Prisma,
+  RegistrationSkuStatus
+} from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 
@@ -19,16 +29,27 @@ export interface RegistrationQuoteResponse {
   conferenceId: string;
   skuId: string;
   skuName: string;
-  quantity: 1;
+  quantity: number;
   originAmountCent: number;
-  discountAmountCent: 0;
+  discountAmountCent: number;
   payableAmountCent: number;
+  items?: RegistrationQuoteItem[];
+  discounts?: PriceDiscount[];
+  messages?: string[];
 }
 
 export interface RegistrationOrderResponse extends RegistrationQuoteResponse {
   orderNo: string;
   status: "PENDING";
   expiredAt: string;
+}
+
+export interface RegistrationQuoteItem {
+  skuId: string;
+  skuName: string;
+  quantity: number;
+  unitPriceCent: number;
+  subtotalCent: number;
 }
 
 type RegistrationFormData = Record<string, Prisma.InputJsonValue>;
@@ -42,6 +63,7 @@ const FORBIDDEN_AMOUNT_FIELDS = [
 ] as const;
 const ORDER_EXPIRES_IN_MS = 15 * 60 * 1000;
 const MAX_ORDER_NO_ATTEMPTS = 5;
+const EXPIRED_WECHAT_LOGIN_MESSAGE = "登录状态已过期，请重新进入小程序后下单。";
 
 @Injectable()
 export class RegistrationService {
@@ -49,67 +71,120 @@ export class RegistrationService {
 
   async quote(input: unknown): Promise<ApiResponse<RegistrationQuoteResponse>> {
     const request = parseBaseRegistrationRequest(input);
-    const sku = await this.getQuotableSku(request.conferenceId, request.skuId);
-    const amount = calculateAmount(sku.priceCent, request.quantity);
-
-    return ok({
+    const conference = await this.ensurePublishedConference(request.conferenceId);
+    enforceTicketLimit(conference, request.totalQuantity);
+    const pricedItems = await this.getPricedItems(request.conferenceId, request.items);
+    const pricing = await this.calculatePricing({
       conferenceId: request.conferenceId,
-      skuId: sku.id,
-      skuName: sku.name,
-      quantity: request.quantity,
-      ...amount
+      items: pricedItems,
+      couponCode: readOptionalCouponCode(input),
+      userId: null
     });
+    const firstItem = pricedItems[0];
+    if (!firstItem) {
+      throw new BadRequestException("items must not be empty");
+    }
+
+    const response: RegistrationQuoteResponse = {
+      conferenceId: request.conferenceId,
+      skuId: firstItem.skuId,
+      skuName: firstItem.skuName,
+      quantity: request.totalQuantity,
+      originAmountCent: pricing.originAmountCent,
+      discountAmountCent: pricing.discountAmountCent,
+      payableAmountCent: pricing.payableAmountCent
+    };
+
+    if (request.usesItemsShape) {
+      response.items = pricedItems;
+      response.discounts = pricing.discounts;
+      response.messages = pricing.messages;
+    }
+
+    return ok(response);
   }
 
   async createOrder(input: unknown, currentUser: CurrentUser | undefined): Promise<ApiResponse<RegistrationOrderResponse>> {
     if (!currentUser) {
       throw new UnauthorizedException("Bearer token is required");
     }
+    ensureOrderUserCanCreateOrder(currentUser);
 
     const request = parseBaseRegistrationRequest(input);
-    const formData = readFormData(input);
-    await this.ensurePublishedConference(request.conferenceId);
-    const sku = await this.getOrderableSku(request.conferenceId, request.skuId);
+    const conference = await this.ensurePublishedConference(request.conferenceId);
+    enforceTicketLimit(conference, request.totalQuantity);
+    if (!conference.groupRegistrationEnabled && request.totalQuantity > 1) {
+      throw new ConflictException("Group registration is disabled");
+    }
+
+    const pricedItems = await this.getPricedItems(request.conferenceId, request.items);
     const fields = await this.getEnabledFormFields(request.conferenceId);
-    const validatedFormData = validateFormData(fields, formData);
-    const attendeeName = readOptionalFormString(validatedFormData, "name") ?? currentUser.nickname ?? "未填写";
-    const phone = readOptionalFormString(validatedFormData, "phone") ?? "";
-    const amount = calculateAmount(sku.priceCent, request.quantity);
+    const attendees = validateAttendees(fields, request, currentUser);
+    ensureAttendeesMatchItems(request.items, attendees);
+    const primaryAttendee = attendees[0];
+    const primaryItem = pricedItems[0];
+    if (!primaryAttendee || !primaryItem) {
+      throw new BadRequestException("items and attendees must not be empty");
+    }
+
+    const attendeeName = primaryAttendee.name;
+    const phone = primaryAttendee.phone;
+    const pricing = await this.calculatePricing({
+      conferenceId: request.conferenceId,
+      items: pricedItems,
+      couponCode: readOptionalCouponCode(input),
+      userId: currentUser.id
+    });
     const expiredAt = new Date(this.getCurrentTime().getTime() + ORDER_EXPIRES_IN_MS);
+    const snapshotItems = pricedItems.map((item) => ({ ...item })) as Prisma.InputJsonArray;
+    const snapshotAttendees = attendees.map((attendee) => ({ ...attendee })) as Prisma.InputJsonArray;
     const snapshot = {
       conferenceId: request.conferenceId,
-      skuId: sku.id,
-      skuName: sku.name,
+      skuId: primaryItem.skuId,
+      skuName: primaryItem.skuName,
       attendeeName,
       phone,
-      formData: validatedFormData
+      formData: primaryAttendee.formData,
+      ...(request.usesItemsShape ? { items: snapshotItems, attendees: snapshotAttendees } : {})
     } satisfies Prisma.InputJsonObject;
 
     const order = await this.createPendingOrderWithRetry({
       userId: currentUser.id,
       conferenceId: request.conferenceId,
-      skuId: sku.id,
-      skuName: sku.name,
-      quantity: request.quantity,
+      skuId: primaryItem.skuId,
+      items: pricedItems,
       attendeeName,
       phone,
       expiredAt,
-      submittedFormJson: validatedFormData,
+      submittedFormJson: request.usesItemsShape ? { attendees: snapshotAttendees } : primaryAttendee.formData,
       registrationSnapshotJson: snapshot,
-      originAmountCent: amount.originAmountCent,
-      payableAmountCent: amount.payableAmountCent
+      originAmountCent: pricing.originAmountCent,
+      discountAmountCent: pricing.discountAmountCent,
+      payableAmountCent: pricing.payableAmountCent,
+      discounts: pricing.discounts,
+      couponId: pricing.couponId
     });
 
-    return ok({
+    const response: RegistrationOrderResponse = {
       orderNo: order.orderNo,
       status: "PENDING",
       conferenceId: request.conferenceId,
-      skuId: sku.id,
-      skuName: sku.name,
-      quantity: request.quantity,
-      ...amount,
+      skuId: primaryItem.skuId,
+      skuName: primaryItem.skuName,
+      quantity: request.totalQuantity,
+      originAmountCent: pricing.originAmountCent,
+      discountAmountCent: pricing.discountAmountCent,
+      payableAmountCent: pricing.payableAmountCent,
       expiredAt: order.expiredAt.toISOString()
-    });
+    };
+
+    if (request.usesItemsShape) {
+      response.items = pricedItems;
+      response.discounts = pricing.discounts;
+      response.messages = pricing.messages;
+    }
+
+    return ok(response);
   }
 
   protected getCurrentTime(): Date {
@@ -122,28 +197,43 @@ export class RegistrationService {
     return `REG${date}${randomPart}`;
   }
 
-  private async ensurePublishedConference(conferenceId: string): Promise<void> {
+  private async ensurePublishedConference(conferenceId: string): Promise<PublishedConferenceConfig> {
     const conference = await this.prisma.conference.findFirst({
       where: {
         id: conferenceId,
         status: ConferenceStatus.PUBLISHED
       },
       select: {
-        id: true
+        id: true,
+        groupRegistrationEnabled: true,
+        maxTicketsPerOrder: true
       }
     });
 
     if (!conference) {
       throw new NotFoundException("Conference not found");
     }
+
+    return conference;
   }
 
-  private async getQuotableSku(conferenceId: string, skuId: string) {
-    await this.ensurePublishedConference(conferenceId);
-    return this.getOrderableSku(conferenceId, skuId);
+  private async getPricedItems(conferenceId: string, items: RegistrationRequestItem[]): Promise<PricedRegistrationItem[]> {
+    const pricedItems: PricedRegistrationItem[] = [];
+    for (const item of items) {
+      const sku = await this.getOrderableSku(conferenceId, item.skuId, item.quantity);
+      pricedItems.push({
+        skuId: sku.id,
+        skuName: sku.name,
+        quantity: item.quantity,
+        unitPriceCent: sku.priceCent,
+        subtotalCent: sku.priceCent * item.quantity
+      });
+    }
+
+    return pricedItems;
   }
 
-  private async getOrderableSku(conferenceId: string, skuId: string) {
+  private async getOrderableSku(conferenceId: string, skuId: string, quantity: number) {
     const sku = await this.prisma.registrationSku.findFirst({
       where: {
         id: skuId,
@@ -169,7 +259,7 @@ export class RegistrationService {
       throw new ConflictException("Registration SKU is not active");
     }
 
-    if (sku.stock - sku.soldCount <= 0) {
+    if (sku.stock - sku.soldCount < quantity) {
       throw new ConflictException("Registration SKU is out of stock");
     }
 
@@ -215,6 +305,149 @@ export class RegistrationService {
     return formDefinition.fields;
   }
 
+  private async calculatePricing(input: {
+    conferenceId: string;
+    items: PricedRegistrationItem[];
+    couponCode: string | null;
+    userId: string | null;
+  }): Promise<PriceCalculation> {
+    const originAmountCent = calculateAmount(input.items).originAmountCent;
+    const totalQuantity = input.items.reduce((sum, item) => sum + item.quantity, 0);
+    const promotion = await this.findBestPromotion(input.conferenceId, input.items, originAmountCent, totalQuantity);
+    const coupon = input.couponCode
+      ? await this.findApplicableCoupon(input.couponCode, input.conferenceId, input.items, originAmountCent, totalQuantity, input.userId)
+      : null;
+    const canStack = Boolean(promotion && coupon && promotion.stackableWithCoupon && coupon.stackableWithPromotion);
+    const discounts: PriceDiscount[] = [];
+    const messages: string[] = [];
+
+    if (promotion && (!coupon || canStack || promotion.discount.amountCent >= coupon.discount.amountCent)) {
+      discounts.push(promotion.discount);
+    }
+    if (coupon && (!promotion || canStack || coupon.discount.amountCent > promotion.discount.amountCent)) {
+      discounts.push(coupon.discount);
+    }
+    if (promotion && coupon && !canStack) {
+      messages.push("优惠券与满减不可叠加，已自动选择本单更优优惠");
+    }
+
+    const discountAmountCent = Math.min(
+      originAmountCent,
+      discounts.reduce((sum, discount) => sum + discount.amountCent, 0)
+    );
+
+    return {
+      originAmountCent,
+      discountAmountCent,
+      payableAmountCent: Math.max(0, originAmountCent - discountAmountCent),
+      discounts,
+      messages,
+      couponId: discounts.some((discount) => discount.couponId === coupon?.id) ? coupon?.id ?? null : null
+    };
+  }
+
+  private async findBestPromotion(
+    conferenceId: string,
+    items: PricedRegistrationItem[],
+    originAmountCent: number,
+    totalQuantity: number
+  ): Promise<AppliedPromotion | null> {
+    const prismaAny = this.prisma as PrismaService & {
+      promotionRule?: {
+        findMany(args: unknown): Promise<PromotionRuleRecord[]>;
+      };
+    };
+    if (!prismaAny.promotionRule?.findMany) {
+      return null;
+    }
+
+    const now = this.getCurrentTime();
+    const rules = await prismaAny.promotionRule.findMany({
+      where: {
+        enabled: true,
+        type: DiscountType.FULL_REDUCTION,
+        OR: [{ conferenceId }, { conferenceId: null }]
+      }
+    });
+
+    const applicable = rules
+      .filter((rule) => isWithinWindow(rule, now))
+      .filter((rule) => promotionMatches(rule, items, originAmountCent, totalQuantity))
+      .map((rule) => ({
+        rule,
+        discount: {
+          type: DiscountType.FULL_REDUCTION,
+          title: rule.name,
+          amountCent: Math.min(rule.discountAmountCent, originAmountCent),
+          promotionRuleId: rule.id,
+          snapshot: serializePromotionSnapshot(rule)
+        } satisfies PriceDiscount
+      }))
+      .sort((left, right) => right.discount.amountCent - left.discount.amountCent);
+
+    const best = applicable[0];
+    return best ? { ...best.rule, discount: best.discount } : null;
+  }
+
+  private async findApplicableCoupon(
+    code: string,
+    conferenceId: string,
+    items: PricedRegistrationItem[],
+    originAmountCent: number,
+    totalQuantity: number,
+    userId: string | null
+  ): Promise<AppliedCoupon | null> {
+    const prismaAny = this.prisma as PrismaService & {
+      coupon?: {
+        findUnique(args: unknown): Promise<CouponRecord | null>;
+      };
+      couponRedemption?: {
+        count(args: unknown): Promise<number>;
+      };
+    };
+    if (!prismaAny.coupon?.findUnique) {
+      return null;
+    }
+
+    const coupon = await prismaAny.coupon.findUnique({ where: { code } });
+    if (!coupon) {
+      throw new BadRequestException("优惠券不存在");
+    }
+    validateCoupon(coupon, this.getCurrentTime(), conferenceId, items, originAmountCent, totalQuantity);
+
+    if (prismaAny.couponRedemption?.count) {
+      if (typeof coupon.totalLimit === "number") {
+        const totalUsed = await prismaAny.couponRedemption.count({
+          where: { couponId: coupon.id, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
+        });
+        if (totalUsed >= coupon.totalLimit) {
+          throw new BadRequestException("优惠券已被领完或使用完");
+        }
+      }
+      if (userId && typeof coupon.perUserLimit === "number") {
+        const userUsed = await prismaAny.couponRedemption.count({
+          where: { couponId: coupon.id, userId, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
+        });
+        if (userUsed >= coupon.perUserLimit) {
+          throw new BadRequestException("你已使用过该优惠券");
+        }
+      }
+    }
+
+    const scopedAmountCent = filterAllowedItems(items, coupon.allowedSkuIds).reduce((sum, item) => sum + item.subtotalCent, 0);
+    const amountCent = calculateCouponAmount(coupon, scopedAmountCent);
+    return {
+      ...coupon,
+      discount: {
+        type: DiscountType.COUPON,
+        title: `优惠券 ${coupon.code}`,
+        amountCent,
+        couponId: coupon.id,
+        snapshot: serializeCouponSnapshot(coupon)
+      }
+    };
+  }
+
   private async createPendingOrderWithRetry(input: CreatePendingOrderInput) {
     let lastError: unknown;
 
@@ -229,6 +462,7 @@ export class RegistrationService {
               conferenceId: input.conferenceId,
               skuId: input.skuId,
               originAmountCent: input.originAmountCent,
+              discountAmountCent: input.discountAmountCent,
               payableAmountCent: input.payableAmountCent,
               status: OrderStatus.PENDING,
               submittedFormJson: input.submittedFormJson,
@@ -244,16 +478,42 @@ export class RegistrationService {
             }
           });
 
-          await tx.orderItem.create({
-            data: {
-              orderId: order.id,
-              skuId: input.skuId,
-              skuName: input.skuName,
-              unitPriceCent: input.originAmountCent,
-              quantity: input.quantity,
-              totalAmountCent: input.originAmountCent
-            }
-          });
+          for (const item of input.items) {
+            await tx.orderItem.create({
+              data: {
+                orderId: order.id,
+                skuId: item.skuId,
+                skuName: item.skuName,
+                unitPriceCent: item.unitPriceCent,
+                quantity: item.quantity,
+                totalAmountCent: item.subtotalCent
+              }
+            });
+          }
+
+          for (const discount of input.discounts) {
+            await tx.orderDiscount.create({
+              data: {
+                orderId: order.id,
+                type: discount.type,
+                title: discount.title,
+                amountCent: discount.amountCent,
+                couponId: discount.couponId,
+                promotionRuleId: discount.promotionRuleId,
+                snapshotJson: discount.snapshot
+              }
+            });
+          }
+
+          if (input.couponId) {
+            await tx.couponRedemption.create({
+              data: {
+                couponId: input.couponId,
+                userId: input.userId,
+                orderId: order.id
+              }
+            });
+          }
 
           return {
             orderNo: order.orderNo,
@@ -273,6 +533,20 @@ export class RegistrationService {
   }
 }
 
+function ensureOrderUserCanCreateOrder(currentUser: CurrentUser): void {
+  if (!isRealWechatIdentityRequired()) {
+    return;
+  }
+
+  if (!currentUser.openid || currentUser.openid.startsWith("mock_")) {
+    throw new ForbiddenException(EXPIRED_WECHAT_LOGIN_MESSAGE);
+  }
+}
+
+function isRealWechatIdentityRequired(): boolean {
+  return process.env.WECHAT_LOGIN_MODE === "real" || process.env.WECHAT_PAY_MODE === "real";
+}
+
 function parseBaseRegistrationRequest(input: unknown): BaseRegistrationRequest {
   if (!isRecord(input)) {
     throw new BadRequestException("Request body must be a JSON object");
@@ -284,32 +558,204 @@ function parseBaseRegistrationRequest(input: unknown): BaseRegistrationRequest {
   }
 
   const conferenceId = readRequiredString(input, "conferenceId");
-  const skuId = readRequiredString(input, "skuId");
+  const items = readRegistrationItems(input);
+  const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
 
-  if (input.quantity !== 1) {
-    throw new BadRequestException("quantity must be 1");
+  if (totalQuantity <= 0) {
+    throw new BadRequestException("items must not be empty");
   }
 
   return {
     conferenceId,
-    skuId,
-    quantity: 1
+    items,
+    totalQuantity,
+    usesItemsShape: Array.isArray(input.items),
+    rawInput: input
   };
 }
 
-function calculateAmount(priceCent: number, quantity: 1) {
-  const originAmountCent = priceCent * quantity;
-  const discountAmountCent = 0;
+function readRegistrationItems(input: Record<string, unknown>): RegistrationRequestItem[] {
+  if (Array.isArray(input.items)) {
+    const seen = new Set<string>();
+    return input.items.map((item) => {
+      if (!isRecord(item)) {
+        throw new BadRequestException("items must contain JSON objects");
+      }
+
+      const skuId = readRequiredString(item, "skuId");
+      const quantity = readPositiveInt(item.quantity, "quantity");
+      if (seen.has(skuId)) {
+        throw new BadRequestException("duplicate skuId is not allowed");
+      }
+      seen.add(skuId);
+      return { skuId, quantity };
+    });
+  }
+
+  const skuId = readRequiredString(input, "skuId");
+  const quantity = readPositiveInt(input.quantity, "quantity");
+  return [{ skuId, quantity }];
+}
+
+function calculateAmount(items: PricedRegistrationItem[]) {
+  const originAmountCent = items.reduce((sum, item) => sum + item.subtotalCent, 0);
   return {
-    originAmountCent,
-    discountAmountCent,
-    payableAmountCent: originAmountCent
+    originAmountCent
   } as const;
 }
 
-function readFormData(input: unknown): Record<string, unknown> {
-  if (!isRecord(input)) {
-    throw new BadRequestException("Request body must be a JSON object");
+function readOptionalCouponCode(input: unknown): string | null {
+  if (!isRecord(input) || typeof input.couponCode !== "string") {
+    return null;
+  }
+  const code = input.couponCode.trim();
+  return code.length > 0 ? code : null;
+}
+
+function isWithinWindow(record: { startAt: Date | null; endAt: Date | null }, now: Date): boolean {
+  return (!record.startAt || record.startAt <= now) && (!record.endAt || record.endAt >= now);
+}
+
+function promotionMatches(
+  rule: PromotionRuleRecord,
+  items: PricedRegistrationItem[],
+  originAmountCent: number,
+  totalQuantity: number
+): boolean {
+  const scopedItems = filterAllowedItems(items, rule.allowedSkuIds);
+  const scopedQuantity = scopedItems.reduce((sum, item) => sum + item.quantity, 0);
+  const scopedAmount = scopedItems.reduce((sum, item) => sum + item.subtotalCent, 0);
+  if (scopedItems.length === 0) {
+    return false;
+  }
+  if (typeof rule.minQuantity === "number" && scopedQuantity < rule.minQuantity) {
+    return false;
+  }
+  if (typeof rule.minAmountCent === "number" && scopedAmount < rule.minAmountCent) {
+    return false;
+  }
+  return totalQuantity > 0 && originAmountCent > 0;
+}
+
+function validateCoupon(
+  coupon: CouponRecord,
+  now: Date,
+  conferenceId: string,
+  items: PricedRegistrationItem[],
+  originAmountCent: number,
+  totalQuantity: number
+): void {
+  if (!coupon.enabled) {
+    throw new BadRequestException("优惠券不可用");
+  }
+  if (coupon.startAt && coupon.startAt > now) {
+    throw new BadRequestException("优惠券尚未开始");
+  }
+  if (coupon.endAt && coupon.endAt < now) {
+    throw new BadRequestException("优惠券已过期");
+  }
+  if (coupon.conferenceId && coupon.conferenceId !== conferenceId) {
+    throw new BadRequestException("优惠券不适用于当前会议");
+  }
+  if (filterAllowedItems(items, coupon.allowedSkuIds).length === 0) {
+    throw new BadRequestException("优惠券不适用于当前票种");
+  }
+  if (typeof coupon.minAmountCent === "number" && originAmountCent < coupon.minAmountCent) {
+    throw new BadRequestException("未达到优惠券使用金额");
+  }
+  if (typeof coupon.minQuantity === "number" && totalQuantity < coupon.minQuantity) {
+    throw new BadRequestException("未达到优惠券使用张数");
+  }
+}
+
+function calculateCouponAmount(coupon: CouponRecord, originAmountCent: number): number {
+  if (coupon.type === CouponType.AMOUNT) {
+    return Math.min(originAmountCent, coupon.discountAmountCent ?? 0);
+  }
+
+  const rawAmount = Math.floor((originAmountCent * (coupon.discountPercent ?? 0)) / 10000);
+  return Math.min(originAmountCent, coupon.maxDiscountCent ?? rawAmount, rawAmount);
+}
+
+function serializePromotionSnapshot(rule: PromotionRuleRecord): Prisma.InputJsonObject {
+  return {
+    id: rule.id,
+    name: rule.name,
+    discountAmountCent: rule.discountAmountCent,
+    minAmountCent: rule.minAmountCent,
+    minQuantity: rule.minQuantity,
+    allowedSkuIds: readAllowedSkuIds(rule.allowedSkuIds),
+    startAt: rule.startAt?.toISOString() ?? null,
+    endAt: rule.endAt?.toISOString() ?? null,
+    stackableWithCoupon: rule.stackableWithCoupon
+  };
+}
+
+function serializeCouponSnapshot(coupon: CouponRecord): Prisma.InputJsonObject {
+  return {
+    id: coupon.id,
+    code: coupon.code,
+    name: coupon.name,
+    type: coupon.type,
+    discountAmountCent: coupon.discountAmountCent,
+    discountPercent: coupon.discountPercent,
+    maxDiscountCent: coupon.maxDiscountCent,
+    minAmountCent: coupon.minAmountCent,
+    minQuantity: coupon.minQuantity,
+    totalLimit: coupon.totalLimit,
+    perUserLimit: coupon.perUserLimit,
+    enabled: coupon.enabled,
+    startAt: coupon.startAt?.toISOString() ?? null,
+    endAt: coupon.endAt?.toISOString() ?? null,
+    stackableWithPromotion: coupon.stackableWithPromotion,
+    conferenceId: coupon.conferenceId,
+    allowedSkuIds: readAllowedSkuIds(coupon.allowedSkuIds)
+  };
+}
+
+function filterAllowedItems(items: PricedRegistrationItem[], allowedSkuIds: Prisma.JsonValue | null): PricedRegistrationItem[] {
+  const allowed = readAllowedSkuIds(allowedSkuIds);
+  if (allowed.length === 0) {
+    return items;
+  }
+  return items.filter((item) => allowed.includes(item.skuId));
+}
+
+function readAllowedSkuIds(value: Prisma.JsonValue | null): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function validateAttendees(
+  fields: FormFieldConfig[],
+  request: BaseRegistrationRequest,
+  currentUser: CurrentUser
+): RegistrationAttendeeInput[] {
+  const rawAttendees = readRawAttendees(request);
+  return rawAttendees.map((attendee, index) => {
+    const formData = validateFormData(fields, attendee.formData);
+    return {
+      skuId: attendee.skuId,
+      name: readOptionalFormString(formData, "name") ?? (index === 0 ? currentUser.nickname : null) ?? "未填写",
+      phone: readOptionalFormString(formData, "phone") ?? "",
+      company: readOptionalStringField(formData, "company"),
+      title: readOptionalStringField(formData, "title") ?? readOptionalStringField(formData, "position"),
+      formData
+    };
+  });
+}
+
+function readRawAttendees(request: BaseRegistrationRequest): RawRegistrationAttendee[] {
+  const input = request.rawInput;
+  if (Array.isArray(input.attendees)) {
+    return input.attendees.map((attendee) => {
+      if (!isRecord(attendee)) {
+        throw new BadRequestException("attendees must contain JSON objects");
+      }
+
+      const skuId = readRequiredString(attendee, "skuId");
+      const formData = isRecord(attendee.formData) ? attendee.formData : omitKey(attendee, "skuId");
+      return { skuId, formData };
+    });
   }
 
   const formData = input.formData;
@@ -317,7 +763,53 @@ function readFormData(input: unknown): Record<string, unknown> {
     throw new BadRequestException("formData must be a JSON object");
   }
 
-  return formData;
+  return [
+    {
+      skuId: request.items[0]?.skuId ?? "",
+      formData
+    }
+  ];
+}
+
+function ensureAttendeesMatchItems(items: RegistrationRequestItem[], attendees: RegistrationAttendeeInput[]): void {
+  const expected = new Map(items.map((item) => [item.skuId, item.quantity]));
+  const actual = new Map<string, number>();
+  for (const attendee of attendees) {
+    if (!expected.has(attendee.skuId)) {
+      throw new BadRequestException("attendee skuId must match selected items");
+    }
+    actual.set(attendee.skuId, (actual.get(attendee.skuId) ?? 0) + 1);
+  }
+
+  for (const item of items) {
+    if ((actual.get(item.skuId) ?? 0) !== item.quantity) {
+      throw new BadRequestException("attendee count must match item quantity");
+    }
+  }
+}
+
+function enforceTicketLimit(conference: PublishedConferenceConfig, totalQuantity: number): void {
+  if (conference.maxTicketsPerOrder !== null && conference.maxTicketsPerOrder < totalQuantity) {
+    throw new ConflictException("Ticket quantity exceeds maxTicketsPerOrder");
+  }
+}
+
+function readPositiveInt(value: unknown, field: string): number {
+  if (!Number.isInteger(value) || Number(value) <= 0) {
+    throw new BadRequestException(`${field} must be a positive integer`);
+  }
+
+  return Number(value);
+}
+
+function omitKey(input: Record<string, unknown>, key: string): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+  for (const [entryKey, value] of Object.entries(input)) {
+    if (entryKey !== key) {
+      output[entryKey] = value;
+    }
+  }
+  return output;
 }
 
 function validateFormData(fields: FormFieldConfig[], formData: Record<string, unknown>): RegistrationFormData {
@@ -422,6 +914,11 @@ function readOptionalFormString(formData: RegistrationFormData, field: "name" | 
   return value;
 }
 
+function readOptionalStringField(formData: RegistrationFormData, field: string): string | undefined {
+  const value = formData[field];
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
 function ok<TData>(data: TData): ApiResponse<TData> {
   return {
     code: "OK",
@@ -434,7 +931,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readRequiredString(input: Record<string, unknown>, field: "conferenceId" | "skuId"): string {
+function readRequiredString(input: Record<string, unknown>, field: string): string {
   const value = input[field];
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new BadRequestException(`${field} is required`);
@@ -458,8 +955,97 @@ function isUniqueConstraintError(error: unknown): boolean {
 
 interface BaseRegistrationRequest {
   conferenceId: string;
+  items: RegistrationRequestItem[];
+  totalQuantity: number;
+  usesItemsShape: boolean;
+  rawInput: Record<string, unknown>;
+}
+
+interface RegistrationRequestItem {
   skuId: string;
-  quantity: 1;
+  quantity: number;
+}
+
+interface RawRegistrationAttendee {
+  skuId: string;
+  formData: Record<string, unknown>;
+}
+
+interface RegistrationAttendeeInput {
+  skuId: string;
+  name: string;
+  phone: string;
+  company?: string;
+  title?: string;
+  formData: RegistrationFormData;
+}
+
+interface PricedRegistrationItem extends RegistrationQuoteItem {
+  subtotalCent: number;
+}
+
+interface PriceCalculation {
+  originAmountCent: number;
+  discountAmountCent: number;
+  payableAmountCent: number;
+  discounts: PriceDiscount[];
+  messages: string[];
+  couponId: string | null;
+}
+
+interface PriceDiscount {
+  type: DiscountType;
+  title: string;
+  amountCent: number;
+  couponId?: string;
+  promotionRuleId?: string;
+  snapshot?: Prisma.InputJsonObject;
+}
+
+interface PromotionRuleRecord {
+  id: string;
+  name: string;
+  discountAmountCent: number;
+  minAmountCent: number | null;
+  minQuantity: number | null;
+  allowedSkuIds: Prisma.JsonValue | null;
+  startAt: Date | null;
+  endAt: Date | null;
+  stackableWithCoupon: boolean;
+}
+
+interface AppliedPromotion extends PromotionRuleRecord {
+  discount: PriceDiscount;
+}
+
+interface CouponRecord {
+  id: string;
+  code: string;
+  name: string;
+  type: CouponType;
+  discountAmountCent: number | null;
+  discountPercent: number | null;
+  maxDiscountCent: number | null;
+  minAmountCent: number | null;
+  minQuantity: number | null;
+  totalLimit: number | null;
+  perUserLimit: number | null;
+  enabled: boolean;
+  startAt: Date | null;
+  endAt: Date | null;
+  stackableWithPromotion: boolean;
+  conferenceId: string | null;
+  allowedSkuIds: Prisma.JsonValue | null;
+}
+
+interface AppliedCoupon extends CouponRecord {
+  discount: PriceDiscount;
+}
+
+interface PublishedConferenceConfig {
+  id: string;
+  groupRegistrationEnabled: boolean;
+  maxTicketsPerOrder: number | null;
 }
 
 interface FormFieldConfig {
@@ -474,13 +1060,15 @@ interface CreatePendingOrderInput {
   userId: string;
   conferenceId: string;
   skuId: string;
-  skuName: string;
-  quantity: 1;
+  items: PricedRegistrationItem[];
   attendeeName: string;
   phone: string;
   expiredAt: Date;
   submittedFormJson: Prisma.InputJsonObject;
   registrationSnapshotJson: Prisma.InputJsonObject;
   originAmountCent: number;
+  discountAmountCent: number;
   payableAmountCent: number;
+  discounts: PriceDiscount[];
+  couponId: string | null;
 }

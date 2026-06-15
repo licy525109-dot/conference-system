@@ -3,7 +3,15 @@ import { pbkdf2Sync, randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { BadRequestException, ConflictException, ExecutionContext, UnauthorizedException } from "@nestjs/common";
-import { AuditAction, ConferenceStatus, FormFieldType, RegistrationSkuStatus } from "@prisma/client";
+import {
+  AuditAction,
+  CheckInStatus,
+  ConferenceStatus,
+  FormFieldType,
+  OrderStatus,
+  RegistrationSkuStatus,
+  RegistrationStatus
+} from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { AdminAuthService } from "./admin-auth.service";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
@@ -167,6 +175,67 @@ describe("Admin management", () => {
     assert.equal(controllerShape.updateOrder, undefined);
     assert.equal(controllerShape.markOrderPaid, undefined);
   });
+
+  it("updates registration remark without changing payment state", async () => {
+    const prisma = createPrismaMock();
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.updateRegistrationRemark("registration-1", { adminRemark: "已电话确认" }, currentAdmin);
+    const data = response.data as { adminRemark: string; order: { status: string; paidAmountCent: number | null } };
+
+    assert.equal(data.adminRemark, "已电话确认");
+    assert.equal(data.order.status, "PAID");
+    assert.equal(data.order.paidAmountCent, 70000);
+    assert.equal(prisma.auditLogs.some((log) => log.entityType === "Registration" && log.action === AuditAction.UPDATE), true);
+  });
+
+  it("updates conference check-in config", async () => {
+    const prisma = createPrismaMock();
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.updateConferenceCheckInConfig("conference-1", { checkInEnabled: true }, currentAdmin);
+
+    assert.equal((response.data as { checkInEnabled: boolean }).checkInEnabled, true);
+    assert.equal(prisma.conferences[0]?.checkInEnabled, true);
+  });
+
+  it("rejects promotion rules whose endAt is before startAt", async () => {
+    const service = new AdminManagementService(createPrismaMock());
+
+    await assert.rejects(
+      () =>
+        service.createPromotionRule(
+          {
+            name: "错误日期满减",
+            minAmountCent: 200000,
+            minQuantity: 2,
+            discountAmountCent: 199990,
+            startAt: "2026-06-13T17:40:01.000Z",
+            endAt: "2026-06-13T00:00:00.000Z",
+            enabled: true
+          },
+          currentAdmin
+        ),
+      BadRequestException
+    );
+  });
+
+  it("checks in a pending attendee and rejects duplicate check-in", async () => {
+    const prisma = createPrismaMock();
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.checkInRegistrationAttendee("attendee-1", currentAdmin);
+
+    assert.equal((response.data as { checkInStatus: string }).checkInStatus, CheckInStatus.CHECKED_IN);
+    await assert.rejects(
+      () => service.checkInRegistrationAttendee("attendee-1", currentAdmin),
+      (error: unknown) => {
+        assert.ok(error instanceof ConflictException);
+        assert.equal(error.message, "该参会人已核销");
+        return true;
+      }
+    );
+  });
 });
 
 function withJwtEnv(): void {
@@ -187,6 +256,9 @@ function createPrismaMock() {
       endsAt: new Date("2026-08-01T18:00:00.000Z"),
       registrationStartsAt: null,
       registrationEndsAt: null,
+      checkInEnabled: false,
+      groupRegistrationEnabled: true,
+      maxTicketsPerOrder: null,
       status: ConferenceStatus.DRAFT,
       sortOrder: 0,
       createdAt: new Date("2026-06-06T00:00:00.000Z"),
@@ -221,6 +293,25 @@ function createPrismaMock() {
   ];
   const formDefinitions = [{ id: "form-1", conferenceId: "conference-1" }];
   const formFields = [{ id: "field-1", formDefinitionId: "form-1", fieldKey: "name" }];
+  const registration = createRegistrationRead();
+  const attendees = [
+    {
+      id: "attendee-1",
+      registrationId: registration.id,
+      skuId: "sku-1",
+      name: "张三",
+      phone: "13800000000",
+      company: "某公司",
+      title: "经理",
+      formDataJson: registration.formDataJson,
+      checkInStatus: CheckInStatus.PENDING,
+      checkedInAt: null as Date | null,
+      checkedInBy: null as string | null,
+      adminRemark: null as string | null,
+      createdAt: new Date("2026-06-06T01:00:00.000Z"),
+      sku: { name: "仅参会" }
+    }
+  ];
   let nextConference = 2;
 
   const mock = {
@@ -260,6 +351,9 @@ function createPrismaMock() {
           endsAt: args.data.endsAt as Date,
           registrationStartsAt: null,
           registrationEndsAt: null,
+          checkInEnabled: false,
+          groupRegistrationEnabled: Boolean(args.data.groupRegistrationEnabled ?? true),
+          maxTicketsPerOrder: typeof args.data.maxTicketsPerOrder === "number" ? args.data.maxTicketsPerOrder : null,
           status: (args.data.status as ConferenceStatus) ?? ConferenceStatus.DRAFT,
           sortOrder: Number(args.data.sortOrder ?? 0),
           createdAt: new Date("2026-06-06T00:00:00.000Z"),
@@ -278,13 +372,22 @@ function createPrismaMock() {
         return conference;
       },
       findUnique: async (args: { where: { id?: string } }) => conferences.find((conference) => conference.id === args.where.id) ?? null,
-      update: async (args: { where: { id: string }; data: { status?: ConferenceStatus } }) => {
+      update: async (args: { where: { id: string }; data: { status?: ConferenceStatus; checkInEnabled?: boolean } }) => {
         const conference = conferences.find((item) => item.id === args.where.id);
         if (!conference) {
           throw new Error("missing conference");
         }
         if (args.data.status) {
           conference.status = args.data.status;
+        }
+        if (typeof args.data.checkInEnabled === "boolean") {
+          conference.checkInEnabled = args.data.checkInEnabled;
+        }
+        if (typeof (args.data as { groupRegistrationEnabled?: boolean }).groupRegistrationEnabled === "boolean") {
+          conference.groupRegistrationEnabled = (args.data as { groupRegistrationEnabled: boolean }).groupRegistrationEnabled;
+        }
+        if ("maxTicketsPerOrder" in args.data) {
+          conference.maxTicketsPerOrder = (args.data as { maxTicketsPerOrder?: number | null }).maxTicketsPerOrder ?? null;
         }
         return conference;
       }
@@ -331,10 +434,92 @@ function createPrismaMock() {
           updatedAt: new Date("2026-06-06T00:00:00.000Z")
         };
       }
+    },
+    registration: {
+      update: async (args: { where: { id: string }; data: { adminRemark: string | null; remarkUpdatedAt: Date; remarkUpdatedBy: string } }) => {
+        if (args.where.id !== registration.id) {
+          throw new Error("missing registration");
+        }
+
+        Object.assign(registration, args.data);
+        return registration;
+      }
+    },
+    registrationAttendee: {
+      findUnique: async (args: { where: { id: string } }) => {
+        const attendee = attendees.find((item) => item.id === args.where.id);
+        if (!attendee) {
+          return null;
+        }
+
+        return {
+          id: attendee.id,
+          checkInStatus: attendee.checkInStatus,
+          registration: {
+            id: registration.id,
+            registrationNo: registration.registrationNo,
+            status: registration.status,
+            order: {
+              status: registration.order.status
+            }
+          }
+        };
+      },
+      update: async (args: { where: { id: string }; data: { checkInStatus: CheckInStatus; checkedInAt: Date; checkedInBy: string } }) => {
+        const attendee = attendees.find((item) => item.id === args.where.id);
+        if (!attendee) {
+          throw new Error("missing attendee");
+        }
+
+        Object.assign(attendee, args.data);
+        return attendee;
+      }
     }
   };
 
   return mock as typeof mock & PrismaService;
+}
+
+function createRegistrationRead() {
+  const paidAt = new Date("2026-06-06T02:00:00.000Z");
+  return {
+    id: "registration-1",
+    registrationNo: "RREG001",
+    conferenceId: "conference-1",
+    skuId: "sku-1",
+    attendeeName: "张三",
+    phone: "13800000000",
+    paidAmountCent: 70000,
+    status: RegistrationStatus.CONFIRMED,
+    confirmedAt: paidAt,
+    adminRemark: null as string | null,
+    remarkUpdatedAt: null as Date | null,
+    remarkUpdatedBy: null as string | null,
+    createdAt: new Date("2026-06-06T01:00:00.000Z"),
+    formDataJson: {
+      name: "张三",
+      phone: "13800000000"
+    },
+    user: {
+      id: "user-1",
+      openid: "openid-1",
+      wechatNickname: "微信用户",
+      wechatAvatarUrl: null,
+      createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      lastActiveAt: null
+    },
+    conference: { title: "示例会议" },
+    sku: { name: "仅参会" },
+    order: {
+      orderNo: "REG001",
+      status: OrderStatus.PAID,
+      payableAmountCent: 70000,
+      paidAmountCent: 70000,
+      paidAt,
+      payments: []
+    },
+    attendees: []
+  };
 }
 
 function createExecutionContext(request: unknown): ExecutionContext {
@@ -373,6 +558,9 @@ interface ConferenceRecord {
   endsAt: Date;
   registrationStartsAt: Date | null;
   registrationEndsAt: Date | null;
+  checkInEnabled: boolean;
+  groupRegistrationEnabled: boolean;
+  maxTicketsPerOrder: number | null;
   status: ConferenceStatus;
   sortOrder: number;
   createdAt: Date;

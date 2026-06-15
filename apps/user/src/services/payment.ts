@@ -1,3 +1,4 @@
+import { PAYMENT_MODE } from "@/config/app";
 import { request } from "./request";
 
 export interface MockPaymentConfirmResponse {
@@ -50,6 +51,11 @@ export function prepayWechatPayment(orderNo: string): Promise<WechatPrepayRespon
 }
 
 export async function startOrderPayment(orderNo: string): Promise<PaymentStatusResponse> {
+  if (PAYMENT_MODE === "mock") {
+    await confirmMockPayment(orderNo);
+    return getPaymentStatus(orderNo);
+  }
+
   // #ifdef MP-WEIXIN
   const prepay = await prepayWechatPayment(orderNo);
   await requestMiniProgramPayment(prepay);
@@ -57,12 +63,15 @@ export async function startOrderPayment(orderNo: string): Promise<PaymentStatusR
   // #endif
 
   // #ifndef MP-WEIXIN
-  await confirmMockPayment(orderNo);
-  return getPaymentStatus(orderNo);
+  throw new Error("当前平台暂不支持真实微信支付");
   // #endif
 }
 
 export function getPaymentActionLabel(): string {
+  if (PAYMENT_MODE === "mock") {
+    return "开发环境 mock 支付成功";
+  }
+
   // #ifdef MP-WEIXIN
   return "微信支付";
   // #endif
