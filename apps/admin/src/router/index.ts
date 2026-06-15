@@ -53,8 +53,8 @@ export const routes: AdminRoute[] = [
   { path: "/materials", title: "素材管理", menuTitle: "素材管理", group: "页面装修", description: "图片、图标、视频和字体素材", permission: "material:view", component: MaterialsPage },
   { path: "/members/users", title: "会员管理", menuTitle: "会员管理", group: "扩展能力", badge: "后续", description: "会员能力预留，暂不参与会议定价", permission: "member:view", component: MemberUsersPage },
   { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "扩展能力", badge: "后续", description: "会员权益展示预留", permission: "member:view", component: MemberLevelsPage },
-  { path: "/mall/products", title: "商城商品", menuTitle: "商城商品", group: "扩展能力", badge: "后续", description: "商城能力预留，暂不接会议支付", permission: "mall:view", component: MallProductsPage },
-  { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "扩展能力", badge: "后续", description: "商城订单链路预留", permission: "mall:view", component: MallOrdersPage },
+  { path: "/mall/products", title: "商城商品", menuTitle: "商城商品", group: "扩展能力", badge: "灰度", description: "商城能力灰度中，商品支付和履约后续完善", permission: "mall:view", component: MallProductsPage },
+  { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "扩展能力", badge: "灰度", description: "商城订单灰度中，不与会议支付混用", permission: "mall:view", component: MallOrdersPage },
   { path: "/finance", title: "财务对账", menuTitle: "财务对账", group: "扩展能力", badge: "辅助", description: "对账辅助，不等同完整财务系统", permission: "finance:view", component: FinancePage },
   { path: "/system/accounts", title: "账号管理", menuTitle: "账号管理", group: "系统管理", description: "后台账号和角色分配", permission: "system:account", component: AccountsPage },
   { path: "/system/roles", title: "角色权限", menuTitle: "角色权限", group: "系统管理", badge: "高级", description: "高级权限配置，谨慎调整", permission: "system:role", component: RolesPage }
