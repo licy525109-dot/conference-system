@@ -1,11 +1,16 @@
-import { MOCK_LOGIN_CODE, MOCK_LOGIN_NICKNAME } from "@/config/app";
-import { request } from "./request";
-import { getToken, setAuthSession } from "./session";
+import { MOCK_LOGIN_CODE, MOCK_LOGIN_NICKNAME, PAYMENT_MODE } from "@/config/app";
+import { ApiRequestError, request } from "./request";
+import { clearAuthSession, getStoredUser, getToken, setAuthSession } from "./session";
 
 export interface CurrentUser {
   id: string;
   openid: string | null;
   nickname: string | null;
+  phone?: string | null;
+  wechatNickname?: string | null;
+  wechatAvatarUrl?: string | null;
+  registeredAt?: string;
+  lastActiveAt?: string | null;
 }
 
 export interface LoginResponse {
@@ -13,7 +18,9 @@ export interface LoginResponse {
   user: CurrentUser;
 }
 
-export { getStoredUser, getToken, setAuthSession } from "./session";
+export { clearAuthSession, getStoredUser, getToken, setAuthSession } from "./session";
+
+export const EXPIRED_LOGIN_REENTRY_MESSAGE = "登录状态已过期，请返回首页重新进入小程序下单。";
 
 export async function loginWithWechat(): Promise<LoginResponse> {
   const code = await getPlatformLoginCode();
@@ -37,11 +44,48 @@ export const mockLogin = loginWithWechat;
 export async function ensureLogin(): Promise<string> {
   const existingToken = getToken();
   if (existingToken) {
-    return existingToken;
+    if (PAYMENT_MODE === "real" && !hasRealOpenid(getStoredUser())) {
+      clearAuthSession();
+    } else {
+      return existingToken;
+    }
   }
 
   const login = await loginWithWechat();
   return login.token;
+}
+
+function hasRealOpenid(user: CurrentUser | null): boolean {
+  if (!user?.openid) {
+    return false;
+  }
+
+  return !user.openid.startsWith("mock_");
+}
+
+export async function refreshLogin(): Promise<string> {
+  clearAuthSession();
+  const login = await loginWithWechat();
+  return login.token;
+}
+
+export function isAuthSessionExpiredError(err: unknown): boolean {
+  if (!(err instanceof ApiRequestError) || (err.statusCode !== 401 && err.statusCode !== 403)) {
+    return false;
+  }
+
+  const message = `${err.responseMessage || ""} ${err.message || ""}`;
+  return (
+    message.includes("登录状态已过期") ||
+    message.includes("登录状态已失效") ||
+    message.includes("mock") ||
+    message.includes("openid") ||
+    message.includes("当前订单未绑定有效微信身份")
+  );
+}
+
+export function clearExpiredAuthSession(): void {
+  clearAuthSession();
 }
 
 export async function getMe(): Promise<CurrentUser> {
@@ -72,7 +116,8 @@ function getMiniProgramLoginCode(): Promise<string> {
         reject(new Error("wx.login did not return code"));
       },
       fail: (error) => {
-        reject(new Error(error.errMsg || "wx.login failed"));
+        const message = error.errMsg || "wx.login failed";
+        reject(new Error(message));
       }
     });
   });

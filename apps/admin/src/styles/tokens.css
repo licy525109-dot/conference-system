@@ -1,0 +1,18 @@
+:root {
+  --admin-color-primary: #1463ff;
+  --admin-color-primary-strong: #0b46c9;
+  --admin-color-primary-soft: #e8f0ff;
+  --admin-color-success: #0f9f6e;
+  --admin-color-warning: #b76e00;
+  --admin-color-danger: #d92d20;
+  --admin-color-text: #152033;
+  --admin-color-muted: #66758c;
+  --admin-color-border: #dde6f2;
+  --admin-color-bg: #f5f8fc;
+  --admin-color-panel: #ffffff;
+  --admin-color-aside: #0f1b2f;
+  --admin-color-aside-soft: #182741;
+  --admin-radius: 8px;
+  --admin-shadow: 0 12px 32px rgb(21 32 51 / 8%);
+  --admin-shadow-soft: 0 6px 18px rgb(21 32 51 / 6%);
+}

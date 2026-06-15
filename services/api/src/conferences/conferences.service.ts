@@ -39,7 +39,12 @@ export class ConferencesService {
           summary: true,
           location: true,
           startsAt: true,
-          endsAt: true
+          endsAt: true,
+          _count: {
+            select: {
+              registrations: true
+            }
+          }
         }
       }),
       this.prisma.conference.count({
@@ -51,7 +56,8 @@ export class ConferencesService {
       items: items.map((conference) => ({
         ...conference,
         startsAt: conference.startsAt.toISOString(),
-        endsAt: conference.endsAt.toISOString()
+        endsAt: conference.endsAt.toISOString(),
+        registrationCount: conference._count?.registrations ?? 0
       })),
       total,
       page,
@@ -92,6 +98,11 @@ export class ConferencesService {
             stock: true,
             soldCount: true
           }
+        },
+        _count: {
+          select: {
+            registrations: true
+          }
         }
       }
     });
@@ -111,6 +122,7 @@ export class ConferencesService {
       endsAt: conference.endsAt.toISOString(),
       registrationStartsAt: conference.registrationStartsAt?.toISOString() ?? null,
       registrationEndsAt: conference.registrationEndsAt?.toISOString() ?? null,
+      registrationCount: conference._count?.registrations ?? 0,
       contentJson: conference.page?.contentJson ?? null,
       skus: conference.skus
     });
@@ -204,6 +216,7 @@ export interface ConferenceListResponse {
     location: string | null;
     startsAt: string;
     endsAt: string;
+    registrationCount: number;
   }>;
   total: number;
   page: number;
@@ -221,6 +234,7 @@ export interface ConferenceDetailResponse {
   endsAt: string;
   registrationStartsAt: string | null;
   registrationEndsAt: string | null;
+  registrationCount: number;
   contentJson: Prisma.JsonValue | null;
   skus: Array<{
     id: string;

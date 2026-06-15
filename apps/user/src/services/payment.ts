@@ -1,4 +1,5 @@
 import { PAYMENT_MODE } from "@/config/app";
+import { ensureLogin } from "./auth";
 import { request } from "./request";
 
 export interface MockPaymentConfirmResponse {
@@ -51,10 +52,14 @@ export function prepayWechatPayment(orderNo: string): Promise<WechatPrepayRespon
 }
 
 export async function startOrderPayment(orderNo: string): Promise<PaymentStatusResponse> {
+  await ensureLogin();
+
+  // #ifndef MP-WEIXIN
   if (PAYMENT_MODE === "mock") {
     await confirmMockPayment(orderNo);
-    return getPaymentStatus(orderNo);
+    return pollPaidStatus(orderNo);
   }
+  // #endif
 
   // #ifdef MP-WEIXIN
   const prepay = await prepayWechatPayment(orderNo);
@@ -68,16 +73,16 @@ export async function startOrderPayment(orderNo: string): Promise<PaymentStatusR
 }
 
 export function getPaymentActionLabel(): string {
-  if (PAYMENT_MODE === "mock") {
-    return "开发环境 mock 支付成功";
-  }
-
   // #ifdef MP-WEIXIN
   return "微信支付";
   // #endif
 
   // #ifndef MP-WEIXIN
-  return "开发环境 mock 支付成功";
+  if (PAYMENT_MODE === "mock") {
+    return "模拟支付";
+  }
+
+  return "微信支付";
   // #endif
 }
 

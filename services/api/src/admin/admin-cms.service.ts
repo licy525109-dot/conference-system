@@ -1,0 +1,787 @@
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { AuditAction, Prisma } from "@prisma/client";
+import { PrismaService } from "../prisma.service";
+import {
+  ALL_COMPONENT_PRESETS,
+  ALL_COMPONENT_TYPES,
+  DEFAULT_TABBAR_ITEMS,
+  DEFAULT_THEME_CONFIG,
+  ENABLED_COMPONENT_TYPES,
+  defaultPageComponents
+} from "../cms/cms-defaults";
+import { ok } from "../cms/cms.service";
+import { CurrentAdmin } from "./current-admin";
+
+const KNOWN_PAGE_KEYS = new Set(["home", "conference-list", "conference-detail", "my-registrations", "cart", "member-center", "mall"]);
+const DEFAULT_SCOPE = "global";
+
+@Injectable()
+export class AdminCmsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async listPages() {
+    await this.ensureCmsDefaults();
+    const items = await this.prisma.pageTemplate.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: pageSelect
+    });
+    return ok({ items: items.map(formatPageTemplate) });
+  }
+
+  async createPage(input: unknown, admin: CurrentAdmin) {
+    await this.ensureCmsDefaults();
+    const body = readObject(input);
+    const pageKey = normalizePageKey(readRequiredString(body, "pageKey"));
+    const title = readRequiredString(body, "title");
+    const components = parseComponents(body.components ?? defaultPageComponents(pageKey));
+    const template = await catchUniqueConstraint(
+      this.prisma.pageTemplate.create({
+        data: {
+          pageKey,
+          title,
+          description: readOptionalString(body, "description"),
+          pageType: readOptionalString(body, "pageType") ?? inferPageType(pageKey),
+          enabled: readOptionalBoolean(body, "enabled") ?? true,
+          sortOrder: readOptionalInt(body, "sortOrder") ?? 0,
+          versions: {
+            create: {
+              versionNo: 1,
+              status: "DRAFT",
+              title,
+              components,
+              createdBy: admin.id
+            }
+          }
+        },
+        select: pageSelect
+      }),
+      "页面 key 已存在"
+    );
+    await this.writeAudit(admin, AuditAction.CREATE, "PageTemplate", template.id, "Create page template", { pageKey });
+    return ok(formatPageTemplate(template));
+  }
+
+  async updatePage(id: string, input: unknown, admin: CurrentAdmin) {
+    await this.ensurePage(id);
+    const body = readObject(input);
+    const template = await this.prisma.pageTemplate.update({
+      where: { id },
+      data: {
+        ...(typeof body.title !== "undefined" ? { title: readRequiredString(body, "title") } : {}),
+        ...(typeof body.description !== "undefined" ? { description: readNullableString(body.description) } : {}),
+        ...(typeof body.enabled !== "undefined" ? { enabled: readRequiredBoolean(body.enabled, "enabled") } : {}),
+        ...(typeof body.sortOrder !== "undefined" ? { sortOrder: readRequiredInt(body, "sortOrder") } : {})
+      },
+      select: pageSelect
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "PageTemplate", id, "Update page template", { pageKey: template.pageKey });
+    return ok(formatPageTemplate(template));
+  }
+
+  async getPageVersion(id: string) {
+    const version = await this.prisma.pageVersion.findUnique({
+      where: { id },
+      select: versionSelect
+    });
+    if (!version) {
+      throw new NotFoundException("Page version not found");
+    }
+    return ok(formatPageVersion(version));
+  }
+
+  async updatePageVersion(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const existing = await this.prisma.pageVersion.findUnique({
+      where: { id },
+      select: { id: true, status: true, templateId: true }
+    });
+    if (!existing) {
+      throw new NotFoundException("Page version not found");
+    }
+    if (existing.status === "PUBLISHED") {
+      throw new BadRequestException("已发布版本不能直接编辑，请回滚或新建草稿");
+    }
+
+    const version = await this.prisma.pageVersion.update({
+      where: { id },
+      data: {
+        ...(typeof body.title !== "undefined" ? { title: readRequiredString(body, "title") } : {}),
+        ...(typeof body.components !== "undefined" ? { components: parseComponents(body.components) } : {}),
+        ...(typeof body.themeJson !== "undefined" ? { themeJson: readNullableJsonObject(body.themeJson) } : {}),
+        createdBy: admin.id
+      },
+      select: versionSelect
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "PageVersion", id, "Update page version", {
+      templateId: existing.templateId
+    });
+    return ok(formatPageVersion(version));
+  }
+
+  async publishPageVersion(id: string, admin: CurrentAdmin) {
+    const existing = await this.prisma.pageVersion.findUnique({
+      where: { id },
+      select: { id: true, templateId: true, title: true, components: true }
+    });
+    if (!existing) {
+      throw new NotFoundException("Page version not found");
+    }
+    parseComponents(existing.components);
+
+    const publishedAt = new Date();
+    const version = await this.prisma.$transaction(async (tx) => {
+      await tx.pageVersion.updateMany({
+        where: { templateId: existing.templateId, status: "PUBLISHED" },
+        data: { status: "ARCHIVED" }
+      });
+      const updated = await tx.pageVersion.update({
+        where: { id },
+        data: {
+          status: "PUBLISHED",
+          publishedAt
+        },
+        select: versionSelect
+      });
+      await tx.pageTemplate.update({
+        where: { id: existing.templateId },
+        data: {
+          publishedVersionId: id,
+          title: existing.title
+        }
+      });
+      await tx.pagePublishLog.create({
+        data: {
+          templateId: existing.templateId,
+          versionId: id,
+          action: "PUBLISH",
+          summary: "Publish page version",
+          createdBy: admin.id
+        }
+      });
+      return updated;
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "PageVersion", id, "Publish page version", {
+      templateId: existing.templateId
+    });
+    return ok(formatPageVersion(version));
+  }
+
+  async rollbackPage(id: string, input: unknown, admin: CurrentAdmin) {
+    const template = await this.prisma.pageTemplate.findUnique({
+      where: { id },
+      select: { id: true, publishedVersionId: true }
+    });
+    if (!template) {
+      throw new NotFoundException("Page template not found");
+    }
+    const body = readObject(input);
+    const targetVersionId = readOptionalString(body, "versionId");
+    const source = await this.prisma.pageVersion.findFirst({
+      where: targetVersionId
+        ? { id: targetVersionId, templateId: id }
+        : { templateId: id, status: "ARCHIVED", id: { not: template.publishedVersionId ?? undefined } },
+      orderBy: [{ publishedAt: "desc" }, { versionNo: "desc" }],
+      select: { id: true, title: true, components: true, themeJson: true }
+    });
+    if (!source) {
+      throw new NotFoundException("No rollback version found");
+    }
+    const nextVersionNo = await this.nextVersionNo(id);
+    const publishedAt = new Date();
+    const version = await this.prisma.$transaction(async (tx) => {
+      await tx.pageVersion.updateMany({
+        where: { templateId: id, status: "PUBLISHED" },
+        data: { status: "ARCHIVED" }
+      });
+      const created = await tx.pageVersion.create({
+        data: {
+          templateId: id,
+          versionNo: nextVersionNo,
+          status: "PUBLISHED",
+          title: source.title,
+          components: parseComponents(source.components),
+          themeJson: source.themeJson ?? undefined,
+          createdBy: admin.id,
+          publishedAt
+        },
+        select: versionSelect
+      });
+      await tx.pageTemplate.update({
+        where: { id },
+        data: {
+          publishedVersionId: created.id,
+          title: source.title
+        }
+      });
+      await tx.pagePublishLog.create({
+        data: {
+          templateId: id,
+          versionId: created.id,
+          action: "ROLLBACK",
+          summary: `Rollback from ${source.id}`,
+          createdBy: admin.id
+        }
+      });
+      return created;
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "PageTemplate", id, "Rollback page", { sourceVersionId: source.id });
+    return ok(formatPageVersion(version));
+  }
+
+  async listComponentPresets() {
+    await this.ensureCmsDefaults();
+    const items = await this.prisma.componentPreset.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+    });
+    return ok({ items: items.map(formatComponentPreset) });
+  }
+
+  async getTheme() {
+    await this.ensureCmsDefaults();
+    const active = await this.prisma.activeThemeConfig.findUnique({
+      where: { scope: DEFAULT_SCOPE }
+    });
+    return ok(formatActiveTheme(active));
+  }
+
+  async updateTheme(input: unknown, admin: CurrentAdmin) {
+    await this.ensureCmsDefaults();
+    const body = readObject(input);
+    const config = normalizeThemeConfig(body.config ?? body.configJson ?? body);
+    const active = await this.prisma.activeThemeConfig.upsert({
+      where: { scope: DEFAULT_SCOPE },
+      update: {
+        themePresetId: readNullableString(body.themePresetId),
+        configJson: config,
+        publishedAt: new Date()
+      },
+      create: {
+        scope: DEFAULT_SCOPE,
+        themePresetId: readNullableString(body.themePresetId),
+        configJson: config,
+        publishedAt: new Date()
+      }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "ActiveThemeConfig", active.id, "Update active theme", {});
+    return ok(formatActiveTheme(active));
+  }
+
+  async listThemePresets() {
+    await this.ensureCmsDefaults();
+    const items = await this.prisma.themePreset.findMany({
+      orderBy: [{ system: "desc" }, { createdAt: "desc" }]
+    });
+    return ok({ items: items.map(formatThemePreset) });
+  }
+
+  async createThemePreset(input: unknown, admin: CurrentAdmin) {
+    await this.ensureCmsDefaults();
+    const body = readObject(input);
+    const preset = await catchUniqueConstraint(
+      this.prisma.themePreset.create({
+        data: {
+          code: readRequiredString(body, "code"),
+          name: readRequiredString(body, "name"),
+          description: readOptionalString(body, "description"),
+          configJson: normalizeThemeConfig(body.configJson ?? body.config),
+          system: false,
+          enabled: readOptionalBoolean(body, "enabled") ?? true
+        }
+      }),
+      "主题编码已存在"
+    );
+    await this.writeAudit(admin, AuditAction.CREATE, "ThemePreset", preset.id, "Create theme preset", { code: preset.code });
+    return ok(formatThemePreset(preset));
+  }
+
+  async updateThemePreset(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const preset = await this.prisma.themePreset.update({
+      where: { id },
+      data: {
+        ...(typeof body.name !== "undefined" ? { name: readRequiredString(body, "name") } : {}),
+        ...(typeof body.description !== "undefined" ? { description: readNullableString(body.description) } : {}),
+        ...(typeof body.configJson !== "undefined" || typeof body.config !== "undefined"
+          ? { configJson: normalizeThemeConfig(body.configJson ?? body.config) }
+          : {}),
+        ...(typeof body.enabled !== "undefined" ? { enabled: readRequiredBoolean(body.enabled, "enabled") } : {})
+      }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "ThemePreset", id, "Update theme preset", { code: preset.code });
+    return ok(formatThemePreset(preset));
+  }
+
+  async getTabbar() {
+    await this.ensureCmsDefaults();
+    const config = await this.prisma.tabBarConfig.findUnique({
+      where: { scope: DEFAULT_SCOPE },
+      include: { items: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } }
+    });
+    return ok(formatTabbar(config));
+  }
+
+  async updateTabbar(input: unknown, admin: CurrentAdmin) {
+    await this.ensureCmsDefaults();
+    const body = readObject(input);
+    const items = parseTabbarItems(body.items);
+    const enabled = readOptionalBoolean(body, "enabled") ?? true;
+    const config = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.tabBarConfig.upsert({
+        where: { scope: DEFAULT_SCOPE },
+        update: { enabled },
+        create: { scope: DEFAULT_SCOPE, enabled }
+      });
+      await tx.tabBarItem.deleteMany({ where: { configId: current.id } });
+      await tx.tabBarItem.createMany({
+        data: items.map((item) => ({ ...item, configId: current.id }))
+      });
+      return tx.tabBarConfig.findUniqueOrThrow({
+        where: { id: current.id },
+        include: { items: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } }
+      });
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "TabBarConfig", config.id, "Update tabbar", {});
+    return ok(formatTabbar(config));
+  }
+
+  async ensureCmsDefaults(): Promise<void> {
+    for (const [index, preset] of ALL_COMPONENT_PRESETS.entries()) {
+      await this.prisma.componentPreset.upsert({
+        where: { type: preset.type },
+        update: {
+          name: preset.name,
+          group: preset.group,
+          description: preset.description,
+          schemaJson: preset.schemaJson,
+          defaultConfigJson: preset.defaultConfigJson,
+          enabled: preset.enabled,
+          system: preset.system,
+          sortOrder: index
+        },
+        create: {
+          ...preset,
+          sortOrder: index
+        }
+      });
+    }
+
+    const themePreset = await this.prisma.themePreset.upsert({
+      where: { code: "default-light" },
+      update: {
+        name: "默认浅色主题",
+        configJson: DEFAULT_THEME_CONFIG,
+        system: true,
+        enabled: true
+      },
+      create: {
+        code: "default-light",
+        name: "默认浅色主题",
+        description: "系统默认主题",
+        configJson: DEFAULT_THEME_CONFIG,
+        system: true,
+        enabled: true
+      }
+    });
+
+    await this.prisma.activeThemeConfig.upsert({
+      where: { scope: DEFAULT_SCOPE },
+      update: {},
+      create: {
+        scope: DEFAULT_SCOPE,
+        themePresetId: themePreset.id,
+        configJson: DEFAULT_THEME_CONFIG,
+        publishedAt: new Date()
+      }
+    });
+
+    const tabbar = await this.prisma.tabBarConfig.upsert({
+      where: { scope: DEFAULT_SCOPE },
+      update: {},
+      create: { scope: DEFAULT_SCOPE, enabled: true }
+    });
+    const count = await this.prisma.tabBarItem.count({ where: { configId: tabbar.id } });
+    if (count === 0) {
+      await this.prisma.tabBarItem.createMany({
+        data: DEFAULT_TABBAR_ITEMS.map((item) => ({ ...item, configId: tabbar.id }))
+      });
+    }
+
+    for (const page of [
+      { pageKey: "home", title: "首页", pageType: "HOME", sortOrder: 0 },
+      { pageKey: "conference-list", title: "会议列表页", pageType: "CONFERENCE_LIST", sortOrder: 10 },
+      { pageKey: "conference-detail", title: "会议详情页", pageType: "CONFERENCE_DETAIL", sortOrder: 20 },
+      { pageKey: "my-registrations", title: "我的报名页", pageType: "USER", sortOrder: 30 },
+      { pageKey: "cart", title: "购物车页", pageType: "USER", sortOrder: 40 },
+      { pageKey: "member-center", title: "会员中心页", pageType: "USER", sortOrder: 50 },
+      { pageKey: "mall", title: "商城首页", pageType: "MALL", sortOrder: 60 }
+    ]) {
+      const template = await this.prisma.pageTemplate.upsert({
+        where: { pageKey: page.pageKey },
+        update: {
+          title: page.title,
+          pageType: page.pageType,
+          enabled: true,
+          sortOrder: page.sortOrder
+        },
+        create: {
+          ...page,
+          enabled: true
+        }
+      });
+      const versions = await this.prisma.pageVersion.count({ where: { templateId: template.id } });
+      if (versions === 0) {
+        await this.prisma.pageVersion.create({
+          data: {
+            templateId: template.id,
+            versionNo: 1,
+            status: "DRAFT",
+            title: page.title,
+            components: defaultPageComponents(page.pageKey)
+          }
+        });
+      }
+    }
+  }
+
+  private async ensurePage(id: string): Promise<void> {
+    const page = await this.prisma.pageTemplate.findUnique({ where: { id }, select: { id: true } });
+    if (!page) {
+      throw new NotFoundException("Page template not found");
+    }
+  }
+
+  private async nextVersionNo(templateId: string): Promise<number> {
+    const latest = await this.prisma.pageVersion.findFirst({
+      where: { templateId },
+      orderBy: { versionNo: "desc" },
+      select: { versionNo: true }
+    });
+    return (latest?.versionNo ?? 0) + 1;
+  }
+
+  private async writeAudit(
+    admin: CurrentAdmin,
+    action: AuditAction,
+    entityType: string,
+    entityId: string,
+    summary: string,
+    metadataJson?: Prisma.InputJsonObject
+  ): Promise<void> {
+    await this.prisma.auditLog.create({
+      data: {
+        adminUserId: admin.id,
+        action,
+        entityType,
+        entityId,
+        summary,
+        metadataJson
+      }
+    });
+  }
+}
+
+const pageSelect = {
+  id: true,
+  pageKey: true,
+  title: true,
+  description: true,
+  pageType: true,
+  enabled: true,
+  sortOrder: true,
+  publishedVersionId: true,
+  createdAt: true,
+  updatedAt: true,
+  versions: {
+    orderBy: [{ versionNo: "desc" as const }],
+    take: 6,
+    select: {
+      id: true,
+      versionNo: true,
+      status: true,
+      title: true,
+      components: true,
+      themeJson: true,
+      publishedAt: true,
+      createdAt: true,
+      updatedAt: true
+    }
+  }
+} satisfies Prisma.PageTemplateSelect;
+
+const versionSelect = {
+  id: true,
+  templateId: true,
+  versionNo: true,
+  status: true,
+  title: true,
+  components: true,
+  themeJson: true,
+  publishedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  template: {
+    select: {
+      id: true,
+      pageKey: true,
+      title: true
+    }
+  }
+} satisfies Prisma.PageVersionSelect;
+
+function formatPageTemplate(template: Prisma.PageTemplateGetPayload<{ select: typeof pageSelect }>) {
+  return {
+    ...template,
+    versions: template.versions.map((version) => ({
+      id: version.id,
+      versionNo: version.versionNo,
+      status: version.status,
+      title: version.title,
+      componentCount: Array.isArray(version.components) ? version.components.length : 0,
+      publishedAt: version.publishedAt?.toISOString() ?? null,
+      createdAt: version.createdAt.toISOString(),
+      updatedAt: version.updatedAt.toISOString()
+    })),
+    createdAt: template.createdAt.toISOString(),
+    updatedAt: template.updatedAt.toISOString()
+  };
+}
+
+function formatPageVersion(version: Prisma.PageVersionGetPayload<{ select: typeof versionSelect }>) {
+  return {
+    ...version,
+    components: Array.isArray(version.components) ? version.components : [],
+    themeJson: readPlainObject(version.themeJson),
+    publishedAt: version.publishedAt?.toISOString() ?? null,
+    createdAt: version.createdAt.toISOString(),
+    updatedAt: version.updatedAt.toISOString()
+  };
+}
+
+function formatComponentPreset(preset: Prisma.ComponentPresetGetPayload<Record<string, never>>) {
+  return {
+    ...preset,
+    createdAt: preset.createdAt.toISOString(),
+    updatedAt: preset.updatedAt.toISOString()
+  };
+}
+
+function formatThemePreset(preset: Prisma.ThemePresetGetPayload<Record<string, never>>) {
+  return {
+    ...preset,
+    configJson: readPlainObject(preset.configJson) ?? DEFAULT_THEME_CONFIG,
+    createdAt: preset.createdAt.toISOString(),
+    updatedAt: preset.updatedAt.toISOString()
+  };
+}
+
+function formatActiveTheme(active: Prisma.ActiveThemeConfigGetPayload<Record<string, never>> | null) {
+  return {
+    scope: DEFAULT_SCOPE,
+    themePresetId: active?.themePresetId ?? null,
+    config: readPlainObject(active?.configJson) ?? DEFAULT_THEME_CONFIG,
+    publishedAt: active?.publishedAt?.toISOString() ?? null,
+    createdAt: active?.createdAt.toISOString() ?? null,
+    updatedAt: active?.updatedAt.toISOString() ?? null
+  };
+}
+
+function formatTabbar(config: Prisma.TabBarConfigGetPayload<{ include: { items: true } }> | null) {
+  return {
+    enabled: config?.enabled ?? true,
+    items:
+      config?.items.map((item) => ({
+        ...item,
+        createdAt: item.createdAt.toISOString(),
+        updatedAt: item.updatedAt.toISOString()
+      })) ??
+      DEFAULT_TABBAR_ITEMS.map((item, index) => ({
+        id: `default-${index}`,
+        ...item,
+        iconUrl: null,
+        selectedIconUrl: null,
+        badgeText: null
+      })),
+    createdAt: config?.createdAt.toISOString() ?? null,
+    updatedAt: config?.updatedAt.toISOString() ?? null
+  };
+}
+
+function parseComponents(value: unknown): Prisma.InputJsonArray {
+  if (!Array.isArray(value)) {
+    throw new BadRequestException("组件配置必须是数组");
+  }
+  return value.map((item, index) => {
+    const component = readObject(item);
+    const type = readRequiredString(component, "type");
+    if (!ALL_COMPONENT_TYPES.has(type)) {
+      throw new BadRequestException(`未知组件类型：${type}`);
+    }
+    const enabled = readOptionalBoolean(component, "enabled") ?? true;
+    if (enabled && !ENABLED_COMPONENT_TYPES.has(type)) {
+      throw new BadRequestException(`组件 ${type} 为后续开放能力，不能启用发布`);
+    }
+    const config = readPlainObject(component.config) ?? {};
+    validateComponentSafety(type, config);
+    return {
+      id: readOptionalString(component, "id") ?? `${type}-${index + 1}`,
+      type,
+      enabled,
+      sortOrder: readOptionalInt(component, "sortOrder") ?? index,
+      config
+    };
+  });
+}
+
+function validateComponentSafety(type: string, config: Prisma.JsonObject): void {
+  if (type !== "rich-text" && type !== "safe-html") {
+    return;
+  }
+  const html = typeof config.html === "string" ? config.html : "";
+  if (/<\s*script/i.test(html) || /\son[a-z]+\s*=/i.test(html) || /javascript\s*:/i.test(html)) {
+    throw new BadRequestException("富文本 HTML 不允许包含脚本、事件属性或 javascript 协议");
+  }
+}
+
+function normalizeThemeConfig(value: unknown): Prisma.InputJsonObject {
+  const input = readPlainObject(value) ?? {};
+  return {
+    ...DEFAULT_THEME_CONFIG,
+    ...input
+  };
+}
+
+function parseTabbarItems(value: unknown): Array<{
+  title: string;
+  iconUrl?: string | null;
+  selectedIconUrl?: string | null;
+  pageKey: string;
+  path: string;
+  visible: boolean;
+  sortOrder: number;
+  requireLogin: boolean;
+  badgeText?: string | null;
+}> {
+  if (!Array.isArray(value)) {
+    throw new BadRequestException("底部导航 items 必须是数组");
+  }
+  if (value.length === 0 || value.length > 5) {
+    throw new BadRequestException("底部导航数量必须为 1 到 5 个");
+  }
+  return value.map((item, index) => {
+    const body = readObject(item);
+    const pageKey = normalizePageKey(readRequiredString(body, "pageKey"));
+    const path = readRequiredString(body, "path");
+    if (!path.startsWith("/pages/")) {
+      throw new BadRequestException("底部导航路径必须以 /pages/ 开头");
+    }
+    return {
+      title: readRequiredString(body, "title"),
+      iconUrl: readNullableString(body.iconUrl),
+      selectedIconUrl: readNullableString(body.selectedIconUrl),
+      pageKey,
+      path,
+      visible: readOptionalBoolean(body, "visible") ?? true,
+      sortOrder: readOptionalInt(body, "sortOrder") ?? index,
+      requireLogin: readOptionalBoolean(body, "requireLogin") ?? false,
+      badgeText: readNullableString(body.badgeText)
+    };
+  });
+}
+
+function normalizePageKey(value: string): string {
+  const pageKey = value.trim();
+  if (KNOWN_PAGE_KEYS.has(pageKey) || /^custom:[a-z0-9][a-z0-9-]{0,60}$/i.test(pageKey)) {
+    return pageKey;
+  }
+  throw new BadRequestException("页面 key 仅支持内置 key 或 custom:<slug>");
+}
+
+function inferPageType(pageKey: string): string {
+  if (pageKey === "home") return "HOME";
+  if (pageKey === "conference-list") return "CONFERENCE_LIST";
+  if (pageKey === "conference-detail") return "CONFERENCE_DETAIL";
+  if (pageKey === "my-registrations") return "USER";
+  if (pageKey === "cart") return "USER";
+  if (pageKey === "member-center") return "USER";
+  if (pageKey === "mall") return "MALL";
+  return "CUSTOM";
+}
+
+function readObject(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new BadRequestException("请求体格式不正确");
+  }
+  return value as Record<string, unknown>;
+}
+
+function readPlainObject(value: unknown): Prisma.JsonObject | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Prisma.JsonObject) : null;
+}
+
+function readRequiredString(body: Record<string, unknown>, key: string): string {
+  const value = body[key];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new BadRequestException(`${key} 不能为空`);
+  }
+  return value.trim();
+}
+
+function readOptionalString(body: Record<string, unknown>, key: string): string | undefined {
+  const value = body[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readNullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readOptionalBoolean(body: Record<string, unknown>, key: string): boolean | undefined {
+  const value = body[key];
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+function readRequiredBoolean(value: unknown, key: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new BadRequestException(`${key} 必须是布尔值`);
+  }
+  return value;
+}
+
+function readOptionalInt(body: Record<string, unknown>, key: string): number | undefined {
+  const value = body[key];
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number.parseInt(value, 10) : Number.NaN;
+  return Number.isInteger(parsed) ? parsed : undefined;
+}
+
+function readRequiredInt(body: Record<string, unknown>, key: string): number {
+  const parsed = readOptionalInt(body, key);
+  if (typeof parsed !== "number") {
+    throw new BadRequestException(`${key} 必须是整数`);
+  }
+  return parsed;
+}
+
+function readNullableJsonObject(value: unknown): Prisma.InputJsonObject | undefined {
+  if (value === null) {
+    return undefined;
+  }
+  const object = readPlainObject(value);
+  if (!object) {
+    throw new BadRequestException("themeJson 必须是对象");
+  }
+  return object;
+}
+
+async function catchUniqueConstraint<T>(promise: Promise<T>, message: string): Promise<T> {
+  try {
+    return await promise;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new ConflictException(message);
+    }
+    throw error;
+  }
+}

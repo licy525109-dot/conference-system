@@ -29,6 +29,36 @@
       "style": {
         "navigationBarTitleText": "我的报名"
       }
+    },
+    {
+      "path": "pages/cart/index",
+      "style": {
+        "navigationBarTitleText": "购物车"
+      }
+    },
+    {
+      "path": "pages/member/center",
+      "style": {
+        "navigationBarTitleText": "会员中心"
+      }
+    },
+    {
+      "path": "pages/mall/index",
+      "style": {
+        "navigationBarTitleText": "商城"
+      }
+    },
+    {
+      "path": "pages/mall/detail",
+      "style": {
+        "navigationBarTitleText": "商品详情"
+      }
+    },
+    {
+      "path": "pages/custom/index",
+      "style": {
+        "navigationBarTitleText": "自定义页面"
+      }
     }
   ],
   "globalStyle": {

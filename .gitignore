@@ -35,3 +35,47 @@ __MACOSX/
 
 # build cache
 *.tsbuildinfo
+
+# local/prod env files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+apps/**/.env
+apps/**/.env.*
+!apps/**/.env.example
+!apps/**/.env.*.example
+
+services/**/.env
+services/**/.env.*
+!services/**/.env.example
+!services/**/.env.*.example
+
+# secrets/certificates
+*.pem
+*.key
+*.p12
+*.crt
+
+# runtime assets
+uploads/
+services/api/uploads/
+apps/admin/dist.zip
+
+# build outputs / cache
+node_modules/
+.pnpm-store/
+.cache/
+.tmp/
+*.tsbuildinfo
+
+# server-only deploy files
+docker-compose.prod.yml
+docker-compose.prod.yml.bak.*
+start-api.sh
+
+# macOS
+.DS_Store
+__MACOSX/
+**/__MACOSX/

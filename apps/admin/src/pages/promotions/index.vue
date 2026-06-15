@@ -1,0 +1,121 @@
+<template>
+  <section class="admin-page">
+    <div v-if="!embedded" class="page-header">
+      <div>
+        <h1 class="page-title">满减规则</h1>
+        <p class="page-subtitle">满金额或满张数优惠，订单创建时由后端重新计算。</p>
+      </div>
+      <el-button type="primary" @click="openCreate">新增满减</el-button>
+    </div>
+    <div class="toolbar">
+      <el-input v-model="keyword" placeholder="规则名称" style="width: 220px" @keyup.enter="load" />
+      <el-button :loading="loading" @click="load">查询</el-button>
+      <el-button v-if="embedded" type="primary" @click="openCreate">新增满减</el-button>
+    </div>
+    <section class="table-panel">
+      <el-table :data="items" empty-text="暂无满减规则">
+        <el-table-column prop="name" label="名称" min-width="180" />
+        <el-table-column label="门槛" width="170"><template #default="{ row }">{{ thresholdText(row.minAmountCent, row.minQuantity) }}</template></el-table-column>
+        <el-table-column label="优惠" width="120"><template #default="{ row }">¥{{ formatCent(row.discountAmountCent) }}</template></el-table-column>
+        <el-table-column label="可叠券" width="100"><template #default="{ row }">{{ row.stackableWithCoupon ? "是" : "否" }}</template></el-table-column>
+        <el-table-column label="状态" width="90"><template #default="{ row }">{{ row.enabled ? "启用" : "停用" }}</template></el-table-column>
+        <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
+      </el-table>
+    </section>
+    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑满减' : '新增满减'" width="620px">
+      <el-form :model="form" label-width="120px">
+        <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item label="最低金额(元)"><el-input-number v-model="form.minAmountYuan" :min="0" :precision="2" /></el-form-item>
+        <el-form-item label="最低张数"><el-input-number v-model="form.minQuantity" :min="0" /></el-form-item>
+        <el-form-item label="优惠金额(元)"><el-input-number v-model="form.discountAmountYuan" :min="0" :precision="2" /></el-form-item>
+        <el-form-item label="可与券叠加"><el-switch v-model="form.stackableWithCoupon" /></el-form-item>
+        <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+    </el-dialog>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { onMounted, reactive, ref, watch } from "vue";
+import { ElMessage } from "element-plus";
+import { createPromotionRule, listPromotionRules, updatePromotionRule } from "../../services/admin";
+import type { PromotionRule } from "../../services/types";
+
+const props = defineProps<{ conferenceId?: string; embedded?: boolean }>();
+const items = ref<PromotionRule[]>([]);
+const keyword = ref("");
+const loading = ref(false);
+const dialogVisible = ref(false);
+const form = reactive({
+  id: "",
+  name: "",
+  minAmountYuan: 0,
+  minQuantity: 0,
+  discountAmountYuan: 0,
+  enabled: true,
+  stackableWithCoupon: false
+});
+
+onMounted(() => void load());
+watch(() => props.conferenceId, () => void load());
+
+async function load() {
+  loading.value = true;
+  try {
+    items.value = (await listPromotionRules({ page: 1, pageSize: 100, keyword: keyword.value, conferenceId: props.conferenceId })).items;
+  } finally {
+    loading.value = false;
+  }
+}
+
+function openCreate() {
+  Object.assign(form, { id: "", name: "", minAmountYuan: 0, minQuantity: 0, discountAmountYuan: 0, enabled: true, stackableWithCoupon: false });
+  dialogVisible.value = true;
+}
+
+function openEdit(row: PromotionRule) {
+  Object.assign(form, {
+    id: row.id,
+    name: row.name,
+    minAmountYuan: (row.minAmountCent ?? 0) / 100,
+    minQuantity: row.minQuantity ?? 0,
+    discountAmountYuan: row.discountAmountCent / 100,
+    enabled: row.enabled,
+    stackableWithCoupon: row.stackableWithCoupon
+  });
+  dialogVisible.value = true;
+}
+
+async function save() {
+  const payload = {
+    name: form.name,
+    conferenceId: props.conferenceId ?? null,
+    minAmountCent: form.minAmountYuan > 0 ? yuanToCent(form.minAmountYuan) : null,
+    minQuantity: form.minQuantity > 0 ? form.minQuantity : null,
+    discountAmountCent: yuanToCent(form.discountAmountYuan),
+    enabled: form.enabled,
+    stackableWithCoupon: form.stackableWithCoupon
+  };
+  if (form.id) await updatePromotionRule(form.id, payload);
+  else await createPromotionRule(payload);
+  dialogVisible.value = false;
+  await load();
+  ElMessage.success("满减规则已保存");
+}
+
+function thresholdText(minAmountCent: number | null, minQuantity: number | null) {
+  const parts = [];
+  if (minAmountCent) parts.push(`满 ¥${formatCent(minAmountCent)}`);
+  if (minQuantity) parts.push(`满 ${minQuantity} 张`);
+  return parts.length ? parts.join(" / ") : "无门槛";
+}
+
+function formatCent(value: number) {
+  return (value / 100).toFixed(2);
+}
+
+function yuanToCent(value: number) {
+  return Math.round(value * 100);
+}
+</script>

@@ -3,8 +3,17 @@
     <view v-if="loading" class="state">加载会议详情中...</view>
     <view v-else-if="error" class="state error">
       <text>{{ error }}</text>
-      <button class="primary-button compact" @click="loadDetail">重试</button>
+      <button v-if="conferenceId" class="primary-button compact" @click="loadDetail">重试</button>
+      <button class="ghost-button compact" @click="goHome">返回首页</button>
     </view>
+
+    <PageRenderer
+      v-else-if="conference && cmsPage"
+      :components="cmsPage.version.components"
+      :theme="theme"
+      :conference="conference"
+      @register="goRegisterFirst"
+    />
 
     <view v-else-if="conference" class="content">
       <view class="section headline">
@@ -34,36 +43,54 @@
             <view class="sku-action">
               <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
               <button class="primary-button" @click="goRegister(sku.id)">报名</button>
+              <button class="ghost-button" @click="goRegister(sku.id)">填表后加购</button>
             </view>
           </view>
         </view>
       </view>
     </view>
+    <WechatProfilePrompt />
+    <CustomTabbar active-page-key="conference-detail" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { onLoad } from "@dcloudio/uni-app";
+import { onLoad, onShareAppMessage } from "@dcloudio/uni-app";
+import CustomTabbar from "@/components/CustomTabbar.vue";
+import PageRenderer from "@/components/PageRenderer.vue";
+import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
+import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
 import { getConferenceDetail, type ConferenceDetail } from "@/services/conference";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
+import { goHome } from "@/utils/navigation";
 
 const conferenceId = ref("");
 const conference = ref<ConferenceDetail | null>(null);
+const cmsPage = ref<PublishedPage | null>(null);
+const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const loading = ref(false);
 const error = ref("");
 
 const contentText = computed(() => toContentText(conference.value?.contentJson) || "会议议程、嘉宾和报名说明请以主办方发布内容为准。");
 
 onLoad((query) => {
-  conferenceId.value = String(query?.id || "");
+  conferenceId.value = String(query?.id || query?.conferenceId || "");
   void loadDetail();
 });
 
+onShareAppMessage(() =>
+  buildPageShare(
+    cmsPage.value,
+    `/pages/conference/detail?id=${encodeURIComponent(conferenceId.value)}`,
+    conference.value?.title || "会议详情"
+  )
+);
+
 async function loadDetail() {
   if (!conferenceId.value) {
-    error.value = "缺少会议 ID";
+    error.value = "页面信息不完整，请返回首页重新进入";
     return;
   }
 
@@ -71,9 +98,18 @@ async function loadDetail() {
   error.value = "";
 
   try {
-    conference.value = await getConferenceDetail(conferenceId.value);
+    const [detail, page, themeConfig] = await Promise.all([
+      getConferenceDetail(conferenceId.value),
+      getPublishedPage("conference-detail"),
+      getAppTheme()
+    ]);
+    conference.value = detail;
+    cmsPage.value = page;
+    theme.value = themeConfig;
+    applyPageTitle(page, detail.title);
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "会议详情加载失败";
+    console.error("[CONFERENCE_DETAIL_LOAD_ERROR]", err);
+    error.value = "会议详情加载失败，请稍后重试";
   } finally {
     loading.value = false;
   }
@@ -83,6 +119,15 @@ function goRegister(skuId: string) {
   uni.navigateTo({
     url: `/pages/registration/form?conferenceId=${encodeURIComponent(conferenceId.value)}&skuId=${encodeURIComponent(skuId)}`
   });
+}
+
+function goRegisterFirst() {
+  const sku = conference.value?.skus[0];
+  if (!sku) {
+    uni.showToast({ title: "暂无可报名规格", icon: "none" });
+    return;
+  }
+  goRegister(sku.id);
 }
 
 function toContentText(value: unknown): string {
@@ -179,7 +224,7 @@ function toContentText(value: unknown): string {
 }
 
 .sku-action {
-  width: 180rpx;
+  width: 210rpx;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -195,13 +240,23 @@ function toContentText(value: unknown): string {
   text-align: right;
 }
 
-.primary-button {
+.primary-button,
+.ghost-button {
   min-height: 72rpx;
   border-radius: 8px;
-  background: #2452a8;
-  color: #ffffff;
   font-size: 27rpx;
   line-height: 72rpx;
+}
+
+.primary-button {
+  background: #2452a8;
+  color: #ffffff;
+}
+
+.ghost-button {
+  border: 1px solid #ccd7e6;
+  background: #ffffff;
+  color: #2452a8;
 }
 
 .compact {

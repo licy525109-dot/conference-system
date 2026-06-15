@@ -3,6 +3,7 @@ import { BadRequestException, Injectable, InternalServerErrorException, Unauthor
 import { AuditAction } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { signJwt, verifyJwt } from "../auth/jwt";
+import { AdminAccessService } from "./admin-access.service";
 import { CurrentAdmin } from "./current-admin";
 
 export interface ApiResponse<TData> {
@@ -18,7 +19,10 @@ export interface AdminLoginResponse {
 
 @Injectable()
 export class AdminAuthService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessService?: AdminAccessService
+  ) {}
 
   async login(input: unknown): Promise<ApiResponse<AdminLoginResponse>> {
     if (!isRecord(input)) {
@@ -52,10 +56,12 @@ export class AdminAuthService {
       }
     });
 
+    await this.access().ensureBuiltInAccess();
     const admin: CurrentAdmin = {
       id: adminUser.id,
       username: adminUser.username,
-      displayName: adminUser.displayName
+      displayName: adminUser.displayName,
+      permissions: await this.access().getAdminPermissions(adminUser.id)
     };
 
     return ok({
@@ -87,8 +93,13 @@ export class AdminAuthService {
     return {
       id: admin.id,
       username: admin.username,
-      displayName: admin.displayName
+      displayName: admin.displayName,
+      permissions: await this.access().getAdminPermissions(admin.id)
     };
+  }
+
+  private access(): AdminAccessService {
+    return this.accessService ?? new AdminAccessService(this.prisma);
   }
 
   private signAdminToken(admin: CurrentAdmin): string {
