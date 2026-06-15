@@ -68,11 +68,12 @@ function currentUrl(): string {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  min-height: 104rpx;
-  padding: 10rpx 12rpx calc(10rpx + env(safe-area-inset-bottom));
-  border-top: 1px solid #dce3ef;
-  background: #ffffff;
-  box-shadow: 0 -8rpx 24rpx rgba(15, 23, 42, 0.06);
+  min-height: 112rpx;
+  padding: 12rpx 18rpx calc(12rpx + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ui-color-border);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--ui-shadow-bottom);
+  backdrop-filter: blur(12px);
 }
 
 .custom-tabbar__item {
@@ -81,14 +82,16 @@ function currentUrl(): string {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6rpx;
-  color: #637083;
+  gap: 7rpx;
+  min-width: 0;
+  color: var(--ui-color-muted);
   font-size: 22rpx;
+  font-weight: 700;
 }
 
 .custom-tabbar__item.active {
-  color: #2452a8;
-  font-weight: 800;
+  color: var(--ui-color-primary);
+  font-weight: 900;
 }
 
 .custom-tabbar__icon,
@@ -98,13 +101,14 @@ function currentUrl(): string {
 }
 
 .custom-tabbar__dot {
-  border-radius: 14rpx;
+  border-radius: 50%;
   background: currentColor;
-  opacity: 0.2;
+  opacity: 0.18;
 }
 
 .custom-tabbar__item.active .custom-tabbar__dot {
   opacity: 1;
+  box-shadow: 0 8rpx 18rpx rgba(31, 95, 191, 0.22);
 }
 
 .custom-tabbar__badge {
@@ -115,7 +119,7 @@ function currentUrl(): string {
   height: 28rpx;
   padding: 0 8rpx;
   border-radius: 14rpx;
-  background: #ef4444;
+  background: var(--ui-color-danger);
   color: #ffffff;
   font-size: 18rpx;
   line-height: 28rpx;

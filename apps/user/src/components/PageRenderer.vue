@@ -118,9 +118,7 @@
 
       <view v-else-if="component.type === 'spacer'" :style="{ height: `${numberConfig(component, 'height', 24)}rpx` }" />
 
-      <view v-else class="cms-section cms-unknown">
-        <text>当前组件暂未支持预览</text>
-      </view>
+      <view v-else class="cms-hidden" />
     </block>
   </view>
 </template>
@@ -346,11 +344,10 @@ function titleFor(type: string): string {
 
 <style scoped>
 .cms-page {
-  min-height: 100vh;
-  padding: 28rpx;
-  padding-bottom: 140rpx;
+  min-height: auto;
+  padding: 0;
   box-sizing: border-box;
-  background: var(--cms-bg);
+  background: transparent;
 }
 
 .cms-hero,
@@ -364,15 +361,15 @@ function titleFor(type: string): string {
 .cms-hero {
   overflow: hidden;
   padding: 0;
-  background: #e8eef8;
-  color: #637083;
+  background: var(--ui-color-bg-soft);
+  color: var(--ui-color-muted);
 }
 
 .cms-hero__image {
   width: 100%;
   height: 360rpx;
   border-radius: var(--cms-radius);
-  background: #fff8e8;
+  background: var(--ui-color-surface-muted);
 }
 
 .cms-section__title,
@@ -397,18 +394,20 @@ function titleFor(type: string): string {
   margin-top: 22rpx;
   padding: 26rpx;
   background: var(--cms-card);
+  border: 1px solid var(--ui-color-border);
+  box-shadow: var(--ui-shadow-card);
 }
 
 .cms-section__title,
 .cms-title {
-  color: #172033;
+  color: var(--ui-color-text);
   font-size: 32rpx;
 }
 
 .cms-section__text {
   display: block;
   margin-top: 12rpx;
-  color: #637083;
+  color: var(--ui-color-muted);
   font-size: 26rpx;
   line-height: 1.55;
 }
@@ -424,7 +423,7 @@ function titleFor(type: string): string {
   display: flex;
   align-items: flex-start;
   gap: 18rpx;
-  border: 1px solid #e3e9f2;
+  border: 1px solid var(--ui-color-border);
 }
 
 .cms-mini-card {
@@ -433,7 +432,7 @@ function titleFor(type: string): string {
   gap: 18rpx;
   padding: 18rpx;
   border-radius: var(--cms-radius);
-  background: #f7faff;
+  background: var(--ui-color-surface-muted);
 }
 
 .cms-card.is-cover-full,
@@ -447,14 +446,14 @@ function titleFor(type: string): string {
   height: 136rpx;
   flex: 0 0 180rpx;
   border-radius: var(--cms-radius);
-  background: #f8fafc;
+  background: var(--ui-color-surface-muted);
 }
 
 .cms-card__image.is-cover-full__image,
 .cms-mini-card__image.is-cover-full__image {
   width: 100%;
   flex: none;
-  background: #f8fafc;
+  background: var(--ui-color-surface-muted);
 }
 
 .cms-mini-card__image {
@@ -462,7 +461,7 @@ function titleFor(type: string): string {
   height: 112rpx;
   flex: 0 0 150rpx;
   border-radius: var(--cms-radius);
-  background: #f8fafc;
+  background: var(--ui-color-surface-muted);
 }
 
 .cms-card__body {
@@ -474,7 +473,7 @@ function titleFor(type: string): string {
 }
 
 .cms-card__title {
-  color: #172033;
+  color: var(--ui-color-text);
   font-size: 28rpx;
   line-height: 1.35;
   white-space: normal;
@@ -483,9 +482,8 @@ function titleFor(type: string): string {
 
 .cms-card__text,
 .cms-card__meta,
-.cms-empty,
-.cms-unknown {
-  color: #637083;
+.cms-empty {
+  color: var(--ui-color-muted);
   font-size: 23rpx;
   line-height: 1.45;
 }
@@ -501,8 +499,8 @@ function titleFor(type: string): string {
 .cms-card__button {
   align-self: flex-start;
   min-width: 132rpx;
-  height: 52rpx;
-  line-height: 52rpx;
+  min-height: 54rpx;
+  line-height: 54rpx;
   margin: 14rpx 0 0;
   padding: 0 20rpx;
   border: 0;
@@ -519,6 +517,8 @@ function titleFor(type: string): string {
   background: var(--cms-primary);
   color: #ffffff;
   font-weight: 800;
+  min-height: 78rpx;
+  line-height: 78rpx;
 }
 
 .cms-tabs {
@@ -533,8 +533,8 @@ function titleFor(type: string): string {
   flex: 0 0 auto;
   padding: 12rpx 22rpx;
   border-radius: 999rpx;
-  background: #eef4ff;
-  color: #2452a8;
+  background: var(--ui-color-primary-soft);
+  color: var(--ui-color-primary);
   font-size: 24rpx;
   font-weight: 700;
 }
@@ -552,7 +552,7 @@ function titleFor(type: string): string {
   position: fixed;
   left: 32rpx;
   right: 32rpx;
-  bottom: 108rpx;
+  bottom: 128rpx;
   z-index: 20;
 }
 
@@ -575,8 +575,8 @@ function titleFor(type: string): string {
 }
 
 .cms-notice {
-  color: #8a4b00;
-  background: #fff7ed;
+  color: var(--ui-color-warning);
+  background: #fff7e8;
 }
 
 .cms-stats {
@@ -589,8 +589,8 @@ function titleFor(type: string): string {
 .cms-stat,
 .cms-list-line {
   border-radius: var(--cms-radius);
-  background: #f4f8ff;
-  color: #2d3f58;
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-text);
   font-size: 25rpx;
   line-height: 1.45;
 }
@@ -617,7 +617,7 @@ function titleFor(type: string): string {
 }
 
 .cms-live {
-  border: 1px solid rgb(36 82 168 / 22%);
+  border: 1px solid rgba(31, 95, 191, 0.22);
 }
 
 .cms-contact .cms-button {
@@ -627,6 +627,10 @@ function titleFor(type: string): string {
 .cms-divider {
   height: 1px;
   margin: 26rpx 0;
-  background: #dce3ef;
+  background: var(--ui-color-border);
+}
+
+.cms-hidden {
+  display: none;
 }
 </style>

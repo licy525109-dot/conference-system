@@ -164,7 +164,7 @@ function isRemoteUrl(value: string): boolean {
   align-items: center;
   justify-content: center;
   padding: 40rpx;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(15, 23, 42, 0.48);
   box-sizing: border-box;
 }
 
@@ -172,23 +172,24 @@ function isRemoteUrl(value: string): boolean {
   width: 100%;
   max-width: 640rpx;
   padding: 38rpx 36rpx 34rpx;
-  border-radius: 8px;
-  background: #ffffff;
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface);
+  box-shadow: 0 24rpx 70rpx rgba(17, 31, 55, 0.18);
   box-sizing: border-box;
 }
 
 .dialog-title {
   display: block;
-  color: #172033;
+  color: var(--ui-color-text);
   font-size: 36rpx;
-  font-weight: 800;
+  font-weight: 900;
   text-align: center;
 }
 
 .dialog-summary {
   display: block;
   margin: 10rpx 0 28rpx;
-  color: #627087;
+  color: var(--ui-color-muted);
   font-size: 26rpx;
   line-height: 1.5;
   text-align: center;
@@ -206,9 +207,9 @@ function isRemoteUrl(value: string): boolean {
   height: 132rpx;
   margin: 0;
   padding: 0;
-  border-radius: 8px;
-  background: #eef4ff;
-  color: #2452a8;
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-primary-soft);
+  color: var(--ui-color-primary);
   font-size: 26rpx;
   line-height: 132rpx;
 }
@@ -220,7 +221,7 @@ function isRemoteUrl(value: string): boolean {
 .avatar-image {
   width: 132rpx;
   height: 132rpx;
-  border-radius: 8px;
+  border-radius: var(--ui-radius);
 }
 
 .avatar-placeholder {
@@ -231,9 +232,9 @@ function isRemoteUrl(value: string): boolean {
 .preview-name {
   display: block;
   margin-top: 16rpx;
-  color: #172033;
+  color: var(--ui-color-text);
   font-size: 28rpx;
-  font-weight: 700;
+  font-weight: 800;
   text-align: center;
 }
 
@@ -244,24 +245,24 @@ function isRemoteUrl(value: string): boolean {
 }
 
 .label {
-  color: #24324a;
+  color: var(--ui-color-text);
   font-size: 26rpx;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .nickname-input {
   min-height: 82rpx;
   padding: 0 22rpx;
-  border: 1px solid #d8e0ee;
-  border-radius: 8px;
-  color: #172033;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  color: var(--ui-color-text);
   font-size: 28rpx;
   box-sizing: border-box;
 }
 
 .error-text {
   margin-top: 18rpx;
-  color: #b42318;
+  color: var(--ui-color-danger);
   font-size: 25rpx;
   text-align: center;
 }
@@ -276,20 +277,20 @@ function isRemoteUrl(value: string): boolean {
 .ghost-button {
   flex: 1;
   min-height: 76rpx;
-  border-radius: 8px;
+  border-radius: var(--ui-radius);
   font-size: 27rpx;
   line-height: 76rpx;
 }
 
 .primary-button {
-  background: #1aad19;
+  background: var(--ui-color-primary);
   color: #ffffff;
 }
 
 .ghost-button {
-  border: 1px solid #ccd7e6;
-  background: #ffffff;
-  color: #2452a8;
+  border: 1px solid var(--ui-color-border);
+  background: var(--ui-color-surface);
+  color: var(--ui-color-primary);
 }
 
 .primary-button::after,

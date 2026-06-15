@@ -1,20 +1,24 @@
 <template>
-  <view class="page">
-    <view v-if="loading" class="state">加载报名信息中...</view>
-    <view v-else-if="error" class="state error">
-      <text>{{ error }}</text>
-      <button v-if="conferenceId" class="primary-button compact" @click="loadPage">重试</button>
-      <button class="ghost-button compact" @click="goHome">返回首页</button>
-    </view>
+  <view class="page ui-page">
+    <LoadingState v-if="loading" title="加载报名信息中" description="正在读取票种、价格和报名字段。" />
+    <ErrorState
+      v-else-if="error"
+      :message="error"
+      primary-text="重新加载"
+      secondary-text="返回首页"
+      @retry="loadPage"
+      @secondary="goHome"
+    />
 
     <view v-else-if="conference && form" class="content">
-      <view class="section">
+      <view class="headline ui-card">
+        <StatusTag label="报名信息" tone="info" />
         <text class="title">{{ conference.title }}</text>
         <text class="summary">{{ form.title || "填写报名信息" }}</text>
+        <text class="safety-note">金额以提交订单时系统计算结果为准，前端 quote 仅用于展示。</text>
       </view>
 
-      <view class="section">
-        <text class="section-title">报名规格</text>
+      <FormSection title="选择报名规格" description="可选择多个票种，系统会为每张票生成一份参会人信息。" step="1">
         <view class="sku-list">
           <view
             v-for="sku in conference.skus"
@@ -24,6 +28,7 @@
             <view class="sku-main">
               <text class="sku-name">{{ sku.name }}</text>
               <text class="sku-desc">{{ sku.description || "标准报名规格" }}</text>
+              <text class="sku-stock">剩余 {{ Math.max(sku.stock - sku.soldCount, 0) }} / {{ sku.stock }}</text>
             </view>
             <view class="sku-side">
               <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
@@ -35,37 +40,27 @@
             </view>
           </view>
         </view>
+      </FormSection>
+
+      <FormSection title="优惠与费用" description="可输入优惠码试算，最终应付金额以下单时后端重新计算为准。" step="2">
         <view class="coupon-row">
           <input class="coupon-input" placeholder="输入优惠码" :value="couponCode" @input="setCouponCode" />
-          <button class="ghost-button compact" :disabled="quoteLoading" @click="loadQuote">使用</button>
+          <button class="ui-button-secondary ui-button-compact coupon-button" :disabled="quoteLoading" @click="loadQuote">使用</button>
         </view>
-        <view v-if="quoteLoading" class="hint">正在计算价格...</view>
-        <view v-else-if="quoteError" class="hint error-text">{{ quoteError }}</view>
-        <view v-else-if="quote" class="quote-stack">
-          <view class="quote-line">
-            <text>原价金额</text>
-            <text>¥{{ formatCent(quote.originAmountCent) }}</text>
-          </view>
-          <view v-if="quote.discountAmountCent > 0" class="quote-line discount-line">
-            <text>优惠金额</text>
-            <text>-¥{{ formatCent(quote.discountAmountCent) }}</text>
-          </view>
-          <view v-for="discount in quote.discounts || []" :key="`${discount.type}-${discount.title}`" class="discount-title">
-            {{ discount.title }}
-          </view>
-          <view v-for="message in quote.messages || []" :key="message" class="discount-title">
-            {{ message }}
-          </view>
-          <view class="quote-line total-line">
-            <text>应付金额</text>
-            <text class="quote-price">¥{{ formatCent(quote.payableAmountCent) }}</text>
-          </view>
-        </view>
-      </view>
+        <PriceSummary
+          :origin-amount-cent="quote?.originAmountCent ?? selectedAmountCent"
+          :discount-amount-cent="quote?.discountAmountCent ?? 0"
+          :payable-amount-cent="payableAmountCent"
+          :discounts="quote?.discounts ?? []"
+          :messages="quote?.messages ?? []"
+          :loading="quoteLoading"
+          :error="quoteError"
+          note="提交订单后后端会重新读取票种、库存、优惠规则并计算最终金额。"
+        />
+      </FormSection>
 
-      <view class="section">
-        <text class="section-title">参会人表单</text>
-        <view v-if="attendeeForms.length === 0" class="hint">请先选择报名票数</view>
+      <FormSection title="参会人信息" :description="attendeeSectionDescription" step="3">
+        <EmptyState v-if="attendeeForms.length === 0" title="请先选择报名票数" description="选择票数后，这里会自动生成参会人表单。" mark="人" />
         <view v-for="attendee in attendeeForms" :key="attendee.key" class="attendee-card">
           <text class="attendee-title">{{ attendee.skuName }} 第 {{ attendee.index + 1 }} 位参会人</text>
           <view v-for="field in form.fields" :key="`${attendee.key}-${field.id}`" class="field">
@@ -137,28 +132,36 @@
             />
           </view>
         </view>
-      </view>
-
-      <view class="footer">
-        <view class="footer-price">
-          <text>合计</text>
-          <text class="quote-price">¥{{ formatCent(quote?.payableAmountCent ?? selectedAmountCent) }}</text>
-        </view>
-        <button class="ghost-button submit secondary-submit" :disabled="submitting || addingToCart" @click="addSelectedToCart">
-          {{ addingToCart ? "加入中..." : "加入购物车" }}
-        </button>
-        <button class="primary-button submit" :disabled="submitting" @click="submitOrder">
-          {{ submitting ? "提交中..." : "提交订单" }}
-        </button>
-      </view>
+      </FormSection>
     </view>
     <WechatProfilePrompt />
+    <FixedBottomActionBar
+      v-if="conference && form"
+      amount-label="合计"
+      :amount-value="`¥${formatCent(payableAmountCent)}`"
+      note="金额以提交订单时系统计算结果为准"
+      primary-text="提交订单"
+      :secondary-text="addingToCart ? '加入中...' : '加入购物车'"
+      :loading="submitting"
+      loading-text="提交中..."
+      :primary-disabled="submitting || totalTickets === 0"
+      :secondary-disabled="submitting || addingToCart || totalTickets === 0"
+      @primary="submitOrder"
+      @secondary="addSelectedToCart"
+    />
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
+import EmptyState from "@/components/ui/EmptyState.vue";
+import ErrorState from "@/components/ui/ErrorState.vue";
+import FixedBottomActionBar from "@/components/ui/FixedBottomActionBar.vue";
+import FormSection from "@/components/ui/FormSection.vue";
+import LoadingState from "@/components/ui/LoadingState.vue";
+import PriceSummary from "@/components/ui/PriceSummary.vue";
+import StatusTag from "@/components/ui/StatusTag.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import {
   getConferenceDetail,
@@ -201,6 +204,11 @@ const selectedAmountCent = computed(() =>
     const sku = conference.value?.skus.find((entry) => entry.id === item.skuId);
     return sum + (sku?.priceCent ?? 0) * item.quantity;
   }, 0)
+);
+const totalTickets = computed(() => selectedItems.value.reduce((sum, item) => sum + item.quantity, 0));
+const payableAmountCent = computed(() => quote.value?.payableAmountCent ?? selectedAmountCent.value);
+const attendeeSectionDescription = computed(() =>
+  totalTickets.value > 0 ? `共 ${totalTickets.value} 位参会人，请填写真实有效信息。` : "选择报名票数后自动生成表单。"
 );
 
 onLoad((query) => {
@@ -602,50 +610,49 @@ interface AttendeeFormState {
 
 <style scoped>
 .page {
-  min-height: 100vh;
-  padding: 28rpx;
-  box-sizing: border-box;
-  padding-bottom: 172rpx;
+  padding-bottom: 224rpx;
 }
 
 .content {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 22rpx;
 }
 
-.section {
-  padding: 28rpx;
-  border: 1px solid #dce3ef;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.title,
-.section-title,
-.sku-name,
-.quote-price {
-  display: block;
-  color: #172033;
-  font-weight: 800;
+.headline {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  padding: 30rpx;
 }
 
 .title {
-  font-size: 38rpx;
+  display: block;
+  color: var(--ui-color-text);
+  font-size: 40rpx;
+  font-weight: 900;
   line-height: 1.35;
 }
 
 .summary,
 .sku-desc,
+.sku-stock,
 .hint {
-  color: #5c6b82;
+  display: block;
+  color: var(--ui-color-muted);
   font-size: 26rpx;
   line-height: 1.5;
 }
 
-.section-title {
-  margin-bottom: 18rpx;
-  font-size: 31rpx;
+.safety-note {
+  display: block;
+  padding: 16rpx 18rpx;
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-primary-soft);
+  color: var(--ui-color-primary);
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .sku-list {
@@ -658,15 +665,15 @@ interface AttendeeFormState {
   display: flex;
   justify-content: space-between;
   gap: 20rpx;
-  padding: 22rpx;
-  border: 1px solid #e1e8f2;
-  border-radius: 8px;
-  background: #fbfcff;
+  padding: 24rpx;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface-muted);
 }
 
 .selected {
-  border-color: #2452a8;
-  background: #eef4ff;
+  border-color: var(--ui-color-primary);
+  background: var(--ui-color-primary-soft);
 }
 
 .sku-main {
@@ -682,13 +689,17 @@ interface AttendeeFormState {
 }
 
 .sku-name {
+  display: block;
+  color: var(--ui-color-text);
   font-size: 29rpx;
+  font-weight: 900;
+  line-height: 1.35;
 }
 
 .price {
-  color: #2452a8;
+  color: var(--ui-color-primary);
   font-size: 30rpx;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .quantity-control {
@@ -701,86 +712,57 @@ interface AttendeeFormState {
   width: 54rpx;
   height: 54rpx;
   padding: 0;
-  border-radius: 8px;
-  background: #2452a8;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-color-primary);
   color: #ffffff;
   font-size: 28rpx;
   line-height: 54rpx;
 }
 
 .qty-value {
-  min-width: 36rpx;
-  color: #172033;
+  min-width: 42rpx;
+  color: var(--ui-color-text);
   text-align: center;
   font-size: 28rpx;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .attendee-card {
   margin-top: 22rpx;
-  padding-top: 22rpx;
-  border-top: 1px solid #e4eaf3;
+  padding: 22rpx;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface-muted);
 }
 
 .attendee-title {
   display: block;
-  color: #2452a8;
+  color: var(--ui-color-primary);
   font-size: 28rpx;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .coupon-row {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  margin-top: 20rpx;
+  margin-bottom: 18rpx;
 }
 
 .coupon-input {
   flex: 1;
   min-height: 78rpx;
   padding: 0 22rpx;
-  border: 1px solid #d8e0ee;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #172033;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface);
+  color: var(--ui-color-text);
   font-size: 27rpx;
   box-sizing: border-box;
 }
 
-.quote-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-  margin-top: 20rpx;
-  padding-top: 20rpx;
-  border-top: 1px solid #e4eaf3;
-  color: #5c6b82;
-  font-size: 27rpx;
-}
-
-.quote-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.discount-line,
-.discount-title {
-  color: #b45309;
-}
-
-.discount-title {
-  font-size: 24rpx;
-}
-
-.total-line {
-  margin-top: 4rpx;
-}
-
-.quote-price {
-  color: #c2410c;
-  font-size: 34rpx;
+.coupon-button {
+  min-width: 150rpx;
 }
 
 .field {
@@ -791,14 +773,14 @@ interface AttendeeFormState {
 }
 
 .label {
-  color: #24324a;
+  color: var(--ui-color-text);
   font-size: 27rpx;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .required,
 .error-text {
-  color: #b42318;
+  color: var(--ui-color-danger);
 }
 
 .input,
@@ -806,10 +788,10 @@ interface AttendeeFormState {
 .picker-value {
   min-height: 82rpx;
   padding: 0 22rpx;
-  border: 1px solid #d8e0ee;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #172033;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface);
+  color: var(--ui-color-text);
   font-size: 28rpx;
   box-sizing: border-box;
 }
@@ -833,76 +815,7 @@ interface AttendeeFormState {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  color: #24324a;
+  color: var(--ui-color-text);
   font-size: 27rpx;
-}
-
-.footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20rpx;
-  padding: 20rpx 28rpx 34rpx;
-  border-top: 1px solid #dce3ef;
-  background: #ffffff;
-  box-sizing: border-box;
-}
-
-.footer-price {
-  display: flex;
-  flex-direction: column;
-  gap: 4rpx;
-  color: #5c6b82;
-  font-size: 24rpx;
-}
-
-.primary-button,
-.ghost-button {
-  min-height: 78rpx;
-  border-radius: 8px;
-  font-size: 28rpx;
-  line-height: 78rpx;
-}
-
-.primary-button {
-  background: #2452a8;
-  color: #ffffff;
-}
-
-.ghost-button {
-  border: 1px solid #ccd7e6;
-  background: #ffffff;
-  color: #2452a8;
-}
-
-.submit {
-  width: 230rpx;
-}
-
-.secondary-submit {
-  color: #2452a8;
-}
-
-.compact {
-  width: 200rpx;
-}
-
-.state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20rpx;
-  padding: 96rpx 24rpx;
-  color: #627087;
-  font-size: 28rpx;
-  text-align: center;
-}
-
-.error {
-  color: #b42318;
 }
 </style>

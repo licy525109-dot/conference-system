@@ -1,33 +1,56 @@
 <template>
-  <view class="page">
-    <view class="topbar">
-      <text class="title">我的报名</text>
-      <view class="topbar-actions">
-        <button class="ghost-button compact" @click="goHome">返回首页</button>
-        <button class="ghost-button compact" @click="loadRegistrations">刷新</button>
+  <view class="page ui-page">
+    <view class="hero">
+      <view>
+        <text class="eyebrow">报名记录</text>
+        <text class="title">我的报名</text>
+        <text class="subtitle">查看已确认报名、票种和支付信息。</text>
       </view>
+      <button class="ui-button-secondary ui-button-compact" @click="loadRegistrations">刷新</button>
     </view>
 
-    <view v-if="loading" class="state">加载报名记录中...</view>
-    <view v-else-if="error" class="state error">
-      <text>{{ error }}</text>
-      <button class="primary-button compact" @click="loadRegistrations">重试</button>
-    </view>
-    <view v-else-if="items.length === 0" class="state">暂无报名记录</view>
+    <LoadingState v-if="loading" title="加载报名记录中" description="正在同步你的报名凭证。" />
+    <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="loadRegistrations" />
+    <EmptyState
+      v-else-if="items.length === 0"
+      title="暂无报名记录"
+      description="完成会议报名并支付成功后，报名凭证会显示在这里。"
+      mark="证"
+      action-text="去看会议"
+      @action="goHome"
+    />
 
     <view v-else class="list">
       <view v-for="item in items" :key="item.id" class="card">
         <view class="card-head">
-          <text class="conference-title">{{ item.conference.title }}</text>
-          <text class="status">{{ item.status }}</text>
+          <view class="title-box">
+            <text class="conference-title">{{ item.conference.title }}</text>
+            <text class="registration-no">报名号：{{ item.registrationNo }}</text>
+          </view>
+          <StatusTag :label="statusText(item.status)" :tone="statusTone(item.status)" />
         </view>
-        <view class="info">
-          <text>报名规格：{{ item.sku.name }}</text>
-          <text>报名人：{{ item.attendeeName }}</text>
-          <text>手机号：{{ item.phone }}</text>
-          <text>支付金额：¥{{ formatCent(item.paidAmountCent) }}</text>
+        <view class="info-grid">
+          <view class="info-item">
+            <text class="label">票种</text>
+            <text class="value">{{ item.sku.name }}</text>
+          </view>
+          <view class="info-item">
+            <text class="label">参会人</text>
+            <text class="value">{{ item.attendeeName }}</text>
+          </view>
+          <view class="info-item">
+            <text class="label">手机号</text>
+            <text class="value">{{ item.phone || "-" }}</text>
+          </view>
+          <view class="info-item">
+            <text class="label">支付金额</text>
+            <text class="price">¥{{ formatCent(item.paidAmountCent) }}</text>
+          </view>
+        </view>
+        <view class="detail-lines">
           <text>订单号：{{ item.order.orderNo }}</text>
           <text>确认时间：{{ formatDateTime(item.confirmedAt) }}</text>
+          <text>会议时间：{{ formatDateTime(item.conference.startsAt) }}</text>
         </view>
       </view>
     </view>
@@ -39,6 +62,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
+import EmptyState from "@/components/ui/EmptyState.vue";
+import ErrorState from "@/components/ui/ErrorState.vue";
+import LoadingState from "@/components/ui/LoadingState.vue";
+import StatusTag from "@/components/ui/StatusTag.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getMyRegistrations } from "@/services/registration";
@@ -74,32 +101,60 @@ async function loadRegistrations() {
     loading.value = false;
   }
 }
+
+function statusText(status: string): string {
+  const map: Record<string, string> = {
+    CONFIRMED: "已确认",
+    CANCELLED: "已取消",
+    REFUNDED: "已退款"
+  };
+  return map[status] ?? status;
+}
+
+function statusTone(status: string): "info" | "success" | "warning" | "danger" | "neutral" {
+  if (status === "CONFIRMED") return "success";
+  if (status === "CANCELLED") return "neutral";
+  if (status === "REFUNDED") return "warning";
+  return "info";
+}
 </script>
 
 <style scoped>
 .page {
-  min-height: 100vh;
-  padding: 28rpx;
-  box-sizing: border-box;
+  padding-bottom: 164rpx;
 }
 
-.topbar {
+.hero {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 20rpx;
-  margin-bottom: 24rpx;
+  gap: 24rpx;
+  margin-bottom: 28rpx;
+  padding-top: 32rpx;
 }
 
-.topbar-actions {
-  display: flex;
-  gap: 12rpx;
+.eyebrow {
+  display: block;
+  color: var(--ui-color-primary);
+  font-size: 24rpx;
+  font-weight: 800;
 }
 
 .title {
-  color: #172033;
-  font-size: 40rpx;
-  font-weight: 800;
+  display: block;
+  margin-top: 8rpx;
+  color: var(--ui-color-text);
+  font-size: 44rpx;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.subtitle {
+  display: block;
+  margin-top: 10rpx;
+  color: var(--ui-color-muted);
+  font-size: 25rpx;
+  line-height: 1.5;
 }
 
 .list {
@@ -110,76 +165,83 @@ async function loadRegistrations() {
 
 .card {
   padding: 28rpx;
-  border: 1px solid #dce3ef;
-  border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface);
+  box-shadow: var(--ui-shadow-card);
 }
 
 .card-head {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 20rpx;
-  margin-bottom: 18rpx;
+}
+
+.title-box {
+  flex: 1;
+  min-width: 0;
 }
 
 .conference-title {
-  flex: 1;
-  color: #172033;
-  font-size: 31rpx;
-  font-weight: 800;
+  display: block;
+  color: var(--ui-color-text);
+  font-size: 32rpx;
+  font-weight: 900;
   line-height: 1.35;
 }
 
-.status {
-  color: #2452a8;
-  font-size: 25rpx;
-  font-weight: 800;
-}
-
-.info {
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-  color: #5c6b82;
-  font-size: 26rpx;
+.registration-no {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--ui-color-subtle);
+  font-size: 23rpx;
   line-height: 1.45;
 }
 
-.primary-button,
-.ghost-button {
-  min-height: 72rpx;
-  border-radius: 8px;
-  font-size: 27rpx;
-  line-height: 72rpx;
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+  margin-top: 24rpx;
+  padding: 22rpx;
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface-muted);
 }
 
-.primary-button {
-  background: #2452a8;
-  color: #ffffff;
-}
-
-.ghost-button {
-  border: 1px solid #ccd7e6;
-  background: #ffffff;
-  color: #2452a8;
-}
-
-.compact {
-  width: 176rpx;
-}
-
-.state {
+.info-item {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 20rpx;
-  padding: 96rpx 24rpx;
-  color: #627087;
-  font-size: 28rpx;
-  text-align: center;
+  gap: 6rpx;
+  min-width: 0;
 }
 
-.error {
-  color: #b42318;
+.label {
+  color: var(--ui-color-subtle);
+  font-size: 22rpx;
+}
+
+.value,
+.price {
+  color: var(--ui-color-text);
+  font-size: 25rpx;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.price {
+  color: var(--ui-color-primary);
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.detail-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  margin-top: 20rpx;
+  color: var(--ui-color-muted);
+  font-size: 24rpx;
+  line-height: 1.45;
 }
 </style>

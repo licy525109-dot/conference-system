@@ -1,33 +1,48 @@
 <template>
-  <view class="page">
-    <view class="section">
-      <text class="eyebrow">支付状态</text>
-      <text class="title">{{ statusText }}</text>
-      <text class="summary">订单号：{{ orderNo || "-" }}</text>
-      <text v-if="paymentStatus?.paidAt" class="summary">支付时间：{{ formatDateTime(paymentStatus.paidAt) }}</text>
-    </view>
+  <view class="page ui-page">
+    <LoadingState v-if="loading" title="查询支付状态中" description="正在确认订单与报名记录。" />
+    <ErrorState
+      v-else-if="error"
+      title="支付状态查询异常"
+      :message="error"
+      primary-text="刷新状态"
+      secondary-text="返回首页"
+      @retry="loadStatus"
+      @secondary="goHome"
+    />
 
-    <view v-if="loading" class="state">查询支付状态中...</view>
-    <view v-else-if="error" class="state error">
-      <text>{{ error }}</text>
-      <button v-if="orderNo" class="primary-button compact" @click="loadStatus">重试</button>
-      <button class="ghost-button compact" @click="goHome">返回首页</button>
-    </view>
-
-    <view v-if="orderNo" class="actions">
-      <button v-if="orderNo && paymentStatus?.status !== 'PAID'" class="primary-button" :disabled="confirming" @click="confirmPay">
-        {{ confirming ? "确认中..." : paymentActionLabel }}
-      </button>
-      <button class="ghost-button" @click="goHome">返回首页</button>
-      <button v-if="orderNo" class="ghost-button" @click="loadStatus">刷新状态</button>
-      <button class="ghost-button" @click="goMyRegistrations">我的报名</button>
-    </view>
+    <ResultState
+      v-else
+      :tone="resultTone"
+      :title="resultTitle"
+      :description="resultDescription"
+      :order-no="orderNo || '-'"
+      :time-text="paymentStatus?.paidAt ? formatDateTime(paymentStatus.paidAt) : ''"
+    >
+      <view class="actions">
+        <button
+          v-if="orderNo && paymentStatus?.status !== 'PAID'"
+          class="ui-button-primary action"
+          :disabled="confirming"
+          @click="confirmPay"
+        >
+          {{ confirming ? "确认中..." : paymentActionLabel }}
+        </button>
+        <button v-if="orderNo" class="ui-button-secondary action" @click="loadStatus">刷新状态</button>
+        <button v-if="paymentStatus?.status === 'PAID'" class="ui-button-primary action" @click="goMyRegistrations">查看我的报名</button>
+        <button v-else class="ui-button-secondary action" @click="goMyRegistrations">我的报名</button>
+        <button class="ui-button-secondary action" @click="goHome">返回首页</button>
+      </view>
+    </ResultState>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
+import ErrorState from "@/components/ui/ErrorState.vue";
+import LoadingState from "@/components/ui/LoadingState.vue";
+import ResultState from "@/components/ui/ResultState.vue";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getPaymentActionLabel, getPaymentStatus, startOrderPayment, type PaymentStatusResponse } from "@/services/payment";
 import { ApiRequestError } from "@/services/request";
@@ -41,14 +56,39 @@ const confirming = ref(false);
 const error = ref("");
 const paymentActionLabel = getPaymentActionLabel();
 
-const statusText = computed(() => {
+const resultTitle = computed(() => {
   if (paymentStatus.value?.status === "PAID") {
-    return "已支付";
+    return "支付成功";
   }
   if (paymentStatus.value?.status === "PENDING") {
-    return "待支付";
+    return "等待支付";
   }
-  return paymentStatus.value?.status || "待查询";
+  if (paymentStatus.value?.status === "CANCELLED" || paymentStatus.value?.status === "CLOSED") {
+    return "订单已关闭";
+  }
+  if (paymentStatus.value?.paymentStatus === "FAILED") {
+    return "支付未完成";
+  }
+  return "待确认";
+});
+const resultDescription = computed(() => {
+  if (paymentStatus.value?.status === "PAID") {
+    return "报名记录已生成，请在我的报名中查看参会信息。";
+  }
+  if (paymentStatus.value?.status === "PENDING") {
+    return "订单仍在待支付状态，可继续发起支付或刷新状态。";
+  }
+  if (paymentStatus.value?.status === "CANCELLED" || paymentStatus.value?.status === "CLOSED") {
+    return "当前订单不可继续支付，请返回会议详情重新报名。";
+  }
+  return "支付结果可能仍在同步，请刷新状态确认。";
+});
+const resultTone = computed<"success" | "warning" | "danger" | "info">(() => {
+  if (paymentStatus.value?.status === "PAID") return "success";
+  if (paymentStatus.value?.status === "CANCELLED" || paymentStatus.value?.status === "CLOSED") return "danger";
+  if (paymentStatus.value?.paymentStatus === "FAILED") return "danger";
+  if (paymentStatus.value?.status === "PENDING") return "warning";
+  return "info";
 });
 
 onLoad((query) => {
@@ -154,76 +194,16 @@ function goMyRegistrations() {
 
 <style scoped>
 .page {
-  min-height: 100vh;
-  padding: 28rpx;
-  box-sizing: border-box;
-}
-
-.section {
-  padding: 32rpx;
-  border: 1px solid #dce3ef;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.eyebrow,
-.summary {
-  display: block;
-  color: #5c6b82;
-  font-size: 26rpx;
-  line-height: 1.5;
-}
-
-.title {
-  display: block;
-  margin: 12rpx 0;
-  color: #172033;
-  font-size: 44rpx;
-  font-weight: 800;
+  padding-bottom: 64rpx;
 }
 
 .actions {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
-  margin-top: 28rpx;
+  gap: 16rpx;
 }
 
-.primary-button,
-.ghost-button {
-  min-height: 78rpx;
-  border-radius: 8px;
-  font-size: 28rpx;
-  line-height: 78rpx;
-}
-
-.primary-button {
-  background: #2452a8;
-  color: #ffffff;
-}
-
-.ghost-button {
-  border: 1px solid #ccd7e6;
-  background: #ffffff;
-  color: #2452a8;
-}
-
-.compact {
-  width: 200rpx;
-}
-
-.state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20rpx;
-  padding: 56rpx 24rpx;
-  color: #627087;
-  font-size: 28rpx;
-  text-align: center;
-}
-
-.error {
-  color: #b42318;
+.action {
+  width: 100%;
 }
 </style>
