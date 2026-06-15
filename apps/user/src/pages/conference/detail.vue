@@ -31,7 +31,7 @@
         </view>
       </view>
 
-      <FormSection title="报名规格" description="选择票种后进入报名表单。库存和金额以提交订单时系统校验为准。">
+      <FormSection title="报名规格" description="选择票种后进入报名表单。库存和金额以提交订单时系统计算结果为准。">
         <EmptyState v-if="conference.skus.length === 0" title="暂无可报名规格" description="主办方尚未开放报名票种。" mark="票" />
         <view v-else class="sku-list">
           <view v-for="sku in conference.skus" :key="sku.id" class="sku-card">
@@ -69,7 +69,7 @@
       v-if="conference"
       amount-label="报名费用"
       :amount-value="priceRangeText"
-      note="实际应付金额以下单时计算为准"
+      note="金额以提交订单时系统计算结果为准"
       primary-text="立即报名"
       :primary-disabled="conference.skus.length === 0"
       tabbar-offset

@@ -206,7 +206,7 @@ async function checkoutProduct(id: string) {
     });
   } catch (err) {
     console.error("[CART_CHECKOUT_PRODUCT_ERROR]", err);
-    uni.showToast({ title: checkoutMessage(err, "商品结算失败，请重试"), icon: "none" });
+    uni.showToast({ title: checkoutMessage(err, "商品预留单生成失败，请重试"), icon: "none" });
   } finally {
     checkoutId.value = "";
   }
