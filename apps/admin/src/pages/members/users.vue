@@ -1,20 +1,27 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">用户与会员</h1>
-        <p class="page-subtitle">查看小程序用户，手动授予会员等级；会员优惠暂不接入报名定价。</p>
-      </div>
-      <el-button type="primary" @click="openAssign">授予会员</el-button>
-    </div>
+    <AdminPageHeader
+      title="用户与会员"
+      eyebrow="扩展能力"
+      badge="后续开放"
+      badge-tone="neutral"
+      subtitle="查看小程序用户，手动授予会员等级；会员优惠暂不接入会议报名定价。"
+    >
+      <AdminFeatureBadge label="扩展能力，建议灰度使用" description="第一版报名缴费主线不依赖会员能力。" tone="warning" />
+      <template #actions>
+        <el-button type="primary" @click="openAssign">授予会员</el-button>
+      </template>
+    </AdminPageHeader>
 
-    <div class="toolbar">
-      <el-input v-model="keyword" placeholder="昵称 / 手机 / openid" style="width: 260px" @keyup.enter="loadUsers" />
-      <el-button :loading="loading" @click="loadUsers">查询</el-button>
-    </div>
+    <AdminFilterBar>
+      <el-input v-model="keyword" clearable placeholder="昵称 / 手机 / openid" style="width: 260px" @keyup.enter="loadUsers" />
+      <template #actions>
+        <el-button :loading="loading" type="primary" @click="loadUsers">查询</el-button>
+      </template>
+    </AdminFilterBar>
 
     <section class="table-panel">
-      <el-table :data="users" empty-text="暂无用户">
+      <el-table v-loading="loading" :data="users" empty-text="暂无用户">
         <el-table-column label="用户" min-width="220">
           <template #default="{ row }">
             <strong>{{ row.nickname || row.wechatNickname || "未命名用户" }}</strong>
@@ -28,7 +35,7 @@
             <span v-else class="muted-text">非会员</span>
           </template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="注册时间" width="190" />
+        <el-table-column label="注册时间" width="190"><template #default="{ row }">{{ formatDate(row.createdAt) }}</template></el-table-column>
         <el-table-column label="操作" width="110">
           <template #default="{ row }"><el-button size="small" @click="openAssign(row.id)">授予</el-button></template>
         </el-table-column>
@@ -42,9 +49,9 @@
           <template #default="{ row }">{{ row.user.nickname || row.user.wechatNickname || row.user.openid || row.userId }}</template>
         </el-table-column>
         <el-table-column label="等级" width="140"><template #default="{ row }">{{ row.level.name }}</template></el-table-column>
-        <el-table-column prop="status" label="状态" width="110" />
-        <el-table-column prop="startsAt" label="开始时间" width="190" />
-        <el-table-column prop="endsAt" label="结束时间" width="190" />
+        <el-table-column label="状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
+        <el-table-column label="开始时间" width="190"><template #default="{ row }">{{ formatDate(row.startsAt) }}</template></el-table-column>
+        <el-table-column label="结束时间" width="190"><template #default="{ row }">{{ formatDate(row.endsAt) }}</template></el-table-column>
         <el-table-column prop="source" label="来源" width="120" />
       </el-table>
     </section>
@@ -71,6 +78,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
+import AdminFilterBar from "../../components/AdminFilterBar.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { assignMembership, listMemberLevels, listMemberships, listUsers } from "../../services/admin";
 import type { AdminAppUser, MemberLevel, UserMembership } from "../../services/types";
 
@@ -118,5 +129,12 @@ async function saveAssign() {
   dialogVisible.value = false;
   await Promise.all([loadUsers(), loadMemberships()]);
   ElMessage.success("会员已授予");
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 </script>

@@ -23,38 +23,41 @@ export interface AdminRoute {
   title: string;
   menuTitle: string;
   group: string;
+  description?: string;
+  badge?: "灰度" | "后续" | "辅助" | "高级";
   permission?: string;
   component: Component;
   hidden?: boolean;
 }
 
 export const routes: AdminRoute[] = [
-  { path: "/dashboard", title: "数据看板", menuTitle: "数据看板", group: "运营概览", permission: "dashboard:view", component: DashboardPage },
-  { path: "/conferences", title: "会议管理", menuTitle: "会议配置", group: "会议运营", permission: "conference:view", component: ConferencesPage },
+  { path: "/dashboard", title: "数据看板", menuTitle: "数据看板", group: "工作台", description: "核心报名、收入和订单指标", permission: "dashboard:view", component: DashboardPage },
+  { path: "/conferences", title: "会议管理", menuTitle: "会议管理", group: "会议业务", description: "会议基础信息、上下架和配置入口", permission: "conference:view", component: ConferencesPage },
   {
     path: "/conferences/config",
     title: "会议配置详情",
     menuTitle: "会议配置详情",
-    group: "会议运营",
+    group: "会议业务",
+    description: "票种、表单字段、优惠和页面装修",
     permission: "conference:view",
     component: ConferenceConfigPage,
     hidden: true
   },
-  { path: "/orders", title: "订单列表", menuTitle: "订单列表", group: "会议运营", permission: "order:view", component: OrdersPage },
-  { path: "/registrations", title: "报名名单", menuTitle: "报名名单", group: "会议运营", permission: "registration:view", component: RegistrationsPage },
-  { path: "/coupons", title: "优惠券", menuTitle: "优惠券", group: "营销工具", permission: "coupon:view", component: CouponsPage },
-  { path: "/promotions", title: "满减规则", menuTitle: "满减规则", group: "营销工具", permission: "promotion:view", component: PromotionsPage },
-  { path: "/pages", title: "小程序页面装修", menuTitle: "页面装修", group: "页面装修", permission: "page:view", component: CmsPagesPage },
-  { path: "/themes", title: "主题配置", menuTitle: "主题配置", group: "页面装修", permission: "theme:view", component: ThemesPage },
-  { path: "/tabbar", title: "底部导航配置", menuTitle: "底部导航", group: "页面装修", permission: "tabbar:view", component: TabbarPage },
-  { path: "/materials", title: "素材管理", menuTitle: "素材管理", group: "页面装修", permission: "material:view", component: MaterialsPage },
-  { path: "/members/users", title: "用户与会员", menuTitle: "用户与会员", group: "用户资产", permission: "member:view", component: MemberUsersPage },
-  { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "用户资产", permission: "member:view", component: MemberLevelsPage },
-  { path: "/finance", title: "财务与对账", menuTitle: "财务与对账", group: "交易财务", permission: "finance:view", component: FinancePage },
-  { path: "/mall/products", title: "商城商品", menuTitle: "商城商品", group: "交易财务", permission: "mall:view", component: MallProductsPage },
-  { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "交易财务", permission: "mall:view", component: MallOrdersPage },
-  { path: "/system/accounts", title: "账号管理", menuTitle: "账号管理", group: "系统设置", permission: "system:account", component: AccountsPage },
-  { path: "/system/roles", title: "角色权限", menuTitle: "角色权限", group: "系统设置", permission: "system:role", component: RolesPage }
+  { path: "/registrations", title: "报名名单", menuTitle: "报名名单", group: "会议业务", description: "报名记录、参会人、备注和核销", permission: "registration:view", component: RegistrationsPage },
+  { path: "/orders", title: "订单支付", menuTitle: "订单支付", group: "会议业务", description: "订单金额、支付流水和异常识别", permission: "order:view", component: OrdersPage },
+  { path: "/coupons", title: "优惠券", menuTitle: "优惠券", group: "营销配置", badge: "灰度", description: "扩展营销能力，金额仍以后端计算为准", permission: "coupon:view", component: CouponsPage },
+  { path: "/promotions", title: "满减规则", menuTitle: "满减规则", group: "营销配置", badge: "灰度", description: "扩展营销能力，金额仍以后端计算为准", permission: "promotion:view", component: PromotionsPage },
+  { path: "/pages", title: "页面装修", menuTitle: "页面装修", group: "页面装修", description: "CMS 页面版本、组件和发布预览", permission: "page:view", component: CmsPagesPage },
+  { path: "/themes", title: "主题配置", menuTitle: "主题配置", group: "页面装修", description: "小程序/H5 主题色、圆角和卡片风格", permission: "theme:view", component: ThemesPage },
+  { path: "/tabbar", title: "底部导航", menuTitle: "底部导航", group: "页面装修", description: "小程序动态底部导航配置", permission: "tabbar:view", component: TabbarPage },
+  { path: "/materials", title: "素材管理", menuTitle: "素材管理", group: "页面装修", description: "图片、图标、视频和字体素材", permission: "material:view", component: MaterialsPage },
+  { path: "/members/users", title: "会员管理", menuTitle: "会员管理", group: "扩展能力", badge: "后续", description: "会员能力预留，暂不参与会议定价", permission: "member:view", component: MemberUsersPage },
+  { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "扩展能力", badge: "后续", description: "会员权益展示预留", permission: "member:view", component: MemberLevelsPage },
+  { path: "/mall/products", title: "商城商品", menuTitle: "商城商品", group: "扩展能力", badge: "后续", description: "商城能力预留，暂不接会议支付", permission: "mall:view", component: MallProductsPage },
+  { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "扩展能力", badge: "后续", description: "商城订单链路预留", permission: "mall:view", component: MallOrdersPage },
+  { path: "/finance", title: "财务对账", menuTitle: "财务对账", group: "扩展能力", badge: "辅助", description: "对账辅助，不等同完整财务系统", permission: "finance:view", component: FinancePage },
+  { path: "/system/accounts", title: "账号管理", menuTitle: "账号管理", group: "系统管理", description: "后台账号和角色分配", permission: "system:account", component: AccountsPage },
+  { path: "/system/roles", title: "角色权限", menuTitle: "角色权限", group: "系统管理", badge: "高级", description: "高级权限配置，谨慎调整", permission: "system:role", component: RolesPage }
 ];
 
 const currentPath = ref(normalizePath(window.location.hash.replace(/^#/, "")));

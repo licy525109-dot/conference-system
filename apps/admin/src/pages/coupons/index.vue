@@ -1,26 +1,38 @@
 <template>
   <section class="admin-page">
-    <div v-if="!embedded" class="page-header">
-      <div>
-        <h1 class="page-title">优惠券</h1>
-        <p class="page-subtitle">配置固定金额或折扣券，订单创建时后端重新计算优惠。</p>
-      </div>
-      <el-button type="primary" @click="openCreate">新增优惠券</el-button>
-    </div>
-    <div class="toolbar">
-      <el-input v-model="keyword" placeholder="券码/名称" style="width: 220px" @keyup.enter="load" />
-      <el-button :loading="loading" @click="load">查询</el-button>
-      <el-button v-if="embedded" type="primary" @click="openCreate">新增优惠券</el-button>
-    </div>
+    <AdminPageHeader
+      v-if="!embedded"
+      title="优惠券"
+      eyebrow="营销配置"
+      badge="灰度能力"
+      badge-tone="warning"
+      subtitle="配置固定金额或折扣券；订单创建时后端会重新计算优惠，前端金额仅用于展示。"
+    >
+      <template #actions>
+        <el-button type="primary" @click="openCreate">新增优惠券</el-button>
+      </template>
+    </AdminPageHeader>
+
+    <AdminFilterBar>
+      <el-input v-model="keyword" clearable placeholder="券码 / 名称" style="width: 220px" @keyup.enter="load" />
+      <template #actions>
+        <el-button :loading="loading" type="primary" @click="load">查询</el-button>
+        <el-button v-if="embedded" type="primary" @click="openCreate">新增优惠券</el-button>
+      </template>
+    </AdminFilterBar>
+
     <section class="table-panel">
-      <el-table :data="items" empty-text="暂无优惠券">
+      <el-table v-loading="loading" :data="items">
         <el-table-column prop="code" label="券码" width="140" />
         <el-table-column prop="name" label="名称" min-width="160" />
         <el-table-column prop="type" label="类型" width="100" />
         <el-table-column label="优惠" width="120"><template #default="{ row }">{{ discountText(row) }}</template></el-table-column>
         <el-table-column label="门槛" width="160"><template #default="{ row }">{{ thresholdText(row.minAmountCent, row.minQuantity) }}</template></el-table-column>
-        <el-table-column label="状态" width="90"><template #default="{ row }">{{ row.enabled ? "启用" : "停用" }}</template></el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
         <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
+        <template #empty>
+          <AdminEmptyState title="暂无优惠券" description="优惠券为灰度营销能力，第一版会议报名可先不配置。" action-text="新增优惠券" @action="openCreate" />
+        </template>
       </el-table>
     </section>
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑优惠券' : '新增优惠券'" width="680px">
@@ -46,6 +58,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
+import AdminEmptyState from "../../components/AdminEmptyState.vue";
+import AdminFilterBar from "../../components/AdminFilterBar.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { createCoupon, listCoupons, updateCoupon } from "../../services/admin";
 import type { Coupon } from "../../services/types";
 

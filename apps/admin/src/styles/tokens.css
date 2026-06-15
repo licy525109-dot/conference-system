@@ -13,6 +13,7 @@
   --admin-color-aside: #0f1b2f;
   --admin-color-aside-soft: #182741;
   --admin-radius: 8px;
+  --admin-radius-lg: 10px;
   --admin-shadow: 0 12px 32px rgb(21 32 51 / 8%);
   --admin-shadow-soft: 0 6px 18px rgb(21 32 51 / 6%);
 }

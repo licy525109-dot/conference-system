@@ -1,28 +1,33 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">商城商品</h1>
-        <p class="page-subtitle">商品与 SKU 独立于会议报名订单，第一版不接支付与履约。</p>
-      </div>
-      <div class="inline-actions">
+    <AdminPageHeader
+      title="商城商品"
+      eyebrow="扩展能力"
+      badge="后续开放"
+      badge-tone="neutral"
+      subtitle="商品与 SKU 独立于会议报名订单，第一版不接会议支付与履约。"
+    >
+      <AdminFeatureBadge label="后续开放" description="商城能力为预留链路，不进入当前报名缴费主线。" tone="neutral" />
+      <template #actions>
         <el-button @click="categoryVisible = true">新增分类</el-button>
         <el-button type="primary" @click="openCreate">新增商品</el-button>
-      </div>
-    </div>
+      </template>
+    </AdminPageHeader>
 
-    <div class="toolbar">
-      <el-input v-model="keyword" placeholder="商品标题" style="width: 240px" @keyup.enter="loadProducts" />
+    <AdminFilterBar>
+      <el-input v-model="keyword" clearable placeholder="商品标题" style="width: 240px" @keyup.enter="loadProducts" />
       <el-select v-model="status" clearable placeholder="状态" style="width: 140px">
         <el-option label="草稿" value="DRAFT" />
         <el-option label="上架" value="PUBLISHED" />
         <el-option label="下架" value="OFFLINE" />
       </el-select>
-      <el-button :loading="loading" @click="loadProducts">查询</el-button>
-    </div>
+      <template #actions>
+        <el-button :loading="loading" type="primary" @click="loadProducts">查询</el-button>
+      </template>
+    </AdminFilterBar>
 
     <section class="table-panel">
-      <el-table :data="products" empty-text="暂无商品">
+      <el-table v-loading="loading" :data="products" empty-text="暂无商品">
         <el-table-column label="商品" min-width="240">
           <template #default="{ row }">
             <div class="product-cell">
@@ -35,7 +40,7 @@
           </template>
         </el-table-column>
         <el-table-column label="分类" width="140"><template #default="{ row }">{{ row.category?.name || "-" }}</template></el-table-column>
-        <el-table-column label="状态" width="100"><template #default="{ row }">{{ productStatusText(row.status) }}</template></el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="productStatusText(row.status)" /></template></el-table-column>
         <el-table-column label="规格" width="160">
           <template #default="{ row }">{{ row.skus.length }} 个</template>
         </el-table-column>
@@ -94,6 +99,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
+import AdminFilterBar from "../../components/AdminFilterBar.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { createProduct, createProductCategory, createProductSku, listProductCategories, listProducts, updateProduct } from "../../services/admin";
 import type { Product, ProductCategory } from "../../services/types";
 

@@ -1,15 +1,11 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">主题配置</h1>
-        <p class="page-subtitle">发布后小程序页面会读取主题色、圆角、按钮和卡片样式。</p>
-      </div>
-      <div class="inline-actions">
+    <AdminPageHeader title="主题配置" eyebrow="页面装修" subtitle="发布后小程序页面会读取主题色、圆角、按钮和卡片样式。">
+      <template #actions>
         <el-button @click="resetDefault">恢复默认</el-button>
         <el-button type="primary" :loading="saving" @click="save">发布主题</el-button>
-      </div>
-    </div>
+      </template>
+    </AdminPageHeader>
 
     <section class="data-panel theme-grid">
       <el-form :model="form" label-width="120px">
@@ -62,6 +58,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import { getTheme, updateTheme } from "../../services/admin";
 import type { ThemeConfig } from "../../services/types";
 

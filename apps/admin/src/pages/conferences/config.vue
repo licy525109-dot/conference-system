@@ -1,17 +1,21 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">会议配置详情</h1>
-        <p class="page-subtitle">{{ conference?.title || "请选择会议" }}</p>
-      </div>
+    <AdminPageHeader
+      title="会议配置详情"
+      :subtitle="conference?.title || '请选择会议'"
+      eyebrow="会议业务"
+      badge="配置中心"
+      badge-tone="info"
+    >
+      <template #actions>
       <div class="inline-actions">
         <el-select v-model="conferenceId" placeholder="选择会议" style="width: 260px" @change="loadAll">
           <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
         </el-select>
         <el-button @click="goBack">返回列表</el-button>
       </div>
-    </div>
+      </template>
+    </AdminPageHeader>
 
     <el-tabs v-if="conference" v-model="activeTab" class="data-panel">
       <el-tab-pane label="基础信息" name="basic">
@@ -29,7 +33,7 @@
         </el-form>
       </el-tab-pane>
 
-      <el-tab-pane label="票种" name="skus">
+      <el-tab-pane label="票种配置" name="skus">
         <div class="toolbar">
           <el-button type="primary" @click="openSku()">新增票种</el-button>
         </div>
@@ -38,7 +42,7 @@
           <el-table-column label="价格" width="120"><template #default="{ row }">¥{{ formatCent(row.priceCent) }}</template></el-table-column>
           <el-table-column prop="stock" label="库存" width="100" />
           <el-table-column prop="soldCount" label="已售" width="100" />
-          <el-table-column label="状态" width="110"><template #default="{ row }">{{ skuStatusText(row.status) }}</template></el-table-column>
+          <el-table-column label="状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
           <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openSku(row)">编辑</el-button></template></el-table-column>
         </el-table>
       </el-tab-pane>
@@ -51,8 +55,8 @@
           <el-table-column prop="label" label="标签" min-width="140" />
           <el-table-column prop="fieldKey" label="字段标识" min-width="140" />
           <el-table-column label="类型" width="120"><template #default="{ row }">{{ fieldTypeText(row.type) }}</template></el-table-column>
-          <el-table-column label="必填" width="90"><template #default="{ row }">{{ row.required ? "是" : "否" }}</template></el-table-column>
-          <el-table-column label="启用" width="90"><template #default="{ row }">{{ row.enabled ? "是" : "否" }}</template></el-table-column>
+          <el-table-column label="必填" width="90"><template #default="{ row }"><AdminStatusBadge :status="row.required" :label="row.required ? '必填' : '选填'" :tone="row.required ? 'warning' : 'neutral'" /></template></el-table-column>
+          <el-table-column label="启用" width="90"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
           <el-table-column label="操作" width="150">
             <template #default="{ row }">
               <el-button size="small" @click="openField(row)">编辑</el-button>
@@ -62,12 +66,16 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="优惠券" name="coupons">
-        <CouponsPage :conference-id="conferenceId" embedded />
-      </el-tab-pane>
-
-      <el-tab-pane label="满减规则" name="promotions">
-        <PromotionsPage :conference-id="conferenceId" embedded />
+      <el-tab-pane label="优惠配置" name="discounts">
+        <AdminFeatureBadge label="灰度能力" description="优惠券和满减只影响展示配置，订单金额仍由后端重新计算。" tone="warning" />
+        <div class="discount-grid">
+          <AdminSectionCard title="优惠券" subtitle="固定金额或折扣券，可限定当前会议。">
+            <CouponsPage :conference-id="conferenceId" embedded />
+          </AdminSectionCard>
+          <AdminSectionCard title="满减规则" subtitle="满金额或满张数优惠，作为营销配置灰度使用。">
+            <PromotionsPage :conference-id="conferenceId" embedded />
+          </AdminSectionCard>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="页面装修" name="page">
@@ -75,6 +83,17 @@
           <h3>会议详情页装修</h3>
           <p class="muted-text">进入小程序页面装修，编辑并发布会议详情页组件。会议详情页仍保留当前固定页面作为接口失败兜底。</p>
           <el-button type="primary" @click="openPageBuilder">打开页面装修</el-button>
+        </section>
+      </el-tab-pane>
+
+      <el-tab-pane label="发布设置" name="publish">
+        <section class="form-panel publish-panel">
+          <div>
+            <h3>当前发布状态</h3>
+            <p class="muted-text">会议上下架仍在会议管理列表中操作，避免配置页误触影响用户端报名入口。</p>
+          </div>
+          <AdminStatusBadge :status="conference.status" />
+          <el-button @click="goBack">返回会议管理调整状态</el-button>
         </section>
       </el-tab-pane>
     </el-tabs>
@@ -112,7 +131,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
+import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminSectionCard from "../../components/AdminSectionCard.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import CouponsPage from "../coupons/index.vue";
 import PromotionsPage from "../promotions/index.vue";
 import { navigateTo, routeQuery } from "../../router";
@@ -291,6 +314,11 @@ async function saveField() {
 }
 
 async function stopField(id: string) {
+  await ElMessageBox.confirm("确认停用该报名字段？已提交的历史报名数据不会被删除。", "停用报名字段", {
+    confirmButtonText: "确认停用",
+    cancelButtonText: "取消",
+    type: "warning"
+  });
   await disableFormField(id);
   if (conferenceId.value) fields.value = (await listFormFields(conferenceId.value)).items;
 }
@@ -344,3 +372,23 @@ function textToOptions(value: string) {
   return value.split("\n").map((item) => item.trim()).filter(Boolean);
 }
 </script>
+
+<style scoped>
+.discount-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.publish-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.publish-panel h3 {
+  margin: 0;
+}
+</style>

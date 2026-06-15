@@ -1,18 +1,16 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">账号管理</h1>
-        <p class="page-subtitle">创建后台账号并分配角色。</p>
-      </div>
-      <el-button type="primary" @click="openCreate">新增账号</el-button>
-    </div>
+    <AdminPageHeader title="账号管理" eyebrow="系统管理" subtitle="创建后台账号并分配角色，账号启停会影响后台登录和运营操作。">
+      <template #actions>
+        <el-button type="primary" @click="openCreate">新增账号</el-button>
+      </template>
+    </AdminPageHeader>
     <section class="table-panel">
       <el-table :data="accounts" empty-text="暂无账号">
         <el-table-column prop="username" label="用户名" min-width="160" />
         <el-table-column prop="displayName" label="显示名" min-width="160" />
         <el-table-column label="角色" min-width="220"><template #default="{ row }">{{ rolesText(row) }}</template></el-table-column>
-        <el-table-column label="状态" width="100"><template #default="{ row }">{{ row.enabled ? "启用" : "停用" }}</template></el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
         <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
       </el-table>
     </section>
@@ -36,6 +34,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { createAccount, listAccounts, listRoles, updateAccount } from "../../services/admin";
 import type { AdminAccount, Role } from "../../services/types";
 

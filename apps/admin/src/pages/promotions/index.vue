@@ -1,25 +1,37 @@
 <template>
   <section class="admin-page">
-    <div v-if="!embedded" class="page-header">
-      <div>
-        <h1 class="page-title">满减规则</h1>
-        <p class="page-subtitle">满金额或满张数优惠，订单创建时由后端重新计算。</p>
-      </div>
-      <el-button type="primary" @click="openCreate">新增满减</el-button>
-    </div>
-    <div class="toolbar">
-      <el-input v-model="keyword" placeholder="规则名称" style="width: 220px" @keyup.enter="load" />
-      <el-button :loading="loading" @click="load">查询</el-button>
-      <el-button v-if="embedded" type="primary" @click="openCreate">新增满减</el-button>
-    </div>
+    <AdminPageHeader
+      v-if="!embedded"
+      title="满减规则"
+      eyebrow="营销配置"
+      badge="灰度能力"
+      badge-tone="warning"
+      subtitle="配置满金额或满张数优惠；订单创建时由后端重新计算，不以后台展示值作为支付依据。"
+    >
+      <template #actions>
+        <el-button type="primary" @click="openCreate">新增满减</el-button>
+      </template>
+    </AdminPageHeader>
+
+    <AdminFilterBar>
+      <el-input v-model="keyword" clearable placeholder="规则名称" style="width: 220px" @keyup.enter="load" />
+      <template #actions>
+        <el-button :loading="loading" type="primary" @click="load">查询</el-button>
+        <el-button v-if="embedded" type="primary" @click="openCreate">新增满减</el-button>
+      </template>
+    </AdminFilterBar>
+
     <section class="table-panel">
-      <el-table :data="items" empty-text="暂无满减规则">
+      <el-table v-loading="loading" :data="items">
         <el-table-column prop="name" label="名称" min-width="180" />
         <el-table-column label="门槛" width="170"><template #default="{ row }">{{ thresholdText(row.minAmountCent, row.minQuantity) }}</template></el-table-column>
         <el-table-column label="优惠" width="120"><template #default="{ row }">¥{{ formatCent(row.discountAmountCent) }}</template></el-table-column>
         <el-table-column label="可叠券" width="100"><template #default="{ row }">{{ row.stackableWithCoupon ? "是" : "否" }}</template></el-table-column>
-        <el-table-column label="状态" width="90"><template #default="{ row }">{{ row.enabled ? "启用" : "停用" }}</template></el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
         <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
+        <template #empty>
+          <AdminEmptyState title="暂无满减规则" description="满减属于灰度营销能力，第一版会议报名主链路可先保持空配置。" action-text="新增满减" @action="openCreate" />
+        </template>
       </el-table>
     </section>
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑满减' : '新增满减'" width="620px">
@@ -39,6 +51,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
+import AdminEmptyState from "../../components/AdminEmptyState.vue";
+import AdminFilterBar from "../../components/AdminFilterBar.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { createPromotionRule, listPromotionRules, updatePromotionRule } from "../../services/admin";
 import type { PromotionRule } from "../../services/types";
 

@@ -1,34 +1,76 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">报名名单</h1>
-        <p class="page-subtitle">查看报名、参会人、内部备注和手动核销。</p>
-      </div>
-    </div>
-    <div class="toolbar">
-      <el-input v-model="keyword" placeholder="报名号/姓名/手机/订单" style="width: 280px" @keyup.enter="load" />
-      <el-button :loading="loading" @click="load">查询</el-button>
-    </div>
+    <AdminPageHeader
+      title="报名名单"
+      eyebrow="会议业务"
+      subtitle="查看报名记录、参会人信息、内部备注和核销进度。手动核销属于敏感操作，执行前会二次确认。"
+    >
+      <template #actions>
+        <el-button :loading="loading" @click="load">刷新</el-button>
+      </template>
+    </AdminPageHeader>
+
+    <AdminFilterBar>
+      <el-input v-model="keyword" clearable placeholder="报名号 / 姓名 / 手机 / 订单" style="width: 260px" @keyup.enter="load" />
+      <el-select v-model="conferenceId" clearable filterable placeholder="会议" style="width: 220px">
+        <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
+      </el-select>
+      <el-select v-model="registrationStatus" clearable placeholder="报名状态" style="width: 150px">
+        <el-option label="已确认" value="CONFIRMED" />
+        <el-option label="已取消" value="CANCELLED" />
+        <el-option label="已退款" value="REFUNDED" />
+      </el-select>
+      <el-select v-model="paymentStatus" clearable placeholder="支付状态" style="width: 150px">
+        <el-option label="已支付" value="PAID" />
+      </el-select>
+      <el-select v-model="checkInStatus" clearable placeholder="核销状态" style="width: 150px">
+        <el-option label="待核销" value="PENDING" />
+        <el-option label="已核销" value="CHECKED_IN" />
+        <el-option label="无需核销" value="NOT_REQUIRED" />
+      </el-select>
+      <template #actions>
+        <el-button :loading="loading" type="primary" @click="load">查询</el-button>
+      </template>
+    </AdminFilterBar>
+
     <section class="table-panel">
-      <el-table :data="items" empty-text="暂无报名">
-        <el-table-column prop="registrationNo" label="报名号" min-width="180" />
-        <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
-        <el-table-column prop="skuName" label="规格" width="140" />
-        <el-table-column prop="attendeeName" label="姓名" width="120" />
-        <el-table-column prop="phone" label="手机" width="140" />
+      <el-table v-loading="loading" :data="displayedItems">
+        <el-table-column label="报名信息" min-width="230">
+          <template #default="{ row }">
+            <strong>{{ row.registrationNo }}</strong>
+            <div class="muted-text">{{ row.orderNo }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="conferenceTitle" label="会议" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="skuName" label="规格" width="140" show-overflow-tooltip />
+        <el-table-column label="参会人" min-width="150">
+          <template #default="{ row }">
+            <strong>{{ row.attendeeName || "-" }}</strong>
+            <div class="muted-text">{{ row.phone || "-" }}</div>
+          </template>
+        </el-table-column>
         <el-table-column label="人数" width="80"><template #default="{ row }">{{ row.attendeeCount }}</template></el-table-column>
-        <el-table-column label="核销" width="130"><template #default="{ row }">{{ progressText(row.checkInProgress) }}</template></el-table-column>
+        <el-table-column label="报名状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
+        <el-table-column label="支付状态" width="110"><template #default><AdminStatusBadge status="PAID" /></template></el-table-column>
+        <el-table-column label="核销" width="140">
+          <template #default="{ row }">
+            <AdminStatusBadge :label="progressText(row.checkInProgress)" :tone="checkInTone(row.checkInProgress)" />
+          </template>
+        </el-table-column>
         <el-table-column label="金额" width="100"><template #default="{ row }">¥{{ formatCent(row.paidAmountCent) }}</template></el-table-column>
-        <el-table-column label="备注" min-width="180"><template #default="{ row }">{{ row.adminRemark || "-" }}</template></el-table-column>
+        <el-table-column label="备注" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.adminRemark || "-" }}</template></el-table-column>
         <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openDetail(row.id)">详情</el-button></template></el-table-column>
+        <template #empty>
+          <AdminEmptyState title="暂无报名记录" description="调整筛选条件，或从会议管理进入报名主链路。" action-text="查看会议" @action="goConferences" />
+        </template>
       </el-table>
     </section>
+
     <el-dialog v-model="detailVisible" title="报名详情" width="900px">
       <div v-if="detail" class="admin-page">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="报名号">{{ detail.registrationNo }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ detail.status }}</el-descriptions-item>
+          <el-descriptions-item label="状态"><AdminStatusBadge :status="detail.status" /></el-descriptions-item>
           <el-descriptions-item label="会议">{{ detail.conferenceTitle }}</el-descriptions-item>
           <el-descriptions-item label="订单号">{{ detail.order.orderNo }}</el-descriptions-item>
         </el-descriptions>
@@ -38,7 +80,7 @@
           <el-table-column prop="name" label="姓名" width="120" />
           <el-table-column prop="phone" label="手机" width="140" />
           <el-table-column prop="company" label="单位" min-width="140" />
-          <el-table-column label="核销状态" width="130"><template #default="{ row }">{{ checkInText(row.checkInStatus) }}</template></el-table-column>
+          <el-table-column label="核销状态" width="130"><template #default="{ row }"><AdminStatusBadge :status="row.checkInStatus" /></template></el-table-column>
           <el-table-column label="操作" width="120">
             <template #default="{ row }">
               <el-button size="small" type="primary" :disabled="row.checkInStatus !== 'PENDING'" @click="checkIn(row.id)">确认核销</el-button>
@@ -58,24 +100,53 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { ElMessage } from "element-plus";
-import { checkInRegistrationAttendee, getRegistration, listRegistrations, updateRegistrationRemark } from "../../services/admin";
-import type { AdminRegistration, AdminRegistrationDetail } from "../../services/types";
+import { computed, onMounted, ref } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import AdminEmptyState from "../../components/AdminEmptyState.vue";
+import AdminFilterBar from "../../components/AdminFilterBar.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import { navigateTo } from "../../router";
+import { checkInRegistrationAttendee, getRegistration, listConferences, listRegistrations, updateRegistrationRemark } from "../../services/admin";
+import type { AdminRegistration, AdminRegistrationDetail, Conference } from "../../services/types";
 
 const items = ref<AdminRegistration[]>([]);
+const conferences = ref<Conference[]>([]);
 const detail = ref<AdminRegistrationDetail | null>(null);
 const keyword = ref("");
+const conferenceId = ref("");
+const registrationStatus = ref("");
+const paymentStatus = ref("");
+const checkInStatus = ref("");
 const loading = ref(false);
 const detailVisible = ref(false);
 const remark = ref("");
 
-onMounted(() => void load());
+const displayedItems = computed(() => {
+  return items.value.filter((item) => {
+    if (paymentStatus.value && paymentStatus.value !== "PAID") return false;
+    if (!checkInStatus.value) return true;
+    const progress = item.checkInProgress;
+    if (!progress || progress.total === 0) return checkInStatus.value === "NOT_REQUIRED";
+    if (checkInStatus.value === "CHECKED_IN") return progress.checkedIn > 0 && progress.checkedIn === progress.total - progress.notRequired;
+    if (checkInStatus.value === "PENDING") return progress.pending > 0;
+    if (checkInStatus.value === "NOT_REQUIRED") return progress.notRequired === progress.total;
+    return true;
+  });
+});
+
+onMounted(async () => {
+  await Promise.all([loadConferences(), load()]);
+});
+
+async function loadConferences() {
+  conferences.value = (await listConferences({ page: 1, pageSize: 100 })).items;
+}
 
 async function load() {
   loading.value = true;
   try {
-    items.value = (await listRegistrations({ page: 1, pageSize: 100, keyword: keyword.value })).items;
+    items.value = (await listRegistrations({ page: 1, pageSize: 100, keyword: keyword.value, conferenceId: conferenceId.value, status: registrationStatus.value })).items;
   } finally {
     loading.value = false;
   }
@@ -96,6 +167,15 @@ async function saveRemark() {
 
 async function checkIn(id: string) {
   if (!detail.value) return;
+  try {
+    await ElMessageBox.confirm("确认后该参会人将标记为已核销，请确认现场身份信息无误。", "确认手动核销", {
+      confirmButtonText: "确认核销",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
   await checkInRegistrationAttendee(id);
   detail.value = await getRegistration(detail.value.id);
   await load();
@@ -108,8 +188,10 @@ function progressText(progress: AdminRegistration["checkInProgress"]) {
   return `${progress.checkedIn}/${progress.total}`;
 }
 
-function checkInText(status: string) {
-  return { NOT_REQUIRED: "无需核销", PENDING: "待核销", CHECKED_IN: "已核销", CANCELLED: "已取消" }[status] ?? status;
+function checkInTone(progress: AdminRegistration["checkInProgress"]) {
+  if (!progress || progress.total === 0 || progress.notRequired === progress.total) return "neutral";
+  if (progress.pending > 0) return "warning";
+  return "success";
 }
 
 function formatCent(value: number) {
@@ -118,5 +200,9 @@ function formatCent(value: number) {
 
 function formatJson(value: unknown) {
   return JSON.stringify(value ?? {}, null, 2);
+}
+
+function goConferences() {
+  navigateTo("/conferences");
 }
 </script>
