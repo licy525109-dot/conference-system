@@ -1,13 +1,16 @@
 <template>
-  <view class="page">
-    <view v-if="loading" class="state">加载页面中...</view>
-    <view v-else-if="error" class="state error">
-      <text>{{ error }}</text>
-      <button class="primary-button compact" @click="loadPage">重试</button>
-      <button class="ghost-button compact" @click="goHome">返回首页</button>
-    </view>
+  <view class="page ui-page">
+    <LoadingState v-if="loading" title="加载页面中" description="正在读取主办方发布内容。" />
+    <ErrorState
+      v-else-if="error"
+      :message="error"
+      primary-text="重新加载"
+      secondary-text="返回首页"
+      @retry="loadPage"
+      @secondary="goHome"
+    />
     <PageRenderer v-else-if="cmsPage" :components="cmsPage.version.components" :theme="theme" @open-conference="goDetail" />
-    <view v-else class="state">页面尚未发布</view>
+    <EmptyState v-else title="页面尚未发布" description="该页面内容暂未开放，请返回首页查看会议。" mark="页" action-text="返回首页" @action="goHome" />
     <CustomTabbar :active-page-key="pageKey" />
   </view>
 </template>
@@ -16,6 +19,9 @@
 import { ref } from "vue";
 import { onLoad, onShareAppMessage } from "@dcloudio/uni-app";
 import CustomTabbar from "@/components/CustomTabbar.vue";
+import EmptyState from "@/components/ui/EmptyState.vue";
+import ErrorState from "@/components/ui/ErrorState.vue";
+import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
 import { goHome } from "@/utils/navigation";
@@ -60,44 +66,6 @@ function goDetail(id: string) {
 
 <style scoped>
 .page {
-  min-height: 100vh;
-}
-
-.primary-button,
-.ghost-button {
-  min-height: 72rpx;
-  border-radius: 8px;
-  font-size: 27rpx;
-  line-height: 72rpx;
-}
-
-.primary-button {
-  background: #2452a8;
-  color: #ffffff;
-}
-
-.ghost-button {
-  border: 1px solid #ccd7e6;
-  background: #ffffff;
-  color: #2452a8;
-}
-
-.compact {
-  width: 200rpx;
-}
-
-.state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20rpx;
-  padding: 96rpx 24rpx;
-  color: #627087;
-  font-size: 28rpx;
-  text-align: center;
-}
-
-.error {
-  color: #b42318;
+  padding-bottom: 164rpx;
 }
 </style>

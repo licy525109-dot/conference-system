@@ -1,56 +1,79 @@
 <template>
-  <view class="page">
-    <view v-if="loading" class="state">加载会议详情中...</view>
-    <view v-else-if="error" class="state error">
-      <text>{{ error }}</text>
-      <button v-if="conferenceId" class="primary-button compact" @click="loadDetail">重试</button>
-      <button class="ghost-button compact" @click="goHome">返回首页</button>
-    </view>
-
-    <PageRenderer
-      v-else-if="conference && cmsPage"
-      :components="cmsPage.version.components"
-      :theme="theme"
-      :conference="conference"
-      @register="goRegisterFirst"
+  <view class="page ui-page">
+    <LoadingState v-if="loading" title="加载会议详情中" description="正在读取会议、票种和页面内容。" />
+    <ErrorState
+      v-else-if="error"
+      :message="error"
+      primary-text="重新加载"
+      secondary-text="返回首页"
+      @retry="loadDetail"
+      @secondary="goHome"
     />
 
     <view v-else-if="conference" class="content">
-      <view class="section headline">
+      <view class="hero ui-card">
+        <StatusTag :label="registrationStatus.label" :tone="registrationStatus.tone" />
         <text class="title">{{ conference.title }}</text>
-        <text class="summary">{{ conference.summary || "会议报名已开放。" }}</text>
-        <view class="meta">
-          <text>{{ formatDateTime(conference.startsAt) }} - {{ formatDateTime(conference.endsAt) }}</text>
-          <text v-if="conference.location">{{ conference.location }}</text>
+        <text class="summary">{{ conference.summary || "会议报名已开放，请选择合适的报名规格并填写参会信息。" }}</text>
+        <view class="facts">
+          <view class="fact">
+            <text class="fact-label">会议时间</text>
+            <text class="fact-value">{{ formatDateTime(conference.startsAt) }} - {{ formatDateTime(conference.endsAt) }}</text>
+          </view>
+          <view class="fact">
+            <text class="fact-label">会议地点</text>
+            <text class="fact-value">{{ conference.location || "待公布" }}</text>
+          </view>
+          <view class="fact">
+            <text class="fact-label">报名截止</text>
+            <text class="fact-value">{{ conference.registrationEndsAt ? formatDateTime(conference.registrationEndsAt) : "以主办方通知为准" }}</text>
+          </view>
         </view>
       </view>
 
-      <view class="section">
-        <text class="section-title">会议详情</text>
-        <text class="body-text">{{ contentText }}</text>
-      </view>
-
-      <view class="section">
-        <text class="section-title">报名规格</text>
-        <view v-if="conference.skus.length === 0" class="empty-line">暂无可报名规格</view>
+      <FormSection title="报名规格" description="选择票种后进入报名表单。库存和金额以提交订单时系统校验为准。">
+        <EmptyState v-if="conference.skus.length === 0" title="暂无可报名规格" description="主办方尚未开放报名票种。" mark="票" />
         <view v-else class="sku-list">
           <view v-for="sku in conference.skus" :key="sku.id" class="sku-card">
             <view class="sku-info">
               <text class="sku-name">{{ sku.name }}</text>
               <text class="sku-desc">{{ sku.description || "标准报名规格" }}</text>
-              <text class="stock">剩余 {{ Math.max(sku.stock - sku.soldCount, 0) }} / {{ sku.stock }}</text>
+              <view class="stock-row">
+                <StatusTag :label="stockLabel(sku)" :tone="remainingStock(sku) > 0 ? 'success' : 'neutral'" />
+                <text class="stock">库存 {{ Math.max(sku.stock - sku.soldCount, 0) }} / {{ sku.stock }}</text>
+              </view>
             </view>
-            <view class="sku-action">
+            <view class="sku-side">
               <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
-              <button class="primary-button" @click="goRegister(sku.id)">报名</button>
-              <button class="ghost-button" @click="goRegister(sku.id)">填表后加购</button>
+              <button class="ui-button-primary ui-button-compact sku-button" @click="goRegister(sku.id)">报名</button>
             </view>
           </view>
         </view>
-      </view>
+      </FormSection>
+
+      <FormSection title="会议详情" description="以下内容由主办方维护，报名前请确认参会安排。">
+        <PageRenderer
+          v-if="cmsPage"
+          :components="cmsPage.version.components"
+          :theme="theme"
+          :conference="conference"
+          @register="goRegisterFirst"
+        />
+        <text v-else class="body-text">{{ contentText }}</text>
+      </FormSection>
     </view>
     <WechatProfilePrompt />
     <CustomTabbar active-page-key="conference-detail" />
+    <FixedBottomActionBar
+      v-if="conference"
+      amount-label="报名费用"
+      :amount-value="priceRangeText"
+      note="实际应付金额以下单时计算为准"
+      primary-text="立即报名"
+      :primary-disabled="conference.skus.length === 0"
+      tabbar-offset
+      @primary="goRegisterFirst"
+    />
   </view>
 </template>
 
@@ -58,10 +81,16 @@
 import { computed, ref } from "vue";
 import { onLoad, onShareAppMessage } from "@dcloudio/uni-app";
 import CustomTabbar from "@/components/CustomTabbar.vue";
+import EmptyState from "@/components/ui/EmptyState.vue";
+import ErrorState from "@/components/ui/ErrorState.vue";
+import FixedBottomActionBar from "@/components/ui/FixedBottomActionBar.vue";
+import FormSection from "@/components/ui/FormSection.vue";
+import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
+import StatusTag from "@/components/ui/StatusTag.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
-import { getConferenceDetail, type ConferenceDetail } from "@/services/conference";
+import { getConferenceDetail, type ConferenceDetail, type RegistrationSku } from "@/services/conference";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
@@ -74,6 +103,27 @@ const loading = ref(false);
 const error = ref("");
 
 const contentText = computed(() => toContentText(conference.value?.contentJson) || "会议议程、嘉宾和报名说明请以主办方发布内容为准。");
+const priceRangeText = computed(() => {
+  const prices = conference.value?.skus.map((sku) => sku.priceCent).filter(Number.isFinite) ?? [];
+  if (prices.length === 0) {
+    return "暂无票种";
+  }
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return min === max ? `¥${formatCent(min)}` : `¥${formatCent(min)} 起`;
+});
+const registrationStatus = computed(() => {
+  const detail = conference.value;
+  if (!detail) {
+    return { label: "报名中", tone: "success" as const };
+  }
+  const now = Date.now();
+  const regStart = detail.registrationStartsAt ? new Date(detail.registrationStartsAt).getTime() : 0;
+  const regEnd = detail.registrationEndsAt ? new Date(detail.registrationEndsAt).getTime() : 0;
+  if (regStart && now < regStart) return { label: "即将报名", tone: "warning" as const };
+  if (regEnd && now > regEnd) return { label: "报名截止", tone: "neutral" as const };
+  return { label: "报名中", tone: "success" as const };
+});
 
 onLoad((query) => {
   conferenceId.value = String(query?.id || query?.conferenceId || "");
@@ -122,12 +172,20 @@ function goRegister(skuId: string) {
 }
 
 function goRegisterFirst() {
-  const sku = conference.value?.skus[0];
+  const sku = conference.value?.skus.find((item) => remainingStock(item) > 0) ?? conference.value?.skus[0];
   if (!sku) {
     uni.showToast({ title: "暂无可报名规格", icon: "none" });
     return;
   }
   goRegister(sku.id);
+}
+
+function remainingStock(sku: RegistrationSku): number {
+  return Math.max(sku.stock - sku.soldCount, 0);
+}
+
+function stockLabel(sku: RegistrationSku): string {
+  return remainingStock(sku) > 0 ? "可报名" : "已售罄";
 }
 
 function toContentText(value: unknown): string {
@@ -155,57 +213,69 @@ function toContentText(value: unknown): string {
 
 <style scoped>
 .page {
-  min-height: 100vh;
-  padding: 28rpx;
-  box-sizing: border-box;
+  padding-bottom: 214rpx;
 }
 
-.content,
-.sku-list {
+.content {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 22rpx;
 }
 
-.section {
-  padding: 28rpx;
-  border: 1px solid #dce3ef;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.headline {
+.hero {
+  display: flex;
+  flex-direction: column;
   gap: 18rpx;
-}
-
-.title,
-.section-title,
-.sku-name,
-.price {
-  display: block;
-  color: #172033;
-  font-weight: 800;
+  padding: 32rpx;
 }
 
 .title {
-  font-size: 42rpx;
+  display: block;
+  color: var(--ui-color-text);
+  font-size: 44rpx;
+  font-weight: 900;
   line-height: 1.35;
 }
 
-.summary,
-.body-text,
-.sku-desc,
-.stock,
-.meta,
-.empty-line {
-  color: #5c6b82;
+.summary {
+  color: var(--ui-color-muted);
   font-size: 27rpx;
   line-height: 1.55;
 }
 
-.section-title {
-  margin-bottom: 16rpx;
-  font-size: 31rpx;
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  padding: 22rpx;
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface-muted);
+}
+
+.fact {
+  display: flex;
+  justify-content: space-between;
+  gap: 22rpx;
+}
+
+.fact-label {
+  color: var(--ui-color-subtle);
+  font-size: 24rpx;
+}
+
+.fact-value {
+  flex: 1;
+  color: var(--ui-color-text);
+  font-size: 25rpx;
+  font-weight: 800;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.sku-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
 }
 
 .sku-card {
@@ -213,9 +283,9 @@ function toContentText(value: unknown): string {
   justify-content: space-between;
   gap: 20rpx;
   padding: 24rpx;
-  border: 1px solid #e4eaf3;
-  border-radius: 8px;
-  background: #fbfcff;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface-muted);
 }
 
 .sku-info {
@@ -223,58 +293,47 @@ function toContentText(value: unknown): string {
   min-width: 0;
 }
 
-.sku-action {
-  width: 210rpx;
+.sku-side {
+  width: 190rpx;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: flex-end;
   gap: 16rpx;
 }
 
 .sku-name {
+  display: block;
+  color: var(--ui-color-text);
   font-size: 30rpx;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.sku-desc,
+.stock,
+.body-text {
+  display: block;
+  color: var(--ui-color-muted);
+  font-size: 25rpx;
+  line-height: 1.5;
+}
+
+.stock-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 16rpx;
 }
 
 .price {
-  font-size: 30rpx;
+  display: block;
+  color: var(--ui-color-primary);
+  font-size: 32rpx;
+  font-weight: 900;
   text-align: right;
 }
 
-.primary-button,
-.ghost-button {
-  min-height: 72rpx;
-  border-radius: 8px;
-  font-size: 27rpx;
-  line-height: 72rpx;
-}
-
-.primary-button {
-  background: #2452a8;
-  color: #ffffff;
-}
-
-.ghost-button {
-  border: 1px solid #ccd7e6;
-  background: #ffffff;
-  color: #2452a8;
-}
-
-.compact {
-  width: 200rpx;
-}
-
-.state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20rpx;
-  padding: 96rpx 24rpx;
-  color: #627087;
-  font-size: 28rpx;
-  text-align: center;
-}
-
-.error {
-  color: #b42318;
+.sku-button {
+  min-width: 154rpx;
 }
 </style>

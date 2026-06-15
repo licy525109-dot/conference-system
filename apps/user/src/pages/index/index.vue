@@ -1,19 +1,24 @@
 <template>
-  <view class="page">
-    <view class="topbar">
+  <view class="page ui-page">
+    <view class="hero">
       <view>
         <text class="eyebrow">会议报名</text>
-        <text class="title">可报名会议</text>
+        <text class="title">选择会议，完成报名缴费</text>
+        <text class="subtitle">所有报名费用以提交订单时系统计算结果为准。</text>
       </view>
-      <button class="ghost-button" @click="goMyRegistrations">我的报名</button>
+      <button class="ui-button-secondary ui-button-compact" @click="goMyRegistrations">我的报名</button>
     </view>
 
-    <view v-if="loading" class="state">加载会议中...</view>
-    <view v-else-if="error" class="state error">
-      <text>{{ error }}</text>
-      <button class="primary-button compact" @click="retryLoadConferences">重试</button>
-    </view>
-    <view v-else-if="conferences.length === 0" class="state">暂无可报名会议</view>
+    <LoadingState v-if="loading" title="加载会议中" description="正在同步最新可报名会议。" />
+    <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="retryLoadConferences" />
+    <EmptyState
+      v-else-if="conferences.length === 0"
+      title="暂无可报名会议"
+      description="会议发布后会显示在这里，请稍后再来查看。"
+      mark="会"
+      action-text="刷新"
+      @action="retryLoadConferences"
+    />
 
     <PageRenderer
       v-else-if="cmsPage"
@@ -24,17 +29,21 @@
     />
 
     <view v-else class="list">
-      <view v-for="conference in conferences" :key="conference.id" class="conference-card">
-        <view class="card-main" @click="goDetail(conference.id)">
-          <text class="conference-title">{{ conference.title }}</text>
-          <text class="summary">{{ conference.summary || "会议详情已发布，点击查看报名信息。" }}</text>
-          <view class="meta-row">
-            <text>{{ formatDateTime(conference.startsAt) }}</text>
-            <text v-if="conference.location">{{ conference.location }}</text>
-          </view>
-        </view>
-        <button class="primary-button" @click="goDetail(conference.id)">查看详情</button>
-      </view>
+      <ConferenceCard
+        v-for="conference in conferences"
+        :key="conference.id"
+        :title="conference.title"
+        :summary="conference.summary"
+        :starts-at="conference.startsAt"
+        :ends-at="conference.endsAt"
+        :location="conference.location"
+        :registration-count="conference.registrationCount"
+        :price-text="homeDetailText(conference.id).priceText"
+        :deadline-text="homeDetailText(conference.id).deadlineText"
+        :status-label="homeDetailText(conference.id).statusLabel"
+        :status-tone="homeDetailText(conference.id).statusTone"
+        @open="goDetail(conference.id)"
+      />
     </view>
     <WechatProfilePrompt />
     <CustomTabbar active-page-key="home" />
@@ -45,12 +54,17 @@
 import { ref } from "vue";
 import { onLoad, onShareAppMessage, onShow } from "@dcloudio/uni-app";
 import CustomTabbar from "@/components/CustomTabbar.vue";
+import ConferenceCard from "@/components/ui/ConferenceCard.vue";
+import EmptyState from "@/components/ui/EmptyState.vue";
+import ErrorState from "@/components/ui/ErrorState.vue";
+import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
-import { getConferences, type ConferenceListItem } from "@/services/conference";
+import { getConferenceDetail, getConferences, type ConferenceDetail, type ConferenceListItem } from "@/services/conference";
 import { ApiRequestError } from "@/services/request";
 import { formatDateTime } from "@/utils/date";
+import { formatCent } from "@/utils/money";
 
 const HOME_REFRESH_INTERVAL_MS = 30 * 1000;
 
@@ -59,6 +73,7 @@ const error = ref("");
 const conferences = ref<ConferenceListItem[]>([]);
 const cmsPage = ref<PublishedPage | null>(null);
 const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
+const homeDetails = ref<Record<string, HomeConferenceDetailText>>({});
 let hasLoadedOnce = false;
 let lastLoadAt = 0;
 
@@ -88,6 +103,7 @@ async function loadConferences() {
     conferences.value = items;
     cmsPage.value = page;
     theme.value = themeConfig;
+    homeDetails.value = await loadHomeDetails(items);
     applyPageTitle(page, "会议报名");
   } catch (err) {
     logConferenceLoadError(err);
@@ -124,6 +140,76 @@ function retryLoadConferences() {
   void loadConferences();
 }
 
+async function loadHomeDetails(items: ConferenceListItem[]): Promise<Record<string, HomeConferenceDetailText>> {
+  const entries = await Promise.allSettled(
+    items.map(async (item) => {
+      const detail = await getConferenceDetail(item.id);
+      return [item.id, buildHomeDetailText(detail)] as const;
+    })
+  );
+
+  const next: Record<string, HomeConferenceDetailText> = {};
+  entries.forEach((entry, index) => {
+    const fallback = buildHomeDetailText(items[index]);
+    if (entry.status === "fulfilled") {
+      next[entry.value[0]] = entry.value[1];
+    } else {
+      next[items[index]?.id ?? `fallback-${index}`] = fallback;
+    }
+  });
+  return next;
+}
+
+function homeDetailText(id: string): HomeConferenceDetailText {
+  return homeDetails.value[id] ?? {
+    priceText: "查看票种",
+    deadlineText: "以详情页为准",
+    statusLabel: "报名中",
+    statusTone: "success"
+  };
+}
+
+function buildHomeDetailText(item: ConferenceListItem | ConferenceDetail): HomeConferenceDetailText {
+  const detail = item as Partial<ConferenceDetail>;
+  return {
+    priceText: priceRangeText(detail.skus ?? []),
+    deadlineText: detail.registrationEndsAt ? formatDateTime(detail.registrationEndsAt) : "以详情页为准",
+    ...statusFor(detail.registrationStartsAt, detail.registrationEndsAt, item.startsAt, item.endsAt)
+  };
+}
+
+function priceRangeText(skus: ConferenceDetail["skus"]): string {
+  if (!Array.isArray(skus) || skus.length === 0) {
+    return "查看票种";
+  }
+  const prices = skus.map((sku) => sku.priceCent).filter((value) => Number.isFinite(value));
+  if (prices.length === 0) {
+    return "查看票种";
+  }
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return min === max ? `¥${formatCent(min)}` : `¥${formatCent(min)} 起`;
+}
+
+function statusFor(
+  registrationStartsAt: string | null | undefined,
+  registrationEndsAt: string | null | undefined,
+  startsAt: string,
+  endsAt: string
+): Pick<HomeConferenceDetailText, "statusLabel" | "statusTone"> {
+  const now = Date.now();
+  const regStart = registrationStartsAt ? new Date(registrationStartsAt).getTime() : 0;
+  const regEnd = registrationEndsAt ? new Date(registrationEndsAt).getTime() : 0;
+  const start = new Date(startsAt).getTime();
+  const end = new Date(endsAt).getTime();
+
+  if (regStart && now < regStart) return { statusLabel: "即将报名", statusTone: "warning" };
+  if (regEnd && now > regEnd) return { statusLabel: "报名截止", statusTone: "neutral" };
+  if (Number.isFinite(end) && now > end) return { statusLabel: "已结束", statusTone: "neutral" };
+  if (Number.isFinite(start) && now > start) return { statusLabel: "进行中", statusTone: "info" };
+  return { statusLabel: "报名中", statusTone: "success" };
+}
+
 function goDetail(id: string) {
   uni.navigateTo({
     url: `/pages/conference/detail?id=${encodeURIComponent(id)}`
@@ -135,115 +221,56 @@ function goMyRegistrations() {
     url: "/pages/registrations/my"
   });
 }
+
+interface HomeConferenceDetailText {
+  priceText: string;
+  deadlineText: string;
+  statusLabel: string;
+  statusTone: "info" | "success" | "warning" | "danger" | "neutral";
+}
 </script>
 
 <style scoped>
 .page {
-  min-height: 100vh;
-  padding: 32rpx 28rpx;
-  box-sizing: border-box;
+  padding-bottom: 164rpx;
 }
 
-.topbar {
+.hero {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 24rpx;
-  margin-bottom: 28rpx;
+  margin-bottom: 26rpx;
+  padding: 32rpx 0 10rpx;
 }
 
 .eyebrow {
   display: block;
-  color: #2452a8;
+  color: var(--ui-color-primary);
   font-size: 24rpx;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .title {
   display: block;
   margin-top: 8rpx;
-  color: #14213d;
-  font-size: 42rpx;
-  font-weight: 800;
+  color: var(--ui-color-text);
+  font-size: 44rpx;
+  font-weight: 900;
+  line-height: 1.24;
+}
+
+.subtitle {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--ui-color-muted);
+  font-size: 25rpx;
+  line-height: 1.5;
 }
 
 .list {
   display: flex;
   flex-direction: column;
   gap: 20rpx;
-}
-
-.conference-card {
-  padding: 28rpx;
-  border: 1px solid #dce3ef;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.card-main {
-  display: flex;
-  flex-direction: column;
-  gap: 14rpx;
-}
-
-.conference-title {
-  color: #172033;
-  font-size: 34rpx;
-  font-weight: 800;
-  line-height: 1.35;
-}
-
-.summary {
-  color: #5c6b82;
-  font-size: 27rpx;
-  line-height: 1.55;
-}
-
-.meta-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-  color: #41516a;
-  font-size: 25rpx;
-}
-
-.primary-button,
-.ghost-button {
-  min-height: 72rpx;
-  border-radius: 8px;
-  font-size: 27rpx;
-  line-height: 72rpx;
-}
-
-.primary-button {
-  margin-top: 24rpx;
-  background: #2452a8;
-  color: #ffffff;
-}
-
-.ghost-button {
-  min-width: 172rpx;
-  border: 1px solid #ccd7e6;
-  background: #ffffff;
-  color: #2452a8;
-}
-
-.compact {
-  width: 200rpx;
-}
-
-.state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20rpx;
-  padding: 96rpx 24rpx;
-  color: #627087;
-  font-size: 28rpx;
-  text-align: center;
-}
-
-.error {
-  color: #b42318;
 }
 </style>

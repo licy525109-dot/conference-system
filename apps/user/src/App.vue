@@ -110,14 +110,20 @@ function hasStringValue(value: unknown): boolean {
 </script>
 
 <style>
+@import "./styles/tokens.css";
+
 page {
   min-height: 100%;
-  background: #f5f7fb;
-  color: #172033;
+  background: var(--ui-color-bg);
+  color: var(--ui-color-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 button {
   margin: 0;
+}
+
+button::after {
+  border: 0;
 }
 </style>
