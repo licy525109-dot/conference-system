@@ -80,7 +80,8 @@
                     v-for="preset in group.items"
                     :key="preset.type"
                     class="preset-card"
-                    :disabled="!preset.enabled"
+                    :class="supportStatusClass(preset.type)"
+                    :disabled="!canAddPreset(preset)"
                     @click="addComponent(preset)"
                   >
                     <span class="preset-thumb" :class="thumbClass(preset.type)">
@@ -88,8 +89,11 @@
                       <i />
                       <i />
                     </span>
-                    <strong>{{ preset.name }}</strong>
-                    <small>{{ preset.enabled ? preset.description || "可直接添加" : "后续开放" }}</small>
+                    <span class="preset-card__title">
+                      <strong>{{ preset.name }}</strong>
+                      <span class="support-badge" :class="supportStatusClass(preset.type)">{{ componentSupport(preset.type).label }}</span>
+                    </span>
+                    <small>{{ presetSupportDescription(preset) }}</small>
                   </button>
                 </div>
               </el-tab-pane>
@@ -127,8 +131,14 @@
             <div v-for="(component, index) in components" :id="componentDomId(component.id)" :key="component.id" class="component-card">
               <div class="component-card__head">
                 <div>
-                  <strong>{{ presetName(component.type) }}</strong>
-                  <span>{{ component.enabled ? "正在展示" : "已隐藏" }}</span>
+                  <span class="component-title-row">
+                    <strong>{{ presetName(component.type) }}</strong>
+                    <span class="support-badge" :class="supportStatusClass(component.type)">{{ componentSupport(component.type).label }}</span>
+                  </span>
+                  <span>{{ componentStateText(component) }}</span>
+                  <p v-if="componentNotice(component)" class="component-notice" :class="supportStatusClass(component.type)">
+                    {{ componentNotice(component) }}
+                  </p>
                 </div>
                 <div class="inline-actions">
                   <el-switch v-model="component.enabled" active-text="展示" inactive-text="隐藏" />
@@ -298,7 +308,7 @@ import {
   updatePageVersion
 } from "../../services/admin";
 import { routeQuery } from "../../router";
-import type { CmsComponent, ComponentPreset, Conference, MaterialAsset, PageTemplate, PageVersion, TabBarConfig, ThemeConfig } from "../../services/types";
+import type { CmsComponent, CmsComponentSupportStatus, ComponentPreset, Conference, MaterialAsset, PageTemplate, PageVersion, TabBarConfig, ThemeConfig } from "../../services/types";
 
 interface EditableComponent {
   id: string;
@@ -333,6 +343,55 @@ interface PageMetaForm {
   shareDescription: string;
   shareImageUrl: string;
 }
+
+interface CmsComponentSupportMeta {
+  label: string;
+  status: CmsComponentSupportStatus;
+  description: string;
+}
+
+const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
+  hero: { label: "已支持", status: "supported", description: "小程序/H5 已完整支持图片横幅展示" },
+  "conference-list": { label: "已支持", status: "supported", description: "小程序/H5 已完整支持会议列表展示和详情跳转" },
+  "conference-tabs": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持分类标签和会议卡片展示，暂不做真实筛选" },
+  "registration-button": { label: "已支持", status: "supported", description: "小程序/H5 支持普通报名入口；会议详情页会隐藏以避免重复按钮" },
+  "floating-registration-button": { label: "已支持", status: "supported", description: "小程序/H5 支持悬浮报名入口；会议详情页会隐藏以避免重复按钮" },
+  "promotion-bar": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持提示条展示" },
+  "rich-text": { label: "已支持", status: "supported", description: "小程序/H5 已支持富文本片段展示" },
+  "safe-html": { label: "已支持", status: "supported", description: "小程序/H5 已支持安全图文片段展示" },
+  "image-grid": { label: "已支持", status: "supported", description: "小程序/H5 已支持图片宫格展示" },
+  video: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持视频播放入口" },
+  notice: { label: "已支持", status: "supported", description: "小程序/H5 已支持公告提示展示" },
+  "stats-grid": { label: "已支持", status: "supported", description: "小程序/H5 已支持数字亮点展示" },
+  "ticket-price-list": { label: "已支持", status: "supported", description: "小程序/H5 已支持票种价格文案展示" },
+  "process-steps": { label: "已支持", status: "supported", description: "小程序/H5 已支持流程步骤展示" },
+  "text-image": { label: "已支持", status: "supported", description: "小程序/H5 已支持图文介绍展示" },
+  "download-list": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持资料名称列表展示" },
+  "live-card": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持直播信息展示" },
+  "testimonial-list": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持评价列表展示" },
+  "traffic-guide": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持交通文本展示" },
+  "contact-card": { label: "已支持", status: "supported", description: "小程序/H5 已支持联系卡片展示" },
+  "tag-filter": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持标签展示，暂不做真实筛选" },
+  title: { label: "已支持", status: "supported", description: "小程序/H5 已支持标题展示" },
+  divider: { label: "已支持", status: "supported", description: "小程序/H5 已支持分割线展示" },
+  spacer: { label: "已支持", status: "supported", description: "小程序/H5 已支持留白展示" },
+  carousel: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持图片轮播展示" },
+  "speaker-cards": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持嘉宾卡片展示" },
+  "schedule-timeline": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持会议日程展示" },
+  "coupon-card": { label: "暂不支持小程序/H5", status: "unsupported", description: "优惠券能力为扩展模块，暂不建议发布到用户端" },
+  countdown: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持目标时间倒计时展示" },
+  search: { label: "暂不支持小程序/H5", status: "unsupported", description: "搜索交互暂不支持用户端装修展示" },
+  "map-contact": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持地址和电话展示" },
+  "sponsor-wall": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持赞助商名称或 Logo 展示" },
+  faq: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持问答列表展示" },
+  "membership-benefits": { label: "后续开放", status: "planned", description: "会员模块后续开放，暂不支持用户端装修展示" },
+  "user-profile-card": { label: "后续开放", status: "planned", description: "用户中心后续增强，暂不支持用户端装修展示" },
+  "my-order-list": { label: "后续开放", status: "planned", description: "订单中心后续开放，暂不支持用户端装修展示" },
+  "mall-product-grid": { label: "后续开放", status: "planned", description: "商城模块后续开放，暂不支持用户端装修展示" }
+};
+
+const ADDABLE_SUPPORT_STATUSES: CmsComponentSupportStatus[] = ["supported", "basic"];
+const REGISTRATION_CTA_TYPES = ["registration-button", "floating-registration-button"];
 
 const pages = ref<PageTemplate[]>([]);
 const presets = ref<ComponentPreset[]>([]);
@@ -384,7 +443,7 @@ const filteredPresetGroups = computed(() => {
 const previewComponents = computed(() => components.value.filter((item) => item.enabled));
 const componentOptions = computed(() =>
   components.value.map((component, index) => ({
-    label: `${index + 1}. ${presetName(component.type)}${component.enabled ? "" : "（已隐藏）"}`,
+    label: `${index + 1}. ${presetName(component.type)} · ${componentSupport(component.type).label}${component.enabled ? "" : "（已隐藏）"}`,
     value: component.id
   }))
 );
@@ -458,7 +517,10 @@ function toEditableComponent(component: CmsComponent): EditableComponent {
 }
 
 function addComponent(preset: ComponentPreset) {
-  if (!preset.enabled) return;
+  if (!canAddPreset(preset)) {
+    ElMessage.warning(componentSupport(preset.type).description || "该组件暂不支持小程序/H5展示，建议暂勿发布");
+    return;
+  }
   const id = `${preset.type}-${Date.now()}`;
   components.value.push({
     id,
@@ -1013,6 +1075,61 @@ function presetName(type: string): string {
   return presets.value.find((item) => item.type === type)?.name ?? "未命名组件";
 }
 
+function componentSupport(type: string): CmsComponentSupportMeta {
+  return CMS_COMPONENT_SUPPORT_MATRIX[type] ?? {
+    label: "暂不支持小程序/H5",
+    status: "unsupported",
+    description: "该组件暂未纳入小程序/H5渲染支持矩阵，建议暂勿发布"
+  };
+}
+
+function canAddPreset(preset: ComponentPreset): boolean {
+  return preset.enabled && ADDABLE_SUPPORT_STATUSES.includes(componentSupport(preset.type).status);
+}
+
+function supportStatusClass(type: string): string {
+  return `is-support-${componentSupport(type).status}`;
+}
+
+function presetSupportDescription(preset: ComponentPreset): string {
+  if (!preset.enabled) return "后续开放";
+  const support = componentSupport(preset.type);
+  if (!canAddPreset(preset)) return support.description;
+  return `${support.description}${preset.description ? `；${preset.description}` : ""}`;
+}
+
+function componentStateText(component: EditableComponent): string {
+  const base = component.enabled ? "正在展示" : "已隐藏";
+  const support = componentSupport(component.type);
+  return `${base} · ${support.description}`;
+}
+
+function componentNotice(component: EditableComponent): string {
+  const support = componentSupport(component.type);
+  if (support.status === "unsupported" || support.status === "planned") {
+    return "该组件暂不支持小程序/H5展示，用户端正式页面会静默隐藏，建议暂勿发布。";
+  }
+  if (isConferenceDetailPage() && isRegistrationCtaType(component.type)) {
+    return "会议详情页已有固定底部报名按钮，该 CMS 报名按钮在用户端详情页会隐藏，避免重复 CTA。";
+  }
+  if (support.status === "basic") {
+    return "该组件为基础展示支持，请发布前在 H5 和小程序预览中核对内容字段。";
+  }
+  return "";
+}
+
+function isConferenceDetailPage(): boolean {
+  return selectedPage.value?.pageKey === "conference-detail";
+}
+
+function isRegistrationCtaType(type: string): boolean {
+  return REGISTRATION_CTA_TYPES.includes(type);
+}
+
+function isRenderableSupport(type: string): boolean {
+  return ADDABLE_SUPPORT_STATUSES.includes(componentSupport(type).status);
+}
+
 function thumbClass(type: string): string {
   if (type === "hero") return "is-hero";
   if (type === "carousel" || type === "image-grid") return "is-carousel";
@@ -1035,6 +1152,7 @@ const ComponentPreview = defineComponent({
     const list = (key: string) => (Array.isArray(props.item.config[key]) ? (props.item.config[key] as unknown[]).map(String) : []);
     const textStyle = () => buildPreviewTextStyle(props.item);
     const titleStyle = () => buildPreviewTitleStyle(props.item);
+    const parsedList = (key: string) => list(key).map(splitPreviewLine).filter((item) => item.length > 0);
     const meetings = () =>
       (previewConferences.value.length > 0 ? previewConferences.value : sampleConferences).map((item, index) => ({
         id: item.id,
@@ -1047,6 +1165,18 @@ const ComponentPreview = defineComponent({
       }));
     return () => {
       const type = props.item.type;
+      if (!isRenderableSupport(type)) {
+        return h("div", { class: "preview-support-warning" }, [
+          h("strong", props.name),
+          h("span", "该组件暂不支持小程序/H5展示，建议暂勿发布")
+        ]);
+      }
+      if (isConferenceDetailPage() && isRegistrationCtaType(type)) {
+        return h("div", { class: "preview-support-warning is-support-basic" }, [
+          h("strong", props.name),
+          h("span", "会议详情页会使用固定底部报名按钮，该 CMS 报名按钮将隐藏")
+        ]);
+      }
       if (type === "hero") {
         return h("div", { class: "preview-hero-card" }, [
           value("imageUrl") ? h("img", { src: value("imageUrl"), alt: "主视觉横幅" }) : h("div", { class: "preview-hero-empty" }, "请选择横幅图片")
@@ -1099,6 +1229,59 @@ const ComponentPreview = defineComponent({
       if (type === "registration-button" || type === "floating-registration-button") {
         return h("button", { class: "preview-button", style: textStyle() }, value("text", "立即报名"));
       }
+      if (type === "speaker-cards") {
+        const items = parsedList("speakers");
+        return h("div", { class: "preview-section" }, [
+          h("strong", { style: titleStyle() }, value("title", "嘉宾阵容")),
+          h("div", { class: "preview-speakers" }, (items.length > 0 ? items : [["嘉宾", "信息待公布"]]).map((item) =>
+            h("div", { class: "preview-person" }, [
+              h("span", { class: "preview-person-avatar" }, (item[0] || "嘉宾").slice(0, 1)),
+              h("div", [h("b", item[0] || "嘉宾"), item[1] ? h("span", item[1]) : null])
+            ])
+          ))
+        ]);
+      }
+      if (type === "schedule-timeline") {
+        const items = parsedList("items");
+        return h("div", { class: "preview-section" }, [
+          h("strong", { style: titleStyle() }, value("title", "会议日程")),
+          h("div", { class: "preview-timeline" }, (items.length > 0 ? items : [["待定", "日程安排待公布"]]).map((item) =>
+            h("div", { class: "preview-timeline-item" }, [
+              h("span", { class: "preview-timeline-time" }, item[0] || "待定"),
+              h("div", [h("b", item[1] || item[0] || "日程安排"), item[2] ? h("span", item.slice(2).join(" ")) : null])
+            ])
+          ))
+        ]);
+      }
+      if (type === "countdown") {
+        return h("div", { class: "preview-section" }, [
+          h("strong", { style: titleStyle() }, value("title", "距离开始")),
+          h("div", { class: "preview-countdown" }, ["天", "时", "分", "秒"].map((item, index) => h("span", [h("b", index === 0 ? "00" : "12"), h("small", item)])))
+        ]);
+      }
+      if (type === "map-contact") {
+        return h("div", { class: "preview-section" }, [
+          h("strong", { style: titleStyle() }, value("title", "会场与联系")),
+          h("p", { style: textStyle() }, value("address", "会议地址待公布")),
+          value("phone") ? h("button", { class: "preview-outline-button" }, `联系会务组：${value("phone")}`) : null
+        ]);
+      }
+      if (type === "sponsor-wall") {
+        const items = list("sponsors");
+        return h("div", { class: "preview-section" }, [
+          h("strong", { style: titleStyle() }, value("title", "合作伙伴")),
+          h("div", { class: "preview-sponsors" }, (items.length > 0 ? items : ["合作伙伴"]).map((item) => h("span", item)))
+        ]);
+      }
+      if (type === "faq") {
+        const items = parsedList("items");
+        return h("div", { class: "preview-section" }, [
+          h("strong", { style: titleStyle() }, value("title", "常见问题")),
+          h("div", { class: "preview-faq" }, (items.length > 0 ? items : [["常见问题", "答案待补充"]]).map((item) =>
+            h("div", [h("b", item[0] || "常见问题"), item[1] ? h("span", item.slice(1).join(" ")) : null])
+          ))
+        ]);
+      }
       if (type === "stats-grid") {
         return h("div", { class: "preview-section" }, [
           h("strong", { style: titleStyle() }, value("title", "会议亮点")),
@@ -1119,6 +1302,10 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "image-grid" || type === "carousel") {
+        if (type === "carousel") {
+          const images = list("images");
+          return h("div", { class: "preview-carousel" }, images[0] ? h("img", { src: images[0], alt: "" }) : h("span", "暂无轮播图片"));
+        }
         return h("div", { class: "preview-image-grid" }, list("images").map((item) => h("img", { src: item, alt: "" })));
       }
       if (type === "notice" || type === "promotion-bar") {
@@ -1292,6 +1479,10 @@ function formatPreviewDate(value: string | undefined) {
   if (Number.isNaN(date.getTime())) return "待定";
   return `${String(date.getMonth() + 1).padStart(2, "0")} 月 ${String(date.getDate()).padStart(2, "0")} 日`;
 }
+
+function splitPreviewLine(value: string): string[] {
+  return value.split(/[\n|｜,，;；]+/).map((item) => item.trim()).filter(Boolean);
+}
 </script>
 
 <style scoped>
@@ -1432,10 +1623,72 @@ function formatPreviewDate(value: string | undefined) {
   display: block;
 }
 
+.preset-card__title,
+.component-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.support-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: var(--admin-color-primary);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.support-badge.is-support-supported {
+  background: #e9f8f2;
+  color: #0f7a52;
+}
+
+.support-badge.is-support-basic {
+  background: #fff7e8;
+  color: #a15c00;
+}
+
+.support-badge.is-support-unsupported,
+.support-badge.is-support-planned {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.preset-card.is-support-unsupported,
+.preset-card.is-support-planned {
+  background: #f8fafc;
+}
+
 .preset-card small,
 .component-card__head span {
   color: var(--admin-color-muted);
   line-height: 1.45;
+}
+
+.component-notice {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.component-notice.is-support-basic {
+  background: #fff7e8;
+  color: #8a4b00;
+}
+
+.component-notice.is-support-unsupported,
+.component-notice.is-support-planned {
+  background: #fff1f2;
+  color: #b42318;
 }
 
 .preset-thumb {
@@ -1877,6 +2130,25 @@ function formatPreviewDate(value: string | undefined) {
   line-height: 1.55;
 }
 
+.preview-support-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px dashed #cbd5e1;
+  border-radius: var(--preview-radius);
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.preview-support-warning.is-support-basic {
+  border-color: #f2c36b;
+  background: #fff7e8;
+  color: #8a4b00;
+}
+
 .phone-screen :deep(.preview-meeting) {
   display: flex;
   align-items: flex-start;
@@ -1955,7 +2227,10 @@ function formatPreviewDate(value: string | undefined) {
 
 .preview-stats,
 .preview-list,
-.preview-image-grid {
+.preview-image-grid,
+.preview-speakers,
+.preview-timeline,
+.preview-faq {
   display: grid;
   gap: 8px;
   margin-top: 10px;
@@ -1974,6 +2249,116 @@ function formatPreviewDate(value: string | undefined) {
 
 .preview-image-grid {
   grid-template-columns: repeat(3, 1fr);
+}
+
+.preview-carousel {
+  display: grid;
+  place-items: center;
+  min-height: 132px;
+  overflow: hidden;
+  border-radius: var(--preview-radius);
+  background: #eef3fb;
+  color: #637083;
+  font-size: 12px;
+}
+
+.preview-carousel img {
+  width: 100%;
+  height: 132px;
+  object-fit: cover;
+}
+
+.preview-person,
+.preview-timeline-item,
+.preview-faq div {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f4f8ff;
+}
+
+.preview-person-avatar {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e8f1ff;
+  color: var(--preview-primary);
+  font-weight: 800;
+}
+
+.preview-person b,
+.preview-timeline-item b,
+.preview-faq b {
+  display: block;
+  color: #172033;
+  font-size: 12px;
+}
+
+.preview-person span,
+.preview-timeline-item span,
+.preview-faq span {
+  display: block;
+  margin-top: 3px;
+  color: #637083;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.preview-timeline-time {
+  width: 46px;
+  flex: 0 0 46px;
+  color: var(--preview-primary) !important;
+  font-weight: 800;
+}
+
+.preview-countdown,
+.preview-sponsors {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.preview-countdown {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.preview-countdown span,
+.preview-sponsors span {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  border-radius: 8px;
+  background: #f4f8ff;
+}
+
+.preview-countdown b {
+  color: var(--preview-primary);
+  font-size: 16px;
+}
+
+.preview-countdown small {
+  color: #637083;
+  font-size: 10px;
+}
+
+.preview-sponsors {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.preview-outline-button {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 8px;
+  border: 1px solid #dce3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--preview-primary);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .preview-tabs {

@@ -360,6 +360,8 @@ export interface CmsComponent {
   config: Record<string, unknown>;
 }
 
+export type CmsComponentSupportStatus = "supported" | "basic" | "unsupported" | "planned";
+
 export interface ComponentPreset {
   id: string;
   type: string;
