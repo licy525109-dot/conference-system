@@ -1,17 +1,18 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">素材管理</h1>
-        <p class="page-subtitle">按使用位置管理图片、图标、视频和字体素材。</p>
-      </div>
-      <div class="inline-actions">
+    <AdminPageHeader
+      title="素材管理"
+      eyebrow="页面装修"
+      subtitle="按使用位置管理图片、图标、视频和字体素材；上传接口和 uploads 目录策略保持不变。"
+    >
+      <template #actions>
         <el-button @click="categoryVisible = true">新增分类</el-button>
         <el-button type="primary" @click="openCreate">上传素材</el-button>
-      </div>
-    </div>
-    <div class="toolbar">
-      <el-input v-model="keyword" placeholder="素材名称/位置/备注" style="width: 240px" @keyup.enter="load" />
+      </template>
+    </AdminPageHeader>
+
+    <AdminFilterBar>
+      <el-input v-model="keyword" clearable placeholder="素材名称 / 位置 / 备注" style="width: 240px" @keyup.enter="load" />
       <el-select v-model="categoryId" clearable placeholder="分类" style="width: 180px">
         <el-option v-for="item in categories" :key="item.id" :label="item.name" :value="item.id" />
       </el-select>
@@ -23,10 +24,17 @@
         <el-option label="支付结果页" value="payment_result" />
         <el-option label="页面字体" value="page_font" />
       </el-select>
-      <el-button :loading="loading" @click="load">查询</el-button>
-    </div>
+      <el-select v-model="enabledFilter" clearable placeholder="状态" style="width: 130px">
+        <el-option label="启用" value="true" />
+        <el-option label="停用" value="false" />
+      </el-select>
+      <template #actions>
+        <el-button :loading="loading" type="primary" @click="load">查询</el-button>
+      </template>
+    </AdminFilterBar>
+
     <section class="table-panel">
-      <el-table :data="assets" empty-text="暂无素材">
+      <el-table v-loading="loading" :data="assets" empty-text="暂无素材">
         <el-table-column label="预览" width="100">
           <template #default="{ row }">
             <img v-if="row.fileType.startsWith('image/')" class="image-preview" :src="row.url" alt="" />
@@ -34,17 +42,25 @@
             <span v-else>视频</span>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="160" />
+        <el-table-column label="素材" min-width="180">
+          <template #default="{ row }">
+            <strong>{{ row.name }}</strong>
+            <div class="muted-text">{{ row.fileType || "外部 URL" }}</div>
+          </template>
+        </el-table-column>
         <el-table-column label="分类" width="140"><template #default="{ row }">{{ row.category?.name || "-" }}</template></el-table-column>
         <el-table-column prop="usage" label="使用位置" width="160" />
         <el-table-column prop="url" label="URL" min-width="240" show-overflow-tooltip />
-        <el-table-column label="状态" width="90"><template #default="{ row }">{{ row.enabled ? "启用" : "停用" }}</template></el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
         <el-table-column label="操作" width="190">
           <template #default="{ row }">
             <el-button size="small" @click="copyUrl(row.url)">复制 URL</el-button>
             <el-button size="small" type="warning" :disabled="!row.enabled" @click="disable(row.id)">停用</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <AdminEmptyState title="暂无素材" description="可先上传会议封面、详情头图、页面装修图片或字体文件。" action-text="上传素材" @action="openCreate" />
+        </template>
       </el-table>
     </section>
 
@@ -77,6 +93,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import AdminEmptyState from "../../components/AdminEmptyState.vue";
+import AdminFilterBar from "../../components/AdminFilterBar.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { createMaterial, createMaterialCategory, disableMaterial, listMaterialCategories, listMaterials } from "../../services/admin";
 import type { MaterialAsset, MaterialCategory } from "../../services/types";
 
@@ -85,6 +105,7 @@ const assets = ref<MaterialAsset[]>([]);
 const keyword = ref("");
 const categoryId = ref("");
 const usage = ref("");
+const enabledFilter = ref("");
 const loading = ref(false);
 const dialogVisible = ref(false);
 const categoryVisible = ref(false);
@@ -106,7 +127,16 @@ async function loadCategories() {
 async function load() {
   loading.value = true;
   try {
-    assets.value = (await listMaterials({ page: 1, pageSize: 100, keyword: keyword.value, categoryId: categoryId.value, usage: usage.value })).items;
+    assets.value = (
+      await listMaterials({
+        page: 1,
+        pageSize: 100,
+        keyword: keyword.value,
+        categoryId: categoryId.value,
+        usage: usage.value,
+        enabled: enabledFilter.value ? enabledFilter.value === "true" : undefined
+      })
+    ).items;
   } finally {
     loading.value = false;
   }
@@ -182,8 +212,18 @@ async function saveCategory() {
 }
 
 async function disable(id: string) {
+  try {
+    await ElMessageBox.confirm("停用后装修页面将无法继续选择该素材，已发布页面如仍引用 URL 需要人工确认展示效果。", "确认停用素材", {
+      confirmButtonText: "确认停用",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
   await disableMaterial(id);
   await load();
+  ElMessage.success("素材已停用");
 }
 
 async function copyUrl(url: string) {

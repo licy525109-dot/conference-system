@@ -1,14 +1,12 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">会议管理</h1>
-        <p class="page-subtitle">维护会议基础信息，并进入详情配置中心。</p>
-      </div>
-      <el-button type="primary" @click="openCreate">新建会议</el-button>
-    </div>
+    <AdminPageHeader title="会议管理" subtitle="维护会议基础信息、上下架状态，并进入会议配置中心。" eyebrow="会议业务">
+      <template #actions>
+        <el-button type="primary" @click="openCreate">新建会议</el-button>
+      </template>
+    </AdminPageHeader>
 
-    <div class="toolbar">
+    <AdminFilterBar>
       <el-input v-model="keyword" placeholder="搜索标题、地点" style="width: 260px" @keyup.enter="load" />
       <el-select v-model="status" clearable placeholder="状态" style="width: 160px">
         <el-option label="草稿" value="DRAFT" />
@@ -16,14 +14,28 @@
         <el-option label="已关闭" value="CLOSED" />
         <el-option label="已归档" value="ARCHIVED" />
       </el-select>
-      <el-button :loading="loading" @click="load">查询</el-button>
-    </div>
+      <template #actions>
+        <el-button :loading="loading" @click="load">查询</el-button>
+      </template>
+    </AdminFilterBar>
 
     <section class="table-panel">
       <el-table :data="items" empty-text="暂无会议">
-        <el-table-column prop="title" label="标题" min-width="220" />
-        <el-table-column label="状态" width="120"><template #default="{ row }">{{ statusText(row.status) }}</template></el-table-column>
+        <el-table-column label="会议" min-width="260">
+          <template #default="{ row }">
+            <strong>{{ row.title }}</strong>
+            <div class="muted-text">{{ row.subtitle || "未填写副标题" }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }"><AdminStatusBadge :status="row.status" /></template>
+        </el-table-column>
         <el-table-column prop="location" label="地点" width="140" />
+        <el-table-column label="运营数据" width="150">
+          <template #default="{ row }">
+            <div class="muted-text">{{ row.counts?.registrations ?? 0 }} 报名 / {{ row.counts?.orders ?? 0 }} 订单</div>
+          </template>
+        </el-table-column>
         <el-table-column label="时间" min-width="220">
           <template #default="{ row }">{{ formatDate(row.startAt) }} - {{ formatDate(row.endAt) }}</template>
         </el-table-column>
@@ -46,6 +58,9 @@
             </div>
           </template>
         </el-table-column>
+        <template #empty>
+          <AdminEmptyState title="暂无会议" description="创建第一场会议后，可以继续配置票种、报名字段和页面装修。" mark="会" action-text="新建会议" @action="openCreate" />
+        </template>
       </el-table>
     </section>
 
@@ -99,7 +114,11 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
+import AdminEmptyState from "../../components/AdminEmptyState.vue";
+import AdminFilterBar from "../../components/AdminFilterBar.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { createConference, listConferences, listMaterials, updateConference, updateConferenceStatus } from "../../services/admin";
 import type { Conference, MaterialAsset } from "../../services/types";
 import { navigateTo } from "../../router";
@@ -190,6 +209,14 @@ async function save() {
 }
 
 async function changeStatus(id: string, nextStatus: string) {
+  const target = items.value.find((item) => item.id === id);
+  if (requiresStatusConfirm(nextStatus)) {
+    await ElMessageBox.confirm(
+      `确认将「${target?.title ?? "该会议"}」切换为${statusText(nextStatus)}？该操作会影响用户端报名入口展示。`,
+      "确认变更会议状态",
+      { confirmButtonText: "确认变更", cancelButtonText: "取消", type: nextStatus === "PUBLISHED" ? "warning" : "error" }
+    );
+  }
   await updateConferenceStatus(id, nextStatus);
   await load();
   ElMessage.success("状态已更新");
@@ -226,6 +253,10 @@ function formatDate(value: string) {
 
 function statusText(value: string) {
   return { DRAFT: "草稿", PUBLISHED: "已发布", CLOSED: "已关闭", ARCHIVED: "已归档" }[value] ?? value;
+}
+
+function requiresStatusConfirm(value: string) {
+  return ["PUBLISHED", "CLOSED", "ARCHIVED"].includes(value);
 }
 </script>
 

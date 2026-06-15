@@ -1,16 +1,13 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">底部导航配置</h1>
-        <p class="page-subtitle">配置小程序底部导航，保存后按后台顺序动态展示。</p>
-      </div>
-      <div class="inline-actions">
+    <AdminPageHeader title="底部导航配置" eyebrow="页面装修" subtitle="配置小程序底部导航，保存后按后台顺序动态展示，不写死导航入口。">
+      <AdminFeatureBadge label="主线优先" description="建议第一版优先保留首页、会议列表、我的报名；会员和商城属于扩展能力。" tone="info" />
+      <template #actions>
         <el-switch v-model="enabled" active-text="启用" inactive-text="停用" />
         <el-button @click="addItem">新增导航</el-button>
         <el-button type="primary" :loading="saving" @click="save">保存发布</el-button>
-      </div>
-    </div>
+      </template>
+    </AdminPageHeader>
 
     <section class="data-panel">
       <el-table :data="items" empty-text="暂无导航">
@@ -68,6 +65,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
+import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import { getTabbar, updateTabbar } from "../../services/admin";
 import type { TabBarItem } from "../../services/types";
 

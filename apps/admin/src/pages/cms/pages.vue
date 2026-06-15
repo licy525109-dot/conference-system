@@ -59,6 +59,16 @@
           </el-collapse>
         </section>
 
+        <el-alert
+          v-if="unsupportedEnabledComponents.length > 0"
+          class="publish-guard-alert"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="当前页面包含暂不支持小程序/H5 的组件"
+          :description="`已启用 ${unsupportedEnabledComponents.length} 个不支持或后续开放组件，用户端正式页面会静默隐藏，建议发布前处理：${unsupportedEnabledComponents.map((item) => presetName(item.type)).join('、')}`"
+        />
+
         <section class="cms-builder">
           <div class="component-library data-panel">
             <div class="library-head">
@@ -294,7 +304,7 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createPage,
   getPageVersion,
@@ -441,6 +451,9 @@ const filteredPresetGroups = computed(() => {
 });
 
 const previewComponents = computed(() => components.value.filter((item) => item.enabled));
+const unsupportedEnabledComponents = computed(() =>
+  components.value.filter((item) => item.enabled && ["unsupported", "planned"].includes(componentSupport(item.type).status))
+);
 const componentOptions = computed(() =>
   components.value.map((component, index) => ({
     label: `${index + 1}. ${presetName(component.type)} · ${componentSupport(component.type).label}${component.enabled ? "" : "（已隐藏）"}`,
@@ -611,6 +624,21 @@ async function saveDraft() {
 
 async function publish() {
   if (!version.value) return;
+  if (unsupportedEnabledComponents.value.length > 0) {
+    try {
+      await ElMessageBox.confirm(
+        "发布后这些组件不会展示给普通用户端，请确认是否继续发布。建议先隐藏或替换为已支持/基础支持组件。",
+        "存在暂不支持组件",
+        {
+          confirmButtonText: "继续发布",
+          cancelButtonText: "返回处理",
+          type: "warning"
+        }
+      );
+    } catch {
+      return;
+    }
+  }
   await saveDraft();
   publishing.value = true;
   try {
@@ -1562,6 +1590,10 @@ function splitPreviewLine(value: string): string[] {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.publish-guard-alert {
+  border-radius: var(--admin-radius);
 }
 
 .editor-heading,

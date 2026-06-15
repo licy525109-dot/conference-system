@@ -1,19 +1,24 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">角色权限</h1>
-        <p class="page-subtitle">配置后台功能权限。超级管理员角色为系统内置。</p>
-      </div>
-      <el-button type="primary" @click="openCreate">新增角色</el-button>
-    </div>
+    <AdminPageHeader
+      title="角色权限"
+      eyebrow="系统管理"
+      badge="高级权限"
+      badge-tone="danger"
+      subtitle="配置后台功能权限。超级管理员角色为系统内置，权限变更会直接影响运营后台可见范围。"
+    >
+      <AdminFeatureBadge label="高级权限，谨慎调整" description="建议只由管理员维护角色和权限。" tone="danger" />
+      <template #actions>
+        <el-button type="primary" @click="openCreate">新增角色</el-button>
+      </template>
+    </AdminPageHeader>
     <section class="table-panel">
       <el-table :data="roles" empty-text="暂无角色">
         <el-table-column prop="name" label="角色" min-width="160" />
         <el-table-column prop="code" label="编码" min-width="160" />
         <el-table-column label="权限数" width="100"><template #default="{ row }">{{ row.permissions.length }}</template></el-table-column>
-        <el-table-column label="系统角色" width="100"><template #default="{ row }">{{ row.system ? "是" : "否" }}</template></el-table-column>
-        <el-table-column label="状态" width="100"><template #default="{ row }">{{ row.enabled ? "启用" : "停用" }}</template></el-table-column>
+        <el-table-column label="系统角色" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.system" :label="row.system ? '系统内置' : '自定义'" :tone="row.system ? 'warning' : 'neutral'" /></template></el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
         <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
       </el-table>
     </section>
@@ -44,6 +49,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { createRole, listPermissions, listRoles, updateRole } from "../../services/admin";
 import type { Permission, Role } from "../../services/types";
 

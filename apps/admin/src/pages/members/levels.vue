@@ -1,12 +1,17 @@
 <template>
   <section class="admin-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">会员等级</h1>
-        <p class="page-subtitle">维护会员等级、价格和展示权益；第一版不参与会议订单价格计算。</p>
-      </div>
-      <el-button type="primary" @click="openCreate">新增等级</el-button>
-    </div>
+    <AdminPageHeader
+      title="会员等级"
+      eyebrow="扩展能力"
+      badge="后续开放"
+      badge-tone="neutral"
+      subtitle="维护会员等级、价格和展示权益；第一版不参与会议订单价格计算。"
+    >
+      <AdminFeatureBadge label="后续开放" description="会员权益只做预留展示，不影响报名规格和订单金额。" tone="neutral" />
+      <template #actions>
+        <el-button type="primary" @click="openCreate">新增等级</el-button>
+      </template>
+    </AdminPageHeader>
 
     <section class="table-panel">
       <el-table :data="levels" empty-text="暂无会员等级">
@@ -15,7 +20,7 @@
         <el-table-column prop="rank" label="等级序" width="100" />
         <el-table-column label="价格" width="120"><template #default="{ row }">¥{{ formatCent(row.priceCent) }}</template></el-table-column>
         <el-table-column label="折扣" width="120"><template #default="{ row }">{{ formatDiscount(row.discountPercent) }}</template></el-table-column>
-        <el-table-column label="状态" width="90"><template #default="{ row }">{{ row.enabled ? "启用" : "停用" }}</template></el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
         <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
         <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
       </el-table>
@@ -42,6 +47,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
+import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { createMemberLevel, listMemberLevels, updateMemberLevel } from "../../services/admin";
 import type { MemberLevel } from "../../services/types";
 
