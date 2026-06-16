@@ -37,13 +37,13 @@ const rootStyle = computed(() => ({
 }));
 
 const baseStyle = computed(() => ({
-  background: `linear-gradient(135deg, ${fromColor.value}, ${toColor.value})`,
+  background: `radial-gradient(circle at 16% 18%, ${withAlpha(fromColor.value, 0.34)} 0, transparent 28%), radial-gradient(circle at 78% 16%, ${withAlpha(toColor.value, 0.28)} 0, transparent 26%), radial-gradient(circle at 54% 82%, ${withAlpha(accentColor.value, 0.24)} 0, transparent 30%), linear-gradient(135deg, ${withAlpha(fromColor.value, 0.92)}, ${withAlpha(toColor.value, 0.82)})`,
   animation: `themeDynamicBase ${speed.value}s ease-in-out infinite alternate`
 }));
 
-const glowAStyle = computed(() => glowStyle(fromColor.value, toColor.value, 0.66, 0.2, 320 + density.value * 3, speed.value * 0.92, "themeDynamicGlowA"));
-const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.58, 0.18, 280 + density.value * 2.6, speed.value * 1.08, "themeDynamicGlowB"));
-const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.48, 0.16, 240 + density.value * 2.2, speed.value * 1.18, "themeDynamicGlowC"));
+const glowAStyle = computed(() => glowStyle(fromColor.value, toColor.value, 0.72, 0.24, 360 + density.value * 3.2, speed.value * 0.92, "themeDynamicGlowA"));
+const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.64, 0.22, 320 + density.value * 2.8, speed.value * 1.08, "themeDynamicGlowB"));
+const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.56, 0.2, 290 + density.value * 2.4, speed.value * 1.18, "themeDynamicGlowC"));
 
 function glowStyle(colorA: string, colorB: string, alphaA: number, alphaB: number, size: number, duration: number, animationName: string): Record<string, string> {
   return {
@@ -118,7 +118,8 @@ function withAlpha(value: string, alpha: number): string {
 
 .theme-dynamic-bg__glow {
   border-radius: 9999rpx;
-  opacity: 0.78;
+  opacity: 0.88;
+  filter: blur(18rpx);
 }
 
 .theme-dynamic-bg__glow-a {
@@ -140,16 +141,16 @@ function withAlpha(value: string, alpha: number): string {
   right: 0;
   bottom: 0;
   left: 0;
-  height: 62%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(245, 247, 251, 0.68));
+  height: 66%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(245, 247, 251, 0.58));
 }
 
 @keyframes themeDynamicBase {
   from {
-    transform: translate(-2%, -1%) scale(1);
+    transform: translate(-3%, -2%) scale(1);
   }
   to {
-    transform: translate(3%, 2%) scale(1.04);
+    transform: translate(4%, 3%) scale(1.08);
   }
 }
 

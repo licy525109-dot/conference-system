@@ -1216,21 +1216,42 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "description", label: "说明文字", kind: "textarea", rows: 2, placeholder: "填写横幅说明" },
       { key: "buttonText", label: "按钮文字", placeholder: "立即报名" },
       { key: "showButton", label: "显示按钮", kind: "switch", fallback: "true" },
+      { key: "showContent", label: "显示文字层", kind: "switch", fallback: "true" },
+      { key: "showOverlay", label: "显示渐变遮罩", kind: "switch", fallback: "true" },
+      { key: "imageOnly", label: "仅展示横幅图片", kind: "switch", fallback: "false" },
+      { key: "height", label: "横幅高度", kind: "range", fallback: 430, min: 240, max: 620 },
       { key: "imageUrl", label: "横幅图片地址", placeholder: "从素材库选择或粘贴图片地址" },
       { key: "fullBleed", label: "横幅铺满屏幕宽度", kind: "switch", fallback: "true" },
       {
         key: "imageMode",
         label: "图片裁切方式",
         kind: "select",
-        fallback: "aspectFill",
+        fallback: "aspectFit",
         options: [
-          { label: "铺满裁切", value: "aspectFill" },
           { label: "完整显示", value: "aspectFit" },
+          { label: "铺满裁切", value: "aspectFill" },
           { label: "宽度铺满", value: "widthFix" }
         ]
       }
     ],
-    carousel: [{ key: "images", label: "轮播图片", kind: "list", placeholder: "每行一个图片地址", rows: 5 }],
+    carousel: [
+      { key: "images", label: "轮播图片", kind: "list", placeholder: "每行一个图片地址", rows: 5 },
+      { key: "height", label: "轮播高度", kind: "range", fallback: 360, min: 220, max: 620 },
+      { key: "fullBleed", label: "铺满屏幕宽度", kind: "switch", fallback: "true" },
+      {
+        key: "imageMode",
+        label: "图片显示方式",
+        kind: "select",
+        fallback: "aspectFit",
+        options: [
+          { label: "完整显示", value: "aspectFit" },
+          { label: "铺满裁切", value: "aspectFill" },
+          { label: "宽度铺满", value: "widthFix" }
+        ]
+      },
+      { key: "autoplay", label: "自动播放", kind: "switch", fallback: "true" },
+      { key: "indicatorDots", label: "显示指示点", kind: "switch", fallback: "true" }
+    ],
     "conference-list": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 10 }, ...conferenceDisplayFields], 26),
     "conference-tabs": withTextStyle([...commonTitle, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
     "speaker-cards": withTextStyle([...commonTitle, { key: "speakers", label: "嘉宾信息", kind: "list", placeholder: "每行一位嘉宾，例如：张三｜主讲嘉宾", rows: 5 }], 26),
@@ -1566,15 +1587,17 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "hero") {
-        return h("div", { class: "preview-hero-card" }, [
+        const imageOnly = Boolean(value("imageUrl")) && booleanConfig(props.item, "imageOnly", false);
+        const showContent = !imageOnly && booleanConfig(props.item, "showContent", true);
+        return h("div", { class: ["preview-hero-card", imageOnly ? "is-image-only" : ""], style: { minHeight: `${numberValue(props.item, "height", 430) / 2}px`, height: `${numberValue(props.item, "height", 430) / 2}px` } }, [
           value("imageUrl") ? h("img", { src: value("imageUrl"), alt: "主视觉横幅" }) : h("div", { class: "preview-hero-empty" }),
-          h("div", { class: "preview-hero-card__shade" }),
-          h("div", { class: "preview-hero-card__copy" }, [
+          !imageOnly && booleanConfig(props.item, "showOverlay", true) ? h("div", { class: "preview-hero-card__shade" }) : null,
+          showContent ? h("div", { class: "preview-hero-card__copy" }, [
             h("span", value("kicker", "会议报名")),
             h("strong", { style: titleStyle() }, value("title", "选择会议，完成报名缴费")),
             h("p", { style: textStyle() }, value("description", "查看会议安排、选择报名规格，支付成功后自动生成参会记录。")),
             booleanConfig(props.item, "showButton", true) ? h("button", value("buttonText", "立即报名")) : null
-          ])
+          ]) : null
         ]);
       }
       if (type === "conference-list") {
@@ -1699,7 +1722,7 @@ const ComponentPreview = defineComponent({
       if (type === "image-grid" || type === "carousel") {
         if (type === "carousel") {
           const images = list("images");
-          return h("div", { class: "preview-carousel" }, images[0] ? h("img", { src: images[0], alt: "" }) : h("span", "暂无轮播图片"));
+          return h("div", { class: "preview-carousel", style: { height: `${numberValue(props.item, "height", 360) / 2}px` } }, images[0] ? h("img", { src: images[0], alt: "" }) : h("span", "暂无轮播图片"));
         }
         return h("div", { class: "preview-image-grid" }, list("images").map((item) => h("img", { src: item, alt: "" })));
       }
@@ -2979,6 +3002,11 @@ function splitPreviewLine(value: string): string[] {
     linear-gradient(135deg, var(--preview-primary), var(--preview-secondary));
 }
 
+.phone-screen :deep(.preview-hero-card.is-image-only img) {
+  object-fit: contain;
+  background: #ffffff;
+}
+
 .phone-screen :deep(.preview-hero-card__shade) {
   position: absolute;
   inset: 0;
@@ -3083,8 +3111,9 @@ function splitPreviewLine(value: string): string[] {
 
 .preview-carousel img {
   width: 100%;
-  height: 132px;
-  object-fit: cover;
+  height: 100%;
+  object-fit: contain;
+  background: #ffffff;
 }
 
 .preview-person,
