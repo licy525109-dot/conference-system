@@ -24,7 +24,8 @@ export const ADMIN_PERMISSIONS = [
   { code: "mall:view", name: "查看商城", group: "商城管理" },
   { code: "mall:write", name: "编辑商城", group: "商城管理" },
   { code: "system:account", name: "管理账号", group: "系统设置" },
-  { code: "system:role", name: "管理角色权限", group: "系统设置" }
+  { code: "system:role", name: "管理角色权限", group: "系统设置" },
+  { code: "system:audit", name: "查看操作日志", group: "系统设置" }
 ] as const;
 
 export const ADMIN_PERMISSION_CODES = ADMIN_PERMISSIONS.map((permission) => permission.code);

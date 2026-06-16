@@ -6,6 +6,7 @@ import type {
   AdminRegistration,
   AdminRegistrationDetail,
   AdminAccount,
+  AdminAuditLog,
   AdminUser,
   ApiList,
   ActiveTheme,
@@ -127,16 +128,43 @@ export function disableFormField(id: string) {
   });
 }
 
-export function listOrders(params: { page?: number; pageSize?: number; keyword?: string; conferenceId?: string; status?: string }) {
+export function listOrders(params: { page?: number; pageSize?: number; keyword?: string; conferenceId?: string; status?: string; paymentStatus?: string }) {
   return apiRequest<ApiList<AdminOrder>>(`/admin/orders${toQuery(params)}`);
+}
+
+export function exportOrdersCsv(params: {
+  keyword?: string;
+  conferenceId?: string;
+  status?: string;
+  paymentStatus?: string;
+  onlyExceptions?: boolean;
+}) {
+  return downloadAdminFile(`/admin/exports/orders.csv${toQuery(params)}`, "orders.csv");
 }
 
 export function getOrder(orderNo: string) {
   return apiRequest<AdminOrderDetail>(`/admin/orders/${encodeURIComponent(orderNo)}`);
 }
 
+export function reviewPaymentException(orderNo: string, note: string) {
+  return apiRequest(`/admin/payment-exceptions/${encodeURIComponent(orderNo)}/review`, {
+    method: "POST",
+    body: JSON.stringify({ note })
+  });
+}
+
 export function listRegistrations(params: { page?: number; pageSize?: number; keyword?: string; conferenceId?: string; status?: string }) {
   return apiRequest<ApiList<AdminRegistration>>(`/admin/registrations${toQuery(params)}`);
+}
+
+export function exportRegistrationsCsv(params: {
+  keyword?: string;
+  conferenceId?: string;
+  status?: string;
+  paymentStatus?: string;
+  checkInStatus?: string;
+}) {
+  return downloadAdminFile(`/admin/exports/registrations.csv${toQuery(params)}`, "registrations.csv");
 }
 
 export function getRegistration(id: string) {
@@ -216,6 +244,10 @@ export function listPermissions() {
 
 export function listRoles() {
   return apiRequest<{ items: Role[] }>("/admin/roles");
+}
+
+export function listAuditLogs(params: { page?: number; pageSize?: number; keyword?: string; action?: string; entityType?: string }) {
+  return apiRequest<ApiList<AdminAuditLog>>(`/admin/audit-logs${toQuery(params)}`);
 }
 
 export function createRole(input: Record<string, unknown>) {
@@ -313,6 +345,30 @@ function parseApiBody<T>(text: string): { code?: string; message?: string; data?
   } catch {
     return {};
   }
+}
+
+async function downloadAdminFile(path: string, filename: string): Promise<void> {
+  const headers = new Headers();
+  const token = getAdminToken();
+  if (token) {
+    headers.set("authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({} as { message?: string }));
+    throw new Error(body.message || `下载失败 (${response.status})`);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 export function updateMaterial(id: string, input: Record<string, unknown>) {
