@@ -41,6 +41,7 @@ export interface AppTheme {
 }
 
 export interface ThemeConfig {
+  visualPreset?: string;
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
@@ -85,10 +86,11 @@ export interface TabbarItem {
 }
 
 export const DEFAULT_THEME: ThemeConfig = {
-  primaryColor: "#2452a8",
-  secondaryColor: "#14b8a6",
-  accentColor: "#f59e0b",
-  backgroundColor: "#f5f7fb",
+  visualPreset: "business-blue",
+  primaryColor: "#1f4d7a",
+  secondaryColor: "#4d8dd9",
+  accentColor: "#c7923e",
+  backgroundColor: "#f4f7fb",
   cardBackground: "#ffffff",
   radius: 8,
   buttonStyle: "solid",
@@ -96,8 +98,8 @@ export const DEFAULT_THEME: ThemeConfig = {
   titleFontSize: 42,
   bannerStyle: "clean",
   backgroundMode: "solid",
-  backgroundGradientFrom: "#f5f7fb",
-  backgroundGradientTo: "#eef7f5",
+  backgroundGradientFrom: "#f7fafe",
+  backgroundGradientTo: "#eaf1f8",
   backgroundImageUrl: "",
   backgroundVideoUrl: "",
   backgroundDynamicDensity: 40,

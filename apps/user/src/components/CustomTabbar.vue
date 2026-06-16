@@ -85,7 +85,7 @@ function isTabbarLikePage(url: string): boolean {
   grid-auto-columns: 1fr;
   min-height: 112rpx;
   padding: 12rpx 18rpx calc(12rpx + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--ui-color-border);
+  border-top: 1px solid var(--cms-border);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--ui-shadow-bottom);
   backdrop-filter: blur(12px);
@@ -105,7 +105,7 @@ function isTabbarLikePage(url: string): boolean {
 }
 
 .custom-tabbar__item.active {
-  color: var(--ui-color-primary);
+  color: var(--cms-primary-strong);
   font-weight: 900;
 }
 
@@ -116,14 +116,14 @@ function isTabbarLikePage(url: string): boolean {
 }
 
 .custom-tabbar__dot {
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.18;
+  border-radius: var(--cms-radius-sm);
+  background: var(--cms-primary-soft);
+  opacity: 1;
 }
 
 .custom-tabbar__item.active .custom-tabbar__dot {
-  opacity: 1;
-  box-shadow: 0 8rpx 18rpx rgba(31, 95, 191, 0.22);
+  background: var(--cms-gradient-cta);
+  box-shadow: 0 8rpx 18rpx rgba(31, 77, 122, 0.22);
 }
 
 .custom-tabbar__badge {

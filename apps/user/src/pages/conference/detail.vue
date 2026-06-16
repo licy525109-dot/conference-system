@@ -97,6 +97,7 @@ import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
 import { getConferenceDetail, type ConferenceDetail, type RegistrationSku } from "@/services/conference";
+import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
@@ -108,12 +109,8 @@ const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const loading = ref(false);
 const error = ref("");
 const pageStyle = computed(() => ({
-  "--ui-color-primary": theme.value.primaryColor,
-  "--ui-color-accent": theme.value.secondaryColor,
-  "--ui-color-bg": theme.value.backgroundColor,
-  "--ui-color-surface": theme.value.cardBackground,
-  "--ui-radius": `${theme.value.radius}px`,
-  ...themeBackgroundStyle(theme.value, "body")
+  ...createCmsThemeVars(theme.value),
+  ...createCmsBackgroundStyle(theme.value, "body")
 }));
 const pageClass = computed(() => ["page", "ui-page"]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
@@ -205,31 +202,6 @@ function stockLabel(sku: RegistrationSku): string {
   return remainingStock(sku) > 0 ? "可报名" : "已售罄";
 }
 
-function themeBackgroundStyle(config: ThemeConfig, target: "body" | "header"): Record<string, string> {
-  if (target === "body" && config.backgroundApplyTo === "header") return {};
-  if (target === "header" && config.backgroundApplyTo !== "header") return {};
-  if (config.backgroundMode === "video") {
-    return { background: "transparent" };
-  }
-  if (config.backgroundMode === "image" && config.backgroundImageUrl) {
-    return {
-      backgroundImage: `${config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(245,247,251,0.20), rgba(245,247,251,0.92)), "}url("${config.backgroundImageUrl}")`,
-      backgroundSize: "cover",
-      backgroundPosition: "center top",
-      backgroundRepeat: "no-repeat"
-    };
-  }
-  if (config.backgroundMode === "dynamic-gradient") {
-    return { background: config.backgroundColor };
-  }
-  if (config.backgroundMode === "gradient") {
-    return {
-      backgroundImage: `linear-gradient(180deg, ${config.backgroundGradientFrom || config.backgroundColor}, ${config.backgroundGradientTo || config.secondaryColor})`
-    };
-  }
-  return { background: config.backgroundColor };
-}
-
 function toContentText(value: unknown): string {
   if (!value) {
     return "";
@@ -285,6 +257,7 @@ function toContentText(value: unknown): string {
   flex-direction: column;
   gap: 18rpx;
   padding: 32rpx;
+  background: var(--cms-gradient-card);
 }
 
 .title {
@@ -306,8 +279,9 @@ function toContentText(value: unknown): string {
   flex-direction: column;
   gap: 14rpx;
   padding: 22rpx;
-  border-radius: var(--ui-radius);
-  background: var(--ui-color-surface-muted);
+  border: 1px solid var(--cms-border);
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-surface-soft);
 }
 
 .fact {
@@ -341,9 +315,9 @@ function toContentText(value: unknown): string {
   justify-content: space-between;
   gap: 20rpx;
   padding: 24rpx;
-  border: 1px solid var(--ui-color-border);
-  border-radius: var(--ui-radius);
-  background: var(--ui-color-surface-muted);
+  border: 1px solid var(--cms-border);
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-surface-soft);
 }
 
 .sku-info {
@@ -385,7 +359,7 @@ function toContentText(value: unknown): string {
 
 .price {
   display: block;
-  color: var(--ui-color-primary);
+  color: var(--cms-primary-strong);
   font-size: 32rpx;
   font-weight: 900;
   text-align: right;

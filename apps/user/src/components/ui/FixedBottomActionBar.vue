@@ -66,7 +66,7 @@ withDefaults(
   gap: 18rpx;
   align-items: center;
   padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--ui-color-border);
+  border-top: 1px solid var(--cms-border);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--ui-shadow-bottom);
   box-sizing: border-box;
@@ -90,7 +90,7 @@ withDefaults(
 
 .amount {
   display: block;
-  color: var(--ui-color-primary);
+  color: var(--cms-primary-strong);
   font-size: 36rpx;
   font-weight: 900;
   line-height: 1.25;
@@ -104,6 +104,7 @@ withDefaults(
 
 .button {
   min-width: 188rpx;
+  border-radius: var(--cms-radius-full);
 }
 
 .secondary {

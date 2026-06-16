@@ -22,7 +22,8 @@ describe("CmsService public fallbacks", () => {
     const tabbar = await service.getTabbar();
 
     assert.equal(theme.code, "OK");
-    assert.equal(theme.data.config.primaryColor, "#2452a8");
+    assert.equal(theme.data.config.visualPreset, "business-blue");
+    assert.equal(theme.data.config.primaryColor, "#1f4d7a");
     assert.equal(tabbar.data.enabled, true);
     assert.equal(tabbar.data.items[0]?.pageKey, "home");
   });

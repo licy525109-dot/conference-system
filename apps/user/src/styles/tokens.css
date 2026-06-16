@@ -1,31 +1,97 @@
 :root,
 page {
-  --ui-color-bg: #f4f7fb;
-  --ui-color-bg-soft: #eef4fb;
+  --cms-page-bg: #f4f7fb;
+  --cms-page-bg-soft: #eaf1f8;
+  --cms-bg: var(--cms-page-bg);
+  --cms-surface: #ffffff;
+  --cms-card: var(--cms-surface);
+  --cms-surface-soft: #f8fafd;
+  --cms-surface-muted: #eef4fa;
+  --cms-surface-elevated: #ffffff;
+  --cms-text-primary: #111827;
+  --cms-text-secondary: #667085;
+  --cms-text-tertiary: #93a0b2;
+  --cms-text-inverse: #ffffff;
+  --cms-primary: #1f4d7a;
+  --cms-primary-strong: #173b62;
+  --cms-primary-soft: #e6eef7;
+  --cms-secondary: #4d8dd9;
+  --cms-secondary-soft: #eaf3ff;
+  --cms-accent: #c7923e;
+  --cms-accent-soft: #fff4df;
+  --cms-border: #e4eaf2;
+  --cms-divider: #eef2f7;
+  --cms-success: #11845b;
+  --cms-success-soft: #e8f7f1;
+  --cms-warning: #b76e00;
+  --cms-warning-soft: #fff6df;
+  --cms-danger: #c7352f;
+  --cms-danger-soft: #fff1ef;
+  --cms-info: #1f5fbf;
+  --cms-info-soft: #e8f1ff;
+  --cms-overlay: rgba(17, 24, 39, 0.42);
+  --cms-gradient-page: linear-gradient(180deg, #f7fafe 0%, #eff5fb 100%);
+  --cms-gradient-hero: linear-gradient(135deg, #1f4d7a 0%, #4d8dd9 100%);
+  --cms-gradient-card: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 253, 0.96));
+  --cms-gradient-cta: linear-gradient(135deg, #1f4d7a 0%, #c7923e 100%);
+  --cms-gradient-soft: linear-gradient(135deg, #eef4fa 0%, #f8fafd 100%);
+  --cms-radius-sm: 10px;
+  --cms-radius: 14px;
+  --cms-radius-md: 14px;
+  --cms-radius-lg: 18px;
+  --cms-radius-xl: 24px;
+  --cms-radius-xxl: 30px;
+  --cms-radius-full: 999px;
+  --cms-space-page-x: 28rpx;
+  --cms-space-section-y: 28rpx;
+  --cms-space-card-gap: 18rpx;
+  --cms-space-card-padding: 28rpx;
+  --cms-shadow-sm: 0 8rpx 20rpx rgba(17, 31, 55, 0.05);
+  --cms-shadow-md: 0 18rpx 44rpx rgba(17, 31, 55, 0.08);
+  --cms-shadow-lg: 0 28rpx 70rpx rgba(17, 31, 55, 0.12);
+  --cms-shadow-floating: 0 -10rpx 34rpx rgba(17, 31, 55, 0.12);
+  --cms-shadow-glow: 0 0 0 rgba(0, 0, 0, 0);
+  --cms-title-size: 42rpx;
+  --ui-color-bg: var(--cms-page-bg);
+  --ui-color-bg-soft: var(--cms-page-bg-soft);
   --ui-color-surface: #ffffff;
-  --ui-color-surface-muted: #f8fafc;
-  --ui-color-primary: #1f5fbf;
-  --ui-color-primary-strong: #174b99;
-  --ui-color-primary-soft: #e8f1ff;
-  --ui-color-accent: #0f8f7a;
-  --ui-color-warning: #b76e00;
-  --ui-color-danger: #c7352f;
-  --ui-color-success: #11845b;
-  --ui-color-text: #162033;
-  --ui-color-muted: #637083;
-  --ui-color-subtle: #8a98aa;
-  --ui-color-border: #dde6f2;
-  --ui-radius-sm: 6px;
-  --ui-radius: 8px;
-  --ui-shadow-card: 0 12rpx 32rpx rgba(17, 31, 55, 0.06);
-  --ui-shadow-bottom: 0 -10rpx 30rpx rgba(17, 31, 55, 0.08);
+  --ui-color-surface-muted: var(--cms-surface-muted);
+  --ui-color-primary: var(--cms-primary);
+  --ui-color-primary-strong: var(--cms-primary-strong);
+  --ui-color-primary-soft: var(--cms-primary-soft);
+  --ui-color-accent: var(--cms-accent);
+  --ui-color-warning: var(--cms-warning);
+  --ui-color-danger: var(--cms-danger);
+  --ui-color-success: var(--cms-success);
+  --ui-color-text: var(--cms-text-primary);
+  --ui-color-muted: var(--cms-text-secondary);
+  --ui-color-subtle: var(--cms-text-tertiary);
+  --ui-color-border: var(--cms-border);
+  --ui-radius-sm: var(--cms-radius-sm);
+  --ui-radius: var(--cms-radius-md);
+  --ui-shadow-card: var(--cms-shadow-md);
+  --ui-shadow-bottom: var(--cms-shadow-floating);
 }
 
 .ui-page {
+  position: relative;
   min-height: 100vh;
-  padding: 32rpx 28rpx 148rpx;
+  padding: 34rpx var(--cms-space-page-x) 156rpx;
   box-sizing: border-box;
-  background: var(--ui-color-bg);
+  background: var(--cms-gradient-page);
+  overflow: hidden;
+}
+
+.page-bg-video {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
 }
 
 .ui-stack {
@@ -36,7 +102,7 @@ page {
 
 .ui-card {
   border: 1px solid var(--ui-color-border);
-  border-radius: var(--ui-radius);
+  border-radius: var(--cms-radius-lg);
   background: var(--ui-color-surface);
   box-shadow: var(--ui-shadow-card);
 }
@@ -46,15 +112,16 @@ page {
 .ui-button-ghost {
   min-height: 78rpx;
   padding: 0 26rpx;
-  border-radius: var(--ui-radius);
+  border-radius: var(--cms-radius-full);
   font-size: 28rpx;
   font-weight: 700;
   line-height: 78rpx;
 }
 
 .ui-button-primary {
-  background: var(--ui-color-primary);
+  background: var(--cms-gradient-cta);
   color: #ffffff;
+  box-shadow: 0 14rpx 30rpx rgba(31, 77, 122, 0.18);
 }
 
 .ui-button-secondary {

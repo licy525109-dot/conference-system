@@ -1,10 +1,11 @@
 import { Prisma } from "@prisma/client";
 
 export const DEFAULT_THEME_CONFIG = {
-  primaryColor: "#2452a8",
-  secondaryColor: "#14b8a6",
-  accentColor: "#f59e0b",
-  backgroundColor: "#f5f7fb",
+  visualPreset: "business-blue",
+  primaryColor: "#1f4d7a",
+  secondaryColor: "#4d8dd9",
+  accentColor: "#c7923e",
+  backgroundColor: "#f4f7fb",
   cardBackground: "#ffffff",
   radius: 8,
   buttonStyle: "solid",
@@ -17,8 +18,8 @@ export const DEFAULT_THEME_CONFIG = {
   browserTitle: "会务运营平台",
   browserIconUrl: "",
   backgroundMode: "solid",
-  backgroundGradientFrom: "#f5f7fb",
-  backgroundGradientTo: "#eef7f5",
+  backgroundGradientFrom: "#f7fafe",
+  backgroundGradientTo: "#eaf1f8",
   backgroundImageUrl: "",
   backgroundVideoUrl: "",
   backgroundDynamicDensity: 40,
@@ -73,12 +74,36 @@ export const DEFAULT_TABBAR_ITEMS = [
 ] as const;
 
 export const ENABLED_COMPONENT_PRESETS = [
-  preset("hero", "主视觉横幅", "基础展示", "页面顶部纯图片横幅", { imageUrl: "" }),
+  preset("hero", "主视觉横幅", "基础展示", "页面顶部沉浸式横幅", {
+    kicker: "会议报名",
+    title: "选择会议，完成报名缴费",
+    description: "展示会议定位、关键信息和报名入口，适合作为页面第一屏。",
+    buttonText: "立即报名",
+    showButton: true,
+    imageUrl: "",
+    fullBleed: true
+  }),
   preset("carousel", "轮播图", "基础展示", "多张图片轮播", { images: [] }),
-  preset("conference-list", "会议卡片列表", "会议", "展示可报名会议列表", { title: "可报名会议", limit: 10 }),
-  preset("conference-tabs", "会议分类切换", "会议", "会议分类切换入口", { tabs: ["全部"] }),
-  preset("speaker-cards", "嘉宾卡片", "内容", "展示嘉宾头像和简介", { title: "嘉宾阵容", speakers: [] }),
-  preset("schedule-timeline", "日程时间轴", "内容", "会议日程列表", { title: "会议日程", items: [] }),
+  preset("conference-list", "会议卡片列表", "会议", "展示可报名会议列表", {
+    title: "可报名会议",
+    limit: 10,
+    showSummary: true,
+    showTime: true,
+    showLocation: true,
+    showRegistrationCount: true,
+    detailButtonText: "查看详情",
+    cardImageLayout: "left",
+    cardRadius: 14
+  }),
+  preset("conference-tabs", "会议分类切换", "会议", "会议分类切换入口", { title: "会议分类", tabs: ["全部", "主论坛", "闭门会", "训练营"], limit: 6 }),
+  preset("speaker-cards", "嘉宾卡片", "内容", "展示嘉宾头像和简介", {
+    title: "嘉宾阵容",
+    speakers: ["行业专家｜主题分享｜趋势观察与案例拆解", "会务主持人｜圆桌引导｜现场互动与答疑"]
+  }),
+  preset("schedule-timeline", "日程时间轴", "内容", "会议日程列表", {
+    title: "会议日程",
+    items: ["09:30｜签到入场｜资料领取与会场导览", "10:00｜主题分享｜行业趋势和案例复盘", "14:00｜圆桌交流｜现场答疑与合作连接"]
+  }),
   preset("registration-button", "报名按钮", "报名", "普通报名入口", { text: "立即报名" }),
   preset("floating-registration-button", "悬浮报名按钮", "报名", "页面底部固定报名入口", { text: "立即报名" }),
   preset("coupon-card", "优惠券领取卡片", "营销", "展示优惠券信息", { title: "优惠券", description: "领取后报名可用" }),
@@ -157,12 +182,14 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "主会场风格，强调报名转化和会议信息呈现。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
+      visualPreset: "business-blue",
       templateMeta: {
         category: "会议主会场",
         summary: "适合会议首页、活动主会场和报名导流页。"
       }
     },
     components: [
+      { id: "launch-hero", type: "hero", enabled: true, config: { kicker: "峰会报名", title: "高质量会议报名入口", description: "集中展示会议价值、报名场次和关键信息，让用户快速完成报名决策。", buttonText: "立即报名", fullBleed: true } },
       { id: "launch-notice", type: "notice", enabled: true, config: { text: "报名通道已开启，名额有限，建议尽早锁定席位。" } },
       {
         id: "launch-stats",
@@ -193,12 +220,14 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "突出嘉宾阵容、议程安排和会务联络信息。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
+      visualPreset: "fresh-green",
       templateMeta: {
         category: "嘉宾议程",
         summary: "适合大会详情页、专题会场页和分论坛介绍页。"
       }
     },
     components: [
+      { id: "agenda-hero", type: "hero", enabled: true, config: { kicker: "嘉宾议程", title: "从嘉宾到议程，一屏看清会议价值", description: "突出嘉宾阵容、议程安排和会务联络，适合会议详情和专题分会场。", buttonText: "查看报名", fullBleed: true } },
       { id: "agenda-title", type: "title", enabled: true, config: { text: "会议亮点与议程安排" } },
       {
         id: "agenda-speakers",
@@ -232,12 +261,14 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "更适合资讯型首页，强调分类、亮点和列表阅读节奏。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
+      visualPreset: "education-vitality",
       templateMeta: {
         category: "内容导览",
         summary: "适合资讯首页、专题合集页和导览型活动页。"
       }
     },
     components: [
+      { id: "editorial-hero", type: "hero", enabled: true, config: { kicker: "内容导览", title: "把会议内容组织成清晰入口", description: "适合资讯型首页、专题合集页和多分会场导览。", buttonText: "浏览内容", fullBleed: true } },
       {
         id: "editorial-tabs",
         type: "conference-tabs",
@@ -277,6 +308,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "完整首页结构，覆盖主视觉、亮点、会议列表、票种、流程和咨询。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
+      visualPreset: "business-blue",
       backgroundColor: "#f3f7ff",
       cardBackground: "#ffffff",
       primaryColor: "#1f5fff",
@@ -332,6 +364,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "适合小规模高端沙龙、闭门圆桌和定向邀请报名。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
+      visualPreset: "fresh-green",
       backgroundColor: "#f7f3ea",
       cardBackground: "#fffaf0",
       primaryColor: "#9a6b2f",
@@ -362,6 +395,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "用于会议详情页或专题页，突出嘉宾、日程、交通和咨询。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
+      visualPreset: "fresh-green",
       backgroundColor: "#f4f8fb",
       cardBackground: "#ffffff",
       primaryColor: "#0f766e",
@@ -390,6 +424,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "适合发布报名须知、交通、资料下载和常见问题。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
+      visualPreset: "business-blue",
       backgroundColor: "#f6f8fb",
       cardBackground: "#ffffff",
       primaryColor: "#334155",
@@ -418,6 +453,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "适合招商合作、合作伙伴展示和商务咨询。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
+      visualPreset: "education-vitality",
       backgroundColor: "#f3f6ff",
       cardBackground: "#ffffff",
       primaryColor: "#4338ca",
@@ -439,6 +475,123 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       { id: "sponsor-text", type: "text-image", enabled: true, config: { title: "合作形式", text: "支持会场冠名、展位展示、资料入袋、专场分享和定向邀约等合作方式。", imageUrl: "" } },
       { id: "sponsor-download", type: "download-list", enabled: true, config: { title: "合作资料", items: ["赞助方案", "会场资源", "往届案例"] } },
       { id: "sponsor-contact", type: "contact-card", enabled: true, config: { title: "商务咨询", phone: "请填写联系电话", text: "欢迎联系会务组获取合作方案。" } }
+    ]
+  },
+  {
+    pageKey: "template:expo-recruitment",
+    title: "展会招商模板",
+    description: "用于展会招商、展位报名和合作招募，强调资源、权益和咨询转化。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "summit-red",
+      backgroundColor: "#fff8f3",
+      cardBackground: "#ffffff",
+      primaryColor: "#b4232a",
+      secondaryColor: "#c78b37",
+      accentColor: "#d8582f",
+      templateMeta: {
+        category: "招商展会",
+        summary: "适合招商合作、展位招募和商务资源发布。"
+      },
+      pageMeta: {
+        pageTitle: "展会招商",
+        shareTitle: "展会招商与报名通道"
+      }
+    },
+    components: [
+      { id: "expo-hero", type: "hero", enabled: true, config: { kicker: "展会招商", title: "链接精准人群，释放品牌增长机会", description: "展示参展权益、合作资源和报名入口，适合招商会与展会合作页。", buttonText: "咨询合作", fullBleed: true } },
+      { id: "expo-stats", type: "stats-grid", enabled: true, config: { title: "招商价值", items: ["精准客群触达", "现场展位曝光", "会后线索沉淀"] } },
+      { id: "expo-process", type: "process-steps", enabled: true, config: { title: "合作流程", items: ["提交合作意向", "会务组确认资源", "完成订单支付", "获取展位与物料安排"] } },
+      { id: "expo-download", type: "download-list", enabled: true, config: { title: "招商资料", items: ["招商手册", "展位示意", "参展须知", "品牌权益清单"] } },
+      { id: "expo-sponsor", type: "sponsor-wall", enabled: true, config: { title: "合作伙伴", sponsors: ["主办单位", "承办单位", "生态伙伴", "媒体支持"] } },
+      { id: "expo-contact", type: "contact-card", enabled: true, config: { title: "招商咨询", phone: "请填写联系电话", text: "商务合作、展位资源和招商权益，请联系会务组确认。" } }
+    ]
+  },
+  {
+    pageKey: "template:product-launch",
+    title: "新品发布模板",
+    description: "用于产品发布、路线图说明和报名预约，视觉更现代、转化更直接。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "tech-black-gold",
+      backgroundColor: "#090b10",
+      cardBackground: "#111722",
+      primaryColor: "#d6b56d",
+      secondaryColor: "#6ca8ff",
+      accentColor: "#b88cff",
+      templateMeta: {
+        category: "产品发布",
+        summary: "适合新品发布会、技术发布和路线图公开活动。"
+      },
+      pageMeta: {
+        pageTitle: "新品发布会",
+        shareTitle: "新品发布会报名预约"
+      }
+    },
+    components: [
+      { id: "launch-hero", type: "hero", enabled: true, config: { kicker: "新品发布", title: "见证下一阶段的产品能力", description: "适合发布产品亮点、演示安排、参会福利和报名预约。", buttonText: "预约参会", fullBleed: true } },
+      { id: "launch-countdown", type: "countdown", enabled: true, config: { title: "发布倒计时", targetAt: "" } },
+      { id: "launch-text", type: "text-image", enabled: true, config: { title: "发布亮点", text: "围绕产品价值、关键能力和真实场景，帮助参会者快速理解发布会重点。", imageUrl: "" } },
+      { id: "launch-agenda", type: "schedule-timeline", enabled: true, config: { title: "发布议程", items: ["14:00｜开场致辞｜发布主题介绍", "14:30｜产品演示｜核心能力与场景", "15:30｜客户案例｜实践反馈与答疑", "16:20｜报名交流｜现场咨询与预约"] } },
+      { id: "launch-list", type: "conference-list", enabled: true, config: { title: "可预约场次", limit: 4, showSummary: true, showTime: true, showLocation: true, detailButtonText: "预约详情", cardImageLayout: "full", cardImageHeight: 220 } }
+    ]
+  },
+  {
+    pageKey: "template:brand-annual-meeting",
+    title: "品牌年会模板",
+    description: "用于品牌大会、年度论坛和客户答谢会，结构覆盖亮点、议程、嘉宾和报名。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "business-blue",
+      backgroundColor: "#f4f7fb",
+      cardBackground: "#ffffff",
+      primaryColor: "#1f4d7a",
+      secondaryColor: "#4d8dd9",
+      accentColor: "#c7923e",
+      templateMeta: {
+        category: "品牌大会",
+        summary: "适合年度大会、客户答谢会和行业品牌活动。"
+      },
+      pageMeta: {
+        pageTitle: "品牌年会",
+        shareTitle: "品牌年会报名开启"
+      }
+    },
+    components: [
+      { id: "annual-hero", type: "hero", enabled: true, config: { kicker: "年度大会", title: "共赴年度相聚，沉淀合作与增长", description: "适合展示品牌主张、年度议程、嘉宾阵容和参会报名入口。", buttonText: "立即报名", fullBleed: true } },
+      { id: "annual-stats", type: "stats-grid", enabled: true, config: { title: "大会规模", items: ["800+ 参会嘉宾", "40+ 合作伙伴", "12 场主题议程"] } },
+      { id: "annual-speakers", type: "speaker-cards", enabled: true, config: { title: "年度嘉宾", speakers: ["品牌负责人｜年度分享｜战略与产品方向", "客户代表｜案例分享｜合作成果复盘", "行业嘉宾｜趋势观察｜生态共建机会"] } },
+      { id: "annual-schedule", type: "schedule-timeline", enabled: true, config: { title: "年会议程", items: ["13:30｜签到入场｜嘉宾接待", "14:00｜年度主题｜品牌与业务复盘", "15:20｜案例分享｜客户与伙伴共创", "17:30｜交流晚宴｜自由交流与答谢"] } },
+      { id: "annual-list", type: "conference-list", enabled: true, config: { title: "报名入口", limit: 3, showSummary: true, showTime: true, showLocation: true, detailButtonText: "报名参会", cardImageLayout: "left" } }
+    ]
+  },
+  {
+    pageKey: "template:online-summit",
+    title: "线上峰会模板",
+    description: "用于直播峰会、线上课程和混合参会，突出直播入口、日程和提醒。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "education-vitality",
+      backgroundColor: "#f7faff",
+      cardBackground: "#ffffff",
+      primaryColor: "#3b82f6",
+      secondaryColor: "#22c55e",
+      accentColor: "#f59e0b",
+      templateMeta: {
+        category: "线上峰会",
+        summary: "适合线上直播、课程活动和混合参会页面。"
+      },
+      pageMeta: {
+        pageTitle: "线上峰会",
+        shareTitle: "线上峰会报名预约"
+      }
+    },
+    components: [
+      { id: "online-hero", type: "hero", enabled: true, config: { kicker: "线上峰会", title: "线上预约，准时加入直播议程", description: "清晰展示直播安排、报名入口和资料获取方式。", buttonText: "预约直播", fullBleed: true } },
+      { id: "online-live", type: "live-card", enabled: true, config: { title: "直播入口", text: "报名成功后，可在我的报名中查看参会记录和直播提醒。", url: "" } },
+      { id: "online-tabs", type: "conference-tabs", enabled: true, config: { title: "直播场次", tabs: ["全部", "主会场", "训练营", "回放"], limit: 5, showSummary: true, showTime: true, showLocation: false, detailButtonText: "查看场次" } },
+      { id: "online-download", type: "download-list", enabled: true, config: { title: "学习资料", items: ["直播议程", "课件资料", "报名须知", "回放说明"] } },
+      { id: "online-faq", type: "faq", enabled: true, config: { title: "线上参会问题", items: ["如何观看直播｜报名成功后查看我的报名记录", "是否提供回放｜以主办方后续发布为准", "资料在哪里领取｜请关注页面资料下载区"] } }
     ]
   }
 ] as const;

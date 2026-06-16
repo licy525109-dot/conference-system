@@ -472,6 +472,7 @@ export interface PageLibraryTemplate {
 }
 
 export interface ThemeConfig {
+  visualPreset?: string;
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;

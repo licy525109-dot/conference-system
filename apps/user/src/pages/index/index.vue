@@ -60,6 +60,7 @@ import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
 import { getConferenceDetail, getConferences, type ConferenceDetail, type ConferenceListItem } from "@/services/conference";
 import { ApiRequestError } from "@/services/request";
+import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
 
@@ -75,12 +76,8 @@ let hasLoadedOnce = false;
 let lastLoadAt = 0;
 
 const pageStyle = computed(() => ({
-  "--ui-color-primary": theme.value.primaryColor,
-  "--ui-color-accent": theme.value.secondaryColor,
-  "--ui-color-bg": theme.value.backgroundColor,
-  "--ui-color-surface": theme.value.cardBackground,
-  "--ui-radius": `${theme.value.radius}px`,
-  ...themeBackgroundStyle(theme.value, "body")
+  ...createCmsThemeVars(theme.value),
+  ...createCmsBackgroundStyle(theme.value, "body")
 }));
 const pageClass = computed(() => ["page", "ui-page"]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
@@ -223,31 +220,6 @@ function goDetail(id: string) {
   uni.navigateTo({
     url: `/pages/conference/detail?id=${encodeURIComponent(id)}`
   });
-}
-
-function themeBackgroundStyle(config: ThemeConfig, target: "body" | "header"): Record<string, string> {
-  if (target === "body" && config.backgroundApplyTo === "header") return {};
-  if (target === "header" && config.backgroundApplyTo !== "header") return {};
-  if (config.backgroundMode === "video") {
-    return { background: "transparent" };
-  }
-  if (config.backgroundMode === "image" && config.backgroundImageUrl) {
-    return {
-      backgroundImage: `${config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(245,247,251,0.20), rgba(245,247,251,0.92)), "}url("${config.backgroundImageUrl}")`,
-      backgroundSize: "cover",
-      backgroundPosition: "center top",
-      backgroundRepeat: "no-repeat"
-    };
-  }
-  if (config.backgroundMode === "dynamic-gradient") {
-    return { background: config.backgroundColor };
-  }
-  if (config.backgroundMode === "gradient") {
-    return {
-      backgroundImage: `linear-gradient(180deg, ${config.backgroundGradientFrom || config.backgroundColor}, ${config.backgroundGradientTo || config.secondaryColor})`
-    };
-  }
-  return { background: config.backgroundColor };
 }
 
 interface HomeConferenceDetailText {
