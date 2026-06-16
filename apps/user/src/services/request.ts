@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/config/app";
+import { readUniErrMsg } from "@/utils/uniErrors";
 import { getToken } from "./session";
 
 interface ApiEnvelope<T> {
@@ -99,7 +100,7 @@ export function request<T>(path: string, options: RequestOptions = {}): Promise<
         );
       },
       fail: (error) => {
-        const errMsg = error.errMsg || "网络请求失败";
+        const errMsg = readUniErrMsg(error, "网络请求失败");
         reject(
           new ApiRequestError({
             message: `method=${method} url=${url} timeout=${REQUEST_TIMEOUT_MS} API_BASE_URL=${API_BASE_URL} errMsg=${errMsg}`,
