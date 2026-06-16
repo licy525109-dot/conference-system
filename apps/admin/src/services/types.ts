@@ -448,6 +448,29 @@ export interface PageVersion {
   };
 }
 
+export interface PageLibraryTemplate {
+  id: string;
+  pageKey: string;
+  title: string;
+  description: string | null;
+  category: string;
+  summary: string;
+  system: boolean;
+  version: {
+    id: string;
+    versionNo: number;
+    status: "DRAFT" | "PUBLISHED" | "ARCHIVED" | string;
+    title: string;
+    components: CmsComponent[];
+    themeJson: Record<string, unknown> | null;
+    publishedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ThemeConfig {
   primaryColor: string;
   secondaryColor: string;
@@ -473,7 +496,9 @@ export interface ThemeConfig {
   backgroundDynamicSpeed?: number;
   backgroundBottomFilter?: boolean;
   backgroundApplyTo?: string;
-  [key: string]: string | number | boolean | null | undefined;
+  themeApplyMode?: string;
+  themeApplyPageKeys?: string[];
+  [key: string]: string | number | boolean | string[] | null | undefined;
 }
 
 export interface ActiveTheme {

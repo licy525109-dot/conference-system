@@ -65,8 +65,8 @@ import { getTheme } from "../services/admin";
 import { useAdminSession } from "../stores/admin-session";
 
 const { admin, hasPermission, logout } = useAdminSession();
-const brandTitle = ref("会议运营后台");
-const brandSubtitle = ref("会议业务运营中心");
+const brandTitle = ref("会务运营平台");
+const brandSubtitle = ref("报名、支付与页面配置中心");
 const brandLogoUrl = ref("");
 
 const brandMarkText = computed(() => brandTitle.value.trim().slice(0, 1) || "会");

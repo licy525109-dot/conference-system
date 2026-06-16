@@ -7,6 +7,7 @@ import {
   DEFAULT_TABBAR_ITEMS,
   DEFAULT_THEME_CONFIG,
   ENABLED_COMPONENT_TYPES,
+  SYSTEM_PAGE_LIBRARY_TEMPLATES,
   defaultPageComponents
 } from "../cms/cms-defaults";
 import { ok } from "../cms/cms.service";
@@ -14,6 +15,7 @@ import { CurrentAdmin } from "./current-admin";
 
 const KNOWN_PAGE_KEYS = new Set(["home", "conference-list", "conference-detail", "my-registrations", "cart", "member-center", "mall"]);
 const DEFAULT_SCOPE = "global";
+const PAGE_LIBRARY_PREFIX = "template:";
 
 @Injectable()
 export class AdminCmsService {
@@ -22,6 +24,11 @@ export class AdminCmsService {
   async listPages() {
     await this.ensureCmsDefaults();
     const items = await this.prisma.pageTemplate.findMany({
+      where: {
+        NOT: {
+          pageKey: { startsWith: PAGE_LIBRARY_PREFIX }
+        }
+      },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
       select: pageSelect
     });
@@ -33,7 +40,9 @@ export class AdminCmsService {
     const body = readObject(input);
     const pageKey = normalizePageKey(readRequiredString(body, "pageKey"));
     const title = readRequiredString(body, "title");
-    const components = parseComponents(body.components ?? defaultPageComponents(pageKey));
+    const templateVersion = await this.loadPageLibraryTemplateVersion(readOptionalString(body, "templateId"));
+    const components = parseComponents(body.components ?? templateVersion?.components ?? defaultPageComponents(pageKey));
+    const themeJson = cloneTemplateThemeForPage(templateVersion?.themeJson, title);
     const template = await catchUniqueConstraint(
       this.prisma.pageTemplate.create({
         data: {
@@ -49,6 +58,7 @@ export class AdminCmsService {
               status: "DRAFT",
               title,
               components,
+              ...(themeJson ? { themeJson } : {}),
               createdBy: admin.id
             }
           }
@@ -59,6 +69,79 @@ export class AdminCmsService {
     );
     await this.writeAudit(admin, AuditAction.CREATE, "PageTemplate", template.id, "Create page template", { pageKey });
     return ok(formatPageTemplate(template));
+  }
+
+  async listPageLibraryTemplates() {
+    await this.ensureCmsDefaults();
+    const items = await this.prisma.pageTemplate.findMany({
+      where: {
+        pageKey: { startsWith: PAGE_LIBRARY_PREFIX }
+      },
+      orderBy: [{ pageType: "asc" }, { updatedAt: "desc" }],
+      select: pageLibrarySelect
+    });
+    return ok({ items: items.map(formatPageLibraryTemplate) });
+  }
+
+  async createPageLibraryTemplate(input: unknown, admin: CurrentAdmin) {
+    await this.ensureCmsDefaults();
+    const body = readObject(input);
+    const slug = normalizeTemplateSlug(readRequiredString(body, "slug"));
+    const title = readRequiredString(body, "title");
+    const description = readOptionalString(body, "description");
+    const category = readOptionalString(body, "category") ?? "自定义模板";
+    const components = parseComponents(body.components ?? defaultPageComponents("home"));
+    const templateThemeJson = typeof body.themeJson === "undefined" ? {} : readNullableJsonObject(body.themeJson) ?? {};
+    const themeJson = attachTemplateMeta(templateThemeJson, category, description);
+    const created = await catchUniqueConstraint(
+      this.prisma.$transaction(async (tx) => {
+        const template = await tx.pageTemplate.create({
+          data: {
+            pageKey: `${PAGE_LIBRARY_PREFIX}${slug}`,
+            title,
+            description,
+            pageType: "USER_TEMPLATE",
+            enabled: true
+          },
+          select: { id: true }
+        });
+        const version = await tx.pageVersion.create({
+          data: {
+            templateId: template.id,
+            versionNo: 1,
+            status: "PUBLISHED",
+            title,
+            components,
+            themeJson,
+            createdBy: admin.id,
+            publishedAt: new Date()
+          },
+          select: { id: true }
+        });
+        await tx.pageTemplate.update({
+          where: { id: template.id },
+          data: { publishedVersionId: version.id }
+        });
+        await tx.pagePublishLog.create({
+          data: {
+            templateId: template.id,
+            versionId: version.id,
+            action: "PUBLISH",
+            summary: "Create page library template",
+            createdBy: admin.id
+          }
+        });
+        return tx.pageTemplate.findUniqueOrThrow({
+          where: { id: template.id },
+          select: pageLibrarySelect
+        });
+      }),
+      "模板标识已存在"
+    );
+    await this.writeAudit(admin, AuditAction.CREATE, "PageLibraryTemplate", created.id, "Create page library template", {
+      pageKey: created.pageKey
+    });
+    return ok(formatPageLibraryTemplate(created));
   }
 
   async updatePage(id: string, input: unknown, admin: CurrentAdmin) {
@@ -441,6 +524,44 @@ export class AdminCmsService {
         });
       }
     }
+
+    for (const template of SYSTEM_PAGE_LIBRARY_TEMPLATES) {
+      const page = await this.prisma.pageTemplate.upsert({
+        where: { pageKey: template.pageKey },
+        update: {
+          title: template.title,
+          description: template.description,
+          pageType: template.pageType,
+          enabled: true
+        },
+        create: {
+          pageKey: template.pageKey,
+          title: template.title,
+          description: template.description,
+          pageType: template.pageType,
+          enabled: true
+        }
+      });
+      const versions = await this.prisma.pageVersion.count({ where: { templateId: page.id } });
+      if (versions === 0) {
+        const version = await this.prisma.pageVersion.create({
+          data: {
+            templateId: page.id,
+            versionNo: 1,
+            status: "PUBLISHED",
+            title: template.title,
+            components: parseComponents(template.components),
+            themeJson: template.themeJson,
+            publishedAt: new Date()
+          },
+          select: { id: true }
+        });
+        await this.prisma.pageTemplate.update({
+          where: { id: page.id },
+          data: { publishedVersionId: version.id }
+        });
+      }
+    }
   }
 
   private async ensurePage(id: string): Promise<void> {
@@ -457,6 +578,40 @@ export class AdminCmsService {
       select: { versionNo: true }
     });
     return (latest?.versionNo ?? 0) + 1;
+  }
+
+  private async loadPageLibraryTemplateVersion(templateId: string | undefined) {
+    if (!templateId) return null;
+    const template = await this.prisma.pageTemplate.findFirst({
+      where: {
+        id: templateId,
+        pageKey: { startsWith: PAGE_LIBRARY_PREFIX }
+      },
+      select: {
+        id: true,
+        publishedVersionId: true
+      }
+    });
+    if (!template) {
+      throw new NotFoundException("Page library template not found");
+    }
+    const version = await this.prisma.pageVersion.findFirst({
+      where: template.publishedVersionId
+        ? { id: template.publishedVersionId, templateId: template.id }
+        : { templateId: template.id },
+      orderBy: [{ versionNo: "desc" }],
+      select: {
+        components: true,
+        themeJson: true
+      }
+    });
+    if (!version) {
+      throw new NotFoundException("Page library template version not found");
+    }
+    return {
+      components: Array.isArray(version.components) ? version.components : [],
+      themeJson: readPlainObject(version.themeJson)
+    };
   }
 
   private async writeAudit(
@@ -528,6 +683,33 @@ const versionSelect = {
   }
 } satisfies Prisma.PageVersionSelect;
 
+const pageLibrarySelect = {
+  id: true,
+  pageKey: true,
+  title: true,
+  description: true,
+  pageType: true,
+  enabled: true,
+  publishedVersionId: true,
+  createdAt: true,
+  updatedAt: true,
+  versions: {
+    orderBy: [{ versionNo: "desc" as const }],
+    take: 1,
+    select: {
+      id: true,
+      versionNo: true,
+      status: true,
+      title: true,
+      components: true,
+      themeJson: true,
+      publishedAt: true,
+      createdAt: true,
+      updatedAt: true
+    }
+  }
+} satisfies Prisma.PageTemplateSelect;
+
 function formatPageTemplate(template: Prisma.PageTemplateGetPayload<{ select: typeof pageSelect }>) {
   return {
     ...template,
@@ -568,7 +750,7 @@ function formatComponentPreset(preset: Prisma.ComponentPresetGetPayload<Record<s
 function formatThemePreset(preset: Prisma.ThemePresetGetPayload<Record<string, never>>) {
   return {
     ...preset,
-    configJson: readPlainObject(preset.configJson) ?? DEFAULT_THEME_CONFIG,
+    configJson: normalizeThemeConfig(readPlainObject(preset.configJson) ?? DEFAULT_THEME_CONFIG),
     createdAt: preset.createdAt.toISOString(),
     updatedAt: preset.updatedAt.toISOString()
   };
@@ -578,10 +760,40 @@ function formatActiveTheme(active: Prisma.ActiveThemeConfigGetPayload<Record<str
   return {
     scope: DEFAULT_SCOPE,
     themePresetId: active?.themePresetId ?? null,
-    config: readPlainObject(active?.configJson) ?? DEFAULT_THEME_CONFIG,
+    config: normalizeThemeConfig(readPlainObject(active?.configJson) ?? DEFAULT_THEME_CONFIG),
     publishedAt: active?.publishedAt?.toISOString() ?? null,
     createdAt: active?.createdAt.toISOString() ?? null,
     updatedAt: active?.updatedAt.toISOString() ?? null
+  };
+}
+
+function formatPageLibraryTemplate(template: Prisma.PageTemplateGetPayload<{ select: typeof pageLibrarySelect }>) {
+  const latest = template.versions[0];
+  const themeJson = readPlainObject(latest?.themeJson);
+  const meta = readTemplateMeta(themeJson);
+  return {
+    id: template.id,
+    pageKey: template.pageKey,
+    title: template.title,
+    description: template.description,
+    category: meta.category,
+    summary: meta.summary,
+    system: template.pageType === "SYSTEM_TEMPLATE",
+    version: latest
+      ? {
+          id: latest.id,
+          versionNo: latest.versionNo,
+          status: latest.status,
+          title: latest.title,
+          components: Array.isArray(latest.components) ? latest.components : [],
+          themeJson,
+          publishedAt: latest.publishedAt?.toISOString() ?? null,
+          createdAt: latest.createdAt.toISOString(),
+          updatedAt: latest.updatedAt.toISOString()
+        }
+      : null,
+    createdAt: template.createdAt.toISOString(),
+    updatedAt: template.updatedAt.toISOString()
   };
 }
 
@@ -646,7 +858,9 @@ function normalizeThemeConfig(value: unknown): Prisma.InputJsonObject {
   const input = readPlainObject(value) ?? {};
   return {
     ...DEFAULT_THEME_CONFIG,
-    ...input
+    ...input,
+    themeApplyMode: typeof input.themeApplyMode === "string" ? input.themeApplyMode : DEFAULT_THEME_CONFIG.themeApplyMode,
+    themeApplyPageKeys: sanitizeStringArray(input.themeApplyPageKeys)
   };
 }
 
@@ -705,6 +919,50 @@ function inferPageType(pageKey: string): string {
   if (pageKey === "member-center") return "USER";
   if (pageKey === "mall") return "MALL";
   return "CUSTOM";
+}
+
+function normalizeTemplateSlug(value: string): string {
+  const slug = value.trim().replace(/^template:/, "").toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{0,60}$/.test(slug)) {
+    throw new BadRequestException("模板标识仅支持小写字母、数字和中划线");
+  }
+  return slug;
+}
+
+function attachTemplateMeta(themeJson: Prisma.InputJsonObject, category: string, summary?: string): Prisma.InputJsonObject {
+  return {
+    ...themeJson,
+    templateMeta: {
+      category,
+      summary: summary ?? ""
+    }
+  };
+}
+
+function readTemplateMeta(themeJson: Prisma.JsonObject | null): { category: string; summary: string } {
+  const meta = readPlainObject(themeJson?.templateMeta);
+  return {
+    category: typeof meta?.category === "string" && meta.category.trim() ? meta.category.trim() : "全部",
+    summary: typeof meta?.summary === "string" ? meta.summary : ""
+  };
+}
+
+function cloneTemplateThemeForPage(themeJson: Prisma.JsonObject | null | undefined, title: string): Prisma.InputJsonObject | undefined {
+  if (!themeJson) return undefined;
+  const next = { ...themeJson };
+  delete next.templateMeta;
+  const pageMeta = readPlainObject(next.pageMeta) ?? {};
+  next.pageMeta = {
+    ...pageMeta,
+    pageTitle: typeof pageMeta.pageTitle === "string" && pageMeta.pageTitle.trim() ? pageMeta.pageTitle : title,
+    shareTitle: typeof pageMeta.shareTitle === "string" && pageMeta.shareTitle.trim() ? pageMeta.shareTitle : title
+  };
+  return next;
+}
+
+function sanitizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
 }
 
 function readObject(value: unknown): Record<string, unknown> {

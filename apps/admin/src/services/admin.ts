@@ -15,6 +15,7 @@ import type {
   ComponentPreset,
   Coupon,
   PageTemplate,
+  PageLibraryTemplate,
   PageVersion,
   DashboardOverview,
   FinanceBatch,
@@ -403,6 +404,17 @@ export function listPages() {
 
 export function createPage(input: Record<string, unknown>) {
   return apiRequest<PageTemplate>("/admin/pages", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listPageLibraryTemplates() {
+  return apiRequest<{ items: PageLibraryTemplate[] }>("/admin/page-library-templates");
+}
+
+export function createPageLibraryTemplate(input: Record<string, unknown>) {
+  return apiRequest<PageLibraryTemplate>("/admin/page-library-templates", {
     method: "POST",
     body: JSON.stringify(input)
   });

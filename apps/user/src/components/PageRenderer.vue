@@ -1,6 +1,21 @@
 <template>
   <view :class="rootClass" :style="rootStyle">
-    <block v-for="component in visibleComponents" :key="component.id">
+    <view
+      v-for="(component, index) in visibleComponents"
+      :key="component.id"
+      :class="blockClass(index)"
+      :style="blockStyle(index)"
+    >
+      <video
+        v-if="showHeaderVideo && index === 0"
+        class="cms-header__video"
+        :src="String(props.theme.backgroundVideoUrl)"
+        autoplay
+        loop
+        muted
+        object-fit="cover"
+        :controls="false"
+      />
       <view v-if="component.type === 'hero'" :class="['cms-hero', booleanConfig(component, 'fullBleed', true) ? 'is-full-bleed' : '']">
         <image v-if="stringConfig(component, 'imageUrl')" class="cms-hero__image" :src="stringConfig(component, 'imageUrl')" :mode="stringConfig(component, 'imageMode') || 'aspectFill'" />
         <view v-else class="cms-hero__empty">请选择主视觉横幅图片</view>
@@ -201,7 +216,7 @@
       <view v-else-if="component.type === 'spacer'" :style="{ height: `${numberConfig(component, 'height', 24)}rpx` }" />
 
       <view v-else class="cms-hidden" />
-    </block>
+    </view>
   </view>
 </template>
 
@@ -247,6 +262,7 @@ const rootStyle = computed(() => ({
   ...themeBackgroundStyle()
 }));
 const rootClass = computed(() => ["cms-page", props.theme.backgroundApplyTo !== "header" && props.theme.backgroundMode === "dynamic-gradient" ? "is-dynamic-bg" : ""]);
+const showHeaderVideo = computed(() => props.theme.backgroundMode === "video" && Boolean(props.theme.backgroundVideoUrl) && props.theme.backgroundApplyTo === "header");
 
 onMounted(() => {
   loadCustomFonts();
@@ -299,6 +315,47 @@ function themeBackgroundStyle(): Record<string, string> {
     };
   }
   return { background: props.theme.backgroundColor };
+}
+
+function headerBackgroundStyle(): Record<string, string> {
+  if (props.theme.backgroundApplyTo !== "header") return {};
+  if (props.theme.backgroundMode === "video") {
+    return { background: "transparent" };
+  }
+  if (props.theme.backgroundMode === "image" && props.theme.backgroundImageUrl) {
+    return {
+      backgroundImage: `${props.theme.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(245,247,251,0.20), rgba(245,247,251,0.92)), "}url("${props.theme.backgroundImageUrl}")`,
+      backgroundSize: "cover",
+      backgroundPosition: "center top",
+      backgroundRepeat: "no-repeat"
+    };
+  }
+  if (props.theme.backgroundMode === "dynamic-gradient") {
+    return {
+      backgroundImage: dynamicGradient(),
+      backgroundSize: `${dynamicSize()}% ${dynamicSize()}%`,
+      animationDuration: `${dynamicSpeed()}s`
+    };
+  }
+  if (props.theme.backgroundMode === "gradient") {
+    return {
+      backgroundImage: `linear-gradient(180deg, ${props.theme.backgroundGradientFrom || props.theme.backgroundColor}, ${props.theme.backgroundGradientTo || props.theme.secondaryColor})`
+    };
+  }
+  return { background: props.theme.backgroundColor };
+}
+
+function blockClass(index: number): string[] {
+  return [
+    "cms-block",
+    props.theme.backgroundApplyTo === "header" && index === 0 ? "is-header-block" : "",
+    props.theme.backgroundApplyTo === "header" && props.theme.backgroundMode === "dynamic-gradient" && index === 0 ? "is-dynamic-bg" : ""
+  ].filter(Boolean);
+}
+
+function blockStyle(index: number): Record<string, string> {
+  if (index !== 0 || props.theme.backgroundApplyTo !== "header") return {};
+  return headerBackgroundStyle();
 }
 
 function dynamicGradient(): string {
@@ -520,7 +577,7 @@ function conferenceTextStyle(component: CmsComponent, part: "title" | "summary" 
 }
 
 function conferenceCardClass(component: CmsComponent, baseClass: string): string[] {
-  return [baseClass, stringConfig(component, "cardImageLayout") === "full" ? "is-cover-full" : ""].filter(Boolean);
+  return [baseClass, "is-conference-card", stringConfig(component, "cardImageLayout") === "full" ? "is-cover-full" : ""].filter(Boolean);
 }
 
 function conferenceImageClass(component: CmsComponent, baseClass: string): string[] {
@@ -662,6 +719,28 @@ function parseTargetTime(value: string): number | null {
   background: var(--cms-bg);
 }
 
+.cms-block {
+  position: relative;
+}
+
+.cms-block.is-header-block {
+  overflow: hidden;
+  padding: 18rpx 18rpx 10rpx;
+  border-radius: calc(var(--cms-radius) + 8px);
+}
+
+.cms-block.is-header-block > * {
+  position: relative;
+  z-index: 1;
+}
+
+.cms-header__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .is-dynamic-bg {
   animation-name: cmsDynamicBackgroundMove;
   animation-timing-function: ease-in-out;
@@ -760,6 +839,14 @@ function parseTargetTime(value: string): number | null {
   border: 1px solid var(--ui-color-border);
 }
 
+.cms-card.is-conference-card,
+.cms-mini-card.is-conference-card {
+  overflow: hidden;
+  border: 1px solid rgb(36 82 168 / 8%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.96));
+  box-shadow: 0 16rpx 36rpx rgb(15 23 42 / 8%);
+}
+
 .cms-mini-card {
   display: flex;
   align-items: flex-start;
@@ -804,6 +891,7 @@ function parseTargetTime(value: string): number | null {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  gap: 8rpx;
 }
 
 .cms-card__title {
@@ -825,24 +913,33 @@ function parseTargetTime(value: string): number | null {
 .cms-card__text,
 .cms-card__meta {
   display: block;
-  margin-top: 6rpx;
+  margin-top: 0;
   white-space: normal;
   word-break: break-word;
 }
 
+.cms-card__meta {
+  width: fit-content;
+  max-width: 100%;
+  padding: 10rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgb(36 82 168 / 6%);
+}
+
 .cms-card__button {
   align-self: flex-start;
-  min-width: 132rpx;
-  min-height: 54rpx;
-  line-height: 54rpx;
-  margin: 14rpx 0 0;
-  padding: 0 20rpx;
+  min-width: 148rpx;
+  min-height: 58rpx;
+  line-height: 58rpx;
+  margin: 10rpx 0 0;
+  padding: 0 24rpx;
   border: 0;
   border-radius: 999rpx;
-  background: var(--cms-primary);
+  background: linear-gradient(135deg, var(--cms-primary), var(--cms-secondary));
   color: #ffffff;
   font-size: 22rpx;
   font-weight: 800;
+  box-shadow: 0 14rpx 28rpx rgb(36 82 168 / 18%);
 }
 
 .cms-button,
