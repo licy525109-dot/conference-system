@@ -6,7 +6,7 @@
       subtitle="查看报名记录、参会人信息、内部备注和核销进度。手动核销属于敏感操作，执行前会二次确认。"
     >
       <template #actions>
-        <el-button :loading="exporting" @click="exportCsv">导出 CSV</el-button>
+        <el-button :loading="exporting" @click="exportExcel">导出 Excel</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </template>
     </AdminPageHeader>
@@ -108,7 +108,7 @@ import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo } from "../../router";
-import { checkInRegistrationAttendee, exportRegistrationsCsv, getRegistration, listConferences, listRegistrations, updateRegistrationRemark } from "../../services/admin";
+import { checkInRegistrationAttendee, exportRegistrationsExcel, getRegistration, listConferences, listRegistrations, updateRegistrationRemark } from "../../services/admin";
 import type { AdminRegistration, AdminRegistrationDetail, Conference } from "../../services/types";
 
 const items = ref<AdminRegistration[]>([]);
@@ -154,17 +154,17 @@ async function load() {
   }
 }
 
-async function exportCsv() {
+async function exportExcel() {
   exporting.value = true;
   try {
-    await exportRegistrationsCsv({
+    await exportRegistrationsExcel({
       keyword: keyword.value,
       conferenceId: conferenceId.value,
       status: registrationStatus.value,
       paymentStatus: paymentStatus.value,
       checkInStatus: checkInStatus.value
     });
-    ElMessage.success("报名名单 CSV 已开始下载");
+    ElMessage.success("报名名单 Excel 已开始下载");
   } finally {
     exporting.value = false;
   }

@@ -54,6 +54,20 @@
                     <el-button @click="openPageMetaImagePicker">应用素材库</el-button>
                   </div>
                 </el-form-item>
+                <template v-if="selectedPage?.pageKey === 'home'">
+                  <el-divider content-position="left">首页顶部标题与按钮</el-divider>
+                  <el-form-item label="顶部眉标"><el-input v-model="homeHero.eyebrow" placeholder="会议报名" /></el-form-item>
+                  <el-form-item label="顶部标题"><el-input v-model="homeHero.title" placeholder="选择会议，完成报名缴费" /></el-form-item>
+                  <el-form-item label="顶部说明"><el-input v-model="homeHero.subtitle" type="textarea" :rows="2" /></el-form-item>
+                  <el-form-item label="按钮文字"><el-input v-model="homeHero.buttonText" placeholder="我的报名" /></el-form-item>
+                  <el-form-item label="按钮跳转"><el-input v-model="homeHero.buttonTarget" placeholder="/pages/registrations/my" /></el-form-item>
+                  <el-form-item label="排版方式">
+                    <el-radio-group v-model="homeHero.layout">
+                      <el-radio-button label="split">左右排版</el-radio-button>
+                      <el-radio-button label="centered">居中排版</el-radio-button>
+                    </el-radio-group>
+                  </el-form-item>
+                </template>
               </el-form>
             </el-collapse-item>
           </el-collapse>
@@ -354,6 +368,15 @@ interface PageMetaForm {
   shareImageUrl: string;
 }
 
+interface HomeHeroForm {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  buttonText: string;
+  buttonTarget: string;
+  layout: string;
+}
+
 interface CmsComponentSupportMeta {
   label: string;
   status: CmsComponentSupportStatus;
@@ -431,6 +454,14 @@ const expandedComponentIds = ref<string[]>([]);
 const expandedConfigGroupIds = reactive<Record<string, string[]>>({});
 const expandedPageMeta = ref<string[]>(["page-meta"]);
 const pageMeta = reactive<PageMetaForm>({ pageTitle: "", shareTitle: "", shareDescription: "", shareImageUrl: "" });
+const homeHero = reactive<HomeHeroForm>({
+  eyebrow: "会议报名",
+  title: "选择会议，完成报名缴费",
+  subtitle: "所有报名费用以提交订单时系统计算结果为准。",
+  buttonText: "我的报名",
+  buttonTarget: "/pages/registrations/my",
+  layout: "split"
+});
 
 const presetGroups = computed(() => {
   const groups = new Map<string, ComponentPreset[]>();
@@ -514,6 +545,7 @@ async function selectPage(page: PageTemplate) {
   versionTitle.value = version.value.title;
   components.value = version.value.components.map(toEditableComponent);
   applyPageMeta(version.value.themeJson, page.title);
+  applyHomeHero(version.value.themeJson);
   expandedComponentIds.value = components.value[0] ? [components.value[0].id] : [];
   selectedComponentId.value = "";
   initializeConfigGroups(components.value);
@@ -614,6 +646,7 @@ async function saveDraft() {
     });
     components.value = version.value.components.map(toEditableComponent);
     applyPageMeta(version.value.themeJson, selectedPage.value?.title);
+    applyHomeHero(version.value.themeJson);
     expandedComponentIds.value = expandedComponentIds.value.filter((id) => components.value.some((component) => component.id === id));
     initializeConfigGroups(components.value);
     ElMessage.success("草稿已保存");
@@ -657,6 +690,7 @@ async function rollback() {
   version.value = next;
   components.value = next.components.map(toEditableComponent);
   applyPageMeta(next.themeJson, selectedPage.value?.title);
+  applyHomeHero(next.themeJson);
   expandedComponentIds.value = components.value[0] ? [components.value[0].id] : [];
   initializeConfigGroups(components.value);
   ElMessage.success("已回滚到上一发布版本");
@@ -715,6 +749,23 @@ function readPageMeta(themeJson: Record<string, unknown> | null | undefined): Pa
   };
 }
 
+function applyHomeHero(themeJson: Record<string, unknown> | null | undefined) {
+  const raw = themeJson?.homeHero;
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  Object.assign(homeHero, {
+    eyebrow: readString(source.eyebrow, "会议报名"),
+    title: readString(source.title, "选择会议，完成报名缴费"),
+    subtitle: readString(source.subtitle, "所有报名费用以提交订单时系统计算结果为准。"),
+    buttonText: readString(source.buttonText, "我的报名"),
+    buttonTarget: readString(source.buttonTarget, "/pages/registrations/my"),
+    layout: readString(source.layout, "split")
+  });
+}
+
+function readString(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
 function nextThemeJson(): Record<string, unknown> {
   return {
     ...(version.value?.themeJson ?? {}),
@@ -723,6 +774,14 @@ function nextThemeJson(): Record<string, unknown> {
       shareTitle: pageMeta.shareTitle.trim(),
       shareDescription: pageMeta.shareDescription.trim(),
       shareImageUrl: pageMeta.shareImageUrl.trim()
+    },
+    homeHero: {
+      eyebrow: homeHero.eyebrow.trim(),
+      title: homeHero.title.trim(),
+      subtitle: homeHero.subtitle.trim(),
+      buttonText: homeHero.buttonText.trim(),
+      buttonTarget: homeHero.buttonTarget.trim(),
+      layout: homeHero.layout
     }
   };
 }
@@ -869,7 +928,21 @@ function fieldsFor(type: string): ConfigField[] {
     }
   ];
   const map: Record<string, ConfigField[]> = {
-    hero: [{ key: "imageUrl", label: "横幅图片地址", placeholder: "从素材库选择或粘贴图片地址" }],
+    hero: [
+      { key: "imageUrl", label: "横幅图片地址", placeholder: "从素材库选择或粘贴图片地址" },
+      { key: "fullBleed", label: "横幅铺满屏幕宽度", kind: "switch", fallback: "true" },
+      {
+        key: "imageMode",
+        label: "图片裁切方式",
+        kind: "select",
+        fallback: "aspectFill",
+        options: [
+          { label: "铺满裁切", value: "aspectFill" },
+          { label: "完整显示", value: "aspectFit" },
+          { label: "宽度铺满", value: "widthFix" }
+        ]
+      }
+    ],
     carousel: [{ key: "images", label: "轮播图片", kind: "list", placeholder: "每行一个图片地址", rows: 5 }],
     "conference-list": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 10 }, ...conferenceDisplayFields], 26),
     "conference-tabs": withTextStyle([...commonTitle, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),

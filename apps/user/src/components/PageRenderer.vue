@@ -1,8 +1,8 @@
 <template>
-  <view class="cms-page" :style="rootStyle">
+  <view :class="rootClass" :style="rootStyle">
     <block v-for="component in visibleComponents" :key="component.id">
-      <view v-if="component.type === 'hero'" class="cms-hero">
-        <image v-if="stringConfig(component, 'imageUrl')" class="cms-hero__image" :src="stringConfig(component, 'imageUrl')" mode="aspectFit" />
+      <view v-if="component.type === 'hero'" :class="['cms-hero', booleanConfig(component, 'fullBleed', true) ? 'is-full-bleed' : '']">
+        <image v-if="stringConfig(component, 'imageUrl')" class="cms-hero__image" :src="stringConfig(component, 'imageUrl')" :mode="stringConfig(component, 'imageMode') || 'aspectFill'" />
         <view v-else class="cms-hero__empty">请选择主视觉横幅图片</view>
       </view>
 
@@ -243,8 +243,10 @@ const rootStyle = computed(() => ({
   "--cms-bg": props.theme.backgroundColor,
   "--cms-card": props.theme.cardBackground,
   "--cms-radius": `${props.theme.radius}px`,
-  "--cms-title-size": `${props.theme.titleFontSize}rpx`
+  "--cms-title-size": `${props.theme.titleFontSize}rpx`,
+  ...themeBackgroundStyle()
 }));
+const rootClass = computed(() => ["cms-page", props.theme.backgroundApplyTo !== "header" && props.theme.backgroundMode === "dynamic-gradient" ? "is-dynamic-bg" : ""]);
 
 onMounted(() => {
   loadCustomFonts();
@@ -272,6 +274,49 @@ function numberConfig(component: CmsComponent, key: string, fallback: number): n
 function booleanConfig(component: CmsComponent, key: string, fallback = false): boolean {
   const value = component.config?.[key];
   return typeof value === "boolean" ? value : fallback;
+}
+
+function themeBackgroundStyle(): Record<string, string> {
+  if (props.theme.backgroundApplyTo === "header") return {};
+  if (props.theme.backgroundMode === "image" && props.theme.backgroundImageUrl) {
+    return {
+      backgroundImage: `${props.theme.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(245,247,251,0.20), rgba(245,247,251,0.92)), "}url("${props.theme.backgroundImageUrl}")`,
+      backgroundSize: "cover",
+      backgroundPosition: "center top",
+      backgroundRepeat: "no-repeat"
+    };
+  }
+  if (props.theme.backgroundMode === "dynamic-gradient") {
+    return {
+      backgroundImage: dynamicGradient(),
+      backgroundSize: `${dynamicSize()}% ${dynamicSize()}%`,
+      animationDuration: `${dynamicSpeed()}s`
+    };
+  }
+  if (props.theme.backgroundMode === "gradient") {
+    return {
+      backgroundImage: `linear-gradient(180deg, ${props.theme.backgroundGradientFrom || props.theme.backgroundColor}, ${props.theme.backgroundGradientTo || props.theme.secondaryColor})`
+    };
+  }
+  return { background: props.theme.backgroundColor };
+}
+
+function dynamicGradient(): string {
+  const from = props.theme.backgroundGradientFrom || props.theme.backgroundColor;
+  const to = props.theme.backgroundGradientTo || props.theme.secondaryColor;
+  const density = Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40));
+  const dotOpacity = Math.min(0.22, 0.06 + density / 700);
+  const filterLayer = props.theme.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(245,247,251,0.86)), ";
+  return `${filterLayer}radial-gradient(circle at 18% 24%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(12, density / 3)}%), radial-gradient(circle at 82% 18%, rgba(20,184,166,${dotOpacity}) 0, transparent ${Math.max(14, density / 2.8)}%), linear-gradient(135deg, ${from}, ${to})`;
+}
+
+function dynamicSize(): number {
+  const density = Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40));
+  return Math.max(160, 520 - density * 3);
+}
+
+function dynamicSpeed(): number {
+  return Math.max(6, Math.min(40, Number(props.theme.backgroundDynamicSpeed) || 18));
 }
 
 function arrayConfig(component: CmsComponent, key: string): unknown[] {
@@ -614,7 +659,23 @@ function parseTargetTime(value: string): number | null {
   min-height: auto;
   padding: 0;
   box-sizing: border-box;
-  background: transparent;
+  background: var(--cms-bg);
+}
+
+.is-dynamic-bg {
+  animation-name: cmsDynamicBackgroundMove;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes cmsDynamicBackgroundMove {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 70%;
+  }
 }
 
 .cms-hero,
@@ -630,6 +691,12 @@ function parseTargetTime(value: string): number | null {
   padding: 0;
   background: var(--ui-color-bg-soft);
   color: var(--ui-color-muted);
+}
+
+.cms-hero.is-full-bleed {
+  margin-right: -28rpx;
+  margin-left: -28rpx;
+  border-radius: 0;
 }
 
 .cms-hero__image {

@@ -13,6 +13,7 @@
 import { computed, onMounted, ref } from "vue";
 import { getAppTabbar, type AppTabbar, type TabbarItem } from "@/services/cms";
 import { getToken } from "@/services/session";
+import { stringifyQuery } from "@/utils/query";
 
 const props = defineProps<{
   activePageKey: string;
@@ -46,6 +47,10 @@ function go(item: TabbarItem) {
     uni.reLaunch({ url });
     return;
   }
+  if (isTabbarLikePage(url)) {
+    uni.reLaunch({ url });
+    return;
+  }
   uni.navigateTo({ url });
 }
 
@@ -53,8 +58,18 @@ function currentUrl(): string {
   const pages = getCurrentPages();
   const top = pages[pages.length - 1] as unknown as { route?: string; options?: Record<string, string> };
   const route = top?.route ? `/${top.route}` : "";
-  const params = new URLSearchParams(top?.options ?? {});
-  return params.toString() ? `${route}?${params.toString()}` : route;
+  const query = stringifyQuery(top?.options ?? {});
+  return query ? `${route}?${query}` : route;
+}
+
+function isTabbarLikePage(url: string): boolean {
+  const path = url.split("?")[0];
+  return [
+    "/pages/registrations/my",
+    "/pages/cart/index",
+    "/pages/member/center",
+    "/pages/mall/index"
+  ].includes(path);
 }
 </script>
 

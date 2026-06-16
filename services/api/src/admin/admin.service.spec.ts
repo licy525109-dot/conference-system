@@ -9,6 +9,7 @@ import {
   ConferenceStatus,
   FormFieldType,
   OrderStatus,
+  PaymentStatus,
   RegistrationSkuStatus,
   RegistrationStatus
 } from "@prisma/client";
@@ -176,6 +177,26 @@ describe("Admin management", () => {
     assert.equal(controllerShape.markOrderPaid, undefined);
   });
 
+  it("deletes only unpaid orders without registrations or success payments", async () => {
+    const prisma = createPrismaMock();
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.deleteOrder("REG_PENDING", currentAdmin);
+
+    assert.equal((response.data as { deleted: number }).deleted, 1);
+    assert.equal(prisma.orders.some((order) => order.orderNo === "REG_PENDING"), false);
+    assert.equal(prisma.auditLogs.some((log) => log.entityType === "Order" && log.action === AuditAction.DELETE), true);
+  });
+
+  it("rejects deleting paid orders", async () => {
+    const service = new AdminManagementService(createPrismaMock());
+
+    await assert.rejects(
+      () => service.deleteOrder("REG_PAID", currentAdmin),
+      ConflictException
+    );
+  });
+
   it("updates registration remark without changing payment state", async () => {
     const prisma = createPrismaMock();
     const service = new AdminManagementService(prisma);
@@ -294,6 +315,32 @@ function createPrismaMock() {
   const formDefinitions = [{ id: "form-1", conferenceId: "conference-1" }];
   const formFields = [{ id: "field-1", formDefinitionId: "form-1", fieldKey: "name" }];
   const registration = createRegistrationRead();
+  const orders = [
+    {
+      id: "order-pending",
+      orderNo: "REG_PENDING",
+      status: OrderStatus.PENDING,
+      payableAmountCent: 70000,
+      paidAmountCent: null,
+      expiredAt: null,
+      paidAt: null,
+      createdAt: new Date("2026-06-06T00:00:00.000Z"),
+      registration: null,
+      payments: [{ id: "payment-pending", status: PaymentStatus.PENDING, amountCent: 70000, failedReason: null, createdAt: new Date("2026-06-06T00:01:00.000Z"), paidAt: null }]
+    },
+    {
+      id: "order-paid",
+      orderNo: "REG_PAID",
+      status: OrderStatus.PAID,
+      payableAmountCent: 70000,
+      paidAmountCent: 70000,
+      expiredAt: null,
+      paidAt: new Date("2026-06-06T02:00:00.000Z"),
+      createdAt: new Date("2026-06-06T00:00:00.000Z"),
+      registration: { id: registration.id, registrationNo: registration.registrationNo, status: registration.status },
+      payments: [{ id: "payment-success", status: PaymentStatus.SUCCESS, amountCent: 70000, failedReason: null, createdAt: new Date("2026-06-06T00:01:00.000Z"), paidAt: new Date("2026-06-06T02:00:00.000Z") }]
+    }
+  ];
   const attendees = [
     {
       id: "attendee-1",
@@ -317,6 +364,7 @@ function createPrismaMock() {
   const mock = {
     auditLogs,
     conferences,
+    orders,
     adminUser: {
       findUnique: async (args: { where: { username?: string; id?: string } }) => {
         if (args.where.username && args.where.username !== "admin") {
@@ -445,6 +493,26 @@ function createPrismaMock() {
         return registration;
       }
     },
+    order: {
+      findUnique: async (args: { where: { orderNo?: string } }) => orders.find((order) => order.orderNo === args.where.orderNo) ?? null,
+      findMany: async () => orders,
+      delete: async (args: { where: { id: string } }) => {
+        const index = orders.findIndex((order) => order.id === args.where.id);
+        if (index >= 0) {
+          const [deleted] = orders.splice(index, 1);
+          return deleted;
+        }
+        throw new Error("missing order");
+      },
+      deleteMany: async (args: { where: { id: { in: string[] } } }) => {
+        const before = orders.length;
+        for (const id of args.where.id.in) {
+          const index = orders.findIndex((order) => order.id === id);
+          if (index >= 0) orders.splice(index, 1);
+        }
+        return { count: before - orders.length };
+      }
+    },
     registrationAttendee: {
       findUnique: async (args: { where: { id: string } }) => {
         const attendee = attendees.find((item) => item.id === args.where.id);
@@ -477,7 +545,7 @@ function createPrismaMock() {
     }
   };
 
-  return mock as typeof mock & PrismaService;
+  return mock as typeof mock & PrismaService & { orders: typeof orders };
 }
 
 function createRegistrationRead() {

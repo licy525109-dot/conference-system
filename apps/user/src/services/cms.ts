@@ -51,6 +51,15 @@ export interface ThemeConfig {
   shadow: string;
   titleFontSize: number;
   bannerStyle: string;
+  backgroundMode?: string;
+  backgroundGradientFrom?: string;
+  backgroundGradientTo?: string;
+  backgroundImageUrl?: string;
+  backgroundVideoUrl?: string;
+  backgroundDynamicDensity?: number;
+  backgroundDynamicSpeed?: number;
+  backgroundBottomFilter?: boolean;
+  backgroundApplyTo?: string;
   [key: string]: string | number | boolean | null | undefined;
 }
 
@@ -83,7 +92,16 @@ export const DEFAULT_THEME: ThemeConfig = {
   buttonStyle: "solid",
   shadow: "soft",
   titleFontSize: 42,
-  bannerStyle: "clean"
+  bannerStyle: "clean",
+  backgroundMode: "solid",
+  backgroundGradientFrom: "#f5f7fb",
+  backgroundGradientTo: "#eef7f5",
+  backgroundImageUrl: "",
+  backgroundVideoUrl: "",
+  backgroundDynamicDensity: 40,
+  backgroundDynamicSpeed: 18,
+  backgroundBottomFilter: true,
+  backgroundApplyTo: "body"
 };
 
 export async function getPublishedPage(pageKey: string): Promise<PublishedPage | null> {

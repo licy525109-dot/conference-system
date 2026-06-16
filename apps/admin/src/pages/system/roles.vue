@@ -30,9 +30,9 @@
         <el-form-item label="启用"><el-switch v-model="form.enabled" :disabled="form.system" /></el-form-item>
         <el-form-item label="权限">
           <el-checkbox-group v-model="form.permissionIds">
-            <div v-for="group in permissionGroups" :key="group.name" style="margin-bottom: 12px">
+            <div v-for="group in permissionGroups" :key="group.name" class="permission-group">
               <strong>{{ group.name }}</strong>
-              <div>
+              <div class="permission-grid">
                 <el-checkbox v-for="permission in group.items" :key="permission.id" :label="permission.id">
                   {{ permission.name }}
                 </el-checkbox>
@@ -52,6 +52,7 @@ import { ElMessage } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import { routes } from "../../router";
 import { createRole, listPermissions, listRoles, updateRole } from "../../services/admin";
 import type { Permission, Role } from "../../services/types";
 
@@ -71,9 +72,13 @@ const form = reactive({
 const permissionGroups = computed(() => {
   const groups = new Map<string, Permission[]>();
   for (const permission of permissions.value) {
-    groups.set(permission.group, [...(groups.get(permission.group) ?? []), permission]);
+    const groupName = permissionMenuGroup(permission);
+    groups.set(groupName, [...(groups.get(groupName) ?? []), permission]);
   }
-  return Array.from(groups.entries()).map(([name, items]) => ({ name, items }));
+  const order = ["工作台", "会议业务", "营销配置", "页面装修", "扩展能力", "系统管理", "其他权限"];
+  return Array.from(groups.entries())
+    .map(([name, items]) => ({ name, items }))
+    .sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
 });
 
 onMounted(() => void load());
@@ -115,4 +120,30 @@ async function save() {
   await load();
   ElMessage.success("角色已保存");
 }
+
+function permissionMenuGroup(permission: Permission): string {
+  const route = routes.find((item) => item.permission === permission.code);
+  if (route) return route.group;
+  if (permission.code.startsWith("conference:") || permission.code.startsWith("order:") || permission.code.startsWith("registration:")) return "会议业务";
+  if (permission.code.startsWith("coupon:") || permission.code.startsWith("promotion:")) return "营销配置";
+  if (permission.code.startsWith("page:") || permission.code.startsWith("theme:") || permission.code.startsWith("tabbar:") || permission.code.startsWith("material:")) return "页面装修";
+  if (permission.code.startsWith("member:") || permission.code.startsWith("mall:") || permission.code.startsWith("finance:")) return "扩展能力";
+  if (permission.code.startsWith("system:")) return "系统管理";
+  return "其他权限";
+}
 </script>
+
+<style scoped>
+.permission-group {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--admin-color-border);
+}
+
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+</style>

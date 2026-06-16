@@ -10,7 +10,21 @@ export const DEFAULT_THEME_CONFIG = {
   buttonStyle: "solid",
   shadow: "soft",
   titleFontSize: 42,
-  bannerStyle: "clean"
+  bannerStyle: "clean",
+  adminBrandTitle: "会议运营后台",
+  adminBrandSubtitle: "会议业务运营中心",
+  adminBrandLogoUrl: "",
+  browserTitle: "会议后台",
+  browserIconUrl: "",
+  backgroundMode: "solid",
+  backgroundGradientFrom: "#f5f7fb",
+  backgroundGradientTo: "#eef7f5",
+  backgroundImageUrl: "",
+  backgroundVideoUrl: "",
+  backgroundDynamicDensity: 40,
+  backgroundDynamicSpeed: 18,
+  backgroundBottomFilter: true,
+  backgroundApplyTo: "body"
 } satisfies Prisma.InputJsonObject;
 
 export const DEFAULT_TABBAR_ITEMS = [

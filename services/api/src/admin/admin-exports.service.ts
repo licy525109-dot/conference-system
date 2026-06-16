@@ -8,7 +8,7 @@ import { detectPaymentExceptions } from "./admin-payment-exceptions.service";
 export class AdminExportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async exportRegistrationsCsv(query: Record<string, unknown>, admin: CurrentAdmin): Promise<string> {
+  async exportRegistrationsExcel(query: Record<string, unknown>, admin: CurrentAdmin): Promise<string> {
     const where = parseRegistrationWhere(query);
     const checkInStatus = readOptionalEnum(query, "checkInStatus", CheckInStatus);
     const rows = await this.prisma.registration.findMany({
@@ -55,7 +55,7 @@ export class AdminExportsService {
       rowCount: filteredRows.length
     });
 
-    return toCsv([
+    return toExcelHtml("报名名单", [
       [
         "会议名称",
         "报名ID",
@@ -96,7 +96,7 @@ export class AdminExportsService {
     ]);
   }
 
-  async exportOrdersCsv(query: Record<string, unknown>, admin: CurrentAdmin): Promise<string> {
+  async exportOrdersExcel(query: Record<string, unknown>, admin: CurrentAdmin): Promise<string> {
     const where = parseOrderWhere(query);
     const paymentStatus = readOptionalEnum(query, "paymentStatus", PaymentStatus);
     const onlyExceptions = readOptionalBoolean(query, "onlyExceptions");
@@ -160,7 +160,7 @@ export class AdminExportsService {
       rowCount: filteredRows.length
     });
 
-    return toCsv([
+    return toExcelHtml("订单列表", [
       [
         "订单号",
         "会议名称",
@@ -271,14 +271,34 @@ function sanitizeFilters(query: Record<string, unknown>): Prisma.InputJsonObject
   return Object.fromEntries(allowed.map((key) => [key, typeof query[key] === "string" || typeof query[key] === "boolean" ? query[key] : null]));
 }
 
-function toCsv(rows: Array<Array<string | number>>): string {
-  return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
+function toExcelHtml(sheetName: string, rows: Array<Array<string | number>>): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid #d9e2ef; padding: 6px 10px; mso-number-format:"\\@"; }
+    th { background: #eef4ff; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <table>
+    <caption>${escapeHtml(sheetName)}</caption>
+    ${rows
+      .map((row, rowIndex) => `<tr>${row.map((cell) => (rowIndex === 0 ? "th" : "td")).map((tag, index) => `<${tag}>${escapeHtml(row[index])}</${tag}>`).join("")}</tr>`)
+      .join("\n")}
+  </table>
+</body>
+</html>`;
 }
 
-function csvCell(value: string | number): string {
-  const text = String(value);
-  if (!/[",\n\r]/.test(text)) return text;
-  return `"${text.replace(/"/g, '""')}"`;
+function escapeHtml(value: string | number): string {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function centsToYuan(value: number): string {

@@ -10,19 +10,19 @@ import { RequireAdminPermissions } from "./require-permissions.decorator";
 export class AdminExportsController {
   constructor(private readonly exportsService: AdminExportsService) {}
 
-  @Get("registrations.csv")
-  @Header("content-type", "text/csv; charset=utf-8")
-  @Header("content-disposition", 'attachment; filename="registrations.csv"')
+  @Get("registrations.xls")
+  @Header("content-type", "application/vnd.ms-excel; charset=utf-8")
+  @Header("content-disposition", 'attachment; filename="registrations.xls"')
   @RequireAdminPermissions("registration:view")
   exportRegistrations(@Query() query: Record<string, unknown>, @Req() request: RequestWithCurrentAdmin) {
-    return this.exportsService.exportRegistrationsCsv(query, request.currentAdmin!);
+    return this.exportsService.exportRegistrationsExcel(query, request.currentAdmin!);
   }
 
-  @Get("orders.csv")
-  @Header("content-type", "text/csv; charset=utf-8")
-  @Header("content-disposition", 'attachment; filename="orders.csv"')
+  @Get("orders.xls")
+  @Header("content-type", "application/vnd.ms-excel; charset=utf-8")
+  @Header("content-disposition", 'attachment; filename="orders.xls"')
   @RequireAdminPermissions("order:view")
   exportOrders(@Query() query: Record<string, unknown>, @Req() request: RequestWithCurrentAdmin) {
-    return this.exportsService.exportOrdersCsv(query, request.currentAdmin!);
+    return this.exportsService.exportOrdersExcel(query, request.currentAdmin!);
   }
 }

@@ -3,6 +3,7 @@ export const ADMIN_PERMISSIONS = [
   { code: "conference:view", name: "查看会议", group: "会议管理" },
   { code: "conference:write", name: "编辑会议", group: "会议管理" },
   { code: "order:view", name: "查看订单", group: "订单管理" },
+  { code: "order:delete", name: "删除未支付订单", group: "订单管理" },
   { code: "registration:view", name: "查看报名", group: "报名管理" },
   { code: "registration:write", name: "编辑报名备注和核销", group: "报名管理" },
   { code: "coupon:view", name: "查看优惠券", group: "优惠券管理" },

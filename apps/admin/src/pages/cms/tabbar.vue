@@ -33,7 +33,12 @@
           <template #default="{ row }"><el-input v-model="row.path" placeholder="/pages/index/index" /></template>
         </el-table-column>
         <el-table-column label="普通图标" min-width="190">
-          <template #default="{ row }"><el-input v-model="row.iconUrl" placeholder="素材 URL，可为空" /></template>
+          <template #default="{ row }">
+            <el-input v-model="row.iconUrl" placeholder="素材 URL，可为空" />
+            <el-select class="icon-library" placeholder="图标库" @change="(value: string) => applyIcon(row, value)">
+              <el-option v-for="icon in iconLibrary" :key="icon.key" :label="icon.label" :value="icon.key" />
+            </el-select>
+          </template>
         </el-table-column>
         <el-table-column label="选中图标" min-width="190">
           <template #default="{ row }"><el-input v-model="row.selectedIconUrl" placeholder="素材 URL，可为空" /></template>
@@ -73,6 +78,13 @@ import type { TabBarItem } from "../../services/types";
 const enabled = ref(true);
 const items = ref<TabBarItem[]>([]);
 const saving = ref(false);
+const iconLibrary = [
+  { key: "home", label: "首页", glyph: "⌂" },
+  { key: "ticket", label: "报名", glyph: "票" },
+  { key: "cart", label: "购物车", glyph: "购" },
+  { key: "member", label: "会员", glyph: "会" },
+  { key: "mall", label: "商城", glyph: "商" }
+];
 
 const visibleItems = computed(() => [...items.value].filter((item) => item.visible).sort((a, b) => a.sortOrder - b.sortOrder));
 
@@ -110,6 +122,18 @@ function syncPath(row: TabBarItem) {
   } else if (row.pageKey.startsWith("custom:")) {
     row.path = `/pages/custom/index?pageKey=${encodeURIComponent(row.pageKey)}`;
   }
+}
+
+function applyIcon(row: TabBarItem, key: string) {
+  const icon = iconLibrary.find((item) => item.key === key);
+  if (!icon) return;
+  row.iconUrl = svgDataUrl(icon.glyph, "#9aa5b5", "#eef2f7");
+  row.selectedIconUrl = svgDataUrl(icon.glyph, "#1f5fbf", "#e8f1ff");
+}
+
+function svgDataUrl(glyph: string, color: string, bg: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="28" fill="${bg}"/><text x="48" y="58" text-anchor="middle" font-size="38" font-family="Arial, sans-serif" font-weight="700" fill="${color}">${glyph}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 async function save() {
@@ -174,5 +198,9 @@ async function save() {
 .nav-dot {
   display: block;
   background: var(--admin-color-primary);
+}
+
+.icon-library {
+  margin-top: 6px;
 }
 </style>
