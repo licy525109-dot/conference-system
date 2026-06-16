@@ -6,6 +6,7 @@
       subtitle="查看会议报名订单、金额、支付流水和异常状态；后台不提供手动改支付状态。"
     >
       <template #actions>
+        <el-button :loading="exporting" @click="exportCsv">导出 CSV</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </template>
     </AdminPageHeader>
@@ -26,6 +27,7 @@
         <el-option label="待支付" value="PENDING" />
         <el-option label="支付失败" value="FAILED" />
       </el-select>
+      <el-checkbox v-model="onlyExceptions">只看异常</el-checkbox>
       <template #actions>
         <el-button :loading="loading" type="primary" @click="load">查询</el-button>
       </template>
@@ -54,7 +56,9 @@
         <el-table-column label="支付时间" width="180"><template #default="{ row }">{{ formatDate(row.paidAt) }}</template></el-table-column>
         <el-table-column label="异常" width="110">
           <template #default="{ row }">
-            <AdminStatusBadge v-if="isOrderAbnormal(row)" label="需关注" tone="danger" />
+            <el-tooltip v-if="isOrderAbnormal(row)" placement="top" :content="exceptionText(row)">
+              <AdminStatusBadge label="需关注" tone="danger" />
+            </el-tooltip>
             <span v-else class="muted-text">-</span>
           </template>
         </el-table-column>
@@ -81,7 +85,28 @@
           <el-descriptions-item label="商户订单号">{{ detail.outTradeNo || "-" }}</el-descriptions-item>
           <el-descriptions-item label="微信交易号">{{ detail.transactionId || "-" }}</el-descriptions-item>
         </el-descriptions>
-        <el-alert class="reserved-alert" title="退款与同步支付状态属于预留能力，本页仅展示现有订单与支付流水。" type="info" :closable="false" />
+        <el-alert class="reserved-alert" title="退款与重新处理支付成功属于高风险预留能力，本页仅展示异常、记录人工处理备注，不修改支付状态。" type="info" :closable="false" />
+        <section v-if="detail.paymentExceptions.length > 0" class="exception-panel">
+          <h3>异常识别</h3>
+          <el-alert
+            v-for="item in detail.paymentExceptions"
+            :key="item.code"
+            :title="item.message"
+            :type="item.level === 'danger' ? 'error' : 'warning'"
+            :closable="false"
+            show-icon
+          />
+          <el-input v-model="reviewNote" type="textarea" :rows="3" maxlength="1000" show-word-limit placeholder="填写人工核对结果，例如：已核对微信商户后台，用户未支付；或已联系开发排查报名缺失。" />
+          <div class="inline-actions">
+            <el-button type="primary" :disabled="!reviewNote.trim()" :loading="reviewSaving" @click="saveExceptionReview">记录处理备注</el-button>
+          </div>
+          <el-timeline v-if="detail.exceptionReviewLogs.length > 0">
+            <el-timeline-item v-for="log in detail.exceptionReviewLogs" :key="log.id" :timestamp="formatDate(log.createdAt)">
+              <strong>{{ log.adminName }}</strong>
+              <div class="muted-text">{{ readReviewNote(log.metadataJson) || log.summary || "-" }}</div>
+            </el-timeline-item>
+          </el-timeline>
+        </section>
         <h3>优惠明细</h3>
         <el-table :data="detail.discounts" empty-text="暂无优惠">
           <el-table-column prop="type" label="类型" width="130" />
@@ -105,12 +130,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { ElMessage } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo } from "../../router";
-import { getOrder, listConferences, listOrders } from "../../services/admin";
+import { exportOrdersCsv, getOrder, listConferences, listOrders, reviewPaymentException } from "../../services/admin";
 import type { AdminOrder, AdminOrderDetail, Conference } from "../../services/types";
 
 const items = ref<AdminOrder[]>([]);
@@ -120,11 +146,15 @@ const keyword = ref("");
 const conferenceId = ref("");
 const status = ref("");
 const paymentStatus = ref("");
+const onlyExceptions = ref(false);
 const loading = ref(false);
+const exporting = ref(false);
+const reviewSaving = ref(false);
 const detailVisible = ref(false);
+const reviewNote = ref("");
 
 const displayedItems = computed(() => {
-  return items.value.filter((item) => !paymentStatus.value || item.paymentStatus === paymentStatus.value);
+  return items.value.filter((item) => !onlyExceptions.value || isOrderAbnormal(item));
 });
 
 onMounted(async () => {
@@ -138,7 +168,7 @@ async function loadConferences() {
 async function load() {
   loading.value = true;
   try {
-    items.value = (await listOrders({ page: 1, pageSize: 100, keyword: keyword.value, conferenceId: conferenceId.value, status: status.value })).items;
+    items.value = (await listOrders({ page: 1, pageSize: 100, keyword: keyword.value, conferenceId: conferenceId.value, status: status.value, paymentStatus: paymentStatus.value })).items;
   } finally {
     loading.value = false;
   }
@@ -146,7 +176,37 @@ async function load() {
 
 async function openDetail(orderNo: string) {
   detail.value = await getOrder(orderNo);
+  reviewNote.value = "";
   detailVisible.value = true;
+}
+
+async function exportCsv() {
+  exporting.value = true;
+  try {
+    await exportOrdersCsv({
+      keyword: keyword.value,
+      conferenceId: conferenceId.value,
+      status: status.value,
+      paymentStatus: paymentStatus.value,
+      onlyExceptions: onlyExceptions.value
+    });
+    ElMessage.success("订单 CSV 已开始下载");
+  } finally {
+    exporting.value = false;
+  }
+}
+
+async function saveExceptionReview() {
+  if (!detail.value || !reviewNote.value.trim()) return;
+  reviewSaving.value = true;
+  try {
+    await reviewPaymentException(detail.value.orderNo, reviewNote.value);
+    detail.value = await getOrder(detail.value.orderNo);
+    reviewNote.value = "";
+    ElMessage.success("处理备注已记录");
+  } finally {
+    reviewSaving.value = false;
+  }
 }
 
 function formatCent(value: number) {
@@ -165,9 +225,18 @@ function formatJson(value: unknown) {
 }
 
 function isOrderAbnormal(row: AdminOrder) {
+  if (row.paymentExceptions?.length > 0) return true;
   const statusText = String(row.status || "").toUpperCase();
   const paymentText = String(row.paymentStatus || "").toUpperCase();
   return ["FAILED", "CANCELLED", "CANCELED", "CLOSED"].includes(statusText) || ["FAILED", "CANCELLED", "CANCELED"].includes(paymentText);
+}
+
+function exceptionText(row: AdminOrder) {
+  return row.paymentExceptions?.map((item) => item.message).join("；") || "订单状态需关注";
+}
+
+function readReviewNote(value: Record<string, unknown> | null) {
+  return typeof value?.note === "string" ? value.note : "";
 }
 
 function orderRowClassName({ row }: { row: AdminOrder }) {
@@ -182,6 +251,12 @@ function goConferences() {
 <style scoped>
 .reserved-alert {
   margin-top: 14px;
+}
+
+.exception-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 :deep(.is-warning-row) {

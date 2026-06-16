@@ -7,12 +7,14 @@ import {
   DiscountType,
   FormFieldType,
   OrderStatus,
+  PaymentStatus,
   Prisma,
   RegistrationSkuStatus,
   RegistrationStatus
 } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { CurrentAdmin } from "./current-admin";
+import { detectPaymentExceptions } from "./admin-payment-exceptions.service";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -408,7 +410,28 @@ export class AdminManagementService {
       throw new NotFoundException("Order not found");
     }
 
-    return ok(formatOrderDetail(order));
+    const exceptionReviewLogs = await this.prisma.auditLog.findMany({
+      where: {
+        entityType: "PaymentException",
+        entityId: order.id
+      },
+      orderBy: [{ createdAt: "desc" }],
+      take: 10,
+      select: {
+        id: true,
+        summary: true,
+        metadataJson: true,
+        createdAt: true,
+        adminUser: {
+          select: {
+            username: true,
+            displayName: true
+          }
+        }
+      }
+    });
+
+    return ok(formatOrderDetail(order, exceptionReviewLogs));
   }
 
   async listRegistrations(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
@@ -907,12 +930,24 @@ const orderListSelect = {
   sku: { select: { name: true } },
   payments: {
     orderBy: [{ createdAt: "desc" }],
-    take: 1,
+    take: 5,
     select: {
+      id: true,
       provider: true,
       status: true,
       outTradeNo: true,
-      transactionId: true
+      transactionId: true,
+      amountCent: true,
+      failedReason: true,
+      paidAt: true,
+      createdAt: true
+    }
+  },
+  registration: {
+    select: {
+      id: true,
+      registrationNo: true,
+      status: true
     }
   }
 } satisfies Prisma.OrderSelect;
@@ -952,6 +987,7 @@ const orderDetailSelect = {
       outTradeNo: true,
       transactionId: true,
       amountCent: true,
+      failedReason: true,
       paidAt: true,
       createdAt: true
     }
@@ -1157,6 +1193,7 @@ function formatOrderListItem(order: Prisma.OrderGetPayload<{ select: typeof orde
     paymentProvider: latestPayment?.provider ?? null,
     outTradeNo: latestPayment?.outTradeNo ?? null,
     transactionId: latestPayment?.transactionId ?? null,
+    paymentExceptions: detectPaymentExceptions(order),
     user: formatUserProfile(order.user),
     attendeeName: order.attendeeName,
     phone: order.phone,
@@ -1166,7 +1203,16 @@ function formatOrderListItem(order: Prisma.OrderGetPayload<{ select: typeof orde
   };
 }
 
-function formatOrderDetail(order: Prisma.OrderGetPayload<{ select: typeof orderDetailSelect }>) {
+function formatOrderDetail(
+  order: Prisma.OrderGetPayload<{ select: typeof orderDetailSelect }>,
+  exceptionReviewLogs: Array<{
+    id: string;
+    summary: string | null;
+    metadataJson: Prisma.JsonValue;
+    createdAt: Date;
+    adminUser: { username: string; displayName: string | null } | null;
+  }>
+) {
   return {
     ...formatOrderListItem(order),
     submittedFormJson: order.submittedFormJson,
@@ -1181,7 +1227,14 @@ function formatOrderDetail(order: Prisma.OrderGetPayload<{ select: typeof orderD
       paidAt: payment.paidAt?.toISOString() ?? null,
       createdAt: payment.createdAt.toISOString()
     })),
-    registration: order.registration
+    registration: order.registration,
+    exceptionReviewLogs: exceptionReviewLogs.map((log) => ({
+      id: log.id,
+      summary: log.summary,
+      metadataJson: log.metadataJson,
+      adminName: log.adminUser?.displayName ?? log.adminUser?.username ?? "系统",
+      createdAt: log.createdAt.toISOString()
+    }))
   };
 }
 
@@ -1361,16 +1414,20 @@ function parseFormFieldInput(input: unknown, partial: boolean) {
 function parseOrderWhere(query: Record<string, unknown>): Prisma.OrderWhereInput {
   const conferenceId = readOptionalString(query, "conferenceId");
   const status = readOptionalEnum(query, "status", OrderStatus);
+  const paymentStatus = readOptionalEnum(query, "paymentStatus", PaymentStatus);
   const keyword = readOptionalString(query, "keyword");
   return {
     ...(conferenceId ? { conferenceId } : {}),
     ...(status ? { status } : {}),
+    ...(paymentStatus ? { payments: { some: { status: paymentStatus } } } : {}),
     ...(keyword
       ? {
           OR: [
             { orderNo: { contains: keyword, mode: "insensitive" } },
             { attendeeName: { contains: keyword, mode: "insensitive" } },
-            { phone: { contains: keyword, mode: "insensitive" } }
+            { phone: { contains: keyword, mode: "insensitive" } },
+            { payments: { some: { outTradeNo: { contains: keyword, mode: "insensitive" } } } },
+            { payments: { some: { transactionId: { contains: keyword, mode: "insensitive" } } } }
           ]
         }
       : {})

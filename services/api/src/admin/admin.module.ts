@@ -2,12 +2,16 @@ import { Module } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { AdminAccessController } from "./admin-access.controller";
 import { AdminAccessService } from "./admin-access.service";
+import { AdminAuditLogController } from "./admin-audit-log.controller";
+import { AdminAuditLogService } from "./admin-audit-log.service";
 import { AdminAuthController } from "./admin-auth.controller";
 import { AdminAuthService } from "./admin-auth.service";
 import { AdminCmsController } from "./admin-cms.controller";
 import { AdminCmsService } from "./admin-cms.service";
 import { AdminDashboardController } from "./admin-dashboard.controller";
 import { AdminDashboardService } from "./admin-dashboard.service";
+import { AdminExportsController } from "./admin-exports.controller";
+import { AdminExportsService } from "./admin-exports.service";
 import { AdminFinanceController } from "./admin-finance.controller";
 import { AdminFinanceService } from "./admin-finance.service";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
@@ -19,6 +23,8 @@ import { AdminMembersController } from "./admin-members.controller";
 import { AdminMembersService } from "./admin-members.service";
 import { AdminMaterialsController } from "./admin-materials.controller";
 import { AdminMaterialsService } from "./admin-materials.service";
+import { AdminPaymentExceptionsController } from "./admin-payment-exceptions.controller";
+import { AdminPaymentExceptionsService } from "./admin-payment-exceptions.service";
 import { AdminPermissionGuard } from "./admin-permission.guard";
 
 @Module({
@@ -31,12 +37,17 @@ import { AdminPermissionGuard } from "./admin-permission.guard";
     AdminCmsController,
     AdminMembersController,
     AdminFinanceController,
-    AdminMallController
+    AdminMallController,
+    AdminExportsController,
+    AdminPaymentExceptionsController,
+    AdminAuditLogController
   ],
   providers: [
     AdminAccessService,
+    AdminAuditLogService,
     AdminAuthService,
     AdminCmsService,
+    AdminExportsService,
     AdminJwtAuthGuard,
     AdminPermissionGuard,
     AdminManagementService,
@@ -45,6 +56,7 @@ import { AdminPermissionGuard } from "./admin-permission.guard";
     AdminMembersService,
     AdminFinanceService,
     AdminMallService,
+    AdminPaymentExceptionsService,
     PrismaService
   ],
   exports: [AdminAuthService]

@@ -15,6 +15,7 @@ import MallOrdersPage from "../pages/mall/orders.vue";
 import MallProductsPage from "../pages/mall/products.vue";
 import MemberLevelsPage from "../pages/members/levels.vue";
 import MemberUsersPage from "../pages/members/users.vue";
+import AuditLogsPage from "../pages/system/audit-logs.vue";
 import AccountsPage from "../pages/system/accounts.vue";
 import RolesPage from "../pages/system/roles.vue";
 
@@ -56,6 +57,7 @@ export const routes: AdminRoute[] = [
   { path: "/mall/products", title: "商城商品", menuTitle: "商城商品", group: "扩展能力", badge: "灰度", description: "商城能力灰度中，商品支付和履约后续完善", permission: "mall:view", component: MallProductsPage },
   { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "扩展能力", badge: "灰度", description: "商城订单灰度中，不与会议支付混用", permission: "mall:view", component: MallOrdersPage },
   { path: "/finance", title: "财务对账", menuTitle: "财务对账", group: "扩展能力", badge: "辅助", description: "对账辅助，不等同完整财务系统", permission: "finance:view", component: FinancePage },
+  { path: "/system/audit-logs", title: "操作日志", menuTitle: "操作日志", group: "系统管理", description: "登录、编辑、导出、核销和异常处理记录", permission: "system:audit", component: AuditLogsPage },
   { path: "/system/accounts", title: "账号管理", menuTitle: "账号管理", group: "系统管理", description: "后台账号和角色分配", permission: "system:account", component: AccountsPage },
   { path: "/system/roles", title: "角色权限", menuTitle: "角色权限", group: "系统管理", badge: "高级", description: "高级权限配置，谨慎调整", permission: "system:role", component: RolesPage }
 ];

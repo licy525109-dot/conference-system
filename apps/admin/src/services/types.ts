@@ -82,6 +82,12 @@ export interface AdminPayment {
   createdAt?: string;
 }
 
+export interface PaymentExceptionItem {
+  code: string;
+  level: "warning" | "danger";
+  message: string;
+}
+
 export interface AdminOrder {
   id: string;
   orderNo: string;
@@ -98,6 +104,7 @@ export interface AdminOrder {
   paymentProvider: string | null;
   outTradeNo: string | null;
   transactionId: string | null;
+  paymentExceptions: PaymentExceptionItem[];
   user: AdminWechatUser | null;
   attendeeName: string | null;
   phone: string | null;
@@ -122,6 +129,13 @@ export interface AdminOrderDetail extends AdminOrder {
     registrationNo: string;
     status: string;
   } | null;
+  exceptionReviewLogs: Array<{
+    id: string;
+    summary: string | null;
+    metadataJson: Record<string, unknown> | null;
+    adminName: string;
+    createdAt: string;
+  }>;
 }
 
 export interface AdminOrderDiscount {
@@ -186,6 +200,20 @@ export interface AdminRegistrationAttendee {
   checkedInAt: string | null;
   checkedInBy: string | null;
   adminRemark: string | null;
+  createdAt: string;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  adminId: string | null;
+  adminName: string;
+  action: "CREATE" | "UPDATE" | "DELETE" | "LOGIN" | "SYSTEM" | string;
+  targetType: string;
+  targetId: string | null;
+  summary: string | null;
+  metadataJson: Record<string, unknown> | null;
+  ip: string | null;
+  userAgent: string | null;
   createdAt: string;
 }
 
