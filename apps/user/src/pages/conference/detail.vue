@@ -1,70 +1,73 @@
 <template>
   <view :class="pageClass" :style="pageStyle">
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
-    <LoadingState v-if="loading" title="加载会议详情中" description="正在读取会议、票种和页面内容。" />
-    <ErrorState
-      v-else-if="error"
-      :message="error"
-      primary-text="重新加载"
-      secondary-text="返回首页"
-      @retry="loadDetail"
-      @secondary="goHome"
-    />
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
+    <view class="page-content">
+      <LoadingState v-if="loading" title="加载会议详情中" description="正在读取会议、票种和页面内容。" />
+      <ErrorState
+        v-else-if="error"
+        :message="error"
+        primary-text="重新加载"
+        secondary-text="返回首页"
+        @retry="loadDetail"
+        @secondary="goHome"
+      />
 
-    <view v-else-if="conference" class="content">
-      <view class="hero ui-card">
-        <StatusTag :label="registrationStatus.label" :tone="registrationStatus.tone" />
-        <text class="title">{{ conference.title }}</text>
-        <text class="summary">{{ conference.summary || "会议报名已开放，请选择合适的报名规格并填写参会信息。" }}</text>
-        <view class="facts">
-          <view class="fact">
-            <text class="fact-label">会议时间</text>
-            <text class="fact-value">{{ formatDateTime(conference.startsAt) }} - {{ formatDateTime(conference.endsAt) }}</text>
-          </view>
-          <view class="fact">
-            <text class="fact-label">会议地点</text>
-            <text class="fact-value">{{ conference.location || "待公布" }}</text>
-          </view>
-          <view class="fact">
-            <text class="fact-label">报名截止</text>
-            <text class="fact-value">{{ conference.registrationEndsAt ? formatDateTime(conference.registrationEndsAt) : "以主办方通知为准" }}</text>
+      <view v-else-if="conference" class="content">
+        <view class="hero ui-card">
+          <StatusTag :label="registrationStatus.label" :tone="registrationStatus.tone" />
+          <text class="title">{{ conference.title }}</text>
+          <text class="summary">{{ conference.summary || "会议报名已开放，请选择合适的报名规格并填写参会信息。" }}</text>
+          <view class="facts">
+            <view class="fact">
+              <text class="fact-label">会议时间</text>
+              <text class="fact-value">{{ formatDateTime(conference.startsAt) }} - {{ formatDateTime(conference.endsAt) }}</text>
+            </view>
+            <view class="fact">
+              <text class="fact-label">会议地点</text>
+              <text class="fact-value">{{ conference.location || "待公布" }}</text>
+            </view>
+            <view class="fact">
+              <text class="fact-label">报名截止</text>
+              <text class="fact-value">{{ conference.registrationEndsAt ? formatDateTime(conference.registrationEndsAt) : "以主办方通知为准" }}</text>
+            </view>
           </view>
         </view>
-      </view>
 
-      <FormSection title="报名规格" description="选择票种后进入报名表单。库存和金额以提交订单时系统计算结果为准。">
-        <EmptyState v-if="conference.skus.length === 0" title="暂无可报名规格" description="主办方尚未开放报名票种。" mark="票" />
-        <view v-else class="sku-list">
-          <view v-for="sku in conference.skus" :key="sku.id" class="sku-card">
-            <view class="sku-info">
-              <text class="sku-name">{{ sku.name }}</text>
-              <text class="sku-desc">{{ sku.description || "标准报名规格" }}</text>
-              <view class="stock-row">
-                <StatusTag :label="stockLabel(sku)" :tone="remainingStock(sku) > 0 ? 'success' : 'neutral'" />
-                <text class="stock">库存 {{ Math.max(sku.stock - sku.soldCount, 0) }} / {{ sku.stock }}</text>
+        <FormSection title="报名规格" description="选择票种后进入报名表单。库存和金额以提交订单时系统计算结果为准。">
+          <EmptyState v-if="conference.skus.length === 0" title="暂无可报名规格" description="主办方尚未开放报名票种。" mark="票" />
+          <view v-else class="sku-list">
+            <view v-for="sku in conference.skus" :key="sku.id" class="sku-card">
+              <view class="sku-info">
+                <text class="sku-name">{{ sku.name }}</text>
+                <text class="sku-desc">{{ sku.description || "标准报名规格" }}</text>
+                <view class="stock-row">
+                  <StatusTag :label="stockLabel(sku)" :tone="remainingStock(sku) > 0 ? 'success' : 'neutral'" />
+                  <text class="stock">库存 {{ Math.max(sku.stock - sku.soldCount, 0) }} / {{ sku.stock }}</text>
+                </view>
+              </view>
+              <view class="sku-side">
+                <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
+                <button class="ui-button-primary ui-button-compact sku-button" @click="goRegister(sku.id)">报名</button>
               </view>
             </view>
-            <view class="sku-side">
-              <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
-              <button class="ui-button-primary ui-button-compact sku-button" @click="goRegister(sku.id)">报名</button>
-            </view>
           </view>
-        </view>
-      </FormSection>
+        </FormSection>
 
-      <FormSection title="会议详情" description="以下内容由主办方维护，报名前请确认参会安排。">
-        <PageRenderer
-          v-if="cmsPage"
-          :components="cmsPage.version.components"
-          :theme="theme"
-          :conference="conference"
-          suppress-registration-cta
-          @register="goRegisterFirst"
-        />
-        <text v-else class="body-text">{{ contentText }}</text>
-      </FormSection>
+        <FormSection title="会议详情" description="以下内容由主办方维护，报名前请确认参会安排。">
+          <PageRenderer
+            v-if="cmsPage"
+            :components="cmsPage.version.components"
+            :theme="theme"
+            :conference="conference"
+            suppress-registration-cta
+            @register="goRegisterFirst"
+          />
+          <text v-else class="body-text">{{ contentText }}</text>
+        </FormSection>
+      </view>
+      <WechatProfilePrompt />
     </view>
-    <WechatProfilePrompt />
     <CustomTabbar active-page-key="conference-detail" />
     <FixedBottomActionBar
       v-if="conference"
@@ -90,6 +93,7 @@ import FormSection from "@/components/ui/FormSection.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
 import { getConferenceDetail, type ConferenceDetail, type RegistrationSku } from "@/services/conference";
@@ -111,8 +115,9 @@ const pageStyle = computed(() => ({
   "--ui-radius": `${theme.value.radius}px`,
   ...themeBackgroundStyle(theme.value, "body")
 }));
-const pageClass = computed(() => ["page", "ui-page", backgroundClass(theme.value)]);
+const pageClass = computed(() => ["page", "ui-page"]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
+const showBodyDynamicBackground = computed(() => theme.value.backgroundMode === "dynamic-gradient" && theme.value.backgroundApplyTo !== "header");
 
 const contentText = computed(() => toContentText(conference.value?.contentJson) || "会议议程、嘉宾和报名说明请以主办方发布内容为准。");
 const priceRangeText = computed(() => {
@@ -215,11 +220,7 @@ function themeBackgroundStyle(config: ThemeConfig, target: "body" | "header"): R
     };
   }
   if (config.backgroundMode === "dynamic-gradient") {
-    return {
-      backgroundImage: dynamicGradient(config),
-      backgroundSize: `${dynamicSize(config)}% ${dynamicSize(config)}%`,
-      animationDuration: `${dynamicSpeed(config)}s`
-    };
+    return { background: config.backgroundColor };
   }
   if (config.backgroundMode === "gradient") {
     return {
@@ -227,29 +228,6 @@ function themeBackgroundStyle(config: ThemeConfig, target: "body" | "header"): R
     };
   }
   return { background: config.backgroundColor };
-}
-
-function backgroundClass(config: ThemeConfig, target: "body" | "header" = "body"): string {
-  const applies = target === "body" ? config.backgroundApplyTo !== "header" : config.backgroundApplyTo === "header";
-  return applies && config.backgroundMode === "dynamic-gradient" ? "is-dynamic-bg" : "";
-}
-
-function dynamicGradient(config: ThemeConfig): string {
-  const from = config.backgroundGradientFrom || config.backgroundColor;
-  const to = config.backgroundGradientTo || config.secondaryColor;
-  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  const dotOpacity = Math.min(0.46, 0.14 + density / 380);
-  const filterLayer = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,251,0.62)), ";
-  return `${filterLayer}radial-gradient(circle at 12% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.2)}%), radial-gradient(circle at 86% 16%, rgba(20,184,166,${Math.min(0.4, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.9)}%), radial-gradient(circle at 50% 78%, rgba(245,158,11,${Math.min(0.32, dotOpacity)}) 0, transparent ${Math.max(26, density / 1.55)}%), linear-gradient(135deg, ${from}, ${to})`;
-}
-
-function dynamicSize(config: ThemeConfig): number {
-  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  return Math.max(150, 440 - density * 2.4);
-}
-
-function dynamicSpeed(config: ThemeConfig): number {
-  return Math.max(6, Math.min(40, Number(config.backgroundDynamicSpeed) || 18));
 }
 
 function toContentText(value: unknown): string {
@@ -291,20 +269,9 @@ function toContentText(value: unknown): string {
   pointer-events: none;
 }
 
-.is-dynamic-bg {
-  animation-name: dynamicBackgroundMove;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
-}
-
-@keyframes dynamicBackgroundMove {
-  from {
-    background-position: 0% 0%;
-  }
-  to {
-    background-position: 100% 70%;
-  }
+.page-content {
+  position: relative;
+  z-index: 1;
 }
 
 .content {

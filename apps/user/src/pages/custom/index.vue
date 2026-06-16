@@ -1,26 +1,29 @@
 <template>
   <view :class="pageClass" :style="pageStyle">
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
-    <LoadingState v-if="loading" title="加载页面中" description="正在读取主办方发布内容。" />
-    <ErrorState
-      v-else-if="error"
-      :message="error"
-      primary-text="重新加载"
-      secondary-text="返回首页"
-      @retry="loadPage"
-      @secondary="goHome"
-    />
-    <template v-else-if="cmsPage">
-      <ExtensionStatusNotice
-        v-if="extensionNotice"
-        :status="extensionNotice.status"
-        :title="extensionNotice.title"
-        :description="extensionNotice.description"
-        :tone="extensionNotice.tone"
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
+    <view class="page-content">
+      <LoadingState v-if="loading" title="加载页面中" description="正在读取主办方发布内容。" />
+      <ErrorState
+        v-else-if="error"
+        :message="error"
+        primary-text="重新加载"
+        secondary-text="返回首页"
+        @retry="loadPage"
+        @secondary="goHome"
       />
-      <PageRenderer :components="cmsPage.version.components" :theme="theme" @open-conference="goDetail" />
-    </template>
-    <EmptyState v-else title="页面尚未发布" description="该页面内容暂未开放，请返回首页查看会议。" mark="页" action-text="返回首页" @action="goHome" />
+      <template v-else-if="cmsPage">
+        <ExtensionStatusNotice
+          v-if="extensionNotice"
+          :status="extensionNotice.status"
+          :title="extensionNotice.title"
+          :description="extensionNotice.description"
+          :tone="extensionNotice.tone"
+        />
+        <PageRenderer :components="cmsPage.version.components" :theme="theme" @open-conference="goDetail" />
+      </template>
+      <EmptyState v-else title="页面尚未发布" description="该页面内容暂未开放，请返回首页查看会议。" mark="页" action-text="返回首页" @action="goHome" />
+    </view>
     <CustomTabbar :active-page-key="pageKey" />
   </view>
 </template>
@@ -34,6 +37,7 @@ import ErrorState from "@/components/ui/ErrorState.vue";
 import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
 import { goHome } from "@/utils/navigation";
 
@@ -50,8 +54,9 @@ const pageStyle = computed(() => ({
   "--ui-radius": `${theme.value.radius}px`,
   ...themeBackgroundStyle(theme.value, "body")
 }));
-const pageClass = computed(() => ["page", "ui-page", backgroundClass(theme.value)]);
+const pageClass = computed(() => ["page", "ui-page"]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
+const showBodyDynamicBackground = computed(() => theme.value.backgroundMode === "dynamic-gradient" && theme.value.backgroundApplyTo !== "header");
 const extensionNotice = computed(() => extensionNoticeFor(pageKey.value));
 
 onLoad((query) => {
@@ -100,11 +105,7 @@ function themeBackgroundStyle(config: ThemeConfig, target: "body" | "header"): R
     };
   }
   if (config.backgroundMode === "dynamic-gradient") {
-    return {
-      backgroundImage: dynamicGradient(config),
-      backgroundSize: `${dynamicSize(config)}% ${dynamicSize(config)}%`,
-      animationDuration: `${dynamicSpeed(config)}s`
-    };
+    return { background: config.backgroundColor };
   }
   if (config.backgroundMode === "gradient") {
     return {
@@ -112,29 +113,6 @@ function themeBackgroundStyle(config: ThemeConfig, target: "body" | "header"): R
     };
   }
   return { background: config.backgroundColor };
-}
-
-function backgroundClass(config: ThemeConfig, target: "body" | "header" = "body"): string {
-  const applies = target === "body" ? config.backgroundApplyTo !== "header" : config.backgroundApplyTo === "header";
-  return applies && config.backgroundMode === "dynamic-gradient" ? "is-dynamic-bg" : "";
-}
-
-function dynamicGradient(config: ThemeConfig): string {
-  const from = config.backgroundGradientFrom || config.backgroundColor;
-  const to = config.backgroundGradientTo || config.secondaryColor;
-  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  const dotOpacity = Math.min(0.46, 0.14 + density / 380);
-  const filterLayer = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,251,0.62)), ";
-  return `${filterLayer}radial-gradient(circle at 12% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.2)}%), radial-gradient(circle at 86% 16%, rgba(20,184,166,${Math.min(0.4, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.9)}%), radial-gradient(circle at 50% 78%, rgba(245,158,11,${Math.min(0.32, dotOpacity)}) 0, transparent ${Math.max(26, density / 1.55)}%), linear-gradient(135deg, ${from}, ${to})`;
-}
-
-function dynamicSize(config: ThemeConfig): number {
-  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  return Math.max(150, 440 - density * 2.4);
-}
-
-function dynamicSpeed(config: ThemeConfig): number {
-  return Math.max(6, Math.min(40, Number(config.backgroundDynamicSpeed) || 18));
 }
 
 function extensionNoticeFor(key: string):
@@ -184,19 +162,8 @@ function extensionNoticeFor(key: string):
   pointer-events: none;
 }
 
-.is-dynamic-bg {
-  animation-name: dynamicBackgroundMove;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
-}
-
-@keyframes dynamicBackgroundMove {
-  from {
-    background-position: 0% 0%;
-  }
-  to {
-    background-position: 100% 70%;
-  }
+.page-content {
+  position: relative;
+  z-index: 1;
 }
 </style>
