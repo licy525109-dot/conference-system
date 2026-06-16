@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/config/app";
+import { readUniErrMsg } from "@/utils/uniErrors";
 import type { CurrentUser } from "./auth";
 import { getToken, setAuthSession } from "./session";
 import { request } from "./request";
@@ -56,7 +57,7 @@ export function uploadWechatAvatar(filePath: string): Promise<string> {
         reject(new Error(body?.message || "头像上传失败"));
       },
       fail: (error) => {
-        reject(new Error(error.errMsg || "头像上传失败"));
+        reject(new Error(readUniErrMsg(error, "头像上传失败")));
       }
     });
   });

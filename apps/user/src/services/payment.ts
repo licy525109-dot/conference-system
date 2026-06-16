@@ -1,4 +1,5 @@
 import { PAYMENT_MODE } from "@/config/app";
+import { readUniErrMsg } from "@/utils/uniErrors";
 import { ensureLogin } from "./auth";
 import { request } from "./request";
 
@@ -96,7 +97,7 @@ function requestMiniProgramPayment(input: WechatPrepayResponse): Promise<void> {
       signType: input.signType,
       paySign: input.paySign,
       success: () => resolve(),
-      fail: (error) => reject(new Error(error.errMsg || "微信支付失败"))
+      fail: (error) => reject(new Error(readUniErrMsg(error, "微信支付失败")))
     });
   });
 }

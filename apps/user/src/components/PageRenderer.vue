@@ -362,14 +362,14 @@ function dynamicGradient(): string {
   const from = props.theme.backgroundGradientFrom || props.theme.backgroundColor;
   const to = props.theme.backgroundGradientTo || props.theme.secondaryColor;
   const density = Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40));
-  const dotOpacity = Math.min(0.22, 0.06 + density / 700);
-  const filterLayer = props.theme.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(245,247,251,0.86)), ";
-  return `${filterLayer}radial-gradient(circle at 18% 24%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(12, density / 3)}%), radial-gradient(circle at 82% 18%, rgba(20,184,166,${dotOpacity}) 0, transparent ${Math.max(14, density / 2.8)}%), linear-gradient(135deg, ${from}, ${to})`;
+  const dotOpacity = Math.min(0.46, 0.14 + density / 380);
+  const filterLayer = props.theme.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,251,0.62)), ";
+  return `${filterLayer}radial-gradient(circle at 12% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.2)}%), radial-gradient(circle at 86% 16%, rgba(20,184,166,${Math.min(0.4, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.9)}%), radial-gradient(circle at 50% 78%, rgba(245,158,11,${Math.min(0.32, dotOpacity)}) 0, transparent ${Math.max(26, density / 1.55)}%), linear-gradient(135deg, ${from}, ${to})`;
 }
 
 function dynamicSize(): number {
   const density = Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40));
-  return Math.max(160, 520 - density * 3);
+  return Math.max(150, 440 - density * 2.4);
 }
 
 function dynamicSpeed(): number {
@@ -726,17 +726,13 @@ function parseTargetTime(value: string): number | null {
 .cms-block.is-header-block {
   overflow: hidden;
   padding: 18rpx 18rpx 10rpx;
-  border-radius: calc(var(--cms-radius) + 8px);
-}
-
-.cms-block.is-header-block > * {
-  position: relative;
-  z-index: 1;
+  border-radius: var(--cms-radius);
 }
 
 .cms-header__video {
   position: absolute;
   inset: 0;
+  z-index: 0;
   width: 100%;
   height: 100%;
 }
@@ -842,9 +838,9 @@ function parseTargetTime(value: string): number | null {
 .cms-card.is-conference-card,
 .cms-mini-card.is-conference-card {
   overflow: hidden;
-  border: 1px solid rgb(36 82 168 / 8%);
+  border: 1px solid rgba(36, 82, 168, 0.08);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.96));
-  box-shadow: 0 16rpx 36rpx rgb(15 23 42 / 8%);
+  box-shadow: 0 16rpx 36rpx rgba(15, 23, 42, 0.08);
 }
 
 .cms-mini-card {
@@ -919,11 +915,12 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-card__meta {
-  width: fit-content;
+  display: inline-flex;
+  align-self: flex-start;
   max-width: 100%;
   padding: 10rpx 14rpx;
   border-radius: 999rpx;
-  background: rgb(36 82 168 / 6%);
+  background: rgba(36, 82, 168, 0.06);
 }
 
 .cms-card__button {
@@ -939,7 +936,7 @@ function parseTargetTime(value: string): number | null {
   color: #ffffff;
   font-size: 22rpx;
   font-weight: 800;
-  box-shadow: 0 14rpx 28rpx rgb(36 82 168 / 18%);
+  box-shadow: 0 14rpx 28rpx rgba(36, 82, 168, 0.18);
 }
 
 .cms-button,
@@ -1019,14 +1016,14 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 12rpx;
   margin-top: 22rpx;
 }
 
 .cms-grid__image {
-  width: 100%;
+  width: 31%;
   height: 160rpx;
   border-radius: var(--cms-radius);
 }
@@ -1042,8 +1039,8 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 12rpx;
   margin-top: 18rpx;
 }
@@ -1058,6 +1055,7 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-stat {
+  width: 31%;
   min-height: 86rpx;
   display: flex;
   align-items: center;
@@ -1174,13 +1172,13 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-countdown {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
   gap: 12rpx;
   margin-top: 18rpx;
 }
 
 .cms-countdown__item {
+  flex: 1;
   min-height: 104rpx;
   display: flex;
   flex-direction: column;
@@ -1203,13 +1201,14 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-sponsors {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 12rpx;
   margin-top: 18rpx;
 }
 
 .cms-sponsor {
+  width: 48%;
   min-height: 96rpx;
   display: flex;
   align-items: center;

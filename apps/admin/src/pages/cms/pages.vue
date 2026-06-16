@@ -109,7 +109,7 @@
           <div class="library-head">
             <div>
               <div class="panel-title">手机预览</div>
-              <p class="page-subtitle">中间预览当前页面效果，点击下方组件卡片可定位并到右侧编辑。</p>
+              <p class="page-subtitle">点击预览中的组件即可编辑，拖动组件可调整页面顺序。</p>
             </div>
             <el-select
               v-model="selectedComponentId"
@@ -122,16 +122,45 @@
               <el-option v-for="option in componentOptions" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
           </div>
+          <el-scrollbar v-if="components.length > 0" class="preview-component-rail">
+            <div class="preview-component-rail__inner">
+              <button
+                v-for="(component, index) in components"
+                :key="component.id"
+                type="button"
+                class="preview-component-chip"
+                :class="{ active: selectedComponentId === component.id, disabled: !component.enabled }"
+                @click="selectPreviewComponent(component.id)"
+              >
+                <span>{{ index + 1 }}</span>
+                <strong>{{ presetName(component.type) }}</strong>
+              </button>
+            </div>
+          </el-scrollbar>
           <div class="phone-shell">
             <div class="phone-status" />
             <div class="phone-window" :style="previewStyle">
               <div class="phone-nav">
-                <span>{{ previewTitle }}</span>
+                <span class="phone-nav__spacer" />
+                <span class="phone-nav__title">{{ previewTitle }}</span>
                 <span class="phone-capsule"><i /><i /></span>
               </div>
               <div class="phone-screen">
                 <template v-if="previewComponents.length > 0">
-                  <div v-for="component in previewComponents" :key="component.id" class="preview-block">
+                  <div
+                    v-for="component in previewComponents"
+                    :id="previewComponentDomId(component.id)"
+                    :key="component.id"
+                    class="preview-block"
+                    :class="{ 'is-selected': selectedComponentId === component.id, 'is-dragging': draggingComponentId === component.id }"
+                    draggable="true"
+                    @click="selectPreviewComponent(component.id)"
+                    @dragstart="startPreviewDrag(component.id, $event)"
+                    @dragover.prevent
+                    @drop.prevent="dropPreviewComponent(component.id)"
+                    @dragend="finishPreviewDrag"
+                  >
+                    <span class="preview-block__handle">按住拖动</span>
                     <component-preview :item="component" :name="presetName(component.type)" />
                   </div>
                 </template>
@@ -157,7 +186,7 @@
           <div class="library-head">
             <div>
               <div class="panel-title">页面内容</div>
-              <p class="page-subtitle">拖拽暂未开放，当前可通过上移、下移和点击卡片来排布与编辑组件。</p>
+              <p class="page-subtitle">可在手机预览中直接点选或拖动，也可在这里精确上移、下移和删除。</p>
             </div>
           </div>
 
@@ -354,7 +383,10 @@
               </div>
               <div class="template-card__actions">
                 <span class="support-badge" :class="template.system ? 'is-support-supported' : 'is-support-basic'">{{ template.system ? "系统模板" : "自定义模板" }}</span>
-                <el-button type="primary" plain :disabled="!selectedPage || !template.version" @click="applyTemplateToCurrentPage(template)">应用到当前页</el-button>
+                <div class="template-card__buttons">
+                  <el-button plain :disabled="!template.version" @click="openTemplatePreview(template)">详细预览</el-button>
+                  <el-button type="primary" plain :disabled="!selectedPage || !template.version" @click="applyTemplateToCurrentPage(template)">应用到当前页</el-button>
+                </div>
               </div>
             </div>
           </article>
@@ -373,6 +405,43 @@
         <el-button @click="saveTemplateVisible = false">取消</el-button>
         <el-button type="primary" :disabled="!selectedPage || !version" @click="saveAsTemplate">保存模板</el-button>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="templatePreviewVisible" :title="templatePreview?.title || '模板详细预览'" width="920px">
+      <div v-if="templatePreview" class="template-preview-layout">
+        <div class="template-preview-phone">
+          <div class="phone-shell">
+            <div class="phone-status" />
+            <div class="phone-window" :style="templatePreviewStyle">
+              <div class="phone-nav">
+                <span class="phone-nav__spacer" />
+                <span class="phone-nav__title">{{ templatePreview.title }}</span>
+                <span class="phone-capsule"><i /><i /></span>
+              </div>
+              <div class="phone-screen">
+                <div
+                  v-for="component in templatePreviewComponents"
+                  :key="component.id"
+                  class="preview-block"
+                >
+                  <component-preview :item="component" :name="presetName(component.type)" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="template-preview-meta">
+          <span class="support-badge" :class="templatePreview.system ? 'is-support-supported' : 'is-support-basic'">
+            {{ templatePreview.system ? "系统模板" : "自定义模板" }}
+          </span>
+          <h3>{{ templatePreview.title }}</h3>
+          <p>{{ templatePreview.description || templatePreview.summary || "可直接套用后继续修改。" }}</p>
+          <div class="template-preview-meta__list">
+            <span v-for="name in templateComponentNames(templatePreview)" :key="name">{{ name }}</span>
+          </div>
+          <el-button type="primary" :disabled="!selectedPage || !templatePreview.version" @click="applyTemplateToCurrentPage(templatePreview)">应用到当前页</el-button>
+        </aside>
+      </div>
     </el-dialog>
 
     <el-dialog v-model="materialVisible" title="选择素材图片" width="820px">
@@ -521,11 +590,14 @@ const publishing = ref(false);
 const createVisible = ref(false);
 const templateVisible = ref(false);
 const saveTemplateVisible = ref(false);
+const templatePreviewVisible = ref(false);
+const templatePreview = ref<PageLibraryTemplate | null>(null);
 const createForm = reactive({ slug: "", title: "", description: "", templateId: "" });
 const saveTemplateForm = reactive({ slug: "", title: "", category: "自定义模板", description: "" });
 const presetKeyword = ref("");
 const activePresetGroup = ref("");
 const selectedComponentId = ref("");
+const draggingComponentId = ref("");
 const templateKeyword = ref("");
 const templateCategory = ref("全部");
 const previewTheme: Partial<ThemeConfig> = { primaryColor: "#1463ff", secondaryColor: "#18c29c", backgroundColor: "#f5f7fb", cardBackground: "#ffffff", radius: 8 };
@@ -585,10 +657,18 @@ const filteredLibraryTemplates = computed(() =>
     return matchesKeyword && matchesCategory;
   })
 );
+const templatePreviewComponents = computed(() => (templatePreview.value?.version?.components ?? []).map(toEditableComponent));
 const previewStyle = computed(() => ({
   "--preview-primary": previewTheme.primaryColor,
   "--preview-secondary": previewTheme.secondaryColor,
   "--preview-bg": previewTheme.backgroundColor,
+  "--preview-card": previewTheme.cardBackground,
+  "--preview-radius": `${previewTheme.radius}px`
+}));
+const templatePreviewStyle = computed(() => ({
+  "--preview-primary": previewTheme.primaryColor,
+  "--preview-secondary": previewTheme.secondaryColor,
+  "--preview-bg": templateBackgroundColor(templatePreview.value),
   "--preview-card": previewTheme.cardBackground,
   "--preview-radius": `${previewTheme.radius}px`
 }));
@@ -620,6 +700,14 @@ onMounted(async () => {
 
 async function loadPages() {
   pages.value = (await listPages()).items;
+  if (selectedPage.value) {
+    const refreshed = pages.value.find((item) => item.id === selectedPage.value?.id);
+    if (refreshed) {
+      selectedPage.value = refreshed;
+      return;
+    }
+    selectedPage.value = null;
+  }
   if (!selectedPage.value && pages.value[0]) {
     const target = pages.value.find((item) => item.pageKey === routeQuery.value.pageKey) ?? pages.value[0];
     await selectPage(target);
@@ -699,6 +787,10 @@ function componentDomId(id: string) {
   return `cms-component-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
+function previewComponentDomId(id: string) {
+  return `cms-preview-component-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
 function focusComponent(value: string | string[] | number | boolean | undefined) {
   if (typeof value !== "string" || !value) return;
   const component = components.value.find((item) => item.id === value);
@@ -713,8 +805,51 @@ function selectComponentCard(id: string) {
   focusComponent(id);
 }
 
+function selectPreviewComponent(id: string) {
+  selectedComponentId.value = id;
+  const component = components.value.find((item) => item.id === id);
+  if (component) {
+    expandedConfigGroupIds[id] = expandedConfigGroupIds[id] ?? defaultExpandedConfigGroups(component.type);
+  }
+}
+
 function scrollToComponent(id: string) {
   document.getElementById(componentDomId(id))?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function scrollToPreviewComponent(id: string) {
+  document.getElementById(previewComponentDomId(id))?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function startPreviewDrag(id: string, event: DragEvent) {
+  draggingComponentId.value = id;
+  event.dataTransfer?.setData("text/plain", id);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+}
+
+function dropPreviewComponent(targetId: string) {
+  const sourceId = draggingComponentId.value;
+  draggingComponentId.value = "";
+  if (!sourceId || sourceId === targetId) return;
+  moveComponentTo(sourceId, targetId);
+}
+
+function finishPreviewDrag() {
+  draggingComponentId.value = "";
+}
+
+function moveComponentTo(sourceId: string, targetId: string) {
+  const sourceIndex = components.value.findIndex((item) => item.id === sourceId);
+  const targetIndex = components.value.findIndex((item) => item.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return;
+  const list = [...components.value];
+  const [item] = list.splice(sourceIndex, 1);
+  list.splice(targetIndex, 0, item);
+  components.value = list;
+  selectedComponentId.value = sourceId;
+  void nextTick(() => scrollToPreviewComponent(sourceId));
 }
 
 function initializeConfigGroups(list: EditableComponent[]) {
@@ -774,9 +909,16 @@ async function publish() {
   await saveDraft();
   publishing.value = true;
   try {
-    version.value = await publishPageVersion(version.value.id);
+    const draft = await publishPageVersion(version.value.id);
+    version.value = draft;
+    versionTitle.value = draft.title;
+    components.value = draft.components.map(toEditableComponent);
+    applyPageMeta(draft.themeJson, selectedPage.value?.title);
+    expandedComponentIds.value = components.value[0] ? [components.value[0].id] : [];
+    selectedComponentId.value = components.value[0]?.id ?? "";
+    initializeConfigGroups(components.value);
     await loadPages();
-    ElMessage.success("页面已发布");
+    ElMessage.success("页面已发布，已自动保留下一版草稿");
   } finally {
     publishing.value = false;
   }
@@ -812,6 +954,11 @@ function openTemplateLibrary() {
   templateVisible.value = true;
 }
 
+function openTemplatePreview(template: PageLibraryTemplate) {
+  templatePreview.value = template;
+  templatePreviewVisible.value = true;
+}
+
 async function applyTemplateToCurrentPage(template: PageLibraryTemplate) {
   if (!template.version) return;
   try {
@@ -829,6 +976,7 @@ async function applyTemplateToCurrentPage(template: PageLibraryTemplate) {
   selectedComponentId.value = components.value[0]?.id ?? "";
   initializeConfigGroups(components.value);
   templateVisible.value = false;
+  templatePreviewVisible.value = false;
   ElMessage.success("已应用模板到当前草稿");
 }
 
@@ -904,7 +1052,12 @@ function nextThemeJson(): Record<string, unknown> {
 
 function templateComponentNames(template: PageLibraryTemplate): string[] {
   const names = (template.version?.components ?? []).map((component) => presetName(component.type));
-  return names.slice(0, 4);
+  return names.slice(0, 8);
+}
+
+function templateBackgroundColor(template: PageLibraryTemplate | null): string {
+  const value = template?.version?.themeJson?.backgroundColor;
+  return typeof value === "string" && value.trim() ? value : "#f5f7fb";
 }
 
 function componentSummary(component: EditableComponent): string {
@@ -2104,7 +2257,7 @@ function splitPreviewLine(value: string): string[] {
 
 .phone-shell {
   width: 320px;
-  margin: 18px auto 0;
+  margin: 14px auto 0;
   padding: 10px;
   border-radius: 34px;
   background: linear-gradient(180deg, #0f172a, #1f2937);
@@ -2120,7 +2273,7 @@ function splitPreviewLine(value: string): string[] {
 .phone-nav {
   height: 46px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 70px minmax(0, 1fr) 70px;
   align-items: center;
   gap: 10px;
   padding: 0 14px;
@@ -2130,10 +2283,11 @@ function splitPreviewLine(value: string): string[] {
   font-weight: 800;
 }
 
-.phone-nav span:first-child {
+.phone-nav__title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -2263,7 +2417,7 @@ function splitPreviewLine(value: string): string[] {
   min-height: 560px;
   max-height: 620px;
   overflow: auto;
-  padding: 0 0 14px;
+  padding: 8px 0 14px;
   background: var(--preview-bg);
   box-sizing: border-box;
 }
@@ -2452,9 +2606,116 @@ function splitPreviewLine(value: string): string[] {
   gap: 12px;
 }
 
+.template-card__buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-component-rail {
+  margin-top: 14px;
+  padding: 8px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.preview-component-rail__inner {
+  display: flex;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.preview-component-chip {
+  min-width: 108px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--admin-color-text);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgb(220 227 239 / 80%);
+}
+
+.preview-component-chip:hover,
+.preview-component-chip.active {
+  border-color: rgb(20 99 255 / 34%);
+  background: #eef4ff;
+  color: var(--admin-color-primary);
+}
+
+.preview-component-chip.disabled {
+  opacity: 0.56;
+}
+
+.preview-component-chip span {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: currentColor;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.preview-component-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .preview-block {
-  margin-bottom: 12px;
-  padding: 0 14px;
+  position: relative;
+  margin: 0 10px 12px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--preview-radius) + 6px);
+  cursor: grab;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.preview-block:hover,
+.preview-block.is-selected {
+  border-color: rgb(20 99 255 / 44%);
+  background: rgb(20 99 255 / 4%);
+  box-shadow: 0 10px 24px rgb(20 99 255 / 12%);
+}
+
+.preview-block.is-dragging {
+  opacity: 0.58;
+  transform: scale(0.98);
+}
+
+.preview-block__handle {
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  z-index: 2;
+  display: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgb(15 23 42 / 76%);
+  color: #ffffff;
+  font-size: 11px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.preview-block:hover .preview-block__handle,
+.preview-block.is-selected .preview-block__handle {
+  display: inline-flex;
 }
 
 .preview-hero-card,
@@ -2516,6 +2777,55 @@ function splitPreviewLine(value: string): string[] {
   height: 168px;
   color: #637083;
   font-size: 13px;
+}
+
+.template-preview-layout {
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.template-preview-phone {
+  display: flex;
+  justify-content: center;
+}
+
+.template-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.template-preview-meta h3 {
+  margin: 0;
+  color: var(--admin-color-text);
+  font-size: 20px;
+}
+
+.template-preview-meta p {
+  margin: 0;
+  color: var(--admin-color-muted);
+  line-height: 1.6;
+}
+
+.template-preview-meta__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-preview-meta__list span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  box-shadow: inset 0 0 0 1px rgb(220 227 239 / 94%);
 }
 
 .phone-screen :deep(.preview-image-grid img) {
