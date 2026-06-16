@@ -3,8 +3,11 @@ import { onHide, onLaunch, onShow } from "@dcloudio/uni-app";
 import { goHome } from "@/utils/navigation";
 
 const HOME_ROUTE = "pages/index/index";
-const STARTUP_FALLBACK_DELAY_MS = 200;
-let startupFallbackScheduled = false;
+const STARTUP_FALLBACK_DELAY_MS = 500;
+const MAX_STARTUP_FALLBACK_ATTEMPTS = 5;
+let startupFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+let startupFallbackAttempts = 0;
+let startupFallbackResolved = false;
 
 onLaunch((options) => {
   console.log("[APP_LAUNCH]", options);
@@ -16,15 +19,20 @@ onShow((options) => {
   scheduleStartupRouteFallback();
 });
 
-onHide(() => {});
+onHide(() => {
+  if (startupFallbackTimer) {
+    clearTimeout(startupFallbackTimer);
+    startupFallbackTimer = undefined;
+  }
+});
 
 function scheduleStartupRouteFallback(): void {
-  if (startupFallbackScheduled) {
+  if (startupFallbackResolved || startupFallbackTimer) {
     return;
   }
 
-  startupFallbackScheduled = true;
-  setTimeout(() => {
+  startupFallbackTimer = setTimeout(() => {
+    startupFallbackTimer = undefined;
     relaunchHomeIfStartupRouteIsInvalid();
   }, STARTUP_FALLBACK_DELAY_MS);
 }
@@ -32,10 +40,14 @@ function scheduleStartupRouteFallback(): void {
 function relaunchHomeIfStartupRouteIsInvalid(): void {
   const pages = getCurrentPages();
   if (pages.length === 0) {
-    goHome();
+    if (startupFallbackAttempts < MAX_STARTUP_FALLBACK_ATTEMPTS) {
+      startupFallbackAttempts += 1;
+      scheduleStartupRouteFallback();
+    }
     return;
   }
 
+  startupFallbackResolved = true;
   const topPage = pages[pages.length - 1] as unknown as { route?: string; options?: Record<string, unknown> };
   const route = normalizeRoute(topPage.route);
   const options = readQuery(topPage.options);
