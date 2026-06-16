@@ -228,7 +228,7 @@ function toContentText(value: unknown): string {
 <style scoped>
 .page {
   position: relative;
-  padding-bottom: 214rpx;
+  padding-bottom: 286rpx;
   overflow: hidden;
 }
 

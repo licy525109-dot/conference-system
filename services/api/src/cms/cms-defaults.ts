@@ -80,10 +80,15 @@ export const ENABLED_COMPONENT_PRESETS = [
     description: "展示会议定位、关键信息和报名入口，适合作为页面第一屏。",
     buttonText: "立即报名",
     showButton: true,
+    showContent: true,
+    showOverlay: true,
+    imageOnly: false,
+    imageMode: "aspectFit",
+    height: 430,
     imageUrl: "",
     fullBleed: true
   }),
-  preset("carousel", "轮播图", "基础展示", "多张图片轮播", { images: [] }),
+  preset("carousel", "轮播图", "基础展示", "多张图片轮播", { images: [], imageMode: "aspectFit", height: 360, autoplay: true, indicatorDots: true, fullBleed: true }),
   preset("conference-list", "会议卡片列表", "会议", "展示可报名会议列表", {
     title: "可报名会议",
     limit: 10,
@@ -167,7 +172,7 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
 
   if (pageKey === "conference-detail") {
     return [
-      { id: "hero-default", type: "hero", enabled: true, config: { imageUrl: "" } },
+      { id: "hero-default", type: "hero", enabled: true, config: { imageUrl: "", imageMode: "aspectFit", height: 430, showContent: true, showOverlay: true } },
       { id: "registration-button-default", type: "registration-button", enabled: true, config: { text: "立即报名" } }
     ];
   }

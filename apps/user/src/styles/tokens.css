@@ -76,7 +76,7 @@ page {
 .ui-page {
   position: relative;
   min-height: 100vh;
-  padding: 34rpx var(--cms-space-page-x) 156rpx;
+  padding: 34rpx var(--cms-space-page-x) 210rpx;
   box-sizing: border-box;
   background: var(--cms-gradient-page);
   overflow: hidden;

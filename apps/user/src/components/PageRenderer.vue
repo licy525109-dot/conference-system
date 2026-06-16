@@ -18,16 +18,20 @@
         object-fit="cover"
         :controls="false"
       />
-      <view v-if="component.type === 'hero'" :class="['cms-hero', booleanConfig(component, 'fullBleed', true) ? 'is-full-bleed' : '']">
+      <view
+        v-if="component.type === 'hero'"
+        :class="['cms-hero', booleanConfig(component, 'fullBleed', true) ? 'is-full-bleed' : '', heroImageOnly(component) ? 'is-image-only' : '']"
+        :style="heroStyle(component)"
+      >
         <image
           v-if="stringConfig(component, 'imageUrl')"
           class="cms-hero__image"
           :src="stringConfig(component, 'imageUrl')"
-          :mode="stringConfig(component, 'imageMode') || 'aspectFill'"
+          :mode="heroImageMode(component)"
         />
         <view v-else class="cms-hero__image cms-hero__image--generated" />
-        <view class="cms-hero__shade" />
-        <view class="cms-hero__content">
+        <view v-if="heroShowOverlay(component)" class="cms-hero__shade" />
+        <view v-if="heroShowContent(component)" class="cms-hero__content">
           <text v-if="heroKicker(component)" class="cms-hero__kicker">{{ heroKicker(component) }}</text>
           <text class="cms-hero__title" :style="titleStyle(component)">{{ heroTitle(component) }}</text>
           <text v-if="heroDescription(component)" class="cms-hero__desc" :style="textStyle(component)">{{ heroDescription(component) }}</text>
@@ -51,11 +55,14 @@
             :src="item.coverImageUrl"
             mode="aspectFill"
           />
+          <view v-else-if="booleanConfig(component, 'showCover', true)" :class="conferenceImageClass(component, 'cms-card__image')" :style="conferenceImageStyle(component)">
+            <text class="cms-card__image-placeholder-text">{{ item.title.slice(0, 1) }}</text>
+          </view>
           <view class="cms-card__body">
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
             <text v-if="booleanConfig(component, 'showSummary', true)" class="cms-card__text" :style="conferenceTextStyle(component, 'summary')">{{ item.summary || summaryFallback(component) }}</text>
             <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-card__meta" :style="conferenceTextStyle(component, 'meta')">{{ line }}</text>
-            <button class="cms-card__button" @click.stop="$emit('openConference', item.id)">{{ detailButtonText(component) }}</button>
+            <text class="cms-card__button" @click.stop="$emit('openConference', item.id)">{{ detailButtonText(component) }} ></text>
           </view>
         </view>
       </view>
@@ -74,19 +81,29 @@
             :src="item.coverImageUrl"
             mode="aspectFill"
           />
+          <view v-else-if="booleanConfig(component, 'showCover', true)" :class="conferenceImageClass(component, 'cms-mini-card__image')" :style="conferenceImageStyle(component)">
+            <text class="cms-card__image-placeholder-text">{{ item.title.slice(0, 1) }}</text>
+          </view>
           <view class="cms-card__body">
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
             <text v-if="booleanConfig(component, 'showSummary', false)" class="cms-card__text" :style="conferenceTextStyle(component, 'summary')">{{ item.summary || summaryFallback(component) }}</text>
             <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-card__meta" :style="conferenceTextStyle(component, 'meta')">{{ line }}</text>
-            <button class="cms-card__button" @click.stop="$emit('openConference', item.id)">{{ detailButtonText(component) }}</button>
+            <text class="cms-card__button" @click.stop="$emit('openConference', item.id)">{{ detailButtonText(component) }} ></text>
           </view>
         </view>
       </view>
 
-      <view v-else-if="component.type === 'carousel'" class="cms-carousel">
-        <swiper v-if="stringListConfig(component, 'images').length > 0" class="cms-swiper" indicator-dots circular autoplay>
+      <view v-else-if="component.type === 'carousel'" :class="['cms-carousel', booleanConfig(component, 'fullBleed', true) ? 'is-full-bleed' : '']">
+        <swiper
+          v-if="stringListConfig(component, 'images').length > 0"
+          class="cms-swiper"
+          :style="carouselStyle(component)"
+          :indicator-dots="booleanConfig(component, 'indicatorDots', true)"
+          circular
+          :autoplay="booleanConfig(component, 'autoplay', true)"
+        >
           <swiper-item v-for="image in stringListConfig(component, 'images')" :key="image">
-            <image class="cms-swiper__image" :src="image" mode="aspectFill" />
+            <image class="cms-swiper__image" :style="carouselStyle(component)" :src="image" :mode="carouselImageMode(component)" />
           </swiper-item>
         </swiper>
         <view v-else class="cms-empty cms-empty-card">暂无轮播图片</view>
@@ -106,6 +123,7 @@
 
       <view v-else-if="component.type === 'image-grid'" class="cms-grid">
         <image v-for="image in arrayConfig(component, 'images')" :key="String(image)" class="cms-grid__image" :src="String(image)" mode="aspectFill" />
+        <view v-if="arrayConfig(component, 'images').length === 0" class="cms-empty cms-empty-card">暂无图片，请在后台选择素材</view>
       </view>
 
       <view v-else-if="component.type === 'video'" class="cms-section">
@@ -487,6 +505,30 @@ function detailButtonText(component: CmsComponent): string {
   return stringConfig(component, "detailButtonText") || "查看详情";
 }
 
+function heroImageOnly(component: CmsComponent): boolean {
+  return Boolean(stringConfig(component, "imageUrl")) && booleanConfig(component, "imageOnly", false);
+}
+
+function heroShowOverlay(component: CmsComponent): boolean {
+  return !heroImageOnly(component) && booleanConfig(component, "showOverlay", true);
+}
+
+function heroShowContent(component: CmsComponent): boolean {
+  return !heroImageOnly(component) && booleanConfig(component, "showContent", true);
+}
+
+function heroImageMode(component: CmsComponent): string {
+  return stringConfig(component, "imageMode") || "aspectFit";
+}
+
+function heroStyle(component: CmsComponent): Record<string, string> {
+  const height = numberConfig(component, "height", 430);
+  return {
+    minHeight: `${height}rpx`,
+    height: `${height}rpx`
+  };
+}
+
 function heroKicker(component: CmsComponent): string {
   return stringConfig(component, "kicker") || stringConfig(component, "eyebrow") || "会议报名";
 }
@@ -583,6 +625,16 @@ function conferenceImageStyle(component: CmsComponent): Record<string, string> {
     height: `${numberConfig(component, "cardImageHeight", 240)}rpx`,
     borderRadius: `${numberConfig(component, "cardRadius", 8)}px`
   };
+}
+
+function carouselStyle(component: CmsComponent): Record<string, string> {
+  return {
+    height: `${numberConfig(component, "height", 360)}rpx`
+  };
+}
+
+function carouselImageMode(component: CmsComponent): string {
+  return stringConfig(component, "imageMode") || "aspectFit";
 }
 
 function conferenceThumbSize(component: CmsComponent): { width: number; height: number } {
@@ -887,19 +939,26 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-card__button {
+  display: inline-flex;
+  width: auto;
   align-self: flex-start;
-  min-width: 148rpx;
-  min-height: 58rpx;
-  line-height: 58rpx;
-  margin: 10rpx 0 0;
-  padding: 0 24rpx;
+  min-width: 0;
+  min-height: 42rpx;
+  line-height: 42rpx;
+  margin: 8rpx 0 0;
+  padding: 0;
   border: 0;
   border-radius: 999rpx;
-  background: linear-gradient(135deg, var(--cms-primary), var(--cms-secondary));
-  color: #ffffff;
+  background: transparent;
+  color: var(--cms-primary-strong);
   font-size: 22rpx;
   font-weight: 800;
-  box-shadow: 0 14rpx 28rpx rgba(36, 82, 168, 0.18);
+  box-shadow: none;
+  text-align: left;
+}
+
+.cms-card__button::after {
+  border: 0;
 }
 
 .cms-button,
@@ -1212,6 +1271,15 @@ function parseTargetTime(value: string): number | null {
   display: none;
 }
 
+@keyframes cmsHeroBreath {
+  from {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.035) translate3d(2%, -1%, 0);
+  }
+}
+
 /* Phase 10 visual system overrides */
 .cms-page {
   overflow: visible;
@@ -1244,6 +1312,10 @@ function parseTargetTime(value: string): number | null {
   box-shadow: var(--cms-shadow-lg);
 }
 
+.cms-hero.is-image-only {
+  background: var(--cms-surface);
+}
+
 .cms-hero.is-full-bleed {
   margin-right: -28rpx;
   margin-left: -28rpx;
@@ -1259,11 +1331,16 @@ function parseTargetTime(value: string): number | null {
   background: var(--cms-gradient-hero);
 }
 
+.cms-hero.is-image-only .cms-hero__image {
+  background: var(--cms-surface);
+}
+
 .cms-hero__image--generated {
   background:
     radial-gradient(circle at 12% 16%, rgba(255, 255, 255, 0.38) 0, transparent 26%),
     radial-gradient(circle at 86% 18%, rgba(255, 255, 255, 0.18) 0, transparent 24%),
     var(--cms-gradient-hero);
+  animation: cmsHeroBreath 9s ease-in-out infinite alternate;
 }
 
 .cms-hero__shade {
@@ -1278,7 +1355,8 @@ function parseTargetTime(value: string): number | null {
   position: relative;
   z-index: 2;
   display: flex;
-  min-height: 430rpx;
+  min-height: inherit;
+  height: 100%;
   flex-direction: column;
   justify-content: flex-end;
   gap: 14rpx;
@@ -1304,6 +1382,7 @@ function parseTargetTime(value: string): number | null {
   font-weight: 900;
   line-height: 1.18;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .cms-hero__desc {
@@ -1359,6 +1438,8 @@ function parseTargetTime(value: string): number | null {
   color: var(--cms-text-primary);
   font-size: 34rpx;
   line-height: 1.28;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .cms-section__text,
@@ -1386,14 +1467,27 @@ function parseTargetTime(value: string): number | null {
 .cms-card__image,
 .cms-mini-card__image {
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--cms-radius-md);
-  background: var(--cms-surface-muted);
+  background:
+    radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.86), transparent 30%),
+    var(--cms-gradient-soft);
+}
+
+.cms-card__image-placeholder-text {
+  color: var(--cms-primary-strong);
+  font-size: 44rpx;
+  font-weight: 900;
 }
 
 .cms-card__title {
   color: var(--cms-text-primary);
   font-size: 30rpx;
   line-height: 1.32;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .cms-card__body {
@@ -1404,15 +1498,53 @@ function parseTargetTime(value: string): number | null {
   padding: 8rpx 13rpx;
   background: var(--cms-primary-soft);
   color: var(--cms-primary-strong);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-.cms-card__button,
 .cms-button,
 .cms-floating {
+  left: 28rpx;
+  right: 28rpx;
+  bottom: calc(170rpx + env(safe-area-inset-bottom));
+  min-height: 82rpx;
+  line-height: 82rpx;
+  z-index: 35;
   border-radius: var(--cms-radius-full);
   background: var(--cms-gradient-cta);
   color: var(--cms-text-inverse);
   box-shadow: 0 16rpx 32rpx rgba(31, 77, 122, 0.18);
+}
+
+.cms-card__button {
+  background: transparent;
+  color: var(--cms-primary-strong);
+  box-shadow: none;
+}
+
+.cms-swiper,
+.cms-swiper__image {
+  background: var(--cms-surface);
+}
+
+.cms-carousel.is-full-bleed {
+  margin-right: -28rpx;
+  margin-left: -28rpx;
+}
+
+.cms-carousel.is-full-bleed .cms-swiper,
+.cms-carousel.is-full-bleed .cms-swiper__image {
+  border-radius: 0;
+}
+
+.cms-swiper__image {
+  width: 100%;
+  height: 100%;
+}
+
+.cms-grid .cms-empty-card {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .cms-tabs {
