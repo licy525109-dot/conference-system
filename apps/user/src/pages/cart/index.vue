@@ -1,5 +1,7 @@
 <template>
-  <view class="page ui-page">
+  <view class="page ui-page" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <view class="topbar ui-card">
       <view>
         <text class="eyebrow">会议报名优先</text>
@@ -105,7 +107,9 @@ import ErrorState from "@/components/ui/ErrorState.vue";
 import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
+import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import {
   checkoutProductCart,
@@ -127,8 +131,10 @@ const error = ref("");
 const removingId = ref("");
 const checkoutId = ref("");
 const isEmpty = computed(() => registrationItems.value.length === 0 && productItems.value.length === 0);
+const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("cart");
 
 onShow(() => {
+  void refreshTheme();
   void loadCart();
 });
 

@@ -1,5 +1,7 @@
 <template>
-  <view class="page ui-page">
+  <view class="page ui-page" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <LoadingState v-if="loading" title="加载报名信息中" description="正在读取票种、价格和报名字段。" />
     <ErrorState
       v-else-if="error"
@@ -162,7 +164,9 @@ import FormSection from "@/components/ui/FormSection.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import PriceSummary from "@/components/ui/PriceSummary.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
+import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import {
   getConferenceDetail,
   getConferenceForm,
@@ -193,6 +197,7 @@ const addingToCart = ref(false);
 const error = ref("");
 const quoteError = ref("");
 const couponCode = ref("");
+const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("registration-form");
 
 const selectedItems = computed<RegistrationOrderItem[]>(() =>
   Object.entries(quantities.value)
@@ -214,6 +219,7 @@ const attendeeSectionDescription = computed(() =>
 onLoad((query) => {
   conferenceId.value = String(query?.conferenceId || "");
   selectedSkuId.value = String(query?.skuId || "");
+  void refreshTheme();
   void loadPage();
 });
 

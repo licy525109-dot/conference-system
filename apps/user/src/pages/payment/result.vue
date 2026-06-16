@@ -1,5 +1,7 @@
 <template>
-  <view class="page ui-page">
+  <view class="page ui-page" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <LoadingState v-if="loading" title="查询支付状态中" description="正在确认订单与报名记录。" />
     <ErrorState
       v-else-if="error"
@@ -43,6 +45,8 @@ import { onLoad } from "@dcloudio/uni-app";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import ResultState from "@/components/ui/ResultState.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
+import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getPaymentActionLabel, getPaymentStatus, startOrderPayment, type PaymentStatusResponse } from "@/services/payment";
 import { ApiRequestError } from "@/services/request";
@@ -55,6 +59,7 @@ const loading = ref(false);
 const confirming = ref(false);
 const error = ref("");
 const paymentActionLabel = getPaymentActionLabel();
+const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("payment-result");
 
 const resultTitle = computed(() => {
   if (paymentStatus.value?.status === "PAID") {
@@ -93,6 +98,7 @@ const resultTone = computed<"success" | "warning" | "danger" | "info">(() => {
 
 onLoad((query) => {
   orderNo.value = String(query?.orderNo || "");
+  void refreshTheme();
   void loadStatus();
 });
 

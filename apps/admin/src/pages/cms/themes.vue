@@ -52,12 +52,14 @@
                   :key="palette.name"
                   type="button"
                   class="palette-card"
+                  :class="{ active: form.visualPreset === palette.values.visualPreset }"
                   @click="applyPalette(palette)"
                 >
                   <span class="palette-swatches">
                     <i v-for="color in palette.colors" :key="color" :style="{ background: color }" />
                   </span>
                   <strong>{{ palette.name }}</strong>
+                  <small>{{ palette.subtitle }}</small>
                 </button>
               </div>
             </el-form-item>
@@ -246,15 +248,17 @@ import type { MaterialAsset, PageTemplate, ThemeConfig } from "../../services/ty
 
 interface PalettePreset {
   name: string;
+  subtitle: string;
   colors: string[];
   values: Partial<ThemeConfig>;
 }
 
 const DEFAULT_THEME: ThemeConfig = {
-  primaryColor: "#2452a8",
-  secondaryColor: "#14b8a6",
-  accentColor: "#f59e0b",
-  backgroundColor: "#f5f7fb",
+  visualPreset: "business-blue",
+  primaryColor: "#1f4d7a",
+  secondaryColor: "#4d8dd9",
+  accentColor: "#c7923e",
+  backgroundColor: "#f4f7fb",
   cardBackground: "#ffffff",
   radius: 8,
   buttonStyle: "solid",
@@ -267,8 +271,8 @@ const DEFAULT_THEME: ThemeConfig = {
   browserTitle: "会务运营平台",
   browserIconUrl: "",
   backgroundMode: "solid",
-  backgroundGradientFrom: "#f5f7fb",
-  backgroundGradientTo: "#eef7f5",
+  backgroundGradientFrom: "#f7fafe",
+  backgroundGradientTo: "#eaf1f8",
   backgroundImageUrl: "",
   backgroundVideoUrl: "",
   backgroundDynamicDensity: 40,
@@ -281,42 +285,88 @@ const DEFAULT_THEME: ThemeConfig = {
 
 const palettePresets: PalettePreset[] = [
   {
-    name: "会务蓝",
-    colors: ["#2452a8", "#14b8a6", "#f59e0b", "#f5f7fb"],
+    name: "Business Blue",
+    subtitle: "商务会议、发布会、标准会务",
+    colors: ["#1f4d7a", "#4d8dd9", "#c7923e", "#f4f7fb"],
     values: {
-      primaryColor: "#2452a8",
-      secondaryColor: "#14b8a6",
+      visualPreset: "business-blue",
+      primaryColor: "#1f4d7a",
+      secondaryColor: "#4d8dd9",
+      accentColor: "#c7923e",
+      backgroundColor: "#f4f7fb",
+      cardBackground: "#ffffff",
+      backgroundGradientFrom: "#f7fafe",
+      backgroundGradientTo: "#eaf1f8",
+      bannerStyle: "immersive",
+      shadow: "soft"
+    }
+  },
+  {
+    name: "Tech Black Gold",
+    subtitle: "科技峰会、闭门会、高端论坛",
+    colors: ["#090b10", "#d6b56d", "#6ca8ff", "#111722"],
+    values: {
+      visualPreset: "tech-black-gold",
+      primaryColor: "#d6b56d",
+      secondaryColor: "#6ca8ff",
+      accentColor: "#b88cff",
+      backgroundColor: "#090b10",
+      cardBackground: "#111722",
+      backgroundGradientFrom: "#090b10",
+      backgroundGradientTo: "#1e293b",
+      bannerStyle: "interactive",
+      shadow: "strong"
+    }
+  },
+  {
+    name: "Fresh Green",
+    subtitle: "生态会、文旅会、轻商务活动",
+    colors: ["#263b2e", "#86a36e", "#b68e55", "#f4f5ec"],
+    values: {
+      visualPreset: "fresh-green",
+      primaryColor: "#263b2e",
+      secondaryColor: "#86a36e",
+      accentColor: "#b68e55",
+      backgroundColor: "#f4f5ec",
+      cardBackground: "#ffffff",
+      backgroundGradientFrom: "#f7f8f0",
+      backgroundGradientTo: "#eef2e5",
+      bannerStyle: "clean",
+      shadow: "soft"
+    }
+  },
+  {
+    name: "Summit Red",
+    subtitle: "大会、招商会、品牌峰会",
+    colors: ["#b4232a", "#c78b37", "#d8582f", "#fff8f3"],
+    values: {
+      visualPreset: "summit-red",
+      primaryColor: "#b4232a",
+      secondaryColor: "#c78b37",
+      accentColor: "#d8582f",
+      backgroundColor: "#fff8f3",
+      cardBackground: "#ffffff",
+      backgroundGradientFrom: "#fff8f3",
+      backgroundGradientTo: "#fbe7e8",
+      bannerStyle: "accent",
+      shadow: "soft"
+    }
+  },
+  {
+    name: "Education Vitality",
+    subtitle: "培训、课程、教育大会",
+    colors: ["#3b82f6", "#22c55e", "#f59e0b", "#f7faff"],
+    values: {
+      visualPreset: "education-vitality",
+      primaryColor: "#3b82f6",
+      secondaryColor: "#22c55e",
       accentColor: "#f59e0b",
-      backgroundColor: "#f5f7fb",
+      backgroundColor: "#f7faff",
       cardBackground: "#ffffff",
-      backgroundGradientFrom: "#eef4ff",
-      backgroundGradientTo: "#ecfbf7"
-    }
-  },
-  {
-    name: "日光暖金",
-    colors: ["#c8862b", "#f2c94c", "#1f4ba7", "#fff8ef"],
-    values: {
-      primaryColor: "#c8862b",
-      secondaryColor: "#f2c94c",
-      accentColor: "#1f4ba7",
-      backgroundColor: "#fff8ef",
-      cardBackground: "#ffffff",
-      backgroundGradientFrom: "#fff0c8",
-      backgroundGradientTo: "#ffe2d1"
-    }
-  },
-  {
-    name: "海岸青绿",
-    colors: ["#0f766e", "#38bdf8", "#fb7185", "#effcf8"],
-    values: {
-      primaryColor: "#0f766e",
-      secondaryColor: "#38bdf8",
-      accentColor: "#fb7185",
-      backgroundColor: "#effcf8",
-      cardBackground: "#ffffff",
-      backgroundGradientFrom: "#dffaf3",
-      backgroundGradientTo: "#dff4ff"
+      backgroundGradientFrom: "#f7faff",
+      backgroundGradientTo: "#eef6ff",
+      bannerStyle: "interactive",
+      shadow: "soft"
     }
   }
 ];
@@ -584,12 +634,29 @@ function dynamicGradient(config: ThemeConfig): string {
   border-radius: 12px;
   background: #f8fbff;
   text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.palette-card:hover,
+.palette-card.active {
+  border-color: var(--admin-color-primary);
+  box-shadow: 0 12px 28px rgba(20, 99, 255, 0.12);
+  transform: translateY(-1px);
 }
 
 .palette-card strong {
   display: block;
   margin-top: 8px;
   color: var(--admin-color-text);
+}
+
+.palette-card small {
+  display: block;
+  margin-top: 4px;
+  color: var(--admin-color-muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .palette-swatches {

@@ -1,11 +1,13 @@
 <template>
   <view :class="rootClass" :style="rootStyle">
+    <ThemeDynamicBackground v-if="showRootDynamicBackground" :theme="props.theme" placement="absolute" />
     <view
       v-for="(component, index) in visibleComponents"
       :key="component.id"
       :class="blockClass(index)"
       :style="blockStyle(index)"
     >
+      <ThemeDynamicBackground v-if="showHeaderDynamicBackground(index)" :theme="props.theme" placement="absolute" />
       <video
         v-if="showHeaderVideo && index === 0"
         class="cms-header__video"
@@ -17,8 +19,25 @@
         :controls="false"
       />
       <view v-if="component.type === 'hero'" :class="['cms-hero', booleanConfig(component, 'fullBleed', true) ? 'is-full-bleed' : '']">
-        <image v-if="stringConfig(component, 'imageUrl')" class="cms-hero__image" :src="stringConfig(component, 'imageUrl')" :mode="stringConfig(component, 'imageMode') || 'aspectFill'" />
-        <view v-else class="cms-hero__empty">请选择主视觉横幅图片</view>
+        <image
+          v-if="stringConfig(component, 'imageUrl')"
+          class="cms-hero__image"
+          :src="stringConfig(component, 'imageUrl')"
+          :mode="stringConfig(component, 'imageMode') || 'aspectFill'"
+        />
+        <view v-else class="cms-hero__image cms-hero__image--generated" />
+        <view class="cms-hero__shade" />
+        <view class="cms-hero__content">
+          <text v-if="heroKicker(component)" class="cms-hero__kicker">{{ heroKicker(component) }}</text>
+          <text class="cms-hero__title" :style="titleStyle(component)">{{ heroTitle(component) }}</text>
+          <text v-if="heroDescription(component)" class="cms-hero__desc" :style="textStyle(component)">{{ heroDescription(component) }}</text>
+          <view v-if="heroMetaLines(component).length > 0" class="cms-hero__meta">
+            <text v-for="line in heroMetaLines(component)" :key="line">{{ line }}</text>
+          </view>
+          <button v-if="booleanConfig(component, 'showButton', true)" class="cms-hero__button" @click="$emit('register')">
+            {{ stringConfig(component, "buttonText") || "立即报名" }}
+          </button>
+        </view>
       </view>
 
       <view v-else-if="component.type === 'conference-list'" class="cms-section">
@@ -30,7 +49,7 @@
             :class="conferenceImageClass(component, 'cms-card__image')"
             :style="conferenceImageStyle(component)"
             :src="item.coverImageUrl"
-            mode="aspectFit"
+            mode="aspectFill"
           />
           <view class="cms-card__body">
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
@@ -53,7 +72,7 @@
             :class="conferenceImageClass(component, 'cms-mini-card__image')"
             :style="conferenceImageStyle(component)"
             :src="item.coverImageUrl"
-            mode="aspectFit"
+            mode="aspectFill"
           />
           <view class="cms-card__body">
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
@@ -222,8 +241,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import type { CmsComponent, ThemeConfig } from "@/services/cms";
 import type { ConferenceDetail, ConferenceListItem } from "@/services/conference";
+import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
 import { isCmsComponentUserRenderable, isCmsRegistrationCta } from "@/utils/cmsComponents";
 import { formatDateTime } from "@/utils/date";
 
@@ -252,16 +273,11 @@ const visibleComponents = computed(() =>
 );
 const conferences = computed(() => props.conferences ?? []);
 const rootStyle = computed(() => ({
-  "--cms-primary": props.theme.primaryColor,
-  "--cms-secondary": props.theme.secondaryColor,
-  "--cms-accent": props.theme.accentColor,
-  "--cms-bg": props.theme.backgroundColor,
-  "--cms-card": props.theme.cardBackground,
-  "--cms-radius": `${props.theme.radius}px`,
-  "--cms-title-size": `${props.theme.titleFontSize}rpx`,
-  ...themeBackgroundStyle()
+  ...createCmsThemeVars(props.theme),
+  ...createCmsBackgroundStyle(props.theme, "body")
 }));
-const rootClass = computed(() => ["cms-page", props.theme.backgroundApplyTo !== "header" && props.theme.backgroundMode === "dynamic-gradient" ? "is-dynamic-bg" : ""]);
+const rootClass = computed(() => ["cms-page"]);
+const showRootDynamicBackground = computed(() => props.theme.backgroundApplyTo !== "header" && props.theme.backgroundMode === "dynamic-gradient");
 const showHeaderVideo = computed(() => props.theme.backgroundMode === "video" && Boolean(props.theme.backgroundVideoUrl) && props.theme.backgroundApplyTo === "header");
 
 onMounted(() => {
@@ -292,64 +308,14 @@ function booleanConfig(component: CmsComponent, key: string, fallback = false): 
   return typeof value === "boolean" ? value : fallback;
 }
 
-function themeBackgroundStyle(): Record<string, string> {
-  if (props.theme.backgroundApplyTo === "header") return {};
-  if (props.theme.backgroundMode === "image" && props.theme.backgroundImageUrl) {
-    return {
-      backgroundImage: `${props.theme.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(245,247,251,0.20), rgba(245,247,251,0.92)), "}url("${props.theme.backgroundImageUrl}")`,
-      backgroundSize: "cover",
-      backgroundPosition: "center top",
-      backgroundRepeat: "no-repeat"
-    };
-  }
-  if (props.theme.backgroundMode === "dynamic-gradient") {
-    return {
-      backgroundImage: dynamicGradient(),
-      backgroundSize: `${dynamicSize()}% ${dynamicSize()}%`,
-      animationDuration: `${dynamicSpeed()}s`
-    };
-  }
-  if (props.theme.backgroundMode === "gradient") {
-    return {
-      backgroundImage: `linear-gradient(180deg, ${props.theme.backgroundGradientFrom || props.theme.backgroundColor}, ${props.theme.backgroundGradientTo || props.theme.secondaryColor})`
-    };
-  }
-  return { background: props.theme.backgroundColor };
-}
-
 function headerBackgroundStyle(): Record<string, string> {
-  if (props.theme.backgroundApplyTo !== "header") return {};
-  if (props.theme.backgroundMode === "video") {
-    return { background: "transparent" };
-  }
-  if (props.theme.backgroundMode === "image" && props.theme.backgroundImageUrl) {
-    return {
-      backgroundImage: `${props.theme.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(245,247,251,0.20), rgba(245,247,251,0.92)), "}url("${props.theme.backgroundImageUrl}")`,
-      backgroundSize: "cover",
-      backgroundPosition: "center top",
-      backgroundRepeat: "no-repeat"
-    };
-  }
-  if (props.theme.backgroundMode === "dynamic-gradient") {
-    return {
-      backgroundImage: dynamicGradient(),
-      backgroundSize: `${dynamicSize()}% ${dynamicSize()}%`,
-      animationDuration: `${dynamicSpeed()}s`
-    };
-  }
-  if (props.theme.backgroundMode === "gradient") {
-    return {
-      backgroundImage: `linear-gradient(180deg, ${props.theme.backgroundGradientFrom || props.theme.backgroundColor}, ${props.theme.backgroundGradientTo || props.theme.secondaryColor})`
-    };
-  }
-  return { background: props.theme.backgroundColor };
+  return createCmsBackgroundStyle(props.theme, "header");
 }
 
 function blockClass(index: number): string[] {
   return [
     "cms-block",
-    props.theme.backgroundApplyTo === "header" && index === 0 ? "is-header-block" : "",
-    props.theme.backgroundApplyTo === "header" && props.theme.backgroundMode === "dynamic-gradient" && index === 0 ? "is-dynamic-bg" : ""
+    props.theme.backgroundApplyTo === "header" && index === 0 ? "is-header-block" : ""
   ].filter(Boolean);
 }
 
@@ -358,22 +324,8 @@ function blockStyle(index: number): Record<string, string> {
   return headerBackgroundStyle();
 }
 
-function dynamicGradient(): string {
-  const from = props.theme.backgroundGradientFrom || props.theme.backgroundColor;
-  const to = props.theme.backgroundGradientTo || props.theme.secondaryColor;
-  const density = Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40));
-  const dotOpacity = Math.min(0.46, 0.14 + density / 380);
-  const filterLayer = props.theme.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,251,0.62)), ";
-  return `${filterLayer}radial-gradient(circle at 12% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.2)}%), radial-gradient(circle at 86% 16%, rgba(20,184,166,${Math.min(0.4, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.9)}%), radial-gradient(circle at 50% 78%, rgba(245,158,11,${Math.min(0.32, dotOpacity)}) 0, transparent ${Math.max(26, density / 1.55)}%), linear-gradient(135deg, ${from}, ${to})`;
-}
-
-function dynamicSize(): number {
-  const density = Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40));
-  return Math.max(150, 440 - density * 2.4);
-}
-
-function dynamicSpeed(): number {
-  return Math.max(6, Math.min(40, Number(props.theme.backgroundDynamicSpeed) || 18));
+function showHeaderDynamicBackground(index: number): boolean {
+  return index === 0 && props.theme.backgroundApplyTo === "header" && props.theme.backgroundMode === "dynamic-gradient";
 }
 
 function arrayConfig(component: CmsComponent, key: string): unknown[] {
@@ -533,6 +485,28 @@ function summaryFallback(component: CmsComponent): string {
 
 function detailButtonText(component: CmsComponent): string {
   return stringConfig(component, "detailButtonText") || "查看详情";
+}
+
+function heroKicker(component: CmsComponent): string {
+  return stringConfig(component, "kicker") || stringConfig(component, "eyebrow") || "会议报名";
+}
+
+function heroTitle(component: CmsComponent): string {
+  return stringConfig(component, "title") || props.conference?.title || "选择会议，完成报名缴费";
+}
+
+function heroDescription(component: CmsComponent): string {
+  return stringConfig(component, "description") || stringConfig(component, "subtitle") || props.conference?.summary || "查看会议安排、选择报名规格，支付成功后自动生成参会记录。";
+}
+
+function heroMetaLines(component: CmsComponent): string[] {
+  const configured = arrayConfig(component, "meta").map(String).filter(Boolean);
+  if (configured.length > 0) return configured.slice(0, 3);
+  if (!props.conference) return [];
+  return [
+    props.conference.startsAt ? `时间 ${formatDateTime(props.conference.startsAt)}` : "",
+    props.conference.location ? `地点 ${props.conference.location}` : ""
+  ].filter(Boolean);
 }
 
 function textStyle(component: CmsComponent): Record<string, string> {
@@ -713,6 +687,8 @@ function parseTargetTime(value: string): number | null {
 
 <style scoped>
 .cms-page {
+  position: relative;
+  overflow: hidden;
   min-height: auto;
   padding: 0;
   box-sizing: border-box;
@@ -721,6 +697,7 @@ function parseTargetTime(value: string): number | null {
 
 .cms-block {
   position: relative;
+  z-index: 1;
 }
 
 .cms-block.is-header-block {
@@ -737,27 +714,13 @@ function parseTargetTime(value: string): number | null {
   height: 100%;
 }
 
-.is-dynamic-bg {
-  animation-name: cmsDynamicBackgroundMove;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
-}
-
-@keyframes cmsDynamicBackgroundMove {
-  from {
-    background-position: 0% 0%;
-  }
-  to {
-    background-position: 100% 70%;
-  }
-}
-
 .cms-hero,
 .cms-section,
 .cms-card,
 .cms-notice,
 .cms-title {
+  position: relative;
+  z-index: 1;
   border-radius: var(--cms-radius);
 }
 
@@ -1247,5 +1210,268 @@ function parseTargetTime(value: string): number | null {
 
 .cms-hidden {
   display: none;
+}
+
+/* Phase 10 visual system overrides */
+.cms-page {
+  overflow: visible;
+  background: transparent;
+}
+
+.cms-block + .cms-block {
+  margin-top: var(--cms-space-section-y);
+}
+
+.cms-block.is-header-block {
+  margin-right: -28rpx;
+  margin-left: -28rpx;
+  padding: 22rpx var(--cms-space-page-x) 28rpx;
+  border-radius: 0 0 var(--cms-radius-xxl) var(--cms-radius-xxl);
+}
+
+.cms-hero,
+.cms-section,
+.cms-card,
+.cms-mini-card,
+.cms-notice,
+.cms-title {
+  border-radius: var(--cms-radius-lg);
+}
+
+.cms-hero {
+  min-height: 430rpx;
+  background: var(--cms-gradient-hero);
+  box-shadow: var(--cms-shadow-lg);
+}
+
+.cms-hero.is-full-bleed {
+  margin-right: -28rpx;
+  margin-left: -28rpx;
+  border-radius: 0 0 var(--cms-radius-xxl) var(--cms-radius-xxl);
+}
+
+.cms-hero__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--cms-gradient-hero);
+}
+
+.cms-hero__image--generated {
+  background:
+    radial-gradient(circle at 12% 16%, rgba(255, 255, 255, 0.38) 0, transparent 26%),
+    radial-gradient(circle at 86% 18%, rgba(255, 255, 255, 0.18) 0, transparent 24%),
+    var(--cms-gradient-hero);
+}
+
+.cms-hero__shade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(10, 16, 28, 0.74), rgba(10, 16, 28, 0.34) 56%, rgba(10, 16, 28, 0.08));
+}
+
+.cms-hero__content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  min-height: 430rpx;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 14rpx;
+  padding: 42rpx var(--cms-space-page-x);
+  box-sizing: border-box;
+}
+
+.cms-hero__kicker {
+  align-self: flex-start;
+  padding: 8rpx 16rpx;
+  border-radius: var(--cms-radius-full);
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--cms-text-inverse);
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.cms-hero__title {
+  display: block;
+  max-width: 640rpx;
+  color: var(--cms-text-inverse);
+  font-size: var(--cms-title-size);
+  font-weight: 900;
+  line-height: 1.18;
+  word-break: break-word;
+}
+
+.cms-hero__desc {
+  display: block;
+  max-width: 650rpx;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 27rpx;
+  line-height: 1.52;
+}
+
+.cms-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.cms-hero__meta text {
+  padding: 8rpx 14rpx;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: var(--cms-radius-full);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 22rpx;
+}
+
+.cms-hero__button {
+  align-self: flex-start;
+  min-width: 190rpx;
+  min-height: 72rpx;
+  margin: 8rpx 0 0;
+  padding: 0 30rpx;
+  border: 0;
+  border-radius: var(--cms-radius-full);
+  background: var(--cms-text-inverse);
+  color: var(--cms-primary-strong);
+  font-size: 26rpx;
+  font-weight: 900;
+  line-height: 72rpx;
+  box-shadow: 0 18rpx 40rpx rgba(0, 0, 0, 0.18);
+}
+
+.cms-section,
+.cms-card,
+.cms-notice,
+.cms-title {
+  padding: var(--cms-space-card-padding);
+  border: 1px solid var(--cms-border);
+  background: var(--cms-gradient-card);
+  box-shadow: var(--cms-shadow-md);
+}
+
+.cms-section__title,
+.cms-title {
+  color: var(--cms-text-primary);
+  font-size: 34rpx;
+  line-height: 1.28;
+}
+
+.cms-section__text,
+.cms-card__text,
+.cms-card__meta,
+.cms-empty {
+  color: var(--cms-text-secondary);
+}
+
+.cms-section__image,
+.cms-swiper,
+.cms-swiper__image,
+.cms-grid__image {
+  border-radius: var(--cms-radius-lg);
+}
+
+.cms-card.is-conference-card,
+.cms-mini-card.is-conference-card {
+  gap: 22rpx;
+  border: 1px solid var(--cms-border);
+  background: var(--cms-surface-elevated);
+  box-shadow: var(--cms-shadow-md);
+}
+
+.cms-card__image,
+.cms-mini-card__image {
+  overflow: hidden;
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-surface-muted);
+}
+
+.cms-card__title {
+  color: var(--cms-text-primary);
+  font-size: 30rpx;
+  line-height: 1.32;
+}
+
+.cms-card__body {
+  gap: 10rpx;
+}
+
+.cms-card__meta {
+  padding: 8rpx 13rpx;
+  background: var(--cms-primary-soft);
+  color: var(--cms-primary-strong);
+}
+
+.cms-card__button,
+.cms-button,
+.cms-floating {
+  border-radius: var(--cms-radius-full);
+  background: var(--cms-gradient-cta);
+  color: var(--cms-text-inverse);
+  box-shadow: 0 16rpx 32rpx rgba(31, 77, 122, 0.18);
+}
+
+.cms-tabs {
+  padding-bottom: 4rpx;
+}
+
+.cms-tab {
+  background: var(--cms-primary-soft);
+  color: var(--cms-primary-strong);
+}
+
+.cms-tab.active {
+  background: var(--cms-gradient-cta);
+  color: var(--cms-text-inverse);
+}
+
+.cms-notice {
+  border-color: var(--cms-warning-soft);
+  background: var(--cms-warning-soft);
+  color: var(--cms-warning);
+  font-weight: 800;
+}
+
+.cms-stat,
+.cms-list-line,
+.cms-speaker,
+.cms-faq__item,
+.cms-timeline__item,
+.cms-countdown__item,
+.cms-sponsor {
+  border: 1px solid var(--cms-border);
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-surface-soft);
+}
+
+.cms-stat {
+  color: var(--cms-primary-strong);
+}
+
+.cms-timeline__time,
+.cms-countdown__value,
+.cms-speaker__avatar--text {
+  color: var(--cms-primary-strong);
+}
+
+.cms-speaker__avatar,
+.cms-countdown__item {
+  background: var(--cms-primary-soft);
+}
+
+.cms-faq__answer,
+.cms-speaker__role,
+.cms-speaker__bio,
+.cms-timeline__desc,
+.cms-sponsor__name {
+  color: var(--cms-text-secondary);
+}
+
+.cms-divider {
+  background: var(--cms-divider);
 }
 </style>

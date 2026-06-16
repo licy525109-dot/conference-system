@@ -1,5 +1,7 @@
 <template>
-  <view class="page ui-page">
+  <view class="page ui-page" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <LoadingState v-if="loading" title="加载商品详情中" description="正在读取商品图片、规格和库存。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回商城" @retry="load" @secondary="goMall" />
     <template v-else-if="product">
@@ -76,6 +78,8 @@ import ErrorState from "@/components/ui/ErrorState.vue";
 import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
+import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { addProductCartItem } from "@/services/cart";
 import { getProductDetail, type Product, type ProductSku } from "@/services/mall";
 
@@ -86,6 +90,7 @@ const error = ref("");
 const selectedSkuId = ref("");
 const quantity = ref(1);
 const adding = ref(false);
+const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("mall-detail");
 const heroImage = computed(() => product.value?.coverImageUrl || product.value?.images[0]?.url || "");
 const selectedSku = computed(() => product.value?.skus.find((item) => item.id === selectedSkuId.value) ?? null);
 const canAddProduct = computed(() => Boolean(selectedSku.value && skuAvailable(selectedSku.value)));
@@ -100,6 +105,7 @@ const descriptionText = computed(() => toDescriptionText(product.value?.descript
 
 onLoad((query) => {
   productId.value = typeof query?.id === "string" ? query.id : "";
+  void refreshTheme();
   void load();
 });
 

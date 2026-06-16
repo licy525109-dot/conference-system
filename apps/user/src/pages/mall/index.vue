@@ -1,5 +1,7 @@
 <template>
-  <view class="page ui-page">
+  <view class="page ui-page" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <view class="topbar ui-card">
       <view>
         <text class="eyebrow">扩展能力</text>
@@ -64,6 +66,8 @@ import ErrorState from "@/components/ui/ErrorState.vue";
 import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
+import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { getProductCategories, getProducts, type Product, type ProductCategory } from "@/services/mall";
 import { goHome } from "@/utils/navigation";
 
@@ -73,8 +77,10 @@ const keyword = ref("");
 const categoryId = ref("");
 const loading = ref(false);
 const error = ref("");
+const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("mall");
 
 onMounted(async () => {
+  await refreshTheme();
   await Promise.all([loadCategories(), loadProducts()]);
 });
 

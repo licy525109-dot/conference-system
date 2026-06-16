@@ -1211,6 +1211,11 @@ function fieldsFor(type: string): ConfigField[] {
   ];
   const map: Record<string, ConfigField[]> = {
     hero: [
+      { key: "kicker", label: "眉标文字", placeholder: "会议报名" },
+      { key: "title", label: "主标题", placeholder: "选择会议，完成报名缴费" },
+      { key: "description", label: "说明文字", kind: "textarea", rows: 2, placeholder: "填写横幅说明" },
+      { key: "buttonText", label: "按钮文字", placeholder: "立即报名" },
+      { key: "showButton", label: "显示按钮", kind: "switch", fallback: "true" },
       { key: "imageUrl", label: "横幅图片地址", placeholder: "从素材库选择或粘贴图片地址" },
       { key: "fullBleed", label: "横幅铺满屏幕宽度", kind: "switch", fallback: "true" },
       {
@@ -1562,7 +1567,14 @@ const ComponentPreview = defineComponent({
       }
       if (type === "hero") {
         return h("div", { class: "preview-hero-card" }, [
-          value("imageUrl") ? h("img", { src: value("imageUrl"), alt: "主视觉横幅" }) : h("div", { class: "preview-hero-empty" }, "请选择横幅图片")
+          value("imageUrl") ? h("img", { src: value("imageUrl"), alt: "主视觉横幅" }) : h("div", { class: "preview-hero-empty" }),
+          h("div", { class: "preview-hero-card__shade" }),
+          h("div", { class: "preview-hero-card__copy" }, [
+            h("span", value("kicker", "会议报名")),
+            h("strong", { style: titleStyle() }, value("title", "选择会议，完成报名缴费")),
+            h("p", { style: textStyle() }, value("description", "查看会议安排、选择报名规格，支付成功后自动生成参会记录。")),
+            booleanConfig(props.item, "showButton", true) ? h("button", value("buttonText", "立即报名")) : null
+          ])
         ]);
       }
       if (type === "conference-list") {
@@ -2942,6 +2954,87 @@ function splitPreviewLine(value: string): string[] {
   line-height: 26px;
 }
 
+.phone-screen :deep(.preview-hero-card) {
+  position: relative;
+  min-height: 190px;
+  border-radius: 0 0 calc(var(--preview-radius) + 8px) calc(var(--preview-radius) + 8px);
+  background:
+    radial-gradient(circle at 12% 16%, rgb(255 255 255 / 36%) 0, transparent 27%),
+    linear-gradient(135deg, var(--preview-primary), var(--preview-secondary));
+  color: #ffffff;
+}
+
+.phone-screen :deep(.preview-hero-card img),
+.phone-screen :deep(.preview-hero-empty) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  margin: 0;
+  object-fit: cover;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 12% 16%, rgb(255 255 255 / 36%) 0, transparent 27%),
+    linear-gradient(135deg, var(--preview-primary), var(--preview-secondary));
+}
+
+.phone-screen :deep(.preview-hero-card__shade) {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgb(10 16 28 / 74%), rgb(10 16 28 / 34%) 58%, rgb(10 16 28 / 8%));
+}
+
+.phone-screen :deep(.preview-hero-card__copy) {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-height: 190px;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 18px 16px;
+  box-sizing: border-box;
+}
+
+.phone-screen :deep(.preview-hero-card__copy span) {
+  align-self: flex-start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 18%);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.phone-screen :deep(.preview-hero-card__copy strong) {
+  max-width: 250px;
+  color: #ffffff !important;
+  font-size: 25px !important;
+  line-height: 1.12;
+}
+
+.phone-screen :deep(.preview-hero-card__copy p) {
+  max-width: 255px;
+  margin: 0;
+  color: rgb(255 255 255 / 84%) !important;
+  font-size: 12px !important;
+  line-height: 1.45;
+}
+
+.phone-screen :deep(.preview-hero-card__copy button) {
+  align-self: flex-start;
+  height: 32px;
+  margin: 4px 0 0;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--preview-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .preview-button {
   width: 100%;
   min-height: 42px;
@@ -3221,5 +3314,88 @@ function splitPreviewLine(value: string): string[] {
 
 .material-card small {
   color: var(--admin-color-muted);
+}
+
+/* Phase 10 editor polish */
+.cms-page {
+  background: #f4f7fb;
+}
+
+.cms-hero {
+  border-color: rgb(212 222 236 / 90%);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 8% 0%, rgb(20 99 255 / 16%), transparent 32%),
+    radial-gradient(circle at 88% 14%, rgb(24 194 156 / 12%), transparent 28%),
+    #ffffff;
+}
+
+.cms-panel {
+  border-color: rgb(218 226 238 / 94%);
+  border-radius: 16px;
+}
+
+.cms-sidebar--left,
+.cms-sidebar--right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.phone-preview {
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.phone-shell {
+  width: 344px;
+  padding: 12px;
+  border-radius: 38px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 10%), rgb(255 255 255 / 0%)),
+    #111827;
+}
+
+.phone-window {
+  border: 1px solid rgb(255 255 255 / 10%);
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / 8%);
+}
+
+.phone-screen {
+  background:
+    radial-gradient(circle at 12% 8%, rgb(20 99 255 / 10%), transparent 26%),
+    var(--preview-bg);
+}
+
+.preview-block {
+  margin-right: 12px;
+  margin-left: 12px;
+  border-radius: calc(var(--preview-radius) + 8px);
+}
+
+.preview-block.is-selected {
+  border-color: var(--admin-color-primary);
+  background: rgb(20 99 255 / 6%);
+}
+
+.preset-card,
+.component-card,
+.template-card {
+  border-color: rgb(218 226 238 / 94%);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.component-card.is-selected,
+.template-card:hover,
+.preset-card:hover:not(:disabled) {
+  border-color: var(--admin-color-primary);
+  box-shadow: 0 14px 34px rgb(20 99 255 / 12%);
+}
+
+.template-card__screen {
+  min-height: 238px;
+  background:
+    radial-gradient(circle at 12% 12%, rgb(255 255 255 / 65%), transparent 24%),
+    linear-gradient(135deg, rgb(20 99 255 / 16%), rgb(24 194 156 / 10%)),
+    #f8fbff;
 }
 </style>

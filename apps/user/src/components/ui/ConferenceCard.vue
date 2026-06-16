@@ -73,7 +73,20 @@ const registrationCountText = computed(() =>
 
 <style scoped>
 .card {
-  padding: 28rpx;
+  position: relative;
+  overflow: hidden;
+  padding: 30rpx;
+  background: var(--cms-gradient-card);
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10rpx;
+  height: 100%;
+  background: var(--cms-gradient-cta);
 }
 
 .head {
@@ -91,7 +104,7 @@ const registrationCountText = computed(() =>
 .title {
   display: block;
   color: var(--ui-color-text);
-  font-size: 34rpx;
+  font-size: 35rpx;
   font-weight: 900;
   line-height: 1.35;
 }
@@ -110,8 +123,9 @@ const registrationCountText = computed(() =>
   gap: 18rpx;
   margin-top: 24rpx;
   padding: 20rpx;
-  border-radius: var(--ui-radius);
-  background: var(--ui-color-surface-muted);
+  border: 1px solid var(--cms-border);
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-surface-soft);
 }
 
 .meta {
@@ -135,7 +149,7 @@ const registrationCountText = computed(() =>
 }
 
 .price {
-  color: var(--ui-color-primary);
+  color: var(--cms-primary-strong);
 }
 
 .foot {
@@ -155,5 +169,6 @@ const registrationCountText = computed(() =>
 
 .action {
   min-width: 172rpx;
+  box-shadow: 0 14rpx 28rpx rgba(31, 77, 122, 0.18);
 }
 </style>

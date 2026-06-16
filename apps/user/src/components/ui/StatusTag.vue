@@ -20,7 +20,8 @@ withDefaults(
   align-items: center;
   min-height: 42rpx;
   padding: 0 16rpx;
-  border-radius: 999px;
+  border: 1px solid transparent;
+  border-radius: var(--cms-radius-full);
   font-size: 22rpx;
   font-weight: 800;
   line-height: 42rpx;
@@ -28,27 +29,32 @@ withDefaults(
 }
 
 .tag-info {
-  background: var(--ui-color-primary-soft);
-  color: var(--ui-color-primary);
+  border-color: var(--cms-primary-soft);
+  background: var(--cms-primary-soft);
+  color: var(--cms-primary-strong);
 }
 
 .tag-success {
-  background: #e8f7f1;
-  color: var(--ui-color-success);
+  border-color: var(--cms-success-soft);
+  background: var(--cms-success-soft);
+  color: var(--cms-success);
 }
 
 .tag-warning {
-  background: #fff6df;
-  color: var(--ui-color-warning);
+  border-color: var(--cms-warning-soft);
+  background: var(--cms-warning-soft);
+  color: var(--cms-warning);
 }
 
 .tag-danger {
-  background: #fff1ef;
-  color: var(--ui-color-danger);
+  border-color: var(--cms-danger-soft);
+  background: var(--cms-danger-soft);
+  color: var(--cms-danger);
 }
 
 .tag-neutral {
-  background: #eef2f7;
-  color: var(--ui-color-muted);
+  border-color: var(--cms-border);
+  background: var(--cms-surface-muted);
+  color: var(--cms-text-secondary);
 }
 </style>

@@ -1,5 +1,7 @@
 <template>
-  <view class="page ui-page">
+  <view class="page ui-page" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <view class="hero">
       <view>
         <text class="eyebrow">报名记录</text>
@@ -66,7 +68,9 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
+import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getMyRegistrations } from "@/services/registration";
 import type { MyRegistrationItem } from "@/services/registration-types";
@@ -77,8 +81,10 @@ import { goHome } from "@/utils/navigation";
 const items = ref<MyRegistrationItem[]>([]);
 const loading = ref(false);
 const error = ref("");
+const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("my-registrations");
 
 onMounted(() => {
+  void refreshTheme();
   void loadRegistrations();
 });
 
