@@ -176,13 +176,36 @@ export class AdminCmsService {
     const body = readObject(input);
     const existing = await this.prisma.pageVersion.findUnique({
       where: { id },
-      select: { id: true, status: true, templateId: true }
+      select: { id: true, status: true, templateId: true, title: true, components: true, themeJson: true }
     });
     if (!existing) {
       throw new NotFoundException("Page version not found");
     }
     if (existing.status === "PUBLISHED") {
-      throw new BadRequestException("已发布版本不能直接编辑，请回滚或新建草稿");
+      const nextVersionNo = await this.nextVersionNo(existing.templateId);
+      const draft = await this.prisma.pageVersion.create({
+        data: {
+          templateId: existing.templateId,
+          versionNo: nextVersionNo,
+          status: "DRAFT",
+          title: typeof body.title !== "undefined" ? readRequiredString(body, "title") : existing.title,
+          components: typeof body.components !== "undefined" ? parseComponents(body.components) : parseComponents(existing.components),
+          themeJson:
+            typeof body.themeJson !== "undefined"
+              ? readNullableJsonObject(body.themeJson)
+              : readPlainObject(existing.themeJson) ?? undefined,
+          createdBy: admin.id
+        },
+        select: versionSelect
+      });
+      await this.writeAudit(admin, AuditAction.CREATE, "PageVersion", draft.id, "Create draft from published page version", {
+        templateId: existing.templateId,
+        sourceVersionId: existing.id
+      });
+      return ok(formatPageVersion(draft));
+    }
+    if (existing.status === "ARCHIVED") {
+      throw new BadRequestException("归档版本不能直接编辑，请回滚或从已发布版本继续编辑");
     }
 
     const version = await this.prisma.pageVersion.update({
@@ -204,49 +227,77 @@ export class AdminCmsService {
   async publishPageVersion(id: string, admin: CurrentAdmin) {
     const existing = await this.prisma.pageVersion.findUnique({
       where: { id },
-      select: { id: true, templateId: true, title: true, components: true }
+      select: { id: true, templateId: true, title: true, components: true, themeJson: true }
     });
     if (!existing) {
       throw new NotFoundException("Page version not found");
     }
-    parseComponents(existing.components);
+    const components = parseComponents(existing.components);
+    const themeJson = readPlainObject(existing.themeJson);
+    const latestVersion = await this.prisma.pageVersion.findFirst({
+      where: { templateId: existing.templateId },
+      orderBy: { versionNo: "desc" },
+      select: { versionNo: true }
+    });
+    const publishVersionNo = (latestVersion?.versionNo ?? 0) + 1;
 
     const publishedAt = new Date();
-    const version = await this.prisma.$transaction(async (tx) => {
+    const draft = await this.prisma.$transaction(async (tx) => {
       await tx.pageVersion.updateMany({
         where: { templateId: existing.templateId, status: "PUBLISHED" },
         data: { status: "ARCHIVED" }
       });
-      const updated = await tx.pageVersion.update({
-        where: { id },
+      await tx.pageVersion.update({
+        where: { id: existing.id },
+        data: { status: "ARCHIVED" }
+      });
+      const published = await tx.pageVersion.create({
         data: {
+          templateId: existing.templateId,
+          versionNo: publishVersionNo,
           status: "PUBLISHED",
+          title: existing.title,
+          components,
+          themeJson: themeJson ?? undefined,
+          createdBy: admin.id,
           publishedAt
+        },
+        select: { id: true }
+      });
+      const nextDraft = await tx.pageVersion.create({
+        data: {
+          templateId: existing.templateId,
+          versionNo: publishVersionNo + 1,
+          status: "DRAFT",
+          title: existing.title,
+          components,
+          themeJson: themeJson ?? undefined,
+          createdBy: admin.id
         },
         select: versionSelect
       });
       await tx.pageTemplate.update({
         where: { id: existing.templateId },
         data: {
-          publishedVersionId: id,
+          publishedVersionId: published.id,
           title: existing.title
         }
       });
       await tx.pagePublishLog.create({
         data: {
           templateId: existing.templateId,
-          versionId: id,
+          versionId: published.id,
           action: "PUBLISH",
-          summary: "Publish page version",
+          summary: `Publish page version from draft ${existing.id}`,
           createdBy: admin.id
         }
       });
-      return updated;
+      return nextDraft;
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "PageVersion", id, "Publish page version", {
       templateId: existing.templateId
     });
-    return ok(formatPageVersion(version));
+    return ok(formatPageVersion(draft));
   }
 
   async rollbackPage(id: string, input: unknown, admin: CurrentAdmin) {

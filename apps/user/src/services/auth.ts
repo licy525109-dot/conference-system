@@ -1,4 +1,5 @@
 import { MOCK_LOGIN_CODE, MOCK_LOGIN_NICKNAME, PAYMENT_MODE } from "@/config/app";
+import { readUniErrMsg } from "@/utils/uniErrors";
 import { ApiRequestError, request } from "./request";
 import { clearAuthSession, getStoredUser, getToken, setAuthSession } from "./session";
 
@@ -108,7 +109,7 @@ function getMiniProgramLoginCode(): Promise<string> {
   return new Promise((resolve, reject) => {
     uni.login({
       success: (result) => {
-        if (result.code) {
+        if (result?.code) {
           resolve(result.code);
           return;
         }
@@ -116,8 +117,7 @@ function getMiniProgramLoginCode(): Promise<string> {
         reject(new Error("wx.login did not return code"));
       },
       fail: (error) => {
-        const message = error.errMsg || "wx.login failed";
-        reject(new Error(message));
+        reject(new Error(readUniErrMsg(error, "wx.login failed")));
       }
     });
   });

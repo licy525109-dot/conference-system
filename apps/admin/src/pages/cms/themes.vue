@@ -387,7 +387,7 @@ const previewBackground = computed(() => {
   }
   return form.backgroundColor;
 });
-const dynamicSize = computed(() => Math.max(180, 560 - (Number(form.backgroundDynamicDensity) || 40) * 3));
+const dynamicSize = computed(() => Math.max(150, 440 - (Number(form.backgroundDynamicDensity) || 40) * 2.4));
 const previewHeroTitle = computed(() => {
   if (previewPageKey.value === "conference-detail") return "峰会详情与报名安排";
   if (previewPageKey.value === "my-registrations") return "我的报名与状态查看";
@@ -485,9 +485,9 @@ function dynamicGradient(config: ThemeConfig): string {
   const from = config.backgroundGradientFrom || config.backgroundColor;
   const to = config.backgroundGradientTo || config.secondaryColor;
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  const dotOpacity = Math.min(0.26, 0.08 + density / 650);
-  const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(245,247,251,0.8)), ";
-  return `${overlay}radial-gradient(circle at 16% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(14, density / 2.6)}%), radial-gradient(circle at 84% 22%, rgba(20,184,166,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.1)}%), radial-gradient(circle at 50% 78%, rgba(245,158,11,${Math.min(0.2, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.8)}%), linear-gradient(135deg, ${from}, ${to})`;
+  const dotOpacity = Math.min(0.48, 0.16 + density / 360);
+  const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,251,0.58)), ";
+  return `${overlay}radial-gradient(circle at 12% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.1)}%), radial-gradient(circle at 86% 18%, rgba(20,184,166,${Math.min(0.42, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.9)}%), radial-gradient(circle at 48% 76%, rgba(245,158,11,${Math.min(0.34, dotOpacity)}) 0, transparent ${Math.max(26, density / 1.55)}%), radial-gradient(circle at 68% 42%, rgba(59,130,246,${Math.min(0.32, dotOpacity)}) 0, transparent ${Math.max(24, density / 1.7)}%), linear-gradient(135deg, ${from}, ${to})`;
 }
 </script>
 
@@ -626,6 +626,19 @@ function dynamicGradient(config: ThemeConfig): string {
 
 .preview-stage.is-dynamic-bg {
   animation: themePreviewMove 18s ease-in-out infinite alternate;
+}
+
+.preview-stage.is-dynamic-bg::before {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.46), transparent 18%),
+    radial-gradient(circle at 80% 20%, rgba(20, 184, 166, 0.3), transparent 22%),
+    radial-gradient(circle at 55% 82%, rgba(245, 158, 11, 0.26), transparent 24%);
+  filter: blur(10px);
+  animation: themePreviewFloat 9s ease-in-out infinite alternate;
 }
 
 .preview-video {
@@ -850,6 +863,15 @@ function dynamicGradient(config: ThemeConfig): string {
   }
   to {
     background-position: 100% 70%;
+  }
+}
+
+@keyframes themePreviewFloat {
+  from {
+    transform: translate3d(-3%, -2%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4%, 3%, 0) scale(1.08);
   }
 }
 

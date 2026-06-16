@@ -270,6 +270,176 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
         config: { title: "参会资料", items: ["报名须知", "会场导览", "合作手册"] }
       }
     ]
+  },
+  {
+    pageKey: "template:premium-conference-home",
+    title: "高转化会议首页模板",
+    description: "完整首页结构，覆盖主视觉、亮点、会议列表、票种、流程和咨询。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      backgroundColor: "#f3f7ff",
+      cardBackground: "#ffffff",
+      primaryColor: "#1f5fff",
+      secondaryColor: "#12b8a6",
+      accentColor: "#f59e0b",
+      templateMeta: {
+        category: "会议首页",
+        summary: "适合正式会议首页，信息完整、报名转化明确。"
+      },
+      pageMeta: {
+        pageTitle: "会议报名",
+        shareTitle: "会议报名通道已开启"
+      }
+    },
+    components: [
+      { id: "premium-notice", type: "notice", enabled: true, config: { text: "限时开放报名，完成缴费后系统自动生成参会记录。" } },
+      { id: "premium-title", type: "title", enabled: true, config: { text: "选择会议，完成报名缴费", fontSize: 34, textAlign: "center" } },
+      {
+        id: "premium-stats",
+        type: "stats-grid",
+        enabled: true,
+        config: { title: "活动亮点", items: ["500+ 参会席位", "30+ 行业嘉宾", "8 场闭门交流"] }
+      },
+      {
+        id: "premium-list",
+        type: "conference-list",
+        enabled: true,
+        config: {
+          title: "可报名会议",
+          limit: 6,
+          showSummary: true,
+          showTime: true,
+          showLocation: true,
+          showRegistrationCount: true,
+          registrationCountMode: "actual-plus-virtual",
+          virtualRegistrationBase: 86,
+          virtualRegistrationStep: 18,
+          detailButtonText: "查看详情",
+          cardImageLayout: "left",
+          cardPadding: 24,
+          cardGap: 18,
+          cardRadius: 10
+        }
+      },
+      { id: "premium-price", type: "ticket-price-list", enabled: true, config: { title: "报名票种", items: ["标准参会票｜以详情页实时价格为准", "团体报名｜联系会务组确认席位", "闭门会名额｜审核通过后参与"] } },
+      { id: "premium-steps", type: "process-steps", enabled: true, config: { title: "报名流程", items: ["选择会议与票种", "填写报名信息", "确认订单并支付", "查看我的报名"] } },
+      { id: "premium-contact", type: "contact-card", enabled: true, config: { title: "会务咨询", phone: "请填写联系电话", text: "团体报名、商务合作或特殊参会需求，可联系会务组处理。" } }
+    ]
+  },
+  {
+    pageKey: "template:closed-door-salon",
+    title: "闭门会转化模板",
+    description: "适合小规模高端沙龙、闭门圆桌和定向邀请报名。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      backgroundColor: "#f7f3ea",
+      cardBackground: "#fffaf0",
+      primaryColor: "#9a6b2f",
+      secondaryColor: "#1f4ba7",
+      accentColor: "#d9a441",
+      templateMeta: {
+        category: "闭门沙龙",
+        summary: "强调席位稀缺、嘉宾可信度和报名转化。"
+      },
+      pageMeta: {
+        pageTitle: "闭门会报名",
+        shareTitle: "闭门会席位开放申请"
+      }
+    },
+    components: [
+      { id: "salon-notice", type: "promotion-bar", enabled: true, config: { text: "定向席位有限，报名成功后请以系统记录为准。" } },
+      { id: "salon-title", type: "title", enabled: true, config: { text: "行业决策人闭门会", fontSize: 36, textAlign: "center", textColor: "#2d2415" } },
+      { id: "salon-text", type: "text-image", enabled: true, config: { title: "为什么值得参加", text: "围绕关键议题、真实案例和同业交流，帮助参会者建立高质量连接。", imageUrl: "" } },
+      { id: "salon-speakers", type: "speaker-cards", enabled: true, config: { title: "拟邀嘉宾", speakers: ["行业观察员｜趋势分享｜拆解年度机会", "企业增长负责人｜案例复盘｜分享实战路径", "会务主持人｜圆桌引导｜促进深度交流"] } },
+      { id: "salon-agenda", type: "schedule-timeline", enabled: true, config: { title: "闭门流程", items: ["14:00｜签到入场｜身份确认与资料领取", "14:30｜主题分享｜趋势观察与案例拆解", "15:40｜圆桌讨论｜问题共创与答疑", "17:00｜自由交流｜建立合作连接"] } },
+      { id: "salon-list", type: "conference-list", enabled: true, config: { title: "可申请场次", limit: 3, showSummary: true, showTime: true, showLocation: true, detailButtonText: "申请席位", cardImageLayout: "full", cardImageHeight: 190 } },
+      { id: "salon-faq", type: "faq", enabled: true, config: { title: "常见问题", items: ["报名后是否立即确认｜请以支付状态和我的报名记录为准", "是否支持团体参加｜可联系会务组确认席位", "现场需要携带什么｜请携带报名记录和有效证件"] } }
+    ]
+  },
+  {
+    pageKey: "template:speaker-detail",
+    title: "嘉宾议程详情模板",
+    description: "用于会议详情页或专题页，突出嘉宾、日程、交通和咨询。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      backgroundColor: "#f4f8fb",
+      cardBackground: "#ffffff",
+      primaryColor: "#0f766e",
+      secondaryColor: "#2563eb",
+      accentColor: "#fb7185",
+      templateMeta: {
+        category: "会议详情",
+        summary: "适合详情页，内容全面、层次清楚。"
+      },
+      pageMeta: {
+        pageTitle: "会议详情",
+        shareTitle: "查看会议详情与报名安排"
+      }
+    },
+    components: [
+      { id: "detail-intro", type: "text-image", enabled: true, config: { title: "大会介绍", text: "聚焦趋势、案例、资源连接和落地方法，让参会者快速判断是否报名。", imageUrl: "" } },
+      { id: "detail-speakers", type: "speaker-cards", enabled: true, config: { title: "嘉宾阵容", speakers: ["李老师｜主论坛嘉宾｜增长策略与组织实践", "王老师｜圆桌嘉宾｜AI 场景落地经验", "赵老师｜主持人｜议程串联与现场互动"] } },
+      { id: "detail-schedule", type: "schedule-timeline", enabled: true, config: { title: "会议日程", items: ["09:00｜签到入场｜领取会议资料", "10:00｜主题演讲｜行业趋势观察", "13:30｜案例分享｜实践路径拆解", "16:00｜圆桌交流｜现场答疑与合作对接"] } },
+      { id: "detail-traffic", type: "traffic-guide", enabled: true, config: { title: "交通指南", address: "请填写会议地址", text: "建议提前 30 分钟到达现场，按报名记录完成签到。" } },
+      { id: "detail-contact", type: "contact-card", enabled: true, config: { title: "联系会务组", phone: "请填写联系电话", text: "报名、缴费和参会问题可联系会务组。" } }
+    ]
+  },
+  {
+    pageKey: "template:attendee-guide",
+    title: "参会指南模板",
+    description: "适合发布报名须知、交通、资料下载和常见问题。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      backgroundColor: "#f6f8fb",
+      cardBackground: "#ffffff",
+      primaryColor: "#334155",
+      secondaryColor: "#14b8a6",
+      accentColor: "#f59e0b",
+      templateMeta: {
+        category: "参会指南",
+        summary: "适合补充报名须知、现场说明和资料信息。"
+      },
+      pageMeta: {
+        pageTitle: "参会指南",
+        shareTitle: "参会指南与报名须知"
+      }
+    },
+    components: [
+      { id: "guide-title", type: "title", enabled: true, config: { text: "参会指南", fontSize: 34, textAlign: "center" } },
+      { id: "guide-process", type: "process-steps", enabled: true, config: { title: "到场流程", items: ["打开我的报名记录", "现场核对报名信息", "领取资料和胸牌", "进入对应会场"] } },
+      { id: "guide-download", type: "download-list", enabled: true, config: { title: "资料清单", items: ["会议议程", "交通指引", "参会须知", "合作手册"] } },
+      { id: "guide-map", type: "traffic-guide", enabled: true, config: { title: "交通与签到", address: "请填写会议地址", text: "建议预留路程时间，签到高峰可能排队。" } },
+      { id: "guide-faq", type: "faq", enabled: true, config: { title: "常见问题", items: ["支付后在哪里查看报名｜进入底部导航“我的报名”", "报名信息能否修改｜请联系会务组处理", "是否支持多人报名｜以会议详情页票种规则为准"] } }
+    ]
+  },
+  {
+    pageKey: "template:sponsor-partner",
+    title: "赞助合作模板",
+    description: "适合招商合作、合作伙伴展示和商务咨询。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      backgroundColor: "#f3f6ff",
+      cardBackground: "#ffffff",
+      primaryColor: "#4338ca",
+      secondaryColor: "#06b6d4",
+      accentColor: "#f97316",
+      templateMeta: {
+        category: "商务合作",
+        summary: "用于赞助招商页、合作伙伴页和商务咨询页。"
+      },
+      pageMeta: {
+        pageTitle: "赞助合作",
+        shareTitle: "会议赞助与商务合作"
+      }
+    },
+    components: [
+      { id: "sponsor-title", type: "title", enabled: true, config: { text: "赞助合作与品牌曝光", fontSize: 34, textAlign: "center" } },
+      { id: "sponsor-stats", type: "stats-grid", enabled: true, config: { title: "合作价值", items: ["精准行业人群", "现场品牌曝光", "会后线索沉淀"] } },
+      { id: "sponsor-wall", type: "sponsor-wall", enabled: true, config: { title: "合作伙伴", sponsors: ["主办单位", "平台协同", "生态伙伴", "媒体支持"] } },
+      { id: "sponsor-text", type: "text-image", enabled: true, config: { title: "合作形式", text: "支持会场冠名、展位展示、资料入袋、专场分享和定向邀约等合作方式。", imageUrl: "" } },
+      { id: "sponsor-download", type: "download-list", enabled: true, config: { title: "合作资料", items: ["赞助方案", "会场资源", "往届案例"] } },
+      { id: "sponsor-contact", type: "contact-card", enabled: true, config: { title: "商务咨询", phone: "请填写联系电话", text: "欢迎联系会务组获取合作方案。" } }
+    ]
   }
 ] as const;
 

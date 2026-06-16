@@ -123,14 +123,14 @@ function dynamicGradient(config: ThemeConfig): string {
   const from = config.backgroundGradientFrom || config.backgroundColor;
   const to = config.backgroundGradientTo || config.secondaryColor;
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  const dotOpacity = Math.min(0.22, 0.06 + density / 700);
-  const filterLayer = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(245,247,251,0.84)), ";
-  return `${filterLayer}radial-gradient(circle at 18% 24%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(12, density / 3)}%), radial-gradient(circle at 82% 18%, rgba(20,184,166,${dotOpacity}) 0, transparent ${Math.max(14, density / 2.8)}%), linear-gradient(135deg, ${from}, ${to})`;
+  const dotOpacity = Math.min(0.46, 0.14 + density / 380);
+  const filterLayer = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,251,0.62)), ";
+  return `${filterLayer}radial-gradient(circle at 12% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.2)}%), radial-gradient(circle at 86% 16%, rgba(20,184,166,${Math.min(0.4, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.9)}%), radial-gradient(circle at 50% 78%, rgba(245,158,11,${Math.min(0.32, dotOpacity)}) 0, transparent ${Math.max(26, density / 1.55)}%), linear-gradient(135deg, ${from}, ${to})`;
 }
 
 function dynamicSize(config: ThemeConfig): number {
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  return Math.max(160, 520 - density * 3);
+  return Math.max(150, 440 - density * 2.4);
 }
 
 function dynamicSpeed(config: ThemeConfig): number {
