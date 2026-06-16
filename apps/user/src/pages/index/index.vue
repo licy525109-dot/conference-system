@@ -1,15 +1,6 @@
 <template>
   <view :class="pageClass" :style="pageStyle">
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
-    <view class="hero" :class="heroClass" :style="heroStyle">
-      <video v-if="showHeaderVideo" class="hero-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
-      <view>
-        <text class="eyebrow">{{ homeHero.eyebrow }}</text>
-        <text class="title">{{ homeHero.title }}</text>
-        <text class="subtitle">{{ homeHero.subtitle }}</text>
-      </view>
-      <button v-if="homeHero.buttonText" class="ui-button-secondary ui-button-compact" @click="goHeroAction">{{ homeHero.buttonText }}</button>
-    </view>
 
     <LoadingState v-if="loading" title="加载会议中" description="正在同步最新可报名会议。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="retryLoadConferences" />
@@ -79,19 +70,6 @@ const homeDetails = ref<Record<string, HomeConferenceDetailText>>({});
 let hasLoadedOnce = false;
 let lastLoadAt = 0;
 
-const homeHero = computed(() => {
-  const raw = cmsPage.value?.version.themeJson?.homeHero;
-  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  return {
-    eyebrow: stringValue(source.eyebrow, "会议报名"),
-    title: stringValue(source.title, "选择会议，完成报名缴费"),
-    subtitle: stringValue(source.subtitle, "所有报名费用以提交订单时系统计算结果为准。"),
-    buttonText: stringValue(source.buttonText, "我的报名"),
-    buttonTarget: stringValue(source.buttonTarget, "/pages/registrations/my"),
-    layout: stringValue(source.layout, "split")
-  };
-});
-
 const pageStyle = computed(() => ({
   "--ui-color-primary": theme.value.primaryColor,
   "--ui-color-accent": theme.value.secondaryColor,
@@ -100,11 +78,8 @@ const pageStyle = computed(() => ({
   "--ui-radius": `${theme.value.radius}px`,
   ...themeBackgroundStyle(theme.value, "body")
 }));
-const heroStyle = computed(() => themeBackgroundStyle(theme.value, "header"));
 const pageClass = computed(() => ["page", "ui-page", backgroundClass(theme.value)]);
-const heroClass = computed(() => [`is-${homeHero.value.layout}`, backgroundClass(theme.value, "header")]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
-const showHeaderVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo === "header");
 
 onLoad(() => {
   void loadConferences();
@@ -128,7 +103,7 @@ async function loadConferences() {
   error.value = "";
 
   try {
-    const [items, page, themeConfig] = await Promise.all([getConferences(), getPublishedPage("home"), getAppTheme()]);
+    const [items, page, themeConfig] = await Promise.all([getConferences(), getPublishedPage("home"), getAppTheme("home")]);
     conferences.value = items;
     cmsPage.value = page;
     theme.value = themeConfig;
@@ -245,21 +220,6 @@ function goDetail(id: string) {
   });
 }
 
-function goMyRegistrations() {
-  uni.navigateTo({
-    url: "/pages/registrations/my"
-  });
-}
-
-function goHeroAction() {
-  const target = homeHero.value.buttonTarget || "/pages/registrations/my";
-  uni.navigateTo({ url: target });
-}
-
-function stringValue(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
 function themeBackgroundStyle(config: ThemeConfig, target: "body" | "header"): Record<string, string> {
   if (target === "body" && config.backgroundApplyTo === "header") return {};
   if (target === "header" && config.backgroundApplyTo !== "header") return {};
@@ -327,24 +287,6 @@ interface HomeConferenceDetailText {
   overflow: hidden;
 }
 
-.hero {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24rpx;
-  margin-bottom: 26rpx;
-  padding: 32rpx 0 10rpx;
-  overflow: hidden;
-}
-
-.hero.is-centered {
-  align-items: center;
-  flex-direction: column;
-  text-align: center;
-}
-
 .page-bg-video {
   position: fixed;
   inset: 0;
@@ -352,21 +294,6 @@ interface HomeConferenceDetailText {
   width: 100vw;
   height: 100vh;
   pointer-events: none;
-}
-
-.hero-bg-video {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.hero > view,
-.hero > button {
-  position: relative;
-  z-index: 1;
 }
 
 .is-dynamic-bg {
@@ -383,30 +310,6 @@ interface HomeConferenceDetailText {
   to {
     background-position: 100% 70%;
   }
-}
-
-.eyebrow {
-  display: block;
-  color: var(--ui-color-primary);
-  font-size: 24rpx;
-  font-weight: 800;
-}
-
-.title {
-  display: block;
-  margin-top: 8rpx;
-  color: var(--ui-color-text);
-  font-size: 44rpx;
-  font-weight: 900;
-  line-height: 1.24;
-}
-
-.subtitle {
-  display: block;
-  margin-top: 12rpx;
-  color: var(--ui-color-muted);
-  font-size: 25rpx;
-  line-height: 1.5;
 }
 
 .list {

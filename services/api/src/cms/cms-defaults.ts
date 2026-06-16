@@ -11,10 +11,10 @@ export const DEFAULT_THEME_CONFIG = {
   shadow: "soft",
   titleFontSize: 42,
   bannerStyle: "clean",
-  adminBrandTitle: "会议运营后台",
-  adminBrandSubtitle: "会议业务运营中心",
+  adminBrandTitle: "会务运营平台",
+  adminBrandSubtitle: "报名、支付与页面配置中心",
   adminBrandLogoUrl: "",
-  browserTitle: "会议后台",
+  browserTitle: "会务运营平台",
   browserIconUrl: "",
   backgroundMode: "solid",
   backgroundGradientFrom: "#f5f7fb",
@@ -24,7 +24,9 @@ export const DEFAULT_THEME_CONFIG = {
   backgroundDynamicDensity: 40,
   backgroundDynamicSpeed: 18,
   backgroundBottomFilter: true,
-  backgroundApplyTo: "body"
+  backgroundApplyTo: "body",
+  themeApplyMode: "all",
+  themeApplyPageKeys: [] as string[]
 } satisfies Prisma.InputJsonObject;
 
 export const DEFAULT_TABBAR_ITEMS = [
@@ -120,8 +122,21 @@ export const ALL_COMPONENT_TYPES = new Set(ALL_COMPONENT_PRESETS.map((item) => i
 export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
   if (pageKey === "home" || pageKey === "conference-list") {
     return [
-      { id: "hero-default", type: "hero", enabled: true, config: { imageUrl: "" } },
-      { id: "conference-list-default", type: "conference-list", enabled: true, config: { title: "可报名会议", limit: 10 } }
+      {
+        id: "conference-list-default",
+        type: "conference-list",
+        enabled: true,
+        config: {
+          title: "可报名会议",
+          limit: 10,
+          showSummary: true,
+          showTime: true,
+          showLocation: true,
+          showRegistrationCount: true,
+          detailButtonText: "查看详情",
+          cardImageLayout: "left"
+        }
+      }
     ];
   }
 
@@ -134,6 +149,129 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
 
   return [{ id: "title-default", type: "title", enabled: true, config: { text: "自定义页面" } }];
 }
+
+export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
+  {
+    pageKey: "template:conference-launch",
+    title: "峰会报名模板",
+    description: "主会场风格，强调报名转化和会议信息呈现。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      templateMeta: {
+        category: "会议主会场",
+        summary: "适合会议首页、活动主会场和报名导流页。"
+      }
+    },
+    components: [
+      { id: "launch-notice", type: "notice", enabled: true, config: { text: "报名通道已开启，名额有限，建议尽早锁定席位。" } },
+      {
+        id: "launch-stats",
+        type: "stats-grid",
+        enabled: true,
+        config: { title: "大会亮点", items: ["300+ 行业从业者", "20+ 嘉宾分享", "6 大报名方向"] }
+      },
+      {
+        id: "launch-list",
+        type: "conference-list",
+        enabled: true,
+        config: {
+          title: "精选会议",
+          limit: 6,
+          showSummary: true,
+          showTime: true,
+          showLocation: true,
+          showRegistrationCount: true,
+          detailButtonText: "查看详情",
+          cardImageLayout: "left"
+        }
+      }
+    ]
+  },
+  {
+    pageKey: "template:speaker-agenda",
+    title: "嘉宾议程模板",
+    description: "突出嘉宾阵容、议程安排和会务联络信息。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      templateMeta: {
+        category: "嘉宾议程",
+        summary: "适合大会详情页、专题会场页和分论坛介绍页。"
+      }
+    },
+    components: [
+      { id: "agenda-title", type: "title", enabled: true, config: { text: "会议亮点与议程安排" } },
+      {
+        id: "agenda-speakers",
+        type: "speaker-cards",
+        enabled: true,
+        config: {
+          title: "嘉宾阵容",
+          speakers: ["主论坛嘉宾｜行业负责人｜分享增长实践", "闭门圆桌｜会务总监｜深聊组织协同"]
+        }
+      },
+      {
+        id: "agenda-timeline",
+        type: "schedule-timeline",
+        enabled: true,
+        config: {
+          title: "日程安排",
+          items: ["09:30｜签到入场｜会场暖场与资料领取", "10:00｜主论坛开场｜趋势观察与案例分享", "14:00｜分论坛讨论｜圆桌交流与答疑"]
+        }
+      },
+      {
+        id: "agenda-contact",
+        type: "contact-card",
+        enabled: true,
+        config: { title: "会务咨询", phone: "请填写联系电话", text: "需要团体报名或商务合作，可直接联系会务组。" }
+      }
+    ]
+  },
+  {
+    pageKey: "template:editorial-showcase",
+    title: "内容导览模板",
+    description: "更适合资讯型首页，强调分类、亮点和列表阅读节奏。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      templateMeta: {
+        category: "内容导览",
+        summary: "适合资讯首页、专题合集页和导览型活动页。"
+      }
+    },
+    components: [
+      {
+        id: "editorial-tabs",
+        type: "conference-tabs",
+        enabled: true,
+        config: {
+          title: "分会场速览",
+          tabs: ["全部", "主论坛", "闭门会", "训练营"],
+          limit: 4,
+          showSummary: false,
+          showTime: true,
+          showLocation: true,
+          showRegistrationCount: true,
+          detailButtonText: "进入会场",
+          cardImageLayout: "full"
+        }
+      },
+      {
+        id: "editorial-process",
+        type: "process-steps",
+        enabled: true,
+        config: {
+          title: "报名路径",
+          items: ["挑选会场", "填写信息", "确认支付", "收到报名结果"]
+        }
+      },
+      {
+        id: "editorial-downloads",
+        type: "download-list",
+        enabled: true,
+        config: { title: "参会资料", items: ["报名须知", "会场导览", "合作手册"] }
+      }
+    ]
+  }
+] as const;
 
 function preset(
   type: string,

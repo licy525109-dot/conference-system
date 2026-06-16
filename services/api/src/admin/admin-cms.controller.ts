@@ -22,6 +22,18 @@ export class AdminCmsController {
     return this.cmsService.createPage(body, request.currentAdmin!);
   }
 
+  @Get("page-library-templates")
+  @RequireAdminPermissions("page:view")
+  listPageLibraryTemplates() {
+    return this.cmsService.listPageLibraryTemplates();
+  }
+
+  @Post("page-library-templates")
+  @RequireAdminPermissions("page:write")
+  createPageLibraryTemplate(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.cmsService.createPageLibraryTemplate(body, request.currentAdmin!);
+  }
+
   @Patch("pages/:id")
   @RequireAdminPermissions("page:write")
   updatePage(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {

@@ -1,5 +1,6 @@
 <template>
-  <view class="page ui-page">
+  <view :class="pageClass" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
     <LoadingState v-if="loading" title="加载会议详情中" description="正在读取会议、票种和页面内容。" />
     <ErrorState
       v-else-if="error"
@@ -102,6 +103,16 @@ const cmsPage = ref<PublishedPage | null>(null);
 const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const loading = ref(false);
 const error = ref("");
+const pageStyle = computed(() => ({
+  "--ui-color-primary": theme.value.primaryColor,
+  "--ui-color-accent": theme.value.secondaryColor,
+  "--ui-color-bg": theme.value.backgroundColor,
+  "--ui-color-surface": theme.value.cardBackground,
+  "--ui-radius": `${theme.value.radius}px`,
+  ...themeBackgroundStyle(theme.value, "body")
+}));
+const pageClass = computed(() => ["page", "ui-page", backgroundClass(theme.value)]);
+const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
 
 const contentText = computed(() => toContentText(conference.value?.contentJson) || "会议议程、嘉宾和报名说明请以主办方发布内容为准。");
 const priceRangeText = computed(() => {
@@ -152,7 +163,7 @@ async function loadDetail() {
     const [detail, page, themeConfig] = await Promise.all([
       getConferenceDetail(conferenceId.value),
       getPublishedPage("conference-detail"),
-      getAppTheme()
+      getAppTheme("conference-detail")
     ]);
     conference.value = detail;
     cmsPage.value = page;
@@ -189,6 +200,58 @@ function stockLabel(sku: RegistrationSku): string {
   return remainingStock(sku) > 0 ? "可报名" : "已售罄";
 }
 
+function themeBackgroundStyle(config: ThemeConfig, target: "body" | "header"): Record<string, string> {
+  if (target === "body" && config.backgroundApplyTo === "header") return {};
+  if (target === "header" && config.backgroundApplyTo !== "header") return {};
+  if (config.backgroundMode === "video") {
+    return { background: "transparent" };
+  }
+  if (config.backgroundMode === "image" && config.backgroundImageUrl) {
+    return {
+      backgroundImage: `${config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(245,247,251,0.20), rgba(245,247,251,0.92)), "}url("${config.backgroundImageUrl}")`,
+      backgroundSize: "cover",
+      backgroundPosition: "center top",
+      backgroundRepeat: "no-repeat"
+    };
+  }
+  if (config.backgroundMode === "dynamic-gradient") {
+    return {
+      backgroundImage: dynamicGradient(config),
+      backgroundSize: `${dynamicSize(config)}% ${dynamicSize(config)}%`,
+      animationDuration: `${dynamicSpeed(config)}s`
+    };
+  }
+  if (config.backgroundMode === "gradient") {
+    return {
+      backgroundImage: `linear-gradient(180deg, ${config.backgroundGradientFrom || config.backgroundColor}, ${config.backgroundGradientTo || config.secondaryColor})`
+    };
+  }
+  return { background: config.backgroundColor };
+}
+
+function backgroundClass(config: ThemeConfig, target: "body" | "header" = "body"): string {
+  const applies = target === "body" ? config.backgroundApplyTo !== "header" : config.backgroundApplyTo === "header";
+  return applies && config.backgroundMode === "dynamic-gradient" ? "is-dynamic-bg" : "";
+}
+
+function dynamicGradient(config: ThemeConfig): string {
+  const from = config.backgroundGradientFrom || config.backgroundColor;
+  const to = config.backgroundGradientTo || config.secondaryColor;
+  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
+  const dotOpacity = Math.min(0.22, 0.06 + density / 700);
+  const filterLayer = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(245,247,251,0.84)), ";
+  return `${filterLayer}radial-gradient(circle at 18% 24%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(12, density / 3)}%), radial-gradient(circle at 82% 18%, rgba(20,184,166,${dotOpacity}) 0, transparent ${Math.max(14, density / 2.8)}%), linear-gradient(135deg, ${from}, ${to})`;
+}
+
+function dynamicSize(config: ThemeConfig): number {
+  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
+  return Math.max(160, 520 - density * 3);
+}
+
+function dynamicSpeed(config: ThemeConfig): number {
+  return Math.max(6, Math.min(40, Number(config.backgroundDynamicSpeed) || 18));
+}
+
 function toContentText(value: unknown): string {
   if (!value) {
     return "";
@@ -214,7 +277,34 @@ function toContentText(value: unknown): string {
 
 <style scoped>
 .page {
+  position: relative;
   padding-bottom: 214rpx;
+  overflow: hidden;
+}
+
+.page-bg-video {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+.is-dynamic-bg {
+  animation-name: dynamicBackgroundMove;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes dynamicBackgroundMove {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 70%;
+  }
 }
 
 .content {

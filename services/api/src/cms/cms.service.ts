@@ -77,7 +77,10 @@ export class CmsService {
     return ok({
       scope: "global",
       themePresetId: active?.themePresetId ?? null,
-      config: normalizeJsonObject(active?.configJson) ?? DEFAULT_THEME_CONFIG,
+      config: {
+        ...DEFAULT_THEME_CONFIG,
+        ...(normalizeJsonObject(active?.configJson) ?? {})
+      },
       publishedAt: active?.publishedAt?.toISOString() ?? null,
       updatedAt: active?.updatedAt.toISOString() ?? null
     });

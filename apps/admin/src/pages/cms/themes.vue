@@ -1,105 +1,218 @@
 <template>
-  <section class="admin-page">
-    <AdminPageHeader title="主题配置" eyebrow="页面装修" subtitle="发布后小程序页面会读取主题色、圆角、按钮和卡片样式。">
+  <section class="admin-page theme-page">
+    <AdminPageHeader title="主题配置" eyebrow="页面装修" subtitle="统一设置前台页面的颜色、背景、按钮、卡片与品牌标识。">
       <template #actions>
         <el-button @click="resetDefault">恢复默认</el-button>
         <el-button type="primary" :loading="saving" @click="save">发布主题</el-button>
       </template>
     </AdminPageHeader>
 
-    <section class="data-panel theme-grid">
-      <el-form :model="form" label-width="120px">
-        <el-form-item label="主色"><el-color-picker v-model="form.primaryColor" /><el-input v-model="form.primaryColor" /></el-form-item>
-        <el-form-item label="辅助色"><el-color-picker v-model="form.secondaryColor" /><el-input v-model="form.secondaryColor" /></el-form-item>
-        <el-form-item label="强调色"><el-color-picker v-model="form.accentColor" /><el-input v-model="form.accentColor" /></el-form-item>
-        <el-form-item label="背景色"><el-color-picker v-model="form.backgroundColor" /><el-input v-model="form.backgroundColor" /></el-form-item>
-        <el-form-item label="卡片背景"><el-color-picker v-model="form.cardBackground" /><el-input v-model="form.cardBackground" /></el-form-item>
-        <el-form-item label="圆角"><el-input-number v-model="form.radius" :min="0" :max="32" /></el-form-item>
-        <el-form-item label="按钮风格">
-          <el-select v-model="form.buttonStyle">
-            <el-option label="实心" value="solid" />
-            <el-option label="描边" value="outline" />
-            <el-option label="柔和" value="soft" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="阴影强度">
-          <el-select v-model="form.shadow">
-            <el-option label="无" value="none" />
-            <el-option label="柔和" value="soft" />
-            <el-option label="明显" value="strong" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="标题字号"><el-input-number v-model="form.titleFontSize" :min="28" :max="64" /></el-form-item>
-        <el-form-item label="横幅风格">
-          <el-select v-model="form.bannerStyle">
-            <el-option label="干净" value="clean" />
-            <el-option label="图片" value="image" />
-            <el-option label="强调" value="accent" />
-            <el-option label="沉浸铺满" value="immersive" />
-            <el-option label="互动浮层" value="interactive" />
-          </el-select>
-        </el-form-item>
-        <el-divider content-position="left">后台品牌与浏览器</el-divider>
-        <el-form-item label="后台名称"><el-input v-model="form.adminBrandTitle" /></el-form-item>
-        <el-form-item label="后台副标题"><el-input v-model="form.adminBrandSubtitle" /></el-form-item>
-        <el-form-item label="后台图标">
-          <div class="field-row">
-            <el-input v-model="form.adminBrandLogoUrl" placeholder="可从素材库选择" />
-            <el-button @click="openMaterialPicker('adminBrandLogoUrl', 'image')">应用素材库</el-button>
+    <section class="theme-shell">
+      <div class="data-panel theme-form-panel">
+        <div class="theme-form-intro">
+          <div>
+            <div class="panel-title">主题控制台</div>
+            <p class="page-subtitle">支持按页面应用主题，也能一键应用到所有页面。</p>
           </div>
-        </el-form-item>
-        <el-form-item label="浏览器标题"><el-input v-model="form.browserTitle" /></el-form-item>
-        <el-form-item label="浏览器图标">
-          <div class="field-row">
-            <el-input v-model="form.browserIconUrl" placeholder="可从素材库选择 favicon 图片" />
-            <el-button @click="openMaterialPicker('browserIconUrl', 'image')">应用素材库</el-button>
-          </div>
-        </el-form-item>
-        <el-divider content-position="left">页面背景</el-divider>
-        <el-form-item label="背景模式">
-          <el-select v-model="form.backgroundMode">
-            <el-option label="纯色" value="solid" />
-            <el-option label="渐变" value="gradient" />
-            <el-option label="动态渐变" value="dynamic-gradient" />
-            <el-option label="背景图片" value="image" />
-            <el-option label="视频背景" value="video" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="渐变起点"><el-color-picker v-model="form.backgroundGradientFrom" /><el-input v-model="form.backgroundGradientFrom" /></el-form-item>
-        <el-form-item label="渐变终点"><el-color-picker v-model="form.backgroundGradientTo" /><el-input v-model="form.backgroundGradientTo" /></el-form-item>
-        <el-form-item label="背景图片">
-          <div class="field-row">
-            <el-input v-model="form.backgroundImageUrl" placeholder="可从素材库选择" />
-            <el-button @click="openMaterialPicker('backgroundImageUrl', 'image')">应用素材库</el-button>
-          </div>
-        </el-form-item>
-        <el-form-item label="背景视频">
-          <div class="field-row">
-            <el-input v-model="form.backgroundVideoUrl" placeholder="可从素材库选择 MP4" />
-            <el-button @click="openMaterialPicker('backgroundVideoUrl', 'video')">应用素材库</el-button>
-          </div>
-        </el-form-item>
-        <el-form-item label="动态密度"><el-slider v-model="form.backgroundDynamicDensity" :min="10" :max="100" /></el-form-item>
-        <el-form-item label="变化速度"><el-slider v-model="form.backgroundDynamicSpeed" :min="6" :max="40" /></el-form-item>
-        <el-form-item label="底部过滤"><el-switch v-model="form.backgroundBottomFilter" active-text="开启" inactive-text="关闭" /></el-form-item>
-        <el-form-item label="应用位置">
-          <el-radio-group v-model="form.backgroundApplyTo">
-            <el-radio-button label="header">仅头部</el-radio-button>
-            <el-radio-button label="body">头部和正文</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
-
-      <div class="theme-preview" :style="previewStyle">
-        <div class="preview-hero">
-          <span>会议报名</span>
-          <strong>主题预览</strong>
-          <p>这里展示发布到小程序后的主色、背景、卡片和按钮风格。</p>
+          <span class="theme-badge">{{ form.themeApplyMode === "all" ? "全部页面" : `已选 ${appliedPageNames.length} 个页面` }}</span>
         </div>
-        <div class="preview-card">
-          <strong>会议卡片</strong>
-          <p>后台发布主题后，小程序刷新即可应用。</p>
-          <button>立即报名</button>
+
+        <el-form :model="form" label-width="112px" class="theme-form">
+          <section class="form-section">
+            <div class="section-head">
+              <strong>应用页面</strong>
+              <span>支持单页、多页选择，以及全部页面一键应用。</span>
+            </div>
+            <el-form-item label="应用方式">
+              <el-radio-group v-model="form.themeApplyMode">
+                <el-radio-button label="all">全部页面</el-radio-button>
+                <el-radio-button label="selected">指定页面</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="form.themeApplyMode === 'selected'" label="目标页面">
+              <el-select v-model="form.themeApplyPageKeys" multiple filterable collapse-tags collapse-tags-tooltip placeholder="选择页面">
+                <el-option v-for="page in pageOptions" :key="page.value" :label="page.label" :value="page.value" />
+              </el-select>
+              <div class="apply-row">
+                <el-button link type="primary" @click="applyToAllPages">一键应用全部页面</el-button>
+                <span>{{ appliedPageNames.join("、") || "暂未选择页面" }}</span>
+              </div>
+            </el-form-item>
+          </section>
+
+          <section class="form-section">
+            <div class="section-head">
+              <strong>基础色彩</strong>
+              <span>控制前台主色、辅助色、卡片、按钮和整体层次。</span>
+            </div>
+            <el-form-item label="配色方案">
+              <div class="palette-grid">
+                <button
+                  v-for="palette in palettePresets"
+                  :key="palette.name"
+                  type="button"
+                  class="palette-card"
+                  @click="applyPalette(palette)"
+                >
+                  <span class="palette-swatches">
+                    <i v-for="color in palette.colors" :key="color" :style="{ background: color }" />
+                  </span>
+                  <strong>{{ palette.name }}</strong>
+                </button>
+              </div>
+            </el-form-item>
+            <el-form-item label="主色"><div class="color-row"><el-color-picker v-model="form.primaryColor" /><el-input v-model="form.primaryColor" /></div></el-form-item>
+            <el-form-item label="辅助色"><div class="color-row"><el-color-picker v-model="form.secondaryColor" /><el-input v-model="form.secondaryColor" /></div></el-form-item>
+            <el-form-item label="强调色"><div class="color-row"><el-color-picker v-model="form.accentColor" /><el-input v-model="form.accentColor" /></div></el-form-item>
+            <el-form-item label="背景色"><div class="color-row"><el-color-picker v-model="form.backgroundColor" /><el-input v-model="form.backgroundColor" /></div></el-form-item>
+            <el-form-item label="卡片背景"><div class="color-row"><el-color-picker v-model="form.cardBackground" /><el-input v-model="form.cardBackground" /></div></el-form-item>
+            <el-form-item label="圆角"><el-input-number v-model="form.radius" :min="0" :max="32" /></el-form-item>
+            <el-form-item label="按钮风格">
+              <el-select v-model="form.buttonStyle">
+                <el-option label="实心" value="solid" />
+                <el-option label="描边" value="outline" />
+                <el-option label="柔和" value="soft" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="阴影强度">
+              <el-select v-model="form.shadow">
+                <el-option label="无" value="none" />
+                <el-option label="柔和" value="soft" />
+                <el-option label="明显" value="strong" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="标题字号"><el-input-number v-model="form.titleFontSize" :min="28" :max="64" /></el-form-item>
+            <el-form-item label="横幅风格">
+              <el-select v-model="form.bannerStyle">
+                <el-option label="干净" value="clean" />
+                <el-option label="图片" value="image" />
+                <el-option label="强调" value="accent" />
+                <el-option label="沉浸铺满" value="immersive" />
+                <el-option label="互动浮层" value="interactive" />
+              </el-select>
+            </el-form-item>
+          </section>
+
+          <section class="form-section">
+            <div class="section-head">
+              <strong>后台品牌</strong>
+              <span>控制后台左上角文案、浏览器标题和图标。</span>
+            </div>
+            <el-form-item label="后台名称"><el-input v-model="form.adminBrandTitle" /></el-form-item>
+            <el-form-item label="后台副标题"><el-input v-model="form.adminBrandSubtitle" /></el-form-item>
+            <el-form-item label="后台图标">
+              <div class="field-row">
+                <el-input v-model="form.adminBrandLogoUrl" placeholder="可从素材库选择" />
+                <el-button @click="openMaterialPicker('adminBrandLogoUrl', 'image')">应用素材库</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="浏览器标题"><el-input v-model="form.browserTitle" /></el-form-item>
+            <el-form-item label="浏览器图标">
+              <div class="field-row">
+                <el-input v-model="form.browserIconUrl" placeholder="可从素材库选择 favicon 图片" />
+                <el-button @click="openMaterialPicker('browserIconUrl', 'image')">应用素材库</el-button>
+              </div>
+            </el-form-item>
+          </section>
+
+          <section class="form-section">
+            <div class="section-head">
+              <strong>背景效果</strong>
+              <span>支持纯色、渐变、动态渐变、图片和视频背景，并可控制作用区域。</span>
+            </div>
+            <el-form-item label="背景模式">
+              <el-select v-model="form.backgroundMode">
+                <el-option label="纯色" value="solid" />
+                <el-option label="渐变" value="gradient" />
+                <el-option label="动态渐变" value="dynamic-gradient" />
+                <el-option label="背景图片" value="image" />
+                <el-option label="视频背景" value="video" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="渐变起点"><div class="color-row"><el-color-picker v-model="form.backgroundGradientFrom" /><el-input v-model="form.backgroundGradientFrom" /></div></el-form-item>
+            <el-form-item label="渐变终点"><div class="color-row"><el-color-picker v-model="form.backgroundGradientTo" /><el-input v-model="form.backgroundGradientTo" /></div></el-form-item>
+            <el-form-item label="背景图片">
+              <div class="field-row">
+                <el-input v-model="form.backgroundImageUrl" placeholder="可从素材库选择" />
+                <el-button @click="openMaterialPicker('backgroundImageUrl', 'image')">应用素材库</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="背景视频">
+              <div class="field-row">
+                <el-input v-model="form.backgroundVideoUrl" placeholder="可从素材库选择 MP4" />
+                <el-button @click="openMaterialPicker('backgroundVideoUrl', 'video')">应用素材库</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="动态密度"><el-slider v-model="form.backgroundDynamicDensity" :min="10" :max="100" /></el-form-item>
+            <el-form-item label="变化速度"><el-slider v-model="form.backgroundDynamicSpeed" :min="6" :max="40" /></el-form-item>
+            <el-form-item label="底部过滤"><el-switch v-model="form.backgroundBottomFilter" active-text="开启" inactive-text="关闭" /></el-form-item>
+            <el-form-item label="应用位置">
+              <el-radio-group v-model="form.backgroundApplyTo">
+                <el-radio-button label="header">仅头部</el-radio-button>
+                <el-radio-button label="body">头部和正文</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+          </section>
+        </el-form>
+      </div>
+
+      <div class="data-panel theme-preview-panel">
+        <div class="preview-head">
+          <div>
+            <div class="panel-title">实时预览</div>
+            <p class="page-subtitle">切换页面查看当前主题是否命中，以及背景、卡片、按钮的实际效果。</p>
+          </div>
+          <el-radio-group v-model="previewPageKey" size="small">
+            <el-radio-button v-for="page in previewPageOptions" :key="page.value" :label="page.value">{{ page.label }}</el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <div class="preview-stage" :class="{ 'is-dynamic-bg': form.backgroundMode === 'dynamic-gradient' }" :style="previewStageStyle">
+          <video
+            v-if="form.backgroundMode === 'video' && form.backgroundVideoUrl"
+            class="preview-video"
+            :src="form.backgroundVideoUrl"
+            autoplay
+            muted
+            loop
+          />
+          <div class="preview-phone">
+            <div class="preview-phone__status">
+              <span>9:41</span>
+              <span>{{ previewApplied ? "已应用" : "未应用" }}</span>
+            </div>
+            <div class="preview-phone__screen">
+              <div class="preview-nav">{{ previewPageLabel }}</div>
+              <div class="preview-body">
+                <section class="preview-hero" :style="previewHeroStyle">
+                  <div class="preview-hero__copy">
+                    <span>{{ previewPageLabel }}</span>
+                    <strong>{{ previewHeroTitle }}</strong>
+                    <p>{{ previewHeroText }}</p>
+                  </div>
+                  <button class="preview-primary-button">{{ previewCtaText }}</button>
+                </section>
+
+                <section class="preview-card preview-card--list">
+                  <div class="preview-card__head">
+                    <strong>{{ previewSectionTitle }}</strong>
+                    <small>{{ previewApplied ? "当前页面已命中主题" : "当前页面未命中主题，将回退默认主题" }}</small>
+                  </div>
+                  <div class="preview-conference-list">
+                    <article v-for="item in previewConferenceCards" :key="item.title" class="preview-conference-card">
+                      <div class="preview-conference-card__cover" />
+                      <div class="preview-conference-card__body">
+                        <strong>{{ item.title }}</strong>
+                        <p>{{ item.summary }}</p>
+                        <span>{{ item.meta }}</span>
+                      </div>
+                      <button class="preview-detail-button">查看详情</button>
+                    </article>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -128,8 +241,14 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
-import { getTheme, listMaterials, updateTheme } from "../../services/admin";
-import type { MaterialAsset, ThemeConfig } from "../../services/types";
+import { getTheme, listMaterials, listPages, updateTheme } from "../../services/admin";
+import type { MaterialAsset, PageTemplate, ThemeConfig } from "../../services/types";
+
+interface PalettePreset {
+  name: string;
+  colors: string[];
+  values: Partial<ThemeConfig>;
+}
 
 const DEFAULT_THEME: ThemeConfig = {
   primaryColor: "#2452a8",
@@ -142,10 +261,10 @@ const DEFAULT_THEME: ThemeConfig = {
   shadow: "soft",
   titleFontSize: 42,
   bannerStyle: "clean",
-  adminBrandTitle: "会议运营后台",
-  adminBrandSubtitle: "会议业务运营中心",
+  adminBrandTitle: "会务运营平台",
+  adminBrandSubtitle: "报名、支付与页面配置中心",
   adminBrandLogoUrl: "",
-  browserTitle: "会议后台",
+  browserTitle: "会务运营平台",
   browserIconUrl: "",
   backgroundMode: "solid",
   backgroundGradientFrom: "#f5f7fb",
@@ -155,18 +274,84 @@ const DEFAULT_THEME: ThemeConfig = {
   backgroundDynamicDensity: 40,
   backgroundDynamicSpeed: 18,
   backgroundBottomFilter: true,
-  backgroundApplyTo: "body"
+  backgroundApplyTo: "body",
+  themeApplyMode: "all",
+  themeApplyPageKeys: []
 };
 
+const palettePresets: PalettePreset[] = [
+  {
+    name: "会务蓝",
+    colors: ["#2452a8", "#14b8a6", "#f59e0b", "#f5f7fb"],
+    values: {
+      primaryColor: "#2452a8",
+      secondaryColor: "#14b8a6",
+      accentColor: "#f59e0b",
+      backgroundColor: "#f5f7fb",
+      cardBackground: "#ffffff",
+      backgroundGradientFrom: "#eef4ff",
+      backgroundGradientTo: "#ecfbf7"
+    }
+  },
+  {
+    name: "日光暖金",
+    colors: ["#c8862b", "#f2c94c", "#1f4ba7", "#fff8ef"],
+    values: {
+      primaryColor: "#c8862b",
+      secondaryColor: "#f2c94c",
+      accentColor: "#1f4ba7",
+      backgroundColor: "#fff8ef",
+      cardBackground: "#ffffff",
+      backgroundGradientFrom: "#fff0c8",
+      backgroundGradientTo: "#ffe2d1"
+    }
+  },
+  {
+    name: "海岸青绿",
+    colors: ["#0f766e", "#38bdf8", "#fb7185", "#effcf8"],
+    values: {
+      primaryColor: "#0f766e",
+      secondaryColor: "#38bdf8",
+      accentColor: "#fb7185",
+      backgroundColor: "#effcf8",
+      cardBackground: "#ffffff",
+      backgroundGradientFrom: "#dffaf3",
+      backgroundGradientTo: "#dff4ff"
+    }
+  }
+];
+
+const previewFallbackPages = [
+  { value: "home", label: "首页" },
+  { value: "conference-detail", label: "会议详情" },
+  { value: "my-registrations", label: "我的报名" }
+];
+
 const form = reactive<ThemeConfig>({ ...DEFAULT_THEME });
+const pages = ref<PageTemplate[]>([]);
 const saving = ref(false);
 const materialVisible = ref(false);
 const materialLoading = ref(false);
 const materialKeyword = ref("");
 const materialAssets = ref<MaterialAsset[]>([]);
 const materialTarget = ref<{ key: keyof ThemeConfig; kind: "image" | "video" } | null>(null);
+const previewPageKey = ref("home");
 
-const previewStyle = computed(() => ({
+const pageOptions = computed(() =>
+  pages.value.map((page) => ({
+    value: page.pageKey,
+    label: page.title
+  }))
+);
+
+const previewPageOptions = computed(() => (pageOptions.value.length > 0 ? pageOptions.value.slice(0, 6) : previewFallbackPages));
+const previewPageLabel = computed(() => previewPageOptions.value.find((item) => item.value === previewPageKey.value)?.label ?? "首页");
+const appliedPageNames = computed(() => {
+  const lookup = new Map(pageOptions.value.map((item) => [item.value, item.label]));
+  return (form.themeApplyPageKeys ?? []).map((key) => lookup.get(key) ?? key);
+});
+const previewApplied = computed(() => form.themeApplyMode !== "selected" || (form.themeApplyPageKeys ?? []).includes(previewPageKey.value));
+const previewStageStyle = computed(() => ({
   "--theme-primary": form.primaryColor,
   "--theme-secondary": form.secondaryColor,
   "--theme-accent": form.accentColor,
@@ -174,30 +359,85 @@ const previewStyle = computed(() => ({
   "--theme-card": form.cardBackground,
   "--theme-radius": `${form.radius}px`,
   "--theme-title": `${form.titleFontSize}px`,
-  "--theme-shadow": form.shadow === "none" ? "none" : form.shadow === "strong" ? "0 16px 36px rgba(15, 23, 42, 0.18)" : "0 8px 20px rgba(15, 23, 42, 0.08)",
-  background: previewBackground.value
+  "--theme-shadow": shadowValue(form.shadow),
+  background: previewApplied.value ? previewBackground.value : "#f5f7fb",
+  animationDuration: `${Math.max(6, Number(form.backgroundDynamicSpeed) || 18)}s`,
+  backgroundSize: `${dynamicSize.value}% ${dynamicSize.value}%`
 }));
-
+const previewHeroStyle = computed(() => {
+  if (!previewApplied.value) return {};
+  if (form.backgroundApplyTo === "header") {
+    return {
+      background: previewBackground.value,
+      backgroundSize: `${dynamicSize.value}% ${dynamicSize.value}%`
+    };
+  }
+  return {};
+});
 const previewBackground = computed(() => {
-  if (form.backgroundMode === "image" && form.backgroundImageUrl) return `linear-gradient(180deg, rgba(245,247,251,0.2), rgba(245,247,251,0.88)), url("${form.backgroundImageUrl}") center / cover`;
-  if (form.backgroundMode === "dynamic-gradient") return `linear-gradient(135deg, ${form.backgroundGradientFrom}, ${form.backgroundGradientTo})`;
-  if (form.backgroundMode === "gradient") return `linear-gradient(180deg, ${form.backgroundGradientFrom}, ${form.backgroundGradientTo})`;
+  if (form.backgroundMode === "image" && form.backgroundImageUrl) {
+    const overlay = form.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.12), rgba(245,247,251,0.88)), ";
+    return `${overlay}url("${form.backgroundImageUrl}") center / cover`;
+  }
+  if (form.backgroundMode === "dynamic-gradient") {
+    return dynamicGradient(form);
+  }
+  if (form.backgroundMode === "gradient") {
+    return `linear-gradient(135deg, ${form.backgroundGradientFrom}, ${form.backgroundGradientTo})`;
+  }
   return form.backgroundColor;
 });
+const dynamicSize = computed(() => Math.max(180, 560 - (Number(form.backgroundDynamicDensity) || 40) * 3));
+const previewHeroTitle = computed(() => {
+  if (previewPageKey.value === "conference-detail") return "峰会详情与报名安排";
+  if (previewPageKey.value === "my-registrations") return "我的报名与状态查看";
+  return "会议首页与报名导览";
+});
+const previewHeroText = computed(() => {
+  if (previewPageKey.value === "conference-detail") return "查看时间、地点、票种与报名说明，快速完成参会决策。";
+  if (previewPageKey.value === "my-registrations") return "聚合订单状态、参会记录和报名结果，信息查看更清晰。";
+  return "展示主视觉、活动亮点和可报名会议列表，适合作为用户进入后的第一屏。";
+});
+const previewCtaText = computed(() => (previewPageKey.value === "my-registrations" ? "查看记录" : "立即报名"));
+const previewSectionTitle = computed(() => (previewPageKey.value === "conference-detail" ? "会议信息" : "会议列表"));
+const previewConferenceCards = computed(() =>
+  previewPageKey.value === "conference-detail"
+    ? [
+        { title: "时间安排", summary: "2026-08-01 09:30 入场签到，10:00 正式开场。", meta: "主论坛 + 闭门会" },
+        { title: "会场地点", summary: "上海世博会展中心 2 号馆，支持现场签到。", meta: "地铁直达 · 停车指引" }
+      ]
+    : [
+        { title: "示例会议 2", summary: "围绕行业趋势、嘉宾分享与报名转化设计首页节奏。", meta: "北京 · 6 月 8 日" },
+        { title: "会议报名缴费 MVP 示例会议", summary: "主视觉、时间地点和报名入口信息层次更清晰。", meta: "上海 · 8 月 1 日" }
+      ]
+);
 
 onMounted(async () => {
-  const active = await getTheme();
+  const [active, pageResponse] = await Promise.all([getTheme(), listPages().catch(() => ({ items: [] as PageTemplate[] }))]);
+  pages.value = pageResponse.items;
   Object.assign(form, active.config);
+  if (previewPageOptions.value.length > 0) {
+    previewPageKey.value = previewPageOptions.value[0].value;
+  }
 });
 
 function resetDefault() {
   Object.assign(form, DEFAULT_THEME);
 }
 
+function applyPalette(palette: PalettePreset) {
+  Object.assign(form, palette.values);
+}
+
+function applyToAllPages() {
+  form.themeApplyMode = "all";
+  form.themeApplyPageKeys = [];
+}
+
 async function save() {
   saving.value = true;
   try {
-    const active = await updateTheme({ config: { ...form } });
+    const active = await updateTheme({ config: { ...form, themeApplyPageKeys: [...(form.themeApplyPageKeys ?? [])] } });
     Object.assign(form, active.config);
     ElMessage.success("主题已发布");
   } finally {
@@ -234,69 +474,341 @@ function chooseMaterial(asset: MaterialAsset) {
   materialVisible.value = false;
   ElMessage.success("已应用素材");
 }
+
+function shadowValue(value: string | undefined): string {
+  if (value === "none") return "none";
+  if (value === "strong") return "0 20px 48px rgba(15, 23, 42, 0.18)";
+  return "0 10px 28px rgba(15, 23, 42, 0.1)";
+}
+
+function dynamicGradient(config: ThemeConfig): string {
+  const from = config.backgroundGradientFrom || config.backgroundColor;
+  const to = config.backgroundGradientTo || config.secondaryColor;
+  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
+  const dotOpacity = Math.min(0.26, 0.08 + density / 650);
+  const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(245,247,251,0.8)), ";
+  return `${overlay}radial-gradient(circle at 16% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(14, density / 2.6)}%), radial-gradient(circle at 84% 22%, rgba(20,184,166,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.1)}%), radial-gradient(circle at 50% 78%, rgba(245,158,11,${Math.min(0.2, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.8)}%), linear-gradient(135deg, ${from}, ${to})`;
+}
 </script>
 
 <style scoped>
-.theme-grid {
+.theme-shell {
   display: grid;
-  grid-template-columns: minmax(360px, 0.8fr) minmax(320px, 1fr);
-  gap: 24px;
+  grid-template-columns: minmax(420px, 1.05fr) minmax(360px, 0.95fr);
+  gap: 20px;
 }
 
-.theme-preview {
-  min-height: 520px;
-  padding: 24px;
+.theme-form-panel,
+.theme-preview-panel {
+  min-height: 760px;
+  padding: 20px;
+}
+
+.theme-form-intro,
+.preview-head,
+.section-head,
+.apply-row,
+.field-row,
+.color-row,
+.material-picker__head {
+  display: flex;
+  gap: 12px;
+}
+
+.theme-form-intro,
+.preview-head {
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.theme-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(20, 99, 255, 0.1);
+  color: var(--admin-color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.theme-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.form-section {
+  padding: 18px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.section-head {
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.section-head strong {
+  color: var(--admin-color-text);
+  font-size: 15px;
+}
+
+.section-head span,
+.apply-row span {
+  color: var(--admin-color-muted);
+  font-size: 12px;
+}
+
+.apply-row {
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.palette-card {
+  padding: 10px 12px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 12px;
+  background: #f8fbff;
+  text-align: left;
+}
+
+.palette-card strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--admin-color-text);
+}
+
+.palette-swatches {
+  display: flex;
+  gap: 6px;
+}
+
+.palette-swatches i {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.color-row {
+  align-items: center;
+  width: 100%;
+}
+
+.color-row :deep(.el-input),
+.field-row :deep(.el-input),
+.field-row :deep(.el-select) {
+  flex: 1;
+}
+
+.preview-stage {
+  position: relative;
+  min-height: 700px;
+  overflow: hidden;
   border-radius: 24px;
+  padding: 24px;
   background: var(--theme-bg);
 }
 
+.preview-stage.is-dynamic-bg {
+  animation: themePreviewMove 18s ease-in-out infinite alternate;
+}
+
+.preview-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preview-phone {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 360px);
+  margin: 0 auto;
+  padding: 14px;
+  border-radius: 32px;
+  background: rgba(16, 24, 40, 0.9);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.26);
+}
+
+.preview-phone__status {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 10px 12px;
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.preview-phone__screen {
+  overflow: hidden;
+  border-radius: 24px;
+  background: #ffffff;
+}
+
+.preview-nav {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  text-align: center;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: #f5f7fb;
+}
+
+.preview-hero,
+.preview-card {
+  border-radius: 22px;
+}
+
 .preview-hero {
-  padding: 24px;
-  border-radius: var(--theme-radius);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px;
   background: linear-gradient(135deg, var(--theme-primary), var(--theme-secondary));
   color: #ffffff;
   box-shadow: var(--theme-shadow);
 }
 
-.preview-hero span,
-.preview-hero strong {
+.preview-hero__copy span,
+.preview-hero__copy strong,
+.preview-hero__copy p {
   display: block;
 }
 
-.preview-hero strong {
-  margin-top: 8px;
-  font-size: var(--theme-title);
-  line-height: 1.15;
+.preview-hero__copy span {
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.88;
+}
+
+.preview-hero__copy strong {
+  margin-top: 6px;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.preview-hero__copy p {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  opacity: 0.9;
+}
+
+.preview-primary-button,
+.preview-detail-button {
+  border: 0;
+  font-weight: 800;
+}
+
+.preview-primary-button {
+  align-self: flex-start;
+  min-width: 98px;
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
 }
 
 .preview-card {
-  margin-top: 18px;
-  padding: 20px;
-  border-radius: var(--theme-radius);
+  padding: 18px;
   background: var(--theme-card);
   box-shadow: var(--theme-shadow);
 }
 
-.preview-card button {
+.preview-card__head {
+  margin-bottom: 12px;
+}
+
+.preview-card__head strong,
+.preview-conference-card__body strong {
+  display: block;
+  color: #172033;
+}
+
+.preview-card__head small,
+.preview-conference-card__body p,
+.preview-conference-card__body span {
+  display: block;
+  color: #637083;
+}
+
+.preview-card__head small {
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.preview-conference-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-conference-card {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(36, 82, 168, 0.12);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 247, 255, 0.9));
+}
+
+.preview-conference-card__cover {
+  height: 78px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(36, 82, 168, 0.2), rgba(20, 184, 166, 0.12));
+}
+
+.preview-conference-card__body strong {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.preview-conference-card__body p,
+.preview-conference-card__body span {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.preview-detail-button {
+  min-width: 88px;
   min-height: 38px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: var(--theme-radius);
+  padding: 0 14px;
+  border-radius: 999px;
   background: var(--theme-primary);
   color: #ffffff;
-  font-weight: 700;
 }
 
 .field-row {
-  display: flex;
-  gap: 8px;
+  align-items: center;
   width: 100%;
-}
-
-.material-picker__head {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 14px;
 }
 
 .material-grid {
@@ -330,5 +842,38 @@ function chooseMaterial(asset: MaterialAsset) {
 .material-card small {
   display: block;
   margin-top: 6px;
+}
+
+@keyframes themePreviewMove {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 70%;
+  }
+}
+
+@media (max-width: 1280px) {
+  .theme-shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .palette-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-head,
+  .theme-form-intro,
+  .section-head,
+  .apply-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .preview-conference-card {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

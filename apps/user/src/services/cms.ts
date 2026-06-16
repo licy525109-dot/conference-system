@@ -60,7 +60,9 @@ export interface ThemeConfig {
   backgroundDynamicSpeed?: number;
   backgroundBottomFilter?: boolean;
   backgroundApplyTo?: string;
-  [key: string]: string | number | boolean | null | undefined;
+  themeApplyMode?: string;
+  themeApplyPageKeys?: string[];
+  [key: string]: string | number | boolean | string[] | null | undefined;
 }
 
 export interface AppTabbar {
@@ -101,7 +103,9 @@ export const DEFAULT_THEME: ThemeConfig = {
   backgroundDynamicDensity: 40,
   backgroundDynamicSpeed: 18,
   backgroundBottomFilter: true,
-  backgroundApplyTo: "body"
+  backgroundApplyTo: "body",
+  themeApplyMode: "all",
+  themeApplyPageKeys: []
 };
 
 export async function getPublishedPage(pageKey: string): Promise<PublishedPage | null> {
@@ -140,15 +144,34 @@ export function buildPageShare(page: PublishedPage | null | undefined, path: str
   };
 }
 
-export async function getAppTheme(): Promise<ThemeConfig> {
+export async function getAppTheme(pageKey?: string): Promise<ThemeConfig> {
   try {
     const theme = await request<AppTheme>("/app/theme", { auth: false });
     uni.setStorageSync("cms-theme", theme.config);
-    return { ...DEFAULT_THEME, ...theme.config };
+    return resolveThemeForPage({ ...DEFAULT_THEME, ...theme.config }, pageKey);
   } catch {
     const cached = uni.getStorageSync("cms-theme") as Partial<ThemeConfig> | "";
-    return { ...DEFAULT_THEME, ...(cached || {}) };
+    return resolveThemeForPage({ ...DEFAULT_THEME, ...(cached || {}) }, pageKey);
   }
+}
+
+export function resolveThemeForPage(theme: ThemeConfig, pageKey?: string): ThemeConfig {
+  const mode = theme.themeApplyMode === "selected" ? "selected" : "all";
+  const applyKeys = Array.isArray(theme.themeApplyPageKeys) ? theme.themeApplyPageKeys.filter((item) => typeof item === "string" && item.trim()) : [];
+  if (mode !== "selected" || !pageKey || applyKeys.includes(pageKey)) {
+    return { ...DEFAULT_THEME, ...theme, themeApplyMode: mode, themeApplyPageKeys: applyKeys };
+  }
+
+  return {
+    ...DEFAULT_THEME,
+    adminBrandTitle: theme.adminBrandTitle,
+    adminBrandSubtitle: theme.adminBrandSubtitle,
+    adminBrandLogoUrl: theme.adminBrandLogoUrl,
+    browserTitle: theme.browserTitle,
+    browserIconUrl: theme.browserIconUrl,
+    themeApplyMode: mode,
+    themeApplyPageKeys: applyKeys
+  };
 }
 
 export async function getAppTabbar(): Promise<AppTabbar> {

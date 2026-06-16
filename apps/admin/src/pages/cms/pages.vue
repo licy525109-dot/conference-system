@@ -2,285 +2,310 @@
   <section class="admin-page cms-page">
     <div class="page-header cms-hero">
       <div>
-        <h1 class="page-title">小程序页面装修</h1>
-        <p class="page-subtitle">选择页面、添加组件、填写中文配置，右侧实时查看手机效果。</p>
+        <h1 class="page-title">页面装修工作台</h1>
+        <p class="page-subtitle">左侧管理页面与组件，中间专注预览和排序，右侧集中编辑页面参数与组件配置。</p>
       </div>
       <div class="inline-actions">
         <el-button @click="createVisible = true">新增页面</el-button>
+        <el-button @click="openTemplateLibrary">页面模板</el-button>
+        <el-button :disabled="!selectedPage || !version" @click="saveTemplateVisible = true">另存为模板</el-button>
         <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
         <el-button type="primary" :loading="publishing" @click="publish">发布页面</el-button>
       </div>
     </div>
 
     <section class="cms-workbench">
-      <aside class="cms-sidebar data-panel">
-        <div class="panel-title">页面列表</div>
-        <button
-          v-for="page in pages"
-          :key="page.id"
-          class="page-item"
-          :class="{ active: selectedPage?.id === page.id }"
-          @click="selectPage(page)"
-        >
-          <span>{{ page.title }}</span>
-          <small>{{ page.publishedVersionId ? "已发布" : "未发布" }}</small>
-        </button>
+      <aside class="cms-sidebar cms-sidebar--left">
+        <section class="data-panel cms-panel">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">页面列表</div>
+              <p class="page-subtitle">选择要装修的页面，也可以直接新建自定义页面。</p>
+            </div>
+            <el-button link type="primary" @click="createVisible = true">新增</el-button>
+          </div>
+          <div class="page-list">
+            <button
+              v-for="page in pages"
+              :key="page.id"
+              class="page-item"
+              :class="{ active: selectedPage?.id === page.id }"
+              @click="selectPage(page)"
+            >
+              <span class="page-item__copy">
+                <strong>{{ page.title }}</strong>
+                <small>{{ page.pageType }}</small>
+              </span>
+              <span class="page-item__status">{{ page.publishedVersionId ? "已发布" : "草稿中" }}</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="data-panel cms-panel">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">组件库</div>
+              <p class="page-subtitle">点击添加组件到当前页面，再到右侧细调参数。</p>
+            </div>
+          </div>
+          <div class="library-filters">
+            <el-select v-model="activePresetGroup" placeholder="组件分类">
+              <el-option v-for="group in filteredPresetGroups" :key="group.name" :label="group.name" :value="group.name" />
+            </el-select>
+            <el-input v-model="presetKeyword" clearable placeholder="搜索组件名称" />
+          </div>
+          <el-tabs v-model="activePresetGroup" class="library-tabs">
+            <el-tab-pane v-for="group in filteredPresetGroups" :key="group.name" :label="group.name" :name="group.name">
+              <div class="preset-grid">
+                <button
+                  v-for="preset in group.items"
+                  :key="preset.type"
+                  class="preset-card"
+                  :class="supportStatusClass(preset.type)"
+                  :disabled="!canAddPreset(preset)"
+                  @click="addComponent(preset)"
+                >
+                  <span class="preset-thumb" :class="thumbClass(preset.type)">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <span class="preset-card__title">
+                    <strong>{{ preset.name }}</strong>
+                    <span class="support-badge" :class="supportStatusClass(preset.type)">{{ componentSupport(preset.type).label }}</span>
+                  </span>
+                  <small>{{ presetSupportDescription(preset) }}</small>
+                </button>
+              </div>
+            </el-tab-pane>
+          </el-tabs>
+        </section>
       </aside>
 
-      <main v-if="selectedPage && version" class="cms-editor">
-        <section class="data-panel">
+      <main v-if="selectedPage && version" class="cms-editor cms-stage">
+        <section class="data-panel cms-panel cms-stage-head">
           <div class="editor-heading">
             <div>
               <div class="panel-title">{{ selectedPage.title }}</div>
-              <p class="page-subtitle">当前草稿标题可用于区分每次装修版本。</p>
+              <p class="page-subtitle">当前页面：{{ selectedPage.pageKey }}，草稿标题用于区分每次装修版本。</p>
             </div>
-            <el-input v-model="versionTitle" placeholder="草稿标题" style="width: 260px" />
+            <div class="stage-head__actions">
+              <el-input v-model="versionTitle" placeholder="草稿标题" style="width: 260px" />
+              <el-button @click="rollback">回滚到已发布版本</el-button>
+            </div>
           </div>
-          <el-collapse v-model="expandedPageMeta" class="page-meta-collapse">
-            <el-collapse-item title="页面信息与微信分享" name="page-meta">
-              <el-form label-position="top" class="page-meta-form">
-                <el-form-item label="小程序页面标题">
-                  <el-input v-model="pageMeta.pageTitle" placeholder="显示在手机预览顶部" />
-                </el-form-item>
-                <el-form-item label="微信分享标题">
-                  <el-input v-model="pageMeta.shareTitle" placeholder="转发给朋友时展示的标题" />
-                </el-form-item>
-                <el-form-item label="微信分享描述">
-                  <el-input v-model="pageMeta.shareDescription" type="textarea" :rows="2" placeholder="转发卡片描述" />
-                </el-form-item>
-                <el-form-item label="微信分享封面">
-                  <div class="field-row">
-                    <el-input v-model="pageMeta.shareImageUrl" placeholder="从素材库选择或粘贴图片地址" />
-                    <el-button @click="openPageMetaImagePicker">应用素材库</el-button>
-                  </div>
-                </el-form-item>
-                <template v-if="selectedPage?.pageKey === 'home'">
-                  <el-divider content-position="left">首页顶部标题与按钮</el-divider>
-                  <el-form-item label="顶部眉标"><el-input v-model="homeHero.eyebrow" placeholder="会议报名" /></el-form-item>
-                  <el-form-item label="顶部标题"><el-input v-model="homeHero.title" placeholder="选择会议，完成报名缴费" /></el-form-item>
-                  <el-form-item label="顶部说明"><el-input v-model="homeHero.subtitle" type="textarea" :rows="2" /></el-form-item>
-                  <el-form-item label="按钮文字"><el-input v-model="homeHero.buttonText" placeholder="我的报名" /></el-form-item>
-                  <el-form-item label="按钮跳转"><el-input v-model="homeHero.buttonTarget" placeholder="/pages/registrations/my" /></el-form-item>
-                  <el-form-item label="排版方式">
-                    <el-radio-group v-model="homeHero.layout">
-                      <el-radio-button label="split">左右排版</el-radio-button>
-                      <el-radio-button label="centered">居中排版</el-radio-button>
-                    </el-radio-group>
-                  </el-form-item>
-                </template>
-              </el-form>
-            </el-collapse-item>
-          </el-collapse>
+          <el-alert
+            v-if="unsupportedEnabledComponents.length > 0"
+            class="publish-guard-alert"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="当前页面包含暂不支持小程序/H5 的组件"
+            :description="`已启用 ${unsupportedEnabledComponents.length} 个不支持或后续开放组件，用户端正式页面会静默隐藏，建议发布前处理：${unsupportedEnabledComponents.map((item) => presetName(item.type)).join('、')}`"
+          />
         </section>
 
-        <el-alert
-          v-if="unsupportedEnabledComponents.length > 0"
-          class="publish-guard-alert"
-          type="warning"
-          :closable="false"
-          show-icon
-          title="当前页面包含暂不支持小程序/H5 的组件"
-          :description="`已启用 ${unsupportedEnabledComponents.length} 个不支持或后续开放组件，用户端正式页面会静默隐藏，建议发布前处理：${unsupportedEnabledComponents.map((item) => presetName(item.type)).join('、')}`"
-        />
-
-        <section class="cms-builder">
-          <div class="component-library data-panel">
-            <div class="library-head">
-              <div>
-                <div class="panel-title">组件库</div>
-                <p class="page-subtitle">点击组件即可添加到当前页面。</p>
+        <section class="data-panel cms-panel phone-preview">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">手机预览</div>
+              <p class="page-subtitle">中间预览当前页面效果，点击下方组件卡片可定位并到右侧编辑。</p>
+            </div>
+            <el-select
+              v-model="selectedComponentId"
+              clearable
+              filterable
+              placeholder="定位页面组件"
+              style="width: 240px"
+              @change="focusComponent"
+            >
+              <el-option v-for="option in componentOptions" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
+          </div>
+          <div class="phone-shell">
+            <div class="phone-status" />
+            <div class="phone-window" :style="previewStyle">
+              <div class="phone-nav">
+                <span>{{ previewTitle }}</span>
+                <span class="phone-capsule"><i /><i /></span>
               </div>
-              <div class="library-filters">
-                <el-select v-model="activePresetGroup" placeholder="组件分类" style="width: 150px">
-                  <el-option v-for="group in filteredPresetGroups" :key="group.name" :label="group.name" :value="group.name" />
-                </el-select>
-                <el-input v-model="presetKeyword" clearable placeholder="搜索组件名称" style="width: 220px" />
+              <div class="phone-screen">
+                <template v-if="previewComponents.length > 0">
+                  <div v-for="component in previewComponents" :key="component.id" class="preview-block">
+                    <component-preview :item="component" :name="presetName(component.type)" />
+                  </div>
+                </template>
+                <div v-else class="preview-empty">页面暂无展示内容</div>
+              </div>
+              <div v-if="previewTabbarItems.length > 0" class="phone-tabbar">
+                <div
+                  v-for="item in previewTabbarItems"
+                  :key="item.pageKey"
+                  class="phone-tabbar__item"
+                  :class="{ active: selectedPage?.pageKey === item.pageKey }"
+                >
+                  <img v-if="item.iconUrl" :src="selectedPage?.pageKey === item.pageKey ? item.selectedIconUrl || item.iconUrl : item.iconUrl" :alt="item.title" />
+                  <span v-else class="phone-tabbar__dot" />
+                  <small>{{ item.title }}</small>
+                </div>
               </div>
             </div>
-            <el-tabs v-model="activePresetGroup">
-              <el-tab-pane v-for="group in filteredPresetGroups" :key="group.name" :label="group.name" :name="group.name">
-                <div class="preset-grid">
-                  <button
-                    v-for="preset in group.items"
-                    :key="preset.type"
-                    class="preset-card"
-                    :class="supportStatusClass(preset.type)"
-                    :disabled="!canAddPreset(preset)"
-                    @click="addComponent(preset)"
-                  >
-                    <span class="preset-thumb" :class="thumbClass(preset.type)">
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    <span class="preset-card__title">
-                      <strong>{{ preset.name }}</strong>
-                      <span class="support-badge" :class="supportStatusClass(preset.type)">{{ componentSupport(preset.type).label }}</span>
-                    </span>
-                    <small>{{ presetSupportDescription(preset) }}</small>
-                  </button>
-                </div>
-              </el-tab-pane>
-            </el-tabs>
+          </div>
+        </section>
+
+        <section class="data-panel cms-panel component-stack">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">页面内容</div>
+              <p class="page-subtitle">拖拽暂未开放，当前可通过上移、下移和点击卡片来排布与编辑组件。</p>
+            </div>
           </div>
 
-          <div class="component-stack data-panel">
-            <div class="library-head">
+          <el-empty v-if="components.length === 0" description="还没有组件，请从左侧组件库添加" />
+
+          <div
+            v-for="(component, index) in components"
+            :id="componentDomId(component.id)"
+            :key="component.id"
+            class="component-card component-card--summary"
+            :class="{ 'is-selected': selectedComponentId === component.id }"
+            @click="selectComponentCard(component.id)"
+          >
+            <div class="component-card__head">
               <div>
-                <div class="panel-title">页面内容</div>
-                <p class="page-subtitle">通过上移、下移调整展示顺序。</p>
+                <span class="component-title-row">
+                  <strong>{{ index + 1 }}. {{ presetName(component.type) }}</strong>
+                  <span class="support-badge" :class="supportStatusClass(component.type)">{{ componentSupport(component.type).label }}</span>
+                </span>
+                <span>{{ componentStateText(component) }}</span>
+                <p v-if="componentNotice(component)" class="component-notice" :class="supportStatusClass(component.type)">
+                  {{ componentNotice(component) }}
+                </p>
               </div>
-              <div class="library-filters">
-                <el-select
-                  v-model="selectedComponentId"
-                  clearable
-                  filterable
-                  placeholder="定位页面组件"
-                  style="width: 220px"
-                  @change="focusComponent"
-                >
-                  <el-option
-                    v-for="option in componentOptions"
-                    :key="option.value"
-                    :label="option.label"
-                    :value="option.value"
-                  />
-                </el-select>
-                <el-button @click="rollback">回滚到已发布版本</el-button>
+              <div class="inline-actions" @click.stop>
+                <el-switch v-model="component.enabled" active-text="展示" inactive-text="隐藏" />
+                <el-button size="small" :disabled="index === 0" @click="moveComponent(index, -1)">上移</el-button>
+                <el-button size="small" :disabled="index === components.length - 1" @click="moveComponent(index, 1)">下移</el-button>
+                <el-button size="small" type="danger" plain @click="removeComponent(index)">删除</el-button>
               </div>
             </div>
-
-            <el-empty v-if="components.length === 0" description="还没有组件，请从左侧组件库添加" />
-
-            <div v-for="(component, index) in components" :id="componentDomId(component.id)" :key="component.id" class="component-card">
-              <div class="component-card__head">
-                <div>
-                  <span class="component-title-row">
-                    <strong>{{ presetName(component.type) }}</strong>
-                    <span class="support-badge" :class="supportStatusClass(component.type)">{{ componentSupport(component.type).label }}</span>
-                  </span>
-                  <span>{{ componentStateText(component) }}</span>
-                  <p v-if="componentNotice(component)" class="component-notice" :class="supportStatusClass(component.type)">
-                    {{ componentNotice(component) }}
-                  </p>
-                </div>
-                <div class="inline-actions">
-                  <el-switch v-model="component.enabled" active-text="展示" inactive-text="隐藏" />
-                  <el-button size="small" :disabled="index === 0" @click="moveComponent(index, -1)">上移</el-button>
-                  <el-button size="small" :disabled="index === components.length - 1" @click="moveComponent(index, 1)">下移</el-button>
-                  <el-button size="small" type="danger" plain @click="removeComponent(index)">删除</el-button>
-                </div>
-              </div>
-              <el-collapse v-model="expandedComponentIds" class="component-config-collapse">
-                <el-collapse-item title="组件配置" :name="component.id">
-                  <el-collapse v-model="expandedConfigGroupIds[component.id]" class="config-group-collapse">
-                    <el-collapse-item v-for="group in groupedFieldsFor(component.type)" :key="group.key" :title="group.title" :name="group.key">
-                      <el-form label-position="top" class="config-form">
-                        <el-form-item v-for="field in group.fields" :key="field.key" :label="field.label">
-                          <el-input-number
-                            v-if="field.kind === 'number'"
-                            :model-value="numberValue(component, field.key, field.fallback)"
-                            :min="0"
-                            @update:model-value="setConfig(component, field.key, $event ?? field.fallback ?? 0)"
-                          />
-                          <div v-else-if="field.kind === 'range'" class="range-field">
-                            <el-slider
-                              :model-value="numberValue(component, field.key, field.fallback)"
-                              :min="field.min ?? 0"
-                              :max="field.max ?? 80"
-                              :step="field.step ?? 1"
-                              @update:model-value="setConfig(component, field.key, Number($event) || 0)"
-                            />
-                            <el-input-number
-                              :model-value="numberValue(component, field.key, field.fallback)"
-                              :min="field.min ?? 0"
-                              :max="field.max ?? 80"
-                              :step="field.step ?? 1"
-                              @update:model-value="setConfig(component, field.key, $event ?? field.fallback ?? 0)"
-                            />
-                          </div>
-                          <el-color-picker
-                            v-else-if="field.kind === 'color'"
-                            :model-value="String(component.config[field.key] ?? field.fallback ?? '')"
-                            @update:model-value="setConfig(component, field.key, $event || field.fallback || '')"
-                          />
-                          <el-select
-                            v-else-if="field.kind === 'select'"
-                            :model-value="String(component.config[field.key] ?? field.fallback ?? '')"
-                            @update:model-value="setConfig(component, field.key, $event)"
-                          >
-                            <el-option v-for="option in field.options ?? []" :key="option.value" :label="option.label" :value="option.value" />
-                          </el-select>
-                          <el-switch
-                            v-else-if="field.kind === 'switch'"
-                            :model-value="booleanValue(component, field.key, field.fallback)"
-                            active-text="显示"
-                            inactive-text="隐藏"
-                            @update:model-value="setConfig(component, field.key, $event)"
-                          />
-                          <el-input
-                            v-else-if="field.kind === 'textarea' || field.kind === 'list'"
-                            :model-value="textValue(component, field)"
-                            type="textarea"
-                            :rows="field.rows ?? 3"
-                            :placeholder="field.placeholder"
-                            @update:model-value="setTextValue(component, field, $event)"
-                          />
-                          <div v-else class="field-row">
-                            <el-input
-                              :model-value="String(component.config[field.key] ?? '')"
-                              :placeholder="field.placeholder"
-                              @update:model-value="setConfig(component, field.key, $event)"
-                            />
-                            <el-button v-if="isImageField(field) || isFontField(field)" @click="openMaterialPicker(component, field)">
-                              {{ isFontField(field) ? "选择字体文件" : "应用素材库" }}
-                            </el-button>
-                          </div>
-                          <el-button v-if="field.kind === 'list' && isImageField(field)" class="material-button" @click="openMaterialPicker(component, field)">
-                            从素材库添加图片
-                          </el-button>
-                        </el-form-item>
-                      </el-form>
-                    </el-collapse-item>
-                  </el-collapse>
-                </el-collapse-item>
-              </el-collapse>
+            <div class="component-card__summary">
+              <span>{{ componentSummary(component) }}</span>
+              <el-button link type="primary" @click.stop="selectComponentCard(component.id)">编辑参数</el-button>
             </div>
           </div>
         </section>
       </main>
 
-      <aside class="phone-preview data-panel">
-        <div class="panel-title">手机预览</div>
-        <div class="phone-shell">
-          <div class="phone-status" />
-          <div class="phone-window" :style="previewStyle">
-            <div class="phone-nav">
-              <span>{{ previewTitle }}</span>
-              <span class="phone-capsule"><i /><i /></span>
-            </div>
-            <div class="phone-screen">
-              <template v-if="previewComponents.length > 0">
-                <div v-for="component in previewComponents" :key="component.id" class="preview-block">
-                  <component-preview :item="component" :name="presetName(component.type)" />
-                </div>
-              </template>
-              <div v-else class="preview-empty">页面暂无展示内容</div>
-            </div>
-            <div v-if="previewTabbarItems.length > 0" class="phone-tabbar">
-              <div
-                v-for="item in previewTabbarItems"
-                :key="item.pageKey"
-                class="phone-tabbar__item"
-                :class="{ active: selectedPage?.pageKey === item.pageKey }"
-              >
-                <img v-if="item.iconUrl" :src="selectedPage?.pageKey === item.pageKey ? item.selectedIconUrl || item.iconUrl : item.iconUrl" :alt="item.title" />
-                <span v-else class="phone-tabbar__dot" />
-                <small>{{ item.title }}</small>
-              </div>
+      <aside v-if="selectedPage && version" class="cms-sidebar cms-sidebar--right">
+        <section class="data-panel cms-panel inspector-panel">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">页面参数</div>
+              <p class="page-subtitle">设置页面标题、分享卡片和页面级元信息。</p>
             </div>
           </div>
-        </div>
+          <el-form label-position="top" class="page-meta-form">
+            <el-form-item label="小程序页面标题">
+              <el-input v-model="pageMeta.pageTitle" placeholder="显示在手机预览顶部" />
+            </el-form-item>
+            <el-form-item label="微信分享标题">
+              <el-input v-model="pageMeta.shareTitle" placeholder="转发给朋友时展示的标题" />
+            </el-form-item>
+            <el-form-item label="微信分享描述">
+              <el-input v-model="pageMeta.shareDescription" type="textarea" :rows="2" placeholder="转发卡片描述" />
+            </el-form-item>
+            <el-form-item label="微信分享封面">
+              <div class="field-row">
+                <el-input v-model="pageMeta.shareImageUrl" placeholder="从素材库选择或粘贴图片地址" />
+                <el-button @click="openPageMetaImagePicker">应用素材库</el-button>
+              </div>
+            </el-form-item>
+          </el-form>
+        </section>
+
+        <section class="data-panel cms-panel inspector-panel">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">组件参数</div>
+              <p class="page-subtitle">{{ selectedComponent ? `正在编辑：${presetName(selectedComponent.type)}` : "先在中间选择一个组件，再在这里编辑参数。" }}</p>
+            </div>
+          </div>
+
+          <template v-if="selectedComponent">
+            <el-collapse v-model="expandedConfigGroupIds[selectedComponent.id]" class="config-group-collapse">
+              <el-collapse-item v-for="group in groupedFieldsFor(selectedComponent.type)" :key="group.key" :title="group.title" :name="group.key">
+                <el-form label-position="top" class="config-form">
+                  <el-form-item v-for="field in group.fields" :key="field.key" :label="field.label">
+                    <el-input-number
+                      v-if="field.kind === 'number'"
+                      :model-value="numberValue(selectedComponent, field.key, field.fallback)"
+                      :min="0"
+                      @update:model-value="setConfig(selectedComponent, field.key, $event ?? field.fallback ?? 0)"
+                    />
+                    <div v-else-if="field.kind === 'range'" class="range-field">
+                      <el-slider
+                        :model-value="numberValue(selectedComponent, field.key, field.fallback)"
+                        :min="field.min ?? 0"
+                        :max="field.max ?? 80"
+                        :step="field.step ?? 1"
+                        @update:model-value="setConfig(selectedComponent, field.key, Number($event) || 0)"
+                      />
+                      <el-input-number
+                        :model-value="numberValue(selectedComponent, field.key, field.fallback)"
+                        :min="field.min ?? 0"
+                        :max="field.max ?? 80"
+                        :step="field.step ?? 1"
+                        @update:model-value="setConfig(selectedComponent, field.key, $event ?? field.fallback ?? 0)"
+                      />
+                    </div>
+                    <el-color-picker
+                      v-else-if="field.kind === 'color'"
+                      :model-value="String(selectedComponent.config[field.key] ?? field.fallback ?? '')"
+                      @update:model-value="setConfig(selectedComponent, field.key, $event || field.fallback || '')"
+                    />
+                    <el-select
+                      v-else-if="field.kind === 'select'"
+                      :model-value="String(selectedComponent.config[field.key] ?? field.fallback ?? '')"
+                      @update:model-value="setConfig(selectedComponent, field.key, $event)"
+                    >
+                      <el-option v-for="option in field.options ?? []" :key="option.value" :label="option.label" :value="option.value" />
+                    </el-select>
+                    <el-switch
+                      v-else-if="field.kind === 'switch'"
+                      :model-value="booleanValue(selectedComponent, field.key, field.fallback)"
+                      active-text="显示"
+                      inactive-text="隐藏"
+                      @update:model-value="setConfig(selectedComponent, field.key, $event)"
+                    />
+                    <el-input
+                      v-else-if="field.kind === 'textarea' || field.kind === 'list'"
+                      :model-value="textValue(selectedComponent, field)"
+                      type="textarea"
+                      :rows="field.rows ?? 3"
+                      :placeholder="field.placeholder"
+                      @update:model-value="setTextValue(selectedComponent, field, $event)"
+                    />
+                    <div v-else class="field-row">
+                      <el-input
+                        :model-value="String(selectedComponent.config[field.key] ?? '')"
+                        :placeholder="field.placeholder"
+                        @update:model-value="setConfig(selectedComponent, field.key, $event)"
+                      />
+                      <el-button v-if="isImageField(field) || isFontField(field)" @click="openMaterialPicker(selectedComponent, field)">
+                        {{ isFontField(field) ? "选择字体文件" : "应用素材库" }}
+                      </el-button>
+                    </div>
+                    <el-button v-if="field.kind === 'list' && isImageField(field)" class="material-button" @click="openMaterialPicker(selectedComponent, field)">
+                      从素材库添加图片
+                    </el-button>
+                  </el-form-item>
+                </el-form>
+              </el-collapse-item>
+            </el-collapse>
+          </template>
+          <el-empty v-else description="从中间页面内容区选择一个组件，即可在这里编辑参数" />
+        </section>
       </aside>
     </section>
 
@@ -289,10 +314,64 @@
         <el-form-item label="页面地址尾缀"><el-input v-model="createForm.slug" placeholder="例如 about-us" /></el-form-item>
         <el-form-item label="页面标题"><el-input v-model="createForm.title" /></el-form-item>
         <el-form-item label="页面说明"><el-input v-model="createForm.description" /></el-form-item>
+        <el-form-item label="套用模板">
+          <el-select v-model="createForm.templateId" clearable filterable placeholder="可直接从模板创建">
+            <el-option v-for="template in libraryTemplates" :key="template.id" :label="`${template.title} · ${template.category}`" :value="template.id" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
         <el-button type="primary" @click="createCustomPage">保存页面</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="templateVisible" title="页面模板" width="1080px">
+      <div class="template-library">
+        <div class="template-library__filters">
+          <el-input v-model="templateKeyword" clearable placeholder="搜索模板名称" />
+          <el-radio-group v-model="templateCategory">
+            <el-radio-button label="全部">全部</el-radio-button>
+            <el-radio-button v-for="category in templateCategories" :key="category" :label="category">{{ category }}</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div class="template-grid">
+          <article v-for="template in filteredLibraryTemplates" :key="template.id" class="template-card">
+            <div class="template-card__phone">
+              <div class="template-card__screen">
+                <span class="template-card__category">{{ template.category }}</span>
+                <strong>{{ template.title }}</strong>
+                <small>{{ template.summary || template.description || "可作为页面装修参考模板" }}</small>
+                <div class="template-card__chips">
+                  <span v-for="name in templateComponentNames(template)" :key="name">{{ name }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="template-card__body">
+              <div>
+                <strong>{{ template.title }}</strong>
+                <p>{{ template.description || template.summary || "可直接套用后再继续修改" }}</p>
+              </div>
+              <div class="template-card__actions">
+                <span class="support-badge" :class="template.system ? 'is-support-supported' : 'is-support-basic'">{{ template.system ? "系统模板" : "自定义模板" }}</span>
+                <el-button type="primary" plain :disabled="!selectedPage || !template.version" @click="applyTemplateToCurrentPage(template)">应用到当前页</el-button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </el-dialog>
+
+    <el-dialog v-model="saveTemplateVisible" title="另存为页面模板" width="520px">
+      <el-form :model="saveTemplateForm" label-width="110px">
+        <el-form-item label="模板标识"><el-input v-model="saveTemplateForm.slug" placeholder="例如 summit-landing" /></el-form-item>
+        <el-form-item label="模板名称"><el-input v-model="saveTemplateForm.title" /></el-form-item>
+        <el-form-item label="模板分类"><el-input v-model="saveTemplateForm.category" placeholder="例如 会议主会场" /></el-form-item>
+        <el-form-item label="模板说明"><el-input v-model="saveTemplateForm.description" type="textarea" :rows="3" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="saveTemplateVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!selectedPage || !version" @click="saveAsTemplate">保存模板</el-button>
       </template>
     </el-dialog>
 
@@ -321,18 +400,31 @@ import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createPage,
+  createPageLibraryTemplate,
   getPageVersion,
   getTabbar,
   listMaterials,
   listComponentPresets,
   listConferences,
+  listPageLibraryTemplates,
   listPages,
   publishPageVersion,
   rollbackPage,
   updatePageVersion
 } from "../../services/admin";
 import { routeQuery } from "../../router";
-import type { CmsComponent, CmsComponentSupportStatus, ComponentPreset, Conference, MaterialAsset, PageTemplate, PageVersion, TabBarConfig, ThemeConfig } from "../../services/types";
+import type {
+  CmsComponent,
+  CmsComponentSupportStatus,
+  ComponentPreset,
+  Conference,
+  MaterialAsset,
+  PageLibraryTemplate,
+  PageTemplate,
+  PageVersion,
+  TabBarConfig,
+  ThemeConfig
+} from "../../services/types";
 
 interface EditableComponent {
   id: string;
@@ -366,15 +458,6 @@ interface PageMetaForm {
   shareTitle: string;
   shareDescription: string;
   shareImageUrl: string;
-}
-
-interface HomeHeroForm {
-  eyebrow: string;
-  title: string;
-  subtitle: string;
-  buttonText: string;
-  buttonTarget: string;
-  layout: string;
 }
 
 interface CmsComponentSupportMeta {
@@ -427,6 +510,7 @@ const ADDABLE_SUPPORT_STATUSES: CmsComponentSupportStatus[] = ["supported", "bas
 const REGISTRATION_CTA_TYPES = ["registration-button", "floating-registration-button"];
 
 const pages = ref<PageTemplate[]>([]);
+const libraryTemplates = ref<PageLibraryTemplate[]>([]);
 const presets = ref<ComponentPreset[]>([]);
 const selectedPage = ref<PageTemplate | null>(null);
 const version = ref<PageVersion | null>(null);
@@ -435,10 +519,15 @@ const components = ref<EditableComponent[]>([]);
 const saving = ref(false);
 const publishing = ref(false);
 const createVisible = ref(false);
-const createForm = reactive({ slug: "", title: "", description: "" });
+const templateVisible = ref(false);
+const saveTemplateVisible = ref(false);
+const createForm = reactive({ slug: "", title: "", description: "", templateId: "" });
+const saveTemplateForm = reactive({ slug: "", title: "", category: "自定义模板", description: "" });
 const presetKeyword = ref("");
 const activePresetGroup = ref("");
 const selectedComponentId = ref("");
+const templateKeyword = ref("");
+const templateCategory = ref("全部");
 const previewTheme: Partial<ThemeConfig> = { primaryColor: "#1463ff", secondaryColor: "#18c29c", backgroundColor: "#f5f7fb", cardBackground: "#ffffff", radius: 8 };
 const materialVisible = ref(false);
 const materialLoading = ref(false);
@@ -452,16 +541,7 @@ const loadedPreviewFonts = new Set<string>();
 const materialEmptyText = computed(() => (materialTarget.value && isFontField(materialTarget.value.field) ? "暂无字体素材，请先到素材管理上传字体文件" : "暂无可用图片素材"));
 const expandedComponentIds = ref<string[]>([]);
 const expandedConfigGroupIds = reactive<Record<string, string[]>>({});
-const expandedPageMeta = ref<string[]>(["page-meta"]);
 const pageMeta = reactive<PageMetaForm>({ pageTitle: "", shareTitle: "", shareDescription: "", shareImageUrl: "" });
-const homeHero = reactive<HomeHeroForm>({
-  eyebrow: "会议报名",
-  title: "选择会议，完成报名缴费",
-  subtitle: "所有报名费用以提交订单时系统计算结果为准。",
-  buttonText: "我的报名",
-  buttonTarget: "/pages/registrations/my",
-  layout: "split"
-});
 
 const presetGroups = computed(() => {
   const groups = new Map<string, ComponentPreset[]>();
@@ -491,8 +571,20 @@ const componentOptions = computed(() =>
     value: component.id
   }))
 );
+const selectedComponent = computed(() => components.value.find((component) => component.id === selectedComponentId.value) ?? null);
 const previewTitle = computed(() => pageMeta.pageTitle.trim() || selectedPage.value?.title || "会议报名");
 const previewTabbarItems = computed(() => (previewTabbar.value?.enabled === false ? [] : (previewTabbar.value?.items ?? []).filter((item) => item.visible).sort((a, b) => a.sortOrder - b.sortOrder)));
+const templateCategories = computed(() =>
+  Array.from(new Set(libraryTemplates.value.map((item) => item.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-CN"))
+);
+const filteredLibraryTemplates = computed(() =>
+  libraryTemplates.value.filter((item) => {
+    const keyword = templateKeyword.value.trim();
+    const matchesKeyword = !keyword || item.title.includes(keyword) || item.description?.includes(keyword) || item.summary.includes(keyword);
+    const matchesCategory = templateCategory.value === "全部" || item.category === templateCategory.value;
+    return matchesKeyword && matchesCategory;
+  })
+);
 const previewStyle = computed(() => ({
   "--preview-primary": previewTheme.primaryColor,
   "--preview-secondary": previewTheme.secondaryColor,
@@ -523,7 +615,7 @@ onMounted(async () => {
   previewConferences.value = conferenceResponse.items;
   previewTabbar.value = tabbarResponse;
   activePresetGroup.value = presetGroups.value[0]?.name ?? "";
-  await loadPages();
+  await Promise.all([loadPages(), loadLibraryTemplates()]);
 });
 
 async function loadPages() {
@@ -532,6 +624,10 @@ async function loadPages() {
     const target = pages.value.find((item) => item.pageKey === routeQuery.value.pageKey) ?? pages.value[0];
     await selectPage(target);
   }
+}
+
+async function loadLibraryTemplates() {
+  libraryTemplates.value = (await listPageLibraryTemplates()).items;
 }
 
 async function selectPage(page: PageTemplate) {
@@ -545,9 +641,8 @@ async function selectPage(page: PageTemplate) {
   versionTitle.value = version.value.title;
   components.value = version.value.components.map(toEditableComponent);
   applyPageMeta(version.value.themeJson, page.title);
-  applyHomeHero(version.value.themeJson);
   expandedComponentIds.value = components.value[0] ? [components.value[0].id] : [];
-  selectedComponentId.value = "";
+  selectedComponentId.value = components.value[0]?.id ?? "";
   initializeConfigGroups(components.value);
 }
 
@@ -606,14 +701,16 @@ function componentDomId(id: string) {
 
 function focusComponent(value: string | string[] | number | boolean | undefined) {
   if (typeof value !== "string" || !value) return;
-  if (!expandedComponentIds.value.includes(value)) {
-    expandedComponentIds.value = [value];
-  }
   const component = components.value.find((item) => item.id === value);
   if (component) {
     expandedConfigGroupIds[value] = expandedConfigGroupIds[value] ?? defaultExpandedConfigGroups(component.type);
   }
   void nextTick(() => scrollToComponent(value));
+}
+
+function selectComponentCard(id: string) {
+  selectedComponentId.value = id;
+  focusComponent(id);
 }
 
 function scrollToComponent(id: string) {
@@ -646,8 +743,10 @@ async function saveDraft() {
     });
     components.value = version.value.components.map(toEditableComponent);
     applyPageMeta(version.value.themeJson, selectedPage.value?.title);
-    applyHomeHero(version.value.themeJson);
     expandedComponentIds.value = expandedComponentIds.value.filter((id) => components.value.some((component) => component.id === id));
+    if (!components.value.some((component) => component.id === selectedComponentId.value)) {
+      selectedComponentId.value = components.value[0]?.id ?? "";
+    }
     initializeConfigGroups(components.value);
     ElMessage.success("草稿已保存");
   } finally {
@@ -690,8 +789,8 @@ async function rollback() {
   version.value = next;
   components.value = next.components.map(toEditableComponent);
   applyPageMeta(next.themeJson, selectedPage.value?.title);
-  applyHomeHero(next.themeJson);
   expandedComponentIds.value = components.value[0] ? [components.value[0].id] : [];
+  selectedComponentId.value = components.value[0]?.id ?? "";
   initializeConfigGroups(components.value);
   ElMessage.success("已回滚到上一发布版本");
 }
@@ -701,11 +800,53 @@ async function createCustomPage() {
   await createPage({
     pageKey: `custom:${slug}`,
     title: createForm.title,
-    description: createForm.description
+    description: createForm.description,
+    templateId: createForm.templateId || undefined
   });
-  Object.assign(createForm, { slug: "", title: "", description: "" });
+  Object.assign(createForm, { slug: "", title: "", description: "", templateId: "" });
   createVisible.value = false;
   await loadPages();
+}
+
+function openTemplateLibrary() {
+  templateVisible.value = true;
+}
+
+async function applyTemplateToCurrentPage(template: PageLibraryTemplate) {
+  if (!template.version) return;
+  try {
+    await ElMessageBox.confirm(`应用模板“${template.title}”后，当前草稿中的组件排序与配置会被替换。`, "应用页面模板", {
+      confirmButtonText: "继续应用",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
+  components.value = template.version.components.map(toEditableComponent);
+  versionTitle.value = `${selectedPage.value?.title || "页面"} · ${template.title}`;
+  applyPageMeta(template.version.themeJson, selectedPage.value?.title);
+  selectedComponentId.value = components.value[0]?.id ?? "";
+  initializeConfigGroups(components.value);
+  templateVisible.value = false;
+  ElMessage.success("已应用模板到当前草稿");
+}
+
+async function saveAsTemplate() {
+  if (!version.value) return;
+  const slug = saveTemplateForm.slug.trim().replace(/^template:/, "");
+  await createPageLibraryTemplate({
+    slug,
+    title: saveTemplateForm.title,
+    category: saveTemplateForm.category,
+    description: saveTemplateForm.description,
+    components: toPayloadComponents(),
+    themeJson: nextThemeJson()
+  });
+  Object.assign(saveTemplateForm, { slug: "", title: "", category: "自定义模板", description: "" });
+  saveTemplateVisible.value = false;
+  await loadLibraryTemplates();
+  ElMessage.success("已保存为页面模板");
 }
 
 function toPayloadComponents(): CmsComponent[] {
@@ -749,23 +890,6 @@ function readPageMeta(themeJson: Record<string, unknown> | null | undefined): Pa
   };
 }
 
-function applyHomeHero(themeJson: Record<string, unknown> | null | undefined) {
-  const raw = themeJson?.homeHero;
-  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  Object.assign(homeHero, {
-    eyebrow: readString(source.eyebrow, "会议报名"),
-    title: readString(source.title, "选择会议，完成报名缴费"),
-    subtitle: readString(source.subtitle, "所有报名费用以提交订单时系统计算结果为准。"),
-    buttonText: readString(source.buttonText, "我的报名"),
-    buttonTarget: readString(source.buttonTarget, "/pages/registrations/my"),
-    layout: readString(source.layout, "split")
-  });
-}
-
-function readString(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
 function nextThemeJson(): Record<string, unknown> {
   return {
     ...(version.value?.themeJson ?? {}),
@@ -774,16 +898,21 @@ function nextThemeJson(): Record<string, unknown> {
       shareTitle: pageMeta.shareTitle.trim(),
       shareDescription: pageMeta.shareDescription.trim(),
       shareImageUrl: pageMeta.shareImageUrl.trim()
-    },
-    homeHero: {
-      eyebrow: homeHero.eyebrow.trim(),
-      title: homeHero.title.trim(),
-      subtitle: homeHero.subtitle.trim(),
-      buttonText: homeHero.buttonText.trim(),
-      buttonTarget: homeHero.buttonTarget.trim(),
-      layout: homeHero.layout
     }
   };
+}
+
+function templateComponentNames(template: PageLibraryTemplate): string[] {
+  const names = (template.version?.components ?? []).map((component) => presetName(component.type));
+  return names.slice(0, 4);
+}
+
+function componentSummary(component: EditableComponent): string {
+  const configValues = Object.values(component.config)
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  return configValues[0] || "点击右侧编辑该组件的展示内容、样式和行为。";
 }
 
 function fieldsFor(type: string): ConfigField[] {
@@ -1606,13 +1735,21 @@ function splitPreviewLine(value: string): string[] {
 }
 
 .cms-workbench {
-  grid-template-columns: 220px minmax(720px, 1fr) 336px;
+  grid-template-columns: 288px minmax(760px, 1fr) 360px;
   align-items: start;
-  min-width: 1280px;
+  min-width: 1420px;
 }
 
 .cms-page {
   overflow-x: auto;
+}
+
+.cms-panel {
+  padding: 18px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: var(--admin-shadow-soft);
 }
 
 .cms-sidebar,
@@ -1627,24 +1764,62 @@ function splitPreviewLine(value: string): string[] {
   font-weight: 800;
 }
 
+.page-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  max-height: 320px;
+  overflow: auto;
+}
+
 .page-item {
   width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 10px;
-  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 13px 14px;
   border: 1px solid var(--admin-color-border);
-  border-radius: 8px;
+  border-radius: 12px;
   background: #ffffff;
   color: var(--admin-color-text);
+  text-align: left;
   cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease,
+    background 0.2s ease;
+}
+
+.page-item:hover {
+  border-color: rgb(20 99 255 / 34%);
+  box-shadow: var(--admin-shadow-soft);
+  transform: translateY(-1px);
 }
 
 .page-item.active {
   border-color: var(--admin-color-primary);
-  background: var(--admin-color-primary-soft);
+  background: linear-gradient(135deg, rgb(20 99 255 / 10%), rgb(24 194 156 / 5%));
+}
+
+.page-item__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-item__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: var(--admin-color-primary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .page-item span,
@@ -1679,11 +1854,9 @@ function splitPreviewLine(value: string): string[] {
 }
 
 .library-filters {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  display: grid;
   gap: 10px;
-  flex-wrap: wrap;
+  margin: 14px 0 12px;
 }
 
 .cms-builder {
@@ -1692,18 +1865,18 @@ function splitPreviewLine(value: string): string[] {
 
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
 .preset-card {
-  min-height: 150px;
+  min-height: 156px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 13px;
+  padding: 14px;
   border: 1px solid var(--admin-color-border);
-  border-radius: 8px;
+  border-radius: 12px;
   background: #ffffff;
   color: var(--admin-color-text);
   text-align: left;
@@ -1717,7 +1890,7 @@ function splitPreviewLine(value: string): string[] {
 }
 
 .preset-card:disabled {
-  opacity: 0.5;
+  opacity: 0.54;
   cursor: not-allowed;
 }
 
@@ -1920,22 +2093,22 @@ function splitPreviewLine(value: string): string[] {
 }
 
 .phone-preview {
-  position: fixed;
-  top: 92px;
-  right: 28px;
-  width: 336px;
-  z-index: 6;
-  max-height: calc(100vh - 104px);
-  overflow: visible;
+  position: relative;
+  top: auto;
+  right: auto;
+  width: auto;
+  z-index: auto;
+  max-height: none;
+  overflow: hidden;
 }
 
 .phone-shell {
-  width: 292px;
-  margin: 16px auto 0;
+  width: 320px;
+  margin: 18px auto 0;
   padding: 10px;
   border-radius: 34px;
-  background: #111827;
-  box-shadow: 0 18px 40px rgb(15 23 42 / 22%);
+  background: linear-gradient(180deg, #0f172a, #1f2937);
+  box-shadow: 0 22px 44px rgb(15 23 42 / 22%);
 }
 
 .phone-window {
@@ -1945,13 +2118,13 @@ function splitPreviewLine(value: string): string[] {
 }
 
 .phone-nav {
-  height: 44px;
+  height: 46px;
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
-  background: #ffffff;
+  padding: 0 14px;
+  background: rgb(255 255 255 / 92%);
   color: #172033;
   font-size: 14px;
   font-weight: 800;
@@ -2079,18 +2252,18 @@ function splitPreviewLine(value: string): string[] {
 }
 
 .phone-status {
-  width: 72px;
-  height: 6px;
-  margin: 2px auto 10px;
+  width: 96px;
+  height: 8px;
+  margin: 0 auto 10px;
   border-radius: 999px;
-  background: rgb(255 255 255 / 28%);
+  background: rgb(255 255 255 / 18%);
 }
 
 .phone-screen {
-  min-height: 620px;
+  min-height: 560px;
   max-height: 620px;
   overflow: auto;
-  padding: 12px;
+  padding: 0 0 14px;
   background: var(--preview-bg);
   box-sizing: border-box;
 }
@@ -2142,8 +2315,146 @@ function splitPreviewLine(value: string): string[] {
   white-space: nowrap;
 }
 
+.component-card--summary {
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.component-card--summary:hover {
+  border-color: rgb(20 99 255 / 34%);
+  transform: translateY(-1px);
+}
+
+.component-card--summary.is-selected {
+  border-color: var(--admin-color-primary);
+  box-shadow: 0 12px 28px rgb(20 99 255 / 12%);
+}
+
+.component-card__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgb(220 227 239 / 96%);
+}
+
+.template-library {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.template-library__filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.template-library__filters :deep(.el-input) {
+  width: 240px;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 16px;
+  max-height: 68vh;
+  overflow: auto;
+}
+
+.template-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: var(--admin-shadow-soft);
+}
+
+.template-card__phone {
+  padding: 12px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #172033, #2a3650);
+}
+
+.template-card__screen {
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgb(20 99 255 / 14%), rgb(24 194 156 / 10%)),
+    #f8fbff;
+}
+
+.template-card__category {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgb(20 99 255 / 10%);
+  color: var(--admin-color-primary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.template-card__screen strong,
+.template-card__body strong {
+  color: var(--admin-color-text);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.template-card__screen small,
+.template-card__body p {
+  margin: 0;
+  color: var(--admin-color-muted);
+  line-height: 1.55;
+}
+
+.template-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-card__chips span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  box-shadow: inset 0 0 0 1px rgb(220 227 239 / 94%);
+}
+
+.template-card__body {
+  display: grid;
+  gap: 12px;
+}
+
+.template-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .preview-block {
   margin-bottom: 12px;
+  padding: 0 14px;
 }
 
 .preview-hero-card,

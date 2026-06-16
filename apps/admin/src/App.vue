@@ -1,7 +1,7 @@
 <template>
   <main v-if="!ready" class="login-page">
     <el-card class="login-card" shadow="never">
-      <h1>会议运营后台</h1>
+      <h1>会务运营平台</h1>
       <p>正在恢复登录状态...</p>
     </el-card>
   </main>
@@ -35,7 +35,7 @@ import { useAdminSession } from "./stores/admin-session";
 const { admin, ready, init, login } = useAdminSession();
 const loading = ref(false);
 const loginForm = reactive({ username: "admin", password: "" });
-const browserTitle = ref("会议运营后台");
+const browserTitle = ref("会务运营平台");
 
 onMounted(() => {
   void loadBrand();
