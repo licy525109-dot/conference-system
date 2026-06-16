@@ -132,18 +132,31 @@ export function listOrders(params: { page?: number; pageSize?: number; keyword?:
   return apiRequest<ApiList<AdminOrder>>(`/admin/orders${toQuery(params)}`);
 }
 
-export function exportOrdersCsv(params: {
+export function exportOrdersExcel(params: {
   keyword?: string;
   conferenceId?: string;
   status?: string;
   paymentStatus?: string;
   onlyExceptions?: boolean;
 }) {
-  return downloadAdminFile(`/admin/exports/orders.csv${toQuery(params)}`, "orders.csv");
+  return downloadAdminFile(`/admin/exports/orders.xls${toQuery(params)}`, "orders.xls");
 }
 
 export function getOrder(orderNo: string) {
   return apiRequest<AdminOrderDetail>(`/admin/orders/${encodeURIComponent(orderNo)}`);
+}
+
+export function deleteOrder(orderNo: string) {
+  return apiRequest<{ orderNo: string; deleted: number; skipped: number }>(`/admin/orders/${encodeURIComponent(orderNo)}`, {
+    method: "DELETE"
+  });
+}
+
+export function deleteOrdersByFilter(params: { keyword?: string; conferenceId?: string; status?: string; paymentStatus?: string; onlyExceptions?: boolean }) {
+  return apiRequest<{ matched: number; deleted: number; skipped: number }>("/admin/orders/delete-by-filter", {
+    method: "POST",
+    body: JSON.stringify(params)
+  });
 }
 
 export function reviewPaymentException(orderNo: string, note: string) {
@@ -157,14 +170,14 @@ export function listRegistrations(params: { page?: number; pageSize?: number; ke
   return apiRequest<ApiList<AdminRegistration>>(`/admin/registrations${toQuery(params)}`);
 }
 
-export function exportRegistrationsCsv(params: {
+export function exportRegistrationsExcel(params: {
   keyword?: string;
   conferenceId?: string;
   status?: string;
   paymentStatus?: string;
   checkInStatus?: string;
 }) {
-  return downloadAdminFile(`/admin/exports/registrations.csv${toQuery(params)}`, "registrations.csv");
+  return downloadAdminFile(`/admin/exports/registrations.xls${toQuery(params)}`, "registrations.xls");
 }
 
 export function getRegistration(id: string) {

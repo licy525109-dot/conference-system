@@ -1,4 +1,5 @@
 import { request } from "./request";
+import { stringifyQuery } from "@/utils/query";
 
 export interface ApiList<T> {
   items: T[];
@@ -49,12 +50,8 @@ export function getProductCategories(): Promise<{ items: ProductCategory[] }> {
 }
 
 export function getProducts(params: { page?: number; pageSize?: number; categoryId?: string; keyword?: string } = {}): Promise<ApiList<Product>> {
-  const query = new URLSearchParams();
-  if (params.page) query.set("page", String(params.page));
-  if (params.pageSize) query.set("pageSize", String(params.pageSize));
-  if (params.categoryId) query.set("categoryId", params.categoryId);
-  if (params.keyword) query.set("keyword", params.keyword);
-  return request<ApiList<Product>>(`/mall/products${query.toString() ? `?${query.toString()}` : ""}`, {
+  const query = stringifyQuery(params);
+  return request<ApiList<Product>>(`/mall/products${query ? `?${query}` : ""}`, {
     auth: false
   });
 }

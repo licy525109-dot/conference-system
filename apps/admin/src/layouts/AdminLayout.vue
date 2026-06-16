@@ -2,10 +2,11 @@
   <el-container class="admin-shell">
     <el-aside width="264px" class="admin-aside">
       <div class="admin-brand">
-        <span class="brand-mark">会</span>
+        <img v-if="brandLogoUrl" class="brand-mark brand-mark--image" :src="brandLogoUrl" alt="" />
+        <span v-else class="brand-mark">{{ brandMarkText }}</span>
         <div>
-          <strong>会议运营后台</strong>
-          <span>运营管理中心</span>
+          <strong>{{ brandTitle }}</strong>
+          <span>{{ brandSubtitle }}</span>
         </div>
       </div>
       <el-scrollbar class="admin-menu-scroll">
@@ -36,10 +37,9 @@
           <span v-if="currentRoute.description">{{ currentRoute.description }}</span>
         </div>
         <div class="admin-header__quick">
-          <el-button v-if="hasPermission('conference:view')" size="small" @click="quickGo('/conferences')">新建会议</el-button>
-          <el-button v-if="hasPermission('registration:view')" size="small" @click="quickGo('/registrations')">报名名单</el-button>
-          <el-button v-if="hasPermission('order:view')" size="small" @click="quickGo('/orders')">订单支付</el-button>
-          <el-button v-if="hasPermission('page:view')" size="small" @click="quickGo('/pages')">页面装修</el-button>
+          <el-button v-for="item in currentGroupQuickRoutes" :key="item.path" size="small" :type="item.path === currentRoute.path ? 'primary' : 'default'" @click="quickGo(item.path)">
+            {{ item.menuTitle }}
+          </el-button>
         </div>
         <div class="admin-user">
           <span class="admin-user__role">当前账号</span>
@@ -59,11 +59,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { currentRoute, navigateTo, routes, type AdminRoute } from "../router";
+import { getTheme } from "../services/admin";
 import { useAdminSession } from "../stores/admin-session";
 
 const { admin, hasPermission, logout } = useAdminSession();
+const brandTitle = ref("会议运营后台");
+const brandSubtitle = ref("会议业务运营中心");
+const brandLogoUrl = ref("");
+
+const brandMarkText = computed(() => brandTitle.value.trim().slice(0, 1) || "会");
 
 const GROUP_META: Record<string, { order: number; badge?: string; className?: string }> = {
   工作台: { order: 0 },
@@ -75,6 +81,9 @@ const GROUP_META: Record<string, { order: number; badge?: string; className?: st
 };
 
 const menuRoutes = computed(() => routes.filter((route) => !route.hidden && hasPermission(route.permission)));
+const currentGroupQuickRoutes = computed(() =>
+  menuRoutes.value.filter((route) => route.group === currentRoute.value.group).slice(0, 6)
+);
 const menuGroups = computed(() => {
   const groups = new Map<string, AdminRoute[]>();
   for (const route of menuRoutes.value) {
@@ -89,6 +98,18 @@ const menuGroups = computed(() => {
       order: GROUP_META[name]?.order ?? 999
     }))
     .sort((a, b) => a.order - b.order);
+});
+
+onMounted(async () => {
+  try {
+    const theme = await getTheme();
+    const config = theme.config as Record<string, unknown>;
+    brandTitle.value = typeof config.adminBrandTitle === "string" && config.adminBrandTitle.trim() ? config.adminBrandTitle.trim() : brandTitle.value;
+    brandSubtitle.value = typeof config.adminBrandSubtitle === "string" && config.adminBrandSubtitle.trim() ? config.adminBrandSubtitle.trim() : brandSubtitle.value;
+    brandLogoUrl.value = typeof config.adminBrandLogoUrl === "string" ? config.adminBrandLogoUrl : "";
+  } catch {
+    // Keep local defaults when theme config is unavailable.
+  }
 });
 
 function handleSelect(path: string) {

@@ -8,7 +8,7 @@
 
   <main v-else-if="!admin" class="login-page">
     <el-card class="login-card" shadow="never">
-      <h1>会议运营后台</h1>
+      <h1>{{ browserTitle }}</h1>
       <p>请使用后台账号登录。</p>
       <el-form :model="loginForm" label-position="top" @submit.prevent>
         <el-form-item label="用户名">
@@ -29,15 +29,44 @@
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminLayout from "./layouts/AdminLayout.vue";
+import { getTheme } from "./services/admin";
 import { useAdminSession } from "./stores/admin-session";
 
 const { admin, ready, init, login } = useAdminSession();
 const loading = ref(false);
 const loginForm = reactive({ username: "admin", password: "" });
+const browserTitle = ref("会议运营后台");
 
 onMounted(() => {
+  void loadBrand();
   void init();
 });
+
+async function loadBrand() {
+  try {
+    const theme = await getTheme();
+    const config = theme.config as Record<string, unknown>;
+    const nextTitle = typeof config.browserTitle === "string" && config.browserTitle.trim() ? config.browserTitle.trim() : browserTitle.value;
+    const iconUrl = typeof config.browserIconUrl === "string" ? config.browserIconUrl.trim() : "";
+    browserTitle.value = nextTitle;
+    document.title = nextTitle;
+    if (iconUrl) {
+      setFavicon(iconUrl);
+    }
+  } catch {
+    document.title = browserTitle.value;
+  }
+}
+
+function setFavicon(url: string) {
+  let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "icon";
+    document.head.appendChild(link);
+  }
+  link.href = url;
+}
 
 async function submitLogin() {
   loading.value = true;

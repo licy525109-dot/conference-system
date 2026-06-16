@@ -434,6 +434,54 @@ export class AdminManagementService {
     return ok(formatOrderDetail(order, exceptionReviewLogs));
   }
 
+  async deleteOrder(orderNo: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const order = await this.prisma.order.findUnique({
+      where: { orderNo },
+      select: orderDeleteSelect
+    });
+    if (!order) {
+      throw new NotFoundException("Order not found");
+    }
+    const blockReason = orderDeleteBlockReason(order);
+    if (blockReason) {
+      throw new ConflictException(blockReason);
+    }
+
+    await this.prisma.order.delete({ where: { id: order.id } });
+    await this.writeAudit(admin, AuditAction.DELETE, "Order", order.id, "Delete unpaid order", {
+      orderNo: order.orderNo
+    });
+    return ok({ orderNo: order.orderNo, deleted: 1, skipped: 0 });
+  }
+
+  async deleteOrdersByFilter(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const body = readObject(input);
+    const where = parseOrderWhere(body);
+    const onlyExceptions = readOptionalBoolean(body, "onlyExceptions");
+    const orders = await this.prisma.order.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }],
+      take: 1000,
+      select: orderDeleteSelect
+    });
+    const candidates = onlyExceptions ? orders.filter((order) => detectPaymentExceptions(order).length > 0) : orders;
+    const deletable = candidates.filter((order) => !orderDeleteBlockReason(order));
+    if (deletable.length > 0) {
+      await this.prisma.order.deleteMany({ where: { id: { in: deletable.map((order) => order.id) } } });
+    }
+    await this.writeAudit(admin, AuditAction.DELETE, "Order", null, "Bulk delete unpaid orders by filter", {
+      filters: sanitizeDeleteFilters(body),
+      matchedCount: candidates.length,
+      deletedCount: deletable.length,
+      skippedCount: candidates.length - deletable.length
+    });
+    return ok({
+      deleted: deletable.length,
+      skipped: candidates.length - deletable.length,
+      matched: candidates.length
+    });
+  }
+
   async listRegistrations(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
     const pagination = parsePagination(query);
     const where = parseRegistrationWhere(query);
@@ -807,7 +855,7 @@ export class AdminManagementService {
     admin: CurrentAdmin,
     action: AuditAction,
     entityType: string,
-    entityId: string,
+    entityId: string | null,
     summary: string,
     metadataJson?: Prisma.InputJsonObject
   ): Promise<void> {
@@ -997,6 +1045,35 @@ const orderDetailSelect = {
       id: true,
       registrationNo: true,
       status: true
+    }
+  }
+} satisfies Prisma.OrderSelect;
+
+const orderDeleteSelect = {
+  id: true,
+  orderNo: true,
+  status: true,
+  payableAmountCent: true,
+  paidAmountCent: true,
+  expiredAt: true,
+  paidAt: true,
+  createdAt: true,
+  registration: {
+    select: {
+      id: true,
+      registrationNo: true,
+      status: true
+    }
+  },
+  payments: {
+    orderBy: [{ createdAt: "desc" }],
+    select: {
+      id: true,
+      status: true,
+      amountCent: true,
+      failedReason: true,
+      createdAt: true,
+      paidAt: true
     }
   }
 } satisfies Prisma.OrderSelect;
@@ -1432,6 +1509,21 @@ function parseOrderWhere(query: Record<string, unknown>): Prisma.OrderWhereInput
         }
       : {})
   };
+}
+
+function orderDeleteBlockReason(order: Prisma.OrderGetPayload<{ select: typeof orderDeleteSelect }>): string | null {
+  if (order.status === OrderStatus.PAID || order.registration) {
+    return "已支付或已生成报名记录的订单不能删除";
+  }
+  if (order.payments.some((payment) => payment.status === PaymentStatus.SUCCESS)) {
+    return "存在成功支付流水的订单不能删除";
+  }
+  return null;
+}
+
+function sanitizeDeleteFilters(query: Record<string, unknown>): Prisma.InputJsonObject {
+  const allowed = ["keyword", "conferenceId", "status", "paymentStatus", "onlyExceptions"];
+  return Object.fromEntries(allowed.map((key) => [key, typeof query[key] === "string" || typeof query[key] === "boolean" ? query[key] : null]));
 }
 
 function parseRegistrationWhere(query: Record<string, unknown>): Prisma.RegistrationWhereInput {

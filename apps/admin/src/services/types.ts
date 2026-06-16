@@ -459,6 +459,20 @@ export interface ThemeConfig {
   shadow: string;
   titleFontSize: number;
   bannerStyle: string;
+  adminBrandTitle?: string;
+  adminBrandSubtitle?: string;
+  adminBrandLogoUrl?: string;
+  browserTitle?: string;
+  browserIconUrl?: string;
+  backgroundMode?: string;
+  backgroundGradientFrom?: string;
+  backgroundGradientTo?: string;
+  backgroundImageUrl?: string;
+  backgroundVideoUrl?: string;
+  backgroundDynamicDensity?: number;
+  backgroundDynamicSpeed?: number;
+  backgroundBottomFilter?: boolean;
+  backgroundApplyTo?: string;
   [key: string]: string | number | boolean | null | undefined;
 }
 

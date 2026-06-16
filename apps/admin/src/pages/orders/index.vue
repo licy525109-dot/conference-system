@@ -6,7 +6,8 @@
       subtitle="查看会议报名订单、金额、支付流水和异常状态；后台不提供手动改支付状态。"
     >
       <template #actions>
-        <el-button :loading="exporting" @click="exportCsv">导出 CSV</el-button>
+        <el-button :loading="exporting" @click="exportExcel">导出 Excel</el-button>
+        <el-button v-if="hasPermission('order:delete')" :loading="deleting" type="danger" plain @click="deleteFiltered">筛选后一键删除</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </template>
     </AdminPageHeader>
@@ -62,7 +63,12 @@
             <span v-else class="muted-text">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openDetail(row.orderNo)">详情</el-button></template></el-table-column>
+        <el-table-column label="操作" width="170">
+          <template #default="{ row }">
+            <el-button size="small" @click="openDetail(row.orderNo)">详情</el-button>
+            <el-button v-if="hasPermission('order:delete')" size="small" type="danger" plain @click="deleteSingle(row)">删除</el-button>
+          </template>
+        </el-table-column>
         <template #empty>
           <AdminEmptyState title="暂无订单" description="调整筛选条件，或从用户端完成报名下单后再查看。" action-text="查看会议" @action="goConferences" />
         </template>
@@ -130,16 +136,18 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo } from "../../router";
-import { exportOrdersCsv, getOrder, listConferences, listOrders, reviewPaymentException } from "../../services/admin";
+import { deleteOrder, deleteOrdersByFilter, exportOrdersExcel, getOrder, listConferences, listOrders, reviewPaymentException } from "../../services/admin";
+import { useAdminSession } from "../../stores/admin-session";
 import type { AdminOrder, AdminOrderDetail, Conference } from "../../services/types";
 
 const items = ref<AdminOrder[]>([]);
+const { hasPermission } = useAdminSession();
 const conferences = ref<Conference[]>([]);
 const detail = ref<AdminOrderDetail | null>(null);
 const keyword = ref("");
@@ -149,6 +157,7 @@ const paymentStatus = ref("");
 const onlyExceptions = ref(false);
 const loading = ref(false);
 const exporting = ref(false);
+const deleting = ref(false);
 const reviewSaving = ref(false);
 const detailVisible = ref(false);
 const reviewNote = ref("");
@@ -180,17 +189,17 @@ async function openDetail(orderNo: string) {
   detailVisible.value = true;
 }
 
-async function exportCsv() {
+async function exportExcel() {
   exporting.value = true;
   try {
-    await exportOrdersCsv({
+    await exportOrdersExcel({
       keyword: keyword.value,
       conferenceId: conferenceId.value,
       status: status.value,
       paymentStatus: paymentStatus.value,
       onlyExceptions: onlyExceptions.value
     });
-    ElMessage.success("订单 CSV 已开始下载");
+    ElMessage.success("订单 Excel 已开始下载");
   } finally {
     exporting.value = false;
   }
@@ -206,6 +215,52 @@ async function saveExceptionReview() {
     ElMessage.success("处理备注已记录");
   } finally {
     reviewSaving.value = false;
+  }
+}
+
+async function deleteSingle(row: AdminOrder) {
+  try {
+    await ElMessageBox.confirm("仅未支付、未生成报名且没有成功支付流水的订单可删除。确认删除该订单？", "删除订单", {
+      confirmButtonText: "确认删除",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
+  deleting.value = true;
+  try {
+    await deleteOrder(row.orderNo);
+    await load();
+    ElMessage.success("订单已删除");
+  } finally {
+    deleting.value = false;
+  }
+}
+
+async function deleteFiltered() {
+  try {
+    await ElMessageBox.confirm("将按当前筛选条件删除可安全删除的订单；已支付、有成功支付流水或已生成报名记录的订单会跳过。确认继续？", "筛选后一键删除", {
+      confirmButtonText: "确认删除",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
+  deleting.value = true;
+  try {
+    const result = await deleteOrdersByFilter({
+      keyword: keyword.value,
+      conferenceId: conferenceId.value,
+      status: status.value,
+      paymentStatus: paymentStatus.value,
+      onlyExceptions: onlyExceptions.value
+    });
+    await load();
+    ElMessage.success(`已删除 ${result.deleted} 单，跳过 ${result.skipped} 单`);
+  } finally {
+    deleting.value = false;
   }
 }
 

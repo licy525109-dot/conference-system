@@ -1,12 +1,14 @@
 <template>
-  <view class="page ui-page">
-    <view class="hero">
+  <view :class="pageClass" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <view class="hero" :class="heroClass" :style="heroStyle">
+      <video v-if="showHeaderVideo" class="hero-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
       <view>
-        <text class="eyebrow">会议报名</text>
-        <text class="title">选择会议，完成报名缴费</text>
-        <text class="subtitle">所有报名费用以提交订单时系统计算结果为准。</text>
+        <text class="eyebrow">{{ homeHero.eyebrow }}</text>
+        <text class="title">{{ homeHero.title }}</text>
+        <text class="subtitle">{{ homeHero.subtitle }}</text>
       </view>
-      <button class="ui-button-secondary ui-button-compact" @click="goMyRegistrations">我的报名</button>
+      <button v-if="homeHero.buttonText" class="ui-button-secondary ui-button-compact" @click="goHeroAction">{{ homeHero.buttonText }}</button>
     </view>
 
     <LoadingState v-if="loading" title="加载会议中" description="正在同步最新可报名会议。" />
@@ -51,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { onLoad, onShareAppMessage, onShow } from "@dcloudio/uni-app";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import ConferenceCard from "@/components/ui/ConferenceCard.vue";
@@ -76,6 +78,33 @@ const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const homeDetails = ref<Record<string, HomeConferenceDetailText>>({});
 let hasLoadedOnce = false;
 let lastLoadAt = 0;
+
+const homeHero = computed(() => {
+  const raw = cmsPage.value?.version.themeJson?.homeHero;
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  return {
+    eyebrow: stringValue(source.eyebrow, "会议报名"),
+    title: stringValue(source.title, "选择会议，完成报名缴费"),
+    subtitle: stringValue(source.subtitle, "所有报名费用以提交订单时系统计算结果为准。"),
+    buttonText: stringValue(source.buttonText, "我的报名"),
+    buttonTarget: stringValue(source.buttonTarget, "/pages/registrations/my"),
+    layout: stringValue(source.layout, "split")
+  };
+});
+
+const pageStyle = computed(() => ({
+  "--ui-color-primary": theme.value.primaryColor,
+  "--ui-color-accent": theme.value.secondaryColor,
+  "--ui-color-bg": theme.value.backgroundColor,
+  "--ui-color-surface": theme.value.cardBackground,
+  "--ui-radius": `${theme.value.radius}px`,
+  ...themeBackgroundStyle(theme.value, "body")
+}));
+const heroStyle = computed(() => themeBackgroundStyle(theme.value, "header"));
+const pageClass = computed(() => ["page", "ui-page", backgroundClass(theme.value)]);
+const heroClass = computed(() => [`is-${homeHero.value.layout}`, backgroundClass(theme.value, "header")]);
+const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
+const showHeaderVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo === "header");
 
 onLoad(() => {
   void loadConferences();
@@ -222,6 +251,67 @@ function goMyRegistrations() {
   });
 }
 
+function goHeroAction() {
+  const target = homeHero.value.buttonTarget || "/pages/registrations/my";
+  uni.navigateTo({ url: target });
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function themeBackgroundStyle(config: ThemeConfig, target: "body" | "header"): Record<string, string> {
+  if (target === "body" && config.backgroundApplyTo === "header") return {};
+  if (target === "header" && config.backgroundApplyTo !== "header") return {};
+  if (config.backgroundMode === "video") {
+    return { background: "transparent" };
+  }
+  if (config.backgroundMode === "image" && config.backgroundImageUrl) {
+    return {
+      backgroundImage: `${config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(245,247,251,0.20), rgba(245,247,251,0.92)), "}url("${config.backgroundImageUrl}")`,
+      backgroundSize: "cover",
+      backgroundPosition: "center top",
+      backgroundRepeat: "no-repeat"
+    };
+  }
+  if (config.backgroundMode === "dynamic-gradient") {
+    return {
+      backgroundImage: dynamicGradient(config),
+      backgroundSize: `${dynamicSize(config)}% ${dynamicSize(config)}%`,
+      animationDuration: `${dynamicSpeed(config)}s`
+    };
+  }
+  if (config.backgroundMode === "gradient") {
+    return {
+      backgroundImage: `linear-gradient(180deg, ${config.backgroundGradientFrom || config.backgroundColor}, ${config.backgroundGradientTo || config.secondaryColor})`
+    };
+  }
+  return { background: config.backgroundColor };
+}
+
+function backgroundClass(config: ThemeConfig, target: "body" | "header" = "body"): string {
+  const applies = target === "body" ? config.backgroundApplyTo !== "header" : config.backgroundApplyTo === "header";
+  return applies && config.backgroundMode === "dynamic-gradient" ? "is-dynamic-bg" : "";
+}
+
+function dynamicGradient(config: ThemeConfig): string {
+  const from = config.backgroundGradientFrom || config.backgroundColor;
+  const to = config.backgroundGradientTo || config.secondaryColor;
+  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
+  const dotOpacity = Math.min(0.22, 0.06 + density / 700);
+  const filterLayer = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(245,247,251,0.84)), ";
+  return `${filterLayer}radial-gradient(circle at 18% 24%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(12, density / 3)}%), radial-gradient(circle at 82% 18%, rgba(20,184,166,${dotOpacity}) 0, transparent ${Math.max(14, density / 2.8)}%), linear-gradient(135deg, ${from}, ${to})`;
+}
+
+function dynamicSize(config: ThemeConfig): number {
+  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
+  return Math.max(160, 520 - density * 3);
+}
+
+function dynamicSpeed(config: ThemeConfig): number {
+  return Math.max(6, Math.min(40, Number(config.backgroundDynamicSpeed) || 18));
+}
+
 interface HomeConferenceDetailText {
   priceText: string;
   deadlineText: string;
@@ -232,16 +322,67 @@ interface HomeConferenceDetailText {
 
 <style scoped>
 .page {
+  position: relative;
   padding-bottom: 164rpx;
+  overflow: hidden;
 }
 
 .hero {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 24rpx;
   margin-bottom: 26rpx;
   padding: 32rpx 0 10rpx;
+  overflow: hidden;
+}
+
+.hero.is-centered {
+  align-items: center;
+  flex-direction: column;
+  text-align: center;
+}
+
+.page-bg-video {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+.hero-bg-video {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.hero > view,
+.hero > button {
+  position: relative;
+  z-index: 1;
+}
+
+.is-dynamic-bg {
+  animation-name: dynamicBackgroundMove;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes dynamicBackgroundMove {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 70%;
+  }
 }
 
 .eyebrow {

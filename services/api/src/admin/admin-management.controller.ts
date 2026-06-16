@@ -100,6 +100,18 @@ export class AdminManagementController {
     return this.adminManagementService.getOrder(orderNo);
   }
 
+  @Delete("orders/:orderNo")
+  @RequireAdminPermissions("order:delete")
+  deleteOrder(@Param("orderNo") orderNo: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.deleteOrder(orderNo, request.currentAdmin!);
+  }
+
+  @Post("orders/delete-by-filter")
+  @RequireAdminPermissions("order:delete")
+  deleteOrdersByFilter(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.deleteOrdersByFilter(body, request.currentAdmin!);
+  }
+
   @Get("registrations")
   @RequireAdminPermissions("registration:view")
   listRegistrations(@Query() query: Record<string, unknown>) {
