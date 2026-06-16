@@ -1,11 +1,13 @@
 <template>
   <view :class="rootClass" :style="rootStyle">
+    <ThemeDynamicBackground v-if="showRootDynamicBackground" :theme="props.theme" placement="absolute" />
     <view
       v-for="(component, index) in visibleComponents"
       :key="component.id"
       :class="blockClass(index)"
       :style="blockStyle(index)"
     >
+      <ThemeDynamicBackground v-if="showHeaderDynamicBackground(index)" :theme="props.theme" placement="absolute" />
       <video
         v-if="showHeaderVideo && index === 0"
         class="cms-header__video"
@@ -222,6 +224,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import type { CmsComponent, ThemeConfig } from "@/services/cms";
 import type { ConferenceDetail, ConferenceListItem } from "@/services/conference";
 import { isCmsComponentUserRenderable, isCmsRegistrationCta } from "@/utils/cmsComponents";
@@ -261,7 +264,8 @@ const rootStyle = computed(() => ({
   "--cms-title-size": `${props.theme.titleFontSize}rpx`,
   ...themeBackgroundStyle()
 }));
-const rootClass = computed(() => ["cms-page", props.theme.backgroundApplyTo !== "header" && props.theme.backgroundMode === "dynamic-gradient" ? "is-dynamic-bg" : ""]);
+const rootClass = computed(() => ["cms-page"]);
+const showRootDynamicBackground = computed(() => props.theme.backgroundApplyTo !== "header" && props.theme.backgroundMode === "dynamic-gradient");
 const showHeaderVideo = computed(() => props.theme.backgroundMode === "video" && Boolean(props.theme.backgroundVideoUrl) && props.theme.backgroundApplyTo === "header");
 
 onMounted(() => {
@@ -303,11 +307,7 @@ function themeBackgroundStyle(): Record<string, string> {
     };
   }
   if (props.theme.backgroundMode === "dynamic-gradient") {
-    return {
-      backgroundImage: dynamicGradient(),
-      backgroundSize: `${dynamicSize()}% ${dynamicSize()}%`,
-      animationDuration: `${dynamicSpeed()}s`
-    };
+    return { background: props.theme.backgroundColor };
   }
   if (props.theme.backgroundMode === "gradient") {
     return {
@@ -331,11 +331,7 @@ function headerBackgroundStyle(): Record<string, string> {
     };
   }
   if (props.theme.backgroundMode === "dynamic-gradient") {
-    return {
-      backgroundImage: dynamicGradient(),
-      backgroundSize: `${dynamicSize()}% ${dynamicSize()}%`,
-      animationDuration: `${dynamicSpeed()}s`
-    };
+    return { background: props.theme.backgroundColor };
   }
   if (props.theme.backgroundMode === "gradient") {
     return {
@@ -348,8 +344,7 @@ function headerBackgroundStyle(): Record<string, string> {
 function blockClass(index: number): string[] {
   return [
     "cms-block",
-    props.theme.backgroundApplyTo === "header" && index === 0 ? "is-header-block" : "",
-    props.theme.backgroundApplyTo === "header" && props.theme.backgroundMode === "dynamic-gradient" && index === 0 ? "is-dynamic-bg" : ""
+    props.theme.backgroundApplyTo === "header" && index === 0 ? "is-header-block" : ""
   ].filter(Boolean);
 }
 
@@ -358,22 +353,8 @@ function blockStyle(index: number): Record<string, string> {
   return headerBackgroundStyle();
 }
 
-function dynamicGradient(): string {
-  const from = props.theme.backgroundGradientFrom || props.theme.backgroundColor;
-  const to = props.theme.backgroundGradientTo || props.theme.secondaryColor;
-  const density = Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40));
-  const dotOpacity = Math.min(0.46, 0.14 + density / 380);
-  const filterLayer = props.theme.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,251,0.62)), ";
-  return `${filterLayer}radial-gradient(circle at 12% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.2)}%), radial-gradient(circle at 86% 16%, rgba(20,184,166,${Math.min(0.4, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.9)}%), radial-gradient(circle at 50% 78%, rgba(245,158,11,${Math.min(0.32, dotOpacity)}) 0, transparent ${Math.max(26, density / 1.55)}%), linear-gradient(135deg, ${from}, ${to})`;
-}
-
-function dynamicSize(): number {
-  const density = Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40));
-  return Math.max(150, 440 - density * 2.4);
-}
-
-function dynamicSpeed(): number {
-  return Math.max(6, Math.min(40, Number(props.theme.backgroundDynamicSpeed) || 18));
+function showHeaderDynamicBackground(index: number): boolean {
+  return index === 0 && props.theme.backgroundApplyTo === "header" && props.theme.backgroundMode === "dynamic-gradient";
 }
 
 function arrayConfig(component: CmsComponent, key: string): unknown[] {
@@ -713,6 +694,8 @@ function parseTargetTime(value: string): number | null {
 
 <style scoped>
 .cms-page {
+  position: relative;
+  overflow: hidden;
   min-height: auto;
   padding: 0;
   box-sizing: border-box;
@@ -721,6 +704,7 @@ function parseTargetTime(value: string): number | null {
 
 .cms-block {
   position: relative;
+  z-index: 1;
 }
 
 .cms-block.is-header-block {
@@ -737,27 +721,13 @@ function parseTargetTime(value: string): number | null {
   height: 100%;
 }
 
-.is-dynamic-bg {
-  animation-name: cmsDynamicBackgroundMove;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
-}
-
-@keyframes cmsDynamicBackgroundMove {
-  from {
-    background-position: 0% 0%;
-  }
-  to {
-    background-position: 100% 70%;
-  }
-}
-
 .cms-hero,
 .cms-section,
 .cms-card,
 .cms-notice,
 .cms-title {
+  position: relative;
+  z-index: 1;
   border-radius: var(--cms-radius);
 }
 
