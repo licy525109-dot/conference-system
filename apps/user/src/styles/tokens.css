@@ -83,7 +83,21 @@ page {
   overflow-y: visible;
 }
 
-.ui-page > :not(.theme-dynamic-bg):not(.page-bg-video) {
+.ui-page > .page-content,
+.ui-page > .topbar,
+.ui-page > .hero,
+.ui-page > .section,
+.ui-page > .toolbar,
+.ui-page > .category-scroll,
+.ui-page > .grid,
+.ui-page > .list,
+.ui-page > .card,
+.ui-page > .profile-card,
+.ui-page > .state,
+.ui-page > .notice,
+.ui-page > .actions,
+.ui-page > .custom-tabbar,
+.ui-page > .profile-mask {
   position: relative;
   z-index: 1;
 }
