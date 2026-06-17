@@ -33,6 +33,7 @@
           :ends-at="conference.endsAt"
           :location="conference.location"
           :registration-count="conference.registrationCount"
+          :cover-image-url="conference.coverImageUrl"
           :price-text="homeDetailText(conference.id).priceText"
           :deadline-text="homeDetailText(conference.id).deadlineText"
           :status-label="homeDetailText(conference.id).statusLabel"

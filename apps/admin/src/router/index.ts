@@ -9,6 +9,7 @@ import CouponsPage from "../pages/coupons/index.vue";
 import PromotionsPage from "../pages/promotions/index.vue";
 import NotificationsPage from "../pages/notifications/index.vue";
 import OperationsPage from "../pages/operations/index.vue";
+import WecomPage from "../pages/wecom/index.vue";
 import MaterialsPage from "../pages/materials/index.vue";
 import CmsPagesPage from "../pages/cms/pages.vue";
 import ThemesPage from "../pages/cms/themes.vue";
@@ -54,6 +55,13 @@ export const routes: AdminRoute[] = [
   { path: "/promotions", title: "满减规则", menuTitle: "满减规则", group: "营销配置", badge: "灰度", description: "扩展营销能力，金额仍以后端计算为准", permission: "promotion:view", component: PromotionsPage },
   { path: "/notifications", title: "通知中心", menuTitle: "通知中心", group: "营销配置", badge: "灰度", description: "通知模板、发送任务和发送日志", permission: "notification:view", component: NotificationsPage },
   { path: "/operations", title: "运营闭环", menuTitle: "运营闭环", group: "营销配置", badge: "灰度", description: "客户群、知识库、签到、退款发票和对账", permission: "dashboard:view", component: OperationsPage },
+  { path: "/wecom/config", title: "企微接入配置", menuTitle: "接入配置", group: "企微客户群", description: "企业微信接口配置、连接测试、回调地址和同步入口", permission: "wecom:view", component: WecomPage },
+  { path: "/wecom/groups", title: "客户群列表", menuTitle: "客户群列表", group: "企微客户群", description: "同步和管理企业微信外部客户群", permission: "wecom:view", component: WecomPage },
+  { path: "/wecom/bindings", title: "群绑定会议", menuTitle: "群绑定会议", group: "企微客户群", description: "将客户群绑定到会议和入群入口", permission: "wecom:write", component: WecomPage },
+  { path: "/wecom/welcome", title: "入群欢迎语", menuTitle: "入群欢迎语", group: "企微客户群", description: "维护会议客户群欢迎语素材", permission: "wecom:view", component: WecomPage },
+  { path: "/wecom/tasks", title: "群发任务", menuTitle: "群发任务", group: "企微客户群", description: "按企业微信规则创建待成员确认的群发任务", permission: "wecom:view", component: WecomPage },
+  { path: "/wecom/logs", title: "群发日志", menuTitle: "群发日志", group: "企微客户群", description: "查看成员确认、发送结果和失败原因", permission: "wecom:view", component: WecomPage },
+  { path: "/wecom/callback-events", title: "回调事件", menuTitle: "回调事件", group: "企微客户群", description: "查看客户联系和应用回调事件", permission: "wecom:view", component: WecomPage },
   { path: "/pages", title: "页面装修", menuTitle: "页面装修", group: "页面装修", description: "CMS 页面版本、组件和发布预览", permission: "page:view", component: CmsPagesPage },
   { path: "/themes", title: "主题配置", menuTitle: "主题配置", group: "页面装修", description: "小程序/H5 主题色、圆角和卡片风格", permission: "theme:view", component: ThemesPage },
   { path: "/tabbar", title: "底部导航", menuTitle: "底部导航", group: "页面装修", description: "小程序动态底部导航配置", permission: "tabbar:view", component: TabbarPage },

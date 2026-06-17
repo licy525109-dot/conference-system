@@ -75,9 +75,10 @@ const GROUP_META: Record<string, { order: number; badge?: string; className?: st
   工作台: { order: 0 },
   会议业务: { order: 10 },
   营销配置: { order: 20, badge: "灰度" },
-  页面装修: { order: 30 },
-  扩展能力: { order: 40, badge: "预留", className: "is-extension-group" },
-  系统管理: { order: 50 }
+  企微客户群: { order: 30 },
+  页面装修: { order: 40 },
+  扩展能力: { order: 50, badge: "预留", className: "is-extension-group" },
+  系统管理: { order: 60 }
 };
 
 const menuRoutes = computed(() => routes.filter((route) => !route.hidden && hasPermission(route.permission)));
