@@ -34,6 +34,8 @@
           </view>
         </view>
 
+        <AiAssistantEntry :conference-id="conference.id" />
+
         <FormSection title="报名规格" description="选择票种后进入报名表单。库存和金额以提交订单时系统计算结果为准。">
           <EmptyState v-if="conference.skus.length === 0" title="暂无可报名规格" description="主办方尚未开放报名票种。" mark="票" />
           <view v-else class="sku-list">
@@ -85,6 +87,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { onLoad, onShareAppMessage } from "@dcloudio/uni-app";
+import AiAssistantEntry from "@/components/AiAssistantEntry.vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";

@@ -31,6 +31,24 @@
       }
     },
     {
+      "path": "pages/ai-assistant/index",
+      "style": {
+        "navigationBarTitleText": "会议助手"
+      }
+    },
+    {
+      "path": "pages/coupon/claim",
+      "style": {
+        "navigationBarTitleText": "领取优惠券"
+      }
+    },
+    {
+      "path": "pages/coupon/my",
+      "style": {
+        "navigationBarTitleText": "我的优惠券"
+      }
+    },
+    {
       "path": "pages/registrations/my",
       "style": {
         "navigationBarTitleText": "我的报名"
@@ -64,6 +82,18 @@
       "path": "pages/mall/detail",
       "style": {
         "navigationBarTitleText": "商品详情"
+      }
+    },
+    {
+      "path": "pages/mall/orders",
+      "style": {
+        "navigationBarTitleText": "我的商城订单"
+      }
+    },
+    {
+      "path": "pages/invoice/index",
+      "style": {
+        "navigationBarTitleText": "发票申请"
       }
     },
     {

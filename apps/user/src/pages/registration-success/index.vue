@@ -22,6 +22,8 @@
         </view>
       </view>
 
+      <AiAssistantEntry :conference-id="credential.conference.id" />
+
       <view class="section">
         <text class="section-title">会议信息</text>
         <InfoLine label="时间" :value="`${formatDateTime(credential.conference.startTime)} - ${formatDateTime(credential.conference.endTime)}`" />
@@ -63,6 +65,7 @@
 <script setup lang="ts">
 import { defineComponent, h, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
+import AiAssistantEntry from "@/components/AiAssistantEntry.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";

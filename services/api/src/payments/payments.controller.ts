@@ -56,6 +56,15 @@ export class PaymentsController {
       }
     });
   }
+
+  @Post("wechat/refund-notify")
+  @HttpCode(200)
+  refundNotifyWechat() {
+    return {
+      code: "SUCCESS",
+      message: "refund notify adapter reserved"
+    };
+  }
 }
 
 function normalizeWechatPrepayException(error: unknown): HttpException {

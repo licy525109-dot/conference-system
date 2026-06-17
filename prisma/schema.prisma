@@ -116,6 +116,45 @@ enum NotificationLogStatus {
   SKIPPED
 }
 
+enum CustomerGroupMessageStatus {
+  DRAFT
+  WAITING_CONFIRM
+  SENDING
+  SENT
+  PARTIAL_FAILED
+  FAILED
+  CANCELLED
+}
+
+enum CheckinActionType {
+  VERIFY
+  MANUAL
+  REVOKE
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  PROCESSING
+  SUCCESS
+  FAILED
+  REJECTED
+}
+
+enum InvoiceStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  ISSUED
+}
+
+enum CouponClaimStatus {
+  CLAIMED
+  USED
+  EXPIRED
+  CANCELLED
+}
+
 model User {
   id                        String                     @id @default(cuid())
   openid                    String?                    @unique
@@ -138,6 +177,9 @@ model User {
   notificationSubscriptions NotificationSubscription[]
   notificationLogs          NotificationLog[]
   adminWechatBindings       AdminWechatBinding[]
+  couponClaims              CouponClaim[]
+  refunds                   Refund[]
+  invoiceApplications       InvoiceApplication[]
 
   @@index([createdAt])
   @@index([lastActiveAt])
@@ -157,6 +199,7 @@ model AdminUser {
   mobileBindings        AdminWechatBinding[]
   notificationTemplates NotificationTemplate[] @relation("NotificationTemplateCreatedBy")
   notificationTasks     NotificationTask[]     @relation("NotificationTaskCreatedBy")
+  checkinLogs           CheckinLog[]
 
   @@index([enabled])
   @@index([createdAt])
@@ -245,9 +288,9 @@ model AdminWechatBinding {
 }
 
 model Conference {
-  id                       String                 @id @default(cuid())
+  id                       String                     @id @default(cuid())
   title                    String
-  slug                     String                 @unique
+  slug                     String                     @unique
   coverImageUrl            String?
   summary                  String?
   location                 String?
@@ -255,13 +298,13 @@ model Conference {
   endsAt                   DateTime
   registrationStartsAt     DateTime?
   registrationEndsAt       DateTime?
-  checkInEnabled           Boolean                @default(false)
-  groupRegistrationEnabled Boolean                @default(true)
+  checkInEnabled           Boolean                    @default(false)
+  groupRegistrationEnabled Boolean                    @default(true)
   maxTicketsPerOrder       Int?
-  status                   ConferenceStatus       @default(DRAFT)
-  sortOrder                Int                    @default(0)
-  createdAt                DateTime               @default(now())
-  updatedAt                DateTime               @updatedAt
+  status                   ConferenceStatus           @default(DRAFT)
+  sortOrder                Int                        @default(0)
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
   page                     ConferencePage?
   skus                     RegistrationSku[]
   formDefinition           FormDefinition?
@@ -270,6 +313,12 @@ model Conference {
   coupons                  Coupon[]
   promotionRules           PromotionRule[]
   registrationCartItems    RegistrationCartItem[]
+  inventoryAlertRule       InventoryAlertRule?
+  inventoryAlertLogs       InventoryAlertLog[]
+  knowledgeBases           KnowledgeBase[]
+  aiQuestionLogs           AiQuestionLog[]
+  couponCampaigns          CouponCampaign[]
+  customerGroupTasks       CustomerGroupMessageTask[]
 
   @@index([status])
   @@index([createdAt])
@@ -913,16 +962,16 @@ model FormField {
 }
 
 model Order {
-  id                       String             @id @default(cuid())
-  orderNo                  String             @unique
+  id                       String               @id @default(cuid())
+  orderNo                  String               @unique
   userId                   String?
   conferenceId             String
   skuId                    String
   originAmountCent         Int
-  discountAmountCent       Int                @default(0)
+  discountAmountCent       Int                  @default(0)
   payableAmountCent        Int
   paidAmountCent           Int?
-  status                   OrderStatus        @default(PENDING)
+  status                   OrderStatus          @default(PENDING)
   submittedFormJson        Json
   registrationSnapshotJson Json?
   attendeeName             String?
@@ -930,16 +979,18 @@ model Order {
   expiredAt                DateTime?
   paidAt                   DateTime?
   closedAt                 DateTime?
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
-  user                     User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
-  conference               Conference         @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
-  sku                      RegistrationSku    @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  user                     User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  conference               Conference           @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
+  sku                      RegistrationSku      @relation(fields: [skuId], references: [id], onDelete: Restrict)
   items                    OrderItem[]
   discounts                OrderDiscount[]
   couponRedemptions        CouponRedemption[]
   payments                 Payment[]
   registration             Registration?
+  refunds                  Refund[]
+  invoiceApplications      InvoiceApplication[]
 
   @@index([userId])
   @@index([conferenceId])
@@ -974,8 +1025,8 @@ model OrderDiscount {
 }
 
 model Coupon {
-  id                     String             @id @default(cuid())
-  code                   String             @unique
+  id                     String                 @id @default(cuid())
+  code                   String                 @unique
   name                   String
   type                   CouponType
   discountAmountCent     Int?
@@ -985,17 +1036,19 @@ model Coupon {
   minQuantity            Int?
   totalLimit             Int?
   perUserLimit           Int?
-  enabled                Boolean            @default(true)
+  enabled                Boolean                @default(true)
   startAt                DateTime?
   endAt                  DateTime?
-  stackableWithPromotion Boolean            @default(false)
+  stackableWithPromotion Boolean                @default(false)
   conferenceId           String?
   allowedSkuIds          Json?
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
-  conference             Conference?        @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  conference             Conference?            @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
   discounts              OrderDiscount[]
   redemptions            CouponRedemption[]
+  campaigns              CouponCampaignCoupon[]
+  claims                 CouponClaim[]
 
   @@index([enabled])
   @@index([conferenceId])
@@ -1110,6 +1163,7 @@ model Registration {
   sku             RegistrationSku        @relation(fields: [skuId], references: [id], onDelete: Restrict)
   order           Order                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
   attendees       RegistrationAttendee[]
+  checkinLogs     CheckinLog[]
 
   @@index([userId])
   @@index([conferenceId])
@@ -1138,6 +1192,7 @@ model RegistrationAttendee {
   updatedAt      DateTime        @updatedAt
   registration   Registration    @relation(fields: [registrationId], references: [id], onDelete: Cascade)
   sku            RegistrationSku @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  checkinLogs    CheckinLog[]
 
   @@index([registrationId])
   @@index([skuId])
@@ -1260,4 +1315,379 @@ model NotificationLog {
   @@index([status])
   @@index([createdAt])
   @@map("notification_logs")
+}
+
+model InventoryAlertRule {
+  id                 String     @id @default(cuid())
+  conferenceId       String     @unique
+  enabled            Boolean    @default(false)
+  thresholdRemaining Int        @default(10)
+  notifyMode         String     @default("ADMIN_ONLY")
+  lastScannedAt      DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  conference         Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@index([enabled])
+  @@index([lastScannedAt])
+  @@map("inventory_alert_rules")
+}
+
+model InventoryAlertLog {
+  id                 String     @id @default(cuid())
+  conferenceId       String
+  skuId              String
+  remainingStock     Int
+  thresholdRemaining Int
+  status             String     @default("OPEN")
+  message            String
+  createdAt          DateTime   @default(now())
+  conference         Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@index([conferenceId])
+  @@index([skuId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("inventory_alert_logs")
+}
+
+model CustomerGroup {
+  id          String                    @id @default(cuid())
+  wecomChatId String?                   @unique
+  name        String
+  ownerUserId String?
+  ownerName   String?
+  memberCount Int                       @default(0)
+  status      String                    @default("ACTIVE")
+  remark      String?
+  syncedAt    DateTime?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  messageLogs CustomerGroupMessageLog[]
+
+  @@index([ownerUserId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("customer_groups")
+}
+
+model GroupWelcomeTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  contentJson Json
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([createdAt])
+  @@map("group_welcome_templates")
+}
+
+model CustomerGroupMessageTask {
+  id              String                     @id @default(cuid())
+  name            String
+  conferenceId    String?
+  contentJson     Json
+  targetGroupIds  Json?
+  status          CustomerGroupMessageStatus @default(DRAFT)
+  wecomTaskId     String?
+  needConfirm     Boolean                    @default(true)
+  confirmDeadline DateTime?
+  sentAt          DateTime?
+  createdById     String?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  conference      Conference?                @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+  logs            CustomerGroupMessageLog[]
+
+  @@index([conferenceId])
+  @@index([status])
+  @@index([wecomTaskId])
+  @@index([createdAt])
+  @@map("customer_group_message_tasks")
+}
+
+model CustomerGroupMessageLog {
+  id          String                   @id @default(cuid())
+  taskId      String
+  groupId     String?
+  ownerUserId String?
+  status      String                   @default("PENDING_CONFIRM")
+  resultJson  Json?
+  errorReason String?
+  sentAt      DateTime?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  task        CustomerGroupMessageTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  group       CustomerGroup?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@index([groupId])
+  @@index([ownerUserId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("customer_group_message_logs")
+}
+
+model KnowledgeBase {
+  id           String              @id @default(cuid())
+  conferenceId String
+  title        String
+  enabled      Boolean             @default(false)
+  settingsJson Json?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  conference   Conference          @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  documents    KnowledgeDocument[]
+  autoRules    AutoReplyRule[]
+
+  @@index([conferenceId])
+  @@index([enabled])
+  @@map("knowledge_bases")
+}
+
+model KnowledgeDocument {
+  id              String           @id @default(cuid())
+  knowledgeBaseId String
+  title           String
+  sourceType      String           @default("TEXT")
+  contentText     String
+  status          String           @default("INDEXED")
+  chunkCount      Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  knowledgeBase   KnowledgeBase    @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  chunks          KnowledgeChunk[]
+
+  @@index([knowledgeBaseId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id         String            @id @default(cuid())
+  documentId String
+  chunkIndex Int
+  content    String
+  keywords   Json?
+  createdAt  DateTime          @default(now())
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+  @@map("knowledge_chunks")
+}
+
+model AiQuestionLog {
+  id           String     @id @default(cuid())
+  conferenceId String
+  userId       String?
+  question     String
+  answer       String
+  matchedJson  Json?
+  provider     String     @default("mock")
+  createdAt    DateTime   @default(now())
+  conference   Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@index([conferenceId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ai_question_logs")
+}
+
+model AutoReplyRule {
+  id              String         @id @default(cuid())
+  knowledgeBaseId String?
+  keyword         String
+  answer          String
+  enabled         Boolean        @default(true)
+  priority        Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+
+  @@index([knowledgeBaseId])
+  @@index([enabled])
+  @@index([priority])
+  @@map("auto_reply_rules")
+}
+
+model CouponCampaign {
+  id           String                 @id @default(cuid())
+  conferenceId String?
+  name         String
+  claimCode    String                 @unique
+  qrScene      String                 @unique
+  enabled      Boolean                @default(true)
+  totalLimit   Int?
+  claimedCount Int                    @default(0)
+  startAt      DateTime?
+  endAt        DateTime?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  conference   Conference?            @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+  coupons      CouponCampaignCoupon[]
+  claims       CouponClaim[]
+
+  @@index([conferenceId])
+  @@index([enabled])
+  @@index([createdAt])
+  @@map("coupon_campaigns")
+}
+
+model CouponCampaignCoupon {
+  id         String         @id @default(cuid())
+  campaignId String
+  couponId   String
+  createdAt  DateTime       @default(now())
+  campaign   CouponCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  coupon     Coupon         @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, couponId])
+  @@index([campaignId])
+  @@index([couponId])
+  @@map("coupon_campaign_coupons")
+}
+
+model CouponClaim {
+  id         String            @id @default(cuid())
+  campaignId String
+  couponId   String
+  userId     String
+  status     CouponClaimStatus @default(CLAIMED)
+  claimedAt  DateTime          @default(now())
+  usedAt     DateTime?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  campaign   CouponCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  coupon     Coupon            @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, couponId, userId])
+  @@index([campaignId])
+  @@index([couponId])
+  @@index([userId])
+  @@index([status])
+  @@map("coupon_claims")
+}
+
+model CheckinLog {
+  id             String               @id @default(cuid())
+  attendeeId     String
+  registrationId String
+  action         CheckinActionType
+  beforeStatus   CheckInStatus?
+  afterStatus    CheckInStatus
+  operatorId     String?
+  remark         String?
+  createdAt      DateTime             @default(now())
+  attendee       RegistrationAttendee @relation(fields: [attendeeId], references: [id], onDelete: Cascade)
+  registration   Registration         @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  operator       AdminUser?           @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+
+  @@index([attendeeId])
+  @@index([registrationId])
+  @@index([action])
+  @@index([operatorId])
+  @@index([createdAt])
+  @@map("checkin_logs")
+}
+
+model Refund {
+  id               String           @id @default(cuid())
+  refundNo         String           @unique
+  orderNo          String
+  orderId          String?
+  userId           String?
+  amountCent       Int
+  status           RefundStatus     @default(REQUESTED)
+  reason           String?
+  rejectReason     String?
+  provider         PaymentProvider?
+  providerRefundId String?
+  requestedAt      DateTime         @default(now())
+  approvedAt       DateTime?
+  processedAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  order            Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user             User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orderNo])
+  @@index([orderId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("refunds")
+}
+
+model InvoiceApplication {
+  id           String        @id @default(cuid())
+  invoiceNo    String        @unique
+  orderNo      String
+  orderId      String?
+  userId       String?
+  title        String
+  taxNo        String?
+  amountCent   Int
+  email        String?
+  status       InvoiceStatus @default(REQUESTED)
+  rejectReason String?
+  issuedAt     DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  order        Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orderNo])
+  @@index([orderId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("invoice_applications")
+}
+
+model WechatBill {
+  id          String                 @id @default(cuid())
+  billDate    DateTime
+  billType    String                 @default("TRADE")
+  status      String                 @default("CREATED")
+  downloadUrl String?
+  storagePath String?
+  summaryJson Json?
+  createdBy   String?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  results     ReconciliationResult[]
+
+  @@unique([billDate, billType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("wechat_bills")
+}
+
+model ReconciliationResult {
+  id               String      @id @default(cuid())
+  billId           String?
+  orderNo          String?
+  outTradeNo       String?
+  transactionId    String?
+  localAmountCent  Int?
+  remoteAmountCent Int?
+  type             String
+  status           String      @default("OPEN")
+  detailJson       Json?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  bill             WechatBill? @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+  @@index([type])
+  @@index([status])
+  @@index([orderNo])
+  @@index([outTradeNo])
+  @@index([createdAt])
+  @@map("reconciliation_results")
 }

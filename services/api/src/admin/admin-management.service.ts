@@ -667,7 +667,7 @@ export class AdminManagementService {
 
   async createCoupon(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const request = parseCouponInput(input, false);
-    const code = ensureDefined(request.code, "code").toUpperCase();
+    const code = (request.code ?? generateCouponCode()).toUpperCase();
     const name = ensureDefined(request.name, "name");
     const type = ensureDefined(request.type, "type");
     validateCouponDiscountInput(type, request);
@@ -1735,7 +1735,7 @@ function readRegistrationRemark(input: unknown): string | null {
 function parseCouponInput(input: unknown, partial: boolean) {
   const body = readObject(input);
   return {
-    code: partial ? readOptionalString(body, "code") : readRequiredString(body, "code"),
+    code: readOptionalString(body, "code"),
     name: partial ? readOptionalString(body, "name") : readRequiredString(body, "name"),
     type: partial ? readOptionalEnum(body, "type", CouponType) : readRequiredEnum(body, "type", CouponType),
     discountAmountCent: readOptionalNullableNonNegativeInt(body, "discountAmountCent"),
@@ -1752,6 +1752,10 @@ function parseCouponInput(input: unknown, partial: boolean) {
     conferenceId: readOptionalNullableString(body, "conferenceId"),
     allowedSkuIds: readOptionalNullableStringArray(body, "allowedSkuIds")
   };
+}
+
+function generateCouponCode(): string {
+  return `AUTO${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
 function parsePromotionRuleInput(input: unknown, partial: boolean) {

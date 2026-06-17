@@ -118,6 +118,33 @@ export class AdminMallService {
     return ok({ items: items.map(formatOrder), total, page, pageSize });
   }
 
+  async shipOrder(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const shipment = await this.prisma.mallShipment.create({
+      data: {
+        orderId: id,
+        company: readNullableString(body.company),
+        trackingNo: readNullableString(body.trackingNo),
+        status: "SHIPPED",
+        shippedAt: new Date()
+      }
+    });
+    await this.prisma.mallOrder.update({ where: { id }, data: { status: "SHIPPED" } });
+    await this.writeAudit(admin, AuditAction.UPDATE, "MallOrder", id, "Ship mall order");
+    return ok({ ...shipment, shippedAt: shipment.shippedAt?.toISOString() ?? null, createdAt: shipment.createdAt.toISOString(), updatedAt: shipment.updatedAt.toISOString() });
+  }
+
+  async verifyOrder(id: string, admin: CurrentAdmin) {
+    const order = await this.prisma.mallOrder.update({ where: { id }, data: { status: "COMPLETED" }, include: { user: true, items: true } });
+    await this.writeAudit(admin, AuditAction.UPDATE, "MallOrder", id, "Verify mall order");
+    return ok(formatOrder(order));
+  }
+
+  async exportOrders() {
+    const items = await this.prisma.mallOrder.findMany({ orderBy: { createdAt: "desc" }, take: 5000, include: { user: true, items: true } });
+    return ok({ items: items.map(formatOrder), truncated: items.length >= 5000 });
+  }
+
   private async writeAudit(admin: CurrentAdmin, action: AuditAction, entityType: string, entityId: string, summary: string, metadataJson?: Prisma.InputJsonObject) {
     await this.prisma.auditLog.create({ data: { adminUserId: admin.id, action, entityType, entityId, summary, metadataJson } });
   }

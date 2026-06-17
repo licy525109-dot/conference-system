@@ -28,6 +28,11 @@
     </view>
 
     <button v-if="hasAdminAccess" class="admin-entry ui-button-primary" @click="goAdminNotifications">管理员通知中心</button>
+    <view class="quick-links ui-card">
+      <button class="ui-button-secondary" @click="goPage('/pages/coupon/my')">我的优惠券</button>
+      <button class="ui-button-secondary" @click="goPage('/pages/mall/orders')">商城订单</button>
+      <button class="ui-button-secondary" @click="goPage('/pages/invoice/index')">发票申请</button>
+    </view>
 
     <LoadingState v-if="loading" title="加载会员信息中" description="正在读取账号、会员等级和权益说明。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="load" @secondary="goHome" />
@@ -143,6 +148,10 @@ function goAdminNotifications() {
   uni.navigateTo({ url: "/pages/admin/notifications/index" });
 }
 
+function goPage(url: string) {
+  uni.navigateTo({ url });
+}
+
 function formatCent(value: number) {
   return (value / 100).toFixed(2);
 }
@@ -216,6 +225,13 @@ function formatDiscount(value: number) {
 
 .admin-entry {
   width: 100%;
+}
+
+.quick-links {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16rpx;
+  padding: 24rpx;
 }
 
 .avatar {
