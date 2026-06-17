@@ -171,9 +171,7 @@ async function exportExcel() {
 }
 
 async function openDetail(id: string) {
-  detail.value = await getRegistration(id);
-  remark.value = detail.value.adminRemark ?? "";
-  detailVisible.value = true;
+  navigateTo("/registrations/detail", { id });
 }
 
 async function saveRemark() {

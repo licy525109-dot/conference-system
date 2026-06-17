@@ -13,7 +13,7 @@ export function useAdminSession() {
     if (!permission) {
       return true;
     }
-    return permissions.value.includes(permission);
+    return permissions.value.includes("*") || permissions.value.includes(permission);
   }
 
   async function init() {

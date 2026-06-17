@@ -517,6 +517,44 @@ export class AdminManagementService {
     return ok(formatRegistrationDetail(registration));
   }
 
+  async getRegistrationDetail(id: string): Promise<ApiResponse<unknown>> {
+    const registration = await this.prisma.registration.findUnique({
+      where: { id },
+      select: registrationDetailSelect
+    });
+
+    if (!registration) {
+      throw new NotFoundException("Registration not found");
+    }
+
+    const auditLogs = await this.getRegistrationAuditRows(registration);
+    return ok({
+      ...formatRegistrationDetail(registration),
+      credential: {
+        registrationNo: registration.registrationNo,
+        credentialCode: registration.registrationNo,
+        qrPayload: `CONF_REG:${registration.id}:${registration.registrationNo}`,
+        checkInProgress: summarizeCheckIn(registration.attendees)
+      },
+      auditLogs: auditLogs.map(formatAuditTimelineItem),
+      timeline: buildRegistrationTimeline(registration, auditLogs)
+    });
+  }
+
+  async getRegistrationAuditLogs(id: string): Promise<ApiResponse<unknown>> {
+    const registration = await this.prisma.registration.findUnique({
+      where: { id },
+      select: registrationDetailSelect
+    });
+
+    if (!registration) {
+      throw new NotFoundException("Registration not found");
+    }
+
+    const auditLogs = await this.getRegistrationAuditRows(registration);
+    return ok({ items: auditLogs.map(formatAuditTimelineItem) });
+  }
+
   async updateRegistrationRemark(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const adminRemark = readRegistrationRemark(input);
     const registration = await this.prisma.registration.update({
@@ -870,6 +908,36 @@ export class AdminManagementService {
       }
     });
   }
+
+  private async getRegistrationAuditRows(registration: Prisma.RegistrationGetPayload<{ select: typeof registrationDetailSelect }>) {
+    const entityIds = [registration.id, registration.order.id, ...registration.attendees.map((attendee) => attendee.id)];
+    return this.prisma.auditLog.findMany({
+      where: {
+        OR: [
+          { entityType: "Registration", entityId: registration.id },
+          { entityType: "Order", entityId: registration.order.id },
+          { entityType: "RegistrationAttendee", entityId: { in: entityIds } }
+        ]
+      },
+      orderBy: [{ createdAt: "asc" }],
+      take: 50,
+      select: {
+        id: true,
+        action: true,
+        entityType: true,
+        entityId: true,
+        summary: true,
+        metadataJson: true,
+        createdAt: true,
+        adminUser: {
+          select: {
+            username: true,
+            displayName: true
+          }
+        }
+      }
+    });
+  }
 }
 
 function ok<TData>(data: TData): ApiResponse<TData> {
@@ -1167,11 +1235,39 @@ const registrationDetailSelect = {
   },
   order: {
     select: {
+      id: true,
       orderNo: true,
       status: true,
+      originAmountCent: true,
+      discountAmountCent: true,
       payableAmountCent: true,
       paidAmountCent: true,
+      submittedFormJson: true,
+      registrationSnapshotJson: true,
+      createdAt: true,
       paidAt: true,
+      items: {
+        select: {
+          id: true,
+          skuName: true,
+          unitPriceCent: true,
+          quantity: true,
+          totalAmountCent: true
+        }
+      },
+      discounts: {
+        orderBy: [{ createdAt: "asc" }],
+        select: {
+          id: true,
+          type: true,
+          title: true,
+          amountCent: true,
+          couponId: true,
+          promotionRuleId: true,
+          snapshotJson: true,
+          createdAt: true
+        }
+      },
       payments: {
         orderBy: [{ createdAt: "desc" }],
         select: {
@@ -1349,14 +1445,85 @@ function formatRegistrationDetail(
     attendees: registration.attendees.map(formatAttendee),
     order: {
       ...registration.order,
+      createdAt: registration.order.createdAt?.toISOString?.() ?? registration.createdAt.toISOString(),
       paidAt: registration.order.paidAt?.toISOString() ?? null,
-      payments: registration.order.payments.map((payment) => ({
+      discounts: (registration.order.discounts ?? []).map((discount) => ({
+        ...discount,
+        createdAt: discount.createdAt?.toISOString?.() ?? registration.createdAt.toISOString()
+      })),
+      payments: (registration.order.payments ?? []).map((payment) => ({
         ...payment,
         paidAt: payment.paidAt?.toISOString() ?? null,
         createdAt: payment.createdAt.toISOString()
       }))
     }
   };
+}
+
+type RegistrationAuditRow = {
+  id: string;
+  action: AuditAction;
+  entityType: string;
+  entityId: string | null;
+  summary: string | null;
+  metadataJson: Prisma.JsonValue;
+  createdAt: Date;
+  adminUser: { username: string; displayName: string | null } | null;
+};
+
+function formatAuditTimelineItem(row: RegistrationAuditRow) {
+  return {
+    id: row.id,
+    action: row.action,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    summary: row.summary,
+    metadataJson: row.metadataJson,
+    adminName: row.adminUser?.displayName ?? row.adminUser?.username ?? "系统",
+    createdAt: row.createdAt.toISOString()
+  };
+}
+
+function buildRegistrationTimeline(
+  registration: Prisma.RegistrationGetPayload<{ select: typeof registrationDetailSelect }>,
+  auditLogs: RegistrationAuditRow[]
+) {
+  const items = [
+    {
+      type: "ORDER_CREATED",
+      title: "创建订单",
+      description: registration.order.orderNo,
+      createdAt: registration.order.createdAt.toISOString()
+    },
+    ...registration.order.payments.map((payment) => ({
+      type: `PAYMENT_${payment.status}`,
+      title: payment.status === PaymentStatus.SUCCESS ? "支付成功" : "支付记录",
+      description: `${payment.provider} ${payment.outTradeNo}`,
+      createdAt: (payment.paidAt ?? payment.createdAt).toISOString()
+    })),
+    {
+      type: "REGISTRATION_CONFIRMED",
+      title: "生成报名",
+      description: registration.registrationNo,
+      createdAt: registration.confirmedAt.toISOString()
+    },
+    ...registration.attendees
+      .filter((attendee) => attendee.checkedInAt)
+      .map((attendee) => ({
+        type: "CHECKED_IN",
+        title: "签到核销",
+        description: attendee.name,
+        createdAt: attendee.checkedInAt!.toISOString()
+      })),
+    ...auditLogs.map((log) => ({
+      type: `AUDIT_${log.action}`,
+      title: log.summary ?? log.entityType,
+      description: log.adminUser?.displayName ?? log.adminUser?.username ?? "系统",
+      createdAt: log.createdAt.toISOString()
+    }))
+  ];
+
+  return items.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
 function formatAttendee(attendee: Prisma.RegistrationAttendeeGetPayload<{ select: typeof attendeeSelect }>) {

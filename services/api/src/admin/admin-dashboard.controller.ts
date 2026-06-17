@@ -14,4 +14,28 @@ export class AdminDashboardController {
   overview(@Query() query: { dateFrom?: string; dateTo?: string; conferenceId?: string }) {
     return this.dashboardService.overview(query);
   }
+
+  @Get("conversion")
+  @RequireAdminPermissions("dashboard:view")
+  conversion(@Query() query: { dateFrom?: string; dateTo?: string; conferenceId?: string }) {
+    return this.dashboardService.conversion(query);
+  }
+
+  @Get("payment-trend")
+  @RequireAdminPermissions("dashboard:view")
+  paymentTrend(@Query() query: { dateFrom?: string; dateTo?: string; conferenceId?: string }) {
+    return this.dashboardService.paymentTrend(query);
+  }
+
+  @Get("order-abnormal-trend")
+  @RequireAdminPermissions("dashboard:view")
+  orderAbnormalTrend(@Query() query: { dateFrom?: string; dateTo?: string; conferenceId?: string }) {
+    return this.dashboardService.orderAbnormalTrend(query);
+  }
+
+  @Get("ticket-sales")
+  @RequireAdminPermissions("dashboard:view")
+  ticketSales(@Query() query: { dateFrom?: string; dateTo?: string; conferenceId?: string }) {
+    return this.dashboardService.ticketSales(query);
+  }
 }

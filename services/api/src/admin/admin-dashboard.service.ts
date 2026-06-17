@@ -118,10 +118,15 @@ export class AdminDashboardService {
         todayRevenueCent: todayRevenue._sum.paidAmountCent ?? 0,
         totalRevenueCent: totalRevenue._sum.paidAmountCent ?? 0,
         todayOrders,
+        createdOrders: todayOrders,
+        successfulPayments,
         paidOrders,
         pendingOrders,
         todayRegistrations,
         totalRegistrations,
+        abnormalOrders: recentOrders.filter((order) => order.status !== OrderStatus.PAID && order.status !== OrderStatus.PENDING).length,
+        refundAmountCent: 0,
+        invoiceApplicationCount: 0,
         checkedInCount,
         pendingCheckInCount,
         couponUsedCount,
@@ -163,6 +168,81 @@ export class AdminDashboardService {
       }))
     });
   }
+
+  async conversion(query: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
+    const range = readDateRange(query);
+    const conferenceWhere = query.conferenceId ? { conferenceId: query.conferenceId } : {};
+    const orderWhere = { ...conferenceWhere, ...(range ? { createdAt: range } : {}) };
+    const registrationWhere = { ...conferenceWhere, ...(range ? { createdAt: range } : {}) };
+    const [orders, paidOrders, registrations, payments] = await this.prisma.$transaction([
+      this.prisma.order.count({ where: orderWhere }),
+      this.prisma.order.count({ where: { ...orderWhere, status: OrderStatus.PAID } }),
+      this.prisma.registration.count({ where: registrationWhere }),
+      this.prisma.payment.count({ where: range || query.conferenceId ? { order: orderWhere } : {} })
+    ]);
+    return ok({
+      steps: [
+        { key: "orders", label: "创建订单", count: orders },
+        { key: "paymentAttempts", label: "发起支付", count: payments },
+        { key: "paidOrders", label: "支付成功", count: paidOrders },
+        { key: "registrations", label: "报名成功", count: registrations }
+      ]
+    });
+  }
+
+  async paymentTrend(query: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
+    const range = readDateRange(query) ?? defaultTrendRange();
+    const orderWhere = { ...(query.conferenceId ? { conferenceId: query.conferenceId } : {}), createdAt: range };
+    const payments = await this.prisma.payment.findMany({
+      where: { order: orderWhere },
+      orderBy: [{ createdAt: "asc" }],
+      take: 5000,
+      select: { status: true, createdAt: true }
+    });
+    return ok({ items: aggregateByDay(payments, (item) => item.status === PaymentStatus.SUCCESS) });
+  }
+
+  async orderAbnormalTrend(query: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
+    const range = readDateRange(query) ?? defaultTrendRange();
+    const orders = await this.prisma.order.findMany({
+      where: { ...(query.conferenceId ? { conferenceId: query.conferenceId } : {}), createdAt: range },
+      orderBy: [{ createdAt: "asc" }],
+      take: 5000,
+      select: { status: true, createdAt: true }
+    });
+    return ok({ items: aggregateByDay(orders, (item) => item.status !== OrderStatus.PAID && item.status !== OrderStatus.PENDING) });
+  }
+
+  async ticketSales(query: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
+    const range = readDateRange(query);
+    const skus = await this.prisma.registrationSku.findMany({
+      where: query.conferenceId ? { conferenceId: query.conferenceId } : {},
+      orderBy: [{ soldCount: "desc" }, { createdAt: "desc" }],
+      take: 20,
+      select: {
+        id: true,
+        name: true,
+        stock: true,
+        soldCount: true,
+        conference: { select: { title: true } },
+        orderItems: {
+          where: range ? { order: { createdAt: range } } : {},
+          select: { quantity: true, totalAmountCent: true }
+        }
+      }
+    });
+    return ok({
+      items: skus.map((sku) => ({
+        id: sku.id,
+        name: sku.name,
+        conferenceTitle: sku.conference.title,
+        stock: sku.stock,
+        soldCount: range ? sku.orderItems.reduce((sum, item) => sum + item.quantity, 0) : sku.soldCount,
+        revenueCent: sku.orderItems.reduce((sum, item) => sum + item.totalAmountCent, 0),
+        remainingStock: Math.max(0, sku.stock - sku.soldCount)
+      }))
+    });
+  }
 }
 
 function ok<TData>(data: TData) {
@@ -193,4 +273,24 @@ function readDateRange(query: { dateFrom?: string; dateTo?: string }): { gte?: D
     }
   }
   return range.gte || range.lte ? range : undefined;
+}
+
+function defaultTrendRange(): { gte: Date; lte: Date } {
+  const lte = new Date();
+  const gte = new Date(lte);
+  gte.setDate(lte.getDate() - 29);
+  return { gte, lte };
+}
+
+function aggregateByDay<TItem extends { createdAt: Date }>(items: TItem[], success: (item: TItem) => boolean) {
+  const byDay = new Map<string, { date: string; total: number; success: number; failed: number }>();
+  for (const item of items) {
+    const date = item.createdAt.toISOString().slice(0, 10);
+    const bucket = byDay.get(date) ?? { date, total: 0, success: 0, failed: 0 };
+    bucket.total += 1;
+    if (success(item)) bucket.success += 1;
+    else bucket.failed += 1;
+    byDay.set(date, bucket);
+  }
+  return [...byDay.values()];
 }

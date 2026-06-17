@@ -25,6 +25,12 @@
       }
     },
     {
+      "path": "pages/registration-success/index",
+      "style": {
+        "navigationBarTitleText": "报名凭证"
+      }
+    },
+    {
       "path": "pages/registrations/my",
       "style": {
         "navigationBarTitleText": "我的报名"

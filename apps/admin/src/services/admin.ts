@@ -5,6 +5,8 @@ import type {
   AdminOrderDetail,
   AdminRegistration,
   AdminRegistrationDetail,
+  AdminRegistrationAuditLog,
+  AdminRegistrationFullDetail,
   AdminAccount,
   AdminAuditLog,
   AdminUser,
@@ -18,6 +20,9 @@ import type {
   PageLibraryTemplate,
   PageVersion,
   DashboardOverview,
+  DashboardConversion,
+  DashboardTicketSales,
+  DashboardTrend,
   FinanceBatch,
   FinanceOverview,
   FinancePayment,
@@ -53,6 +58,22 @@ export function getAdminMe(): Promise<{ admin: AdminUser }> {
 
 export function getDashboardOverview(params: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
   return apiRequest<DashboardOverview>(`/admin/dashboard/overview${toQuery(params)}`);
+}
+
+export function getDashboardConversion(params: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
+  return apiRequest<DashboardConversion>(`/admin/dashboard/conversion${toQuery(params)}`);
+}
+
+export function getDashboardPaymentTrend(params: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
+  return apiRequest<DashboardTrend>(`/admin/dashboard/payment-trend${toQuery(params)}`);
+}
+
+export function getDashboardOrderAbnormalTrend(params: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
+  return apiRequest<DashboardTrend>(`/admin/dashboard/order-abnormal-trend${toQuery(params)}`);
+}
+
+export function getDashboardTicketSales(params: { dateFrom?: string; dateTo?: string; conferenceId?: string } = {}) {
+  return apiRequest<DashboardTicketSales>(`/admin/dashboard/ticket-sales${toQuery(params)}`);
 }
 
 export function listConferences(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
@@ -183,6 +204,14 @@ export function exportRegistrationsExcel(params: {
 
 export function getRegistration(id: string) {
   return apiRequest<AdminRegistrationDetail>(`/admin/registrations/${encodeURIComponent(id)}`);
+}
+
+export function getRegistrationDetail(id: string) {
+  return apiRequest<AdminRegistrationFullDetail>(`/admin/registrations/${encodeURIComponent(id)}/detail`);
+}
+
+export function getRegistrationAuditLogs(id: string) {
+  return apiRequest<{ items: AdminRegistrationAuditLog[] }>(`/admin/registrations/${encodeURIComponent(id)}/audit-logs`);
 }
 
 export function updateRegistrationRemark(id: string, adminRemark: string | null) {
