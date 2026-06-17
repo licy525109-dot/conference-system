@@ -34,16 +34,16 @@ export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportDef
   carousel: { label: "轮播图", status: "basic", description: "用户端基础支持图片轮播展示" },
   "speaker-cards": { label: "嘉宾卡片", status: "basic", description: "用户端基础支持嘉宾卡片展示" },
   "schedule-timeline": { label: "日程时间轴", status: "basic", description: "用户端基础支持会议日程展示" },
-  "coupon-card": { label: "优惠券领取卡片", status: "unsupported", description: "优惠能力为扩展模块，暂不支持用户端装修展示" },
+  "coupon-card": { label: "优惠券领取卡片", status: "basic", description: "用户端支持优惠券领取入口展示" },
   countdown: { label: "倒计时", status: "basic", description: "用户端基础支持目标时间倒计时展示" },
-  search: { label: "搜索框", status: "unsupported", description: "搜索交互暂不支持用户端装修展示" },
+  search: { label: "搜索框", status: "basic", description: "用户端支持搜索入口展示和关键词输入" },
   "map-contact": { label: "地图与联系信息", status: "basic", description: "用户端基础支持地址和电话展示" },
   "sponsor-wall": { label: "赞助商 Logo 墙", status: "basic", description: "用户端基础支持赞助商名称或 Logo 展示" },
   faq: { label: "常见问答", status: "basic", description: "用户端基础支持问答列表展示" },
-  "membership-benefits": { label: "会员权益卡", status: "planned", description: "会员模块后续开放，暂不支持用户端装修展示" },
-  "user-profile-card": { label: "用户资料卡", status: "planned", description: "用户中心后续增强，暂不支持用户端装修展示" },
-  "my-order-list": { label: "我的订单列表", status: "planned", description: "订单中心后续开放，暂不支持用户端装修展示" },
-  "mall-product-grid": { label: "商城商品宫格", status: "planned", description: "商城模块后续开放，暂不支持用户端装修展示" }
+  "membership-benefits": { label: "会员权益卡", status: "basic", description: "用户端支持会员权益展示和会员中心入口" },
+  "user-profile-card": { label: "用户资料卡", status: "basic", description: "用户端支持用户资料入口展示" },
+  "my-order-list": { label: "我的订单列表", status: "basic", description: "用户端支持报名和商城订单入口展示" },
+  "mall-product-grid": { label: "商城商品宫格", status: "basic", description: "用户端支持商城商品宫格入口展示" }
 };
 
 const RENDERABLE_STATUSES: CmsComponentSupportStatus[] = ["supported", "basic"];

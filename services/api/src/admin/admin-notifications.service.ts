@@ -271,6 +271,34 @@ export class AdminNotificationsService {
     return ok({ items: items.map(formatLog), total, page, pageSize });
   }
 
+  async getChannelConfig(channel: "WECHAT_SUBSCRIBE" | "SMS") {
+    const templates = await this.prisma.notificationTemplate.findMany({
+      where: { channel },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, code: true, name: true, status: true, templateKey: true, updatedAt: true }
+    });
+    const envKey = channel === "SMS" ? "SMS_ENABLED" : "WECHAT_SUBSCRIBE_MESSAGE_ENABLED";
+    return ok({
+      channel,
+      enabled: process.env[envKey] === "true",
+      envKey,
+      statusText: process.env[envKey] === "true" ? "已开启，真实发送适配器仍以供应商配置为准" : "未启用",
+      templates: templates.map((item) => ({ ...item, hasTemplateKey: Boolean(item.templateKey), templateKey: item.templateKey ? maskValue(item.templateKey) : null, updatedAt: item.updatedAt.toISOString() })),
+      secretVisible: false
+    });
+  }
+
+  async updateChannelConfig(channel: "WECHAT_SUBSCRIBE" | "SMS", input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    await this.writeAudit(admin, AuditAction.UPDATE, "NotificationChannelConfig", channel, "Update notification channel config", {
+      channel,
+      enabled: readOptionalBoolean(body.enabled),
+      provider: readOptionalString(body.provider),
+      note: "Secrets are configured through server env only"
+    });
+    return this.getChannelConfig(channel);
+  }
+
   private async ensureTemplate(id: string) {
     const template = await this.prisma.notificationTemplate.findUnique({ where: { id } });
     if (!template) {
@@ -342,6 +370,10 @@ interface NotificationSendResult {
 
 function ok<TData>(data: TData) {
   return { code: "OK", message: "ok", data };
+}
+
+function maskValue(value: string): string {
+  return value.length <= 6 ? "***" : `${value.slice(0, 3)}***${value.slice(-3)}`;
 }
 
 function formatSubscription(item: {

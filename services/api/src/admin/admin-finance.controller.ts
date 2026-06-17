@@ -40,3 +40,15 @@ export class AdminFinanceController {
     return this.financeService.listDifferences();
   }
 }
+
+@Controller("admin/payments")
+@UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
+export class AdminPaymentsController {
+  constructor(private readonly financeService: AdminFinanceService) {}
+
+  @Get()
+  @RequireAdminPermissions("finance:view")
+  payments(@Query() query: Record<string, unknown>) {
+    return this.financeService.listPayments(query);
+  }
+}

@@ -46,6 +46,12 @@ export class AdminMallController {
     return this.mallService.createSku(id, body, request.currentAdmin!);
   }
 
+  @Get("skus")
+  @RequireAdminPermissions("mall:view")
+  listSkus(@Query() query: Record<string, unknown>) {
+    return this.mallService.listSkus(query);
+  }
+
   @Get("orders")
   @RequireAdminPermissions("mall:view")
   listOrders(@Query() query: Record<string, unknown>) {
@@ -62,6 +68,18 @@ export class AdminMallController {
   @RequireAdminPermissions("mall:write")
   verifyOrder(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
     return this.mallService.verifyOrder(id, request.currentAdmin!);
+  }
+
+  @Get("shipments")
+  @RequireAdminPermissions("mall:view")
+  listShipments(@Query() query: Record<string, unknown>) {
+    return this.mallService.listShipments(query);
+  }
+
+  @Get("aftersales")
+  @RequireAdminPermissions("mall:view")
+  listAfterSales(@Query() query: Record<string, unknown>) {
+    return this.mallService.listAfterSales(query);
   }
 
   @Get("orders-export")

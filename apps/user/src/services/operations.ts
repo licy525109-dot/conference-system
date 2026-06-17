@@ -38,6 +38,11 @@ export async function getMyInvoices() {
   return request<{ items: Array<Record<string, unknown>> }>("/my/invoices");
 }
 
+export async function getMyRefunds() {
+  await ensureLogin();
+  return request<{ items: Array<Record<string, unknown>> }>("/my/refunds");
+}
+
 export async function createMallOrder(input: {
   items: Array<{ skuId: string; quantity: number }>;
   receiverName: string;
@@ -51,5 +56,5 @@ export async function createMallOrder(input: {
 
 export async function getMyMallOrders() {
   await ensureLogin();
-  return request<{ items: Array<Record<string, unknown>> }>("/mall/my/orders");
+  return request<{ items: Array<Record<string, unknown>> }>("/my/mall-orders");
 }

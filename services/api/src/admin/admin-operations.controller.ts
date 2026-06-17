@@ -112,6 +112,12 @@ export class AdminOperationsController {
     return this.operations.getKnowledgeBase(id);
   }
 
+  @Get("knowledge-bases")
+  @RequireAdminPermissions("ai-kb:view")
+  knowledgeBases(@Query() query: Record<string, unknown>) {
+    return this.operations.listKnowledgeBases(query);
+  }
+
   @Post("conferences/:id/knowledge-documents")
   @RequireAdminPermissions("ai-kb:write")
   createKnowledgeDocument(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
@@ -170,6 +176,12 @@ export class AdminOperationsController {
   @RequireAdminPermissions("coupon:write")
   createCouponCampaign(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.operations.createCouponCampaign(body, request.currentAdmin!);
+  }
+
+  @Get("coupon-campaigns")
+  @RequireAdminPermissions("coupon:view")
+  listCouponCampaigns(@Query() query: Record<string, unknown>) {
+    return this.operations.listCouponCampaigns(query);
   }
 
   @Get("coupon-campaigns/:id")
@@ -284,6 +296,12 @@ export class AdminOperationsController {
   @RequireAdminPermissions("finance:view")
   wechatBills() {
     return this.operations.listWechatBills();
+  }
+
+  @Post("finance/wechat-bills/import")
+  @RequireAdminPermissions("finance:write")
+  importWechatBill(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.operations.importWechatBill(body, request.currentAdmin!);
   }
 
   @Post("finance/wechat-bills/:id/download")

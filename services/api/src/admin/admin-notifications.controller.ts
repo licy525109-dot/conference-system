@@ -64,4 +64,28 @@ export class AdminNotificationsController {
   listLogs(@Query() query: Record<string, unknown>) {
     return this.notificationsService.listLogs(query);
   }
+
+  @Get("wechat-subscribe-config")
+  @RequireAdminPermissions("notification:view")
+  wechatSubscribeConfig() {
+    return this.notificationsService.getChannelConfig("WECHAT_SUBSCRIBE");
+  }
+
+  @Patch("wechat-subscribe-config")
+  @RequireAdminPermissions("notification:write")
+  updateWechatSubscribeConfig(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.notificationsService.updateChannelConfig("WECHAT_SUBSCRIBE", body, request.currentAdmin!);
+  }
+
+  @Get("sms-config")
+  @RequireAdminPermissions("notification:view")
+  smsConfig() {
+    return this.notificationsService.getChannelConfig("SMS");
+  }
+
+  @Patch("sms-config")
+  @RequireAdminPermissions("notification:write")
+  updateSmsConfig(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.notificationsService.updateChannelConfig("SMS", body, request.currentAdmin!);
+  }
 }

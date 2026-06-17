@@ -563,16 +563,16 @@ const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
   carousel: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持图片轮播展示" },
   "speaker-cards": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持嘉宾卡片展示" },
   "schedule-timeline": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持会议日程展示" },
-  "coupon-card": { label: "暂不支持小程序/H5", status: "unsupported", description: "优惠券能力为扩展模块，暂不建议发布到用户端" },
+  "coupon-card": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持优惠券领取入口展示" },
   countdown: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持目标时间倒计时展示" },
-  search: { label: "暂不支持小程序/H5", status: "unsupported", description: "搜索交互暂不支持用户端装修展示" },
+  search: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持搜索入口展示" },
   "map-contact": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持地址和电话展示" },
   "sponsor-wall": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持赞助商名称或 Logo 展示" },
   faq: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持问答列表展示" },
-  "membership-benefits": { label: "后续开放", status: "planned", description: "会员模块后续开放，暂不支持用户端装修展示" },
-  "user-profile-card": { label: "后续开放", status: "planned", description: "用户中心后续增强，暂不支持用户端装修展示" },
-  "my-order-list": { label: "后续开放", status: "planned", description: "订单中心后续开放，暂不支持用户端装修展示" },
-  "mall-product-grid": { label: "后续开放", status: "planned", description: "商城模块后续开放，暂不支持用户端装修展示" }
+  "membership-benefits": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持会员权益展示和会员中心入口" },
+  "user-profile-card": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持用户资料入口展示" },
+  "my-order-list": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持报名和商城订单入口展示" },
+  "mall-product-grid": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持商城商品宫格入口展示" }
 };
 
 const ADDABLE_SUPPORT_STATUSES: CmsComponentSupportStatus[] = ["supported", "basic"];

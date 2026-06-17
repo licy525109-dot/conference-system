@@ -41,4 +41,16 @@ export class PublicOperationsController {
   myInvoices(@Req() request: RequestWithCurrentUser) {
     return this.operations.myInvoices(request.currentUser);
   }
+
+  @Get("my/refunds")
+  @UseGuards(JwtAuthGuard)
+  myRefunds(@Req() request: RequestWithCurrentUser) {
+    return this.operations.myRefunds(request.currentUser);
+  }
+
+  @Get("my/mall-orders")
+  @UseGuards(JwtAuthGuard)
+  myMallOrders(@Req() request: RequestWithCurrentUser) {
+    return this.operations.myMallOrders(request.currentUser);
+  }
 }

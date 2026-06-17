@@ -141,17 +141,16 @@ export const ENABLED_COMPONENT_PRESETS = [
   preset("traffic-guide", "交通指南", "内容", "展示交通路线和停车说明", { title: "交通指南", address: "请填写会议地址", text: "建议提前 30 分钟到场签到。" }),
   preset("contact-card", "客服咨询", "转化工具", "展示联系人、电话和咨询入口", { title: "咨询报名", phone: "请填写联系电话", text: "如需团体报名，请联系会务组。" }),
   preset("tag-filter", "快捷标签", "工具", "展示页面快捷筛选标签", { title: "热门主题", items: ["行业趋势", "增长实战", "技术创新", "组织管理"] }),
+  preset("membership-benefits", "会员权益卡", "会员", "展示会员权益和会员中心入口", { title: "会员权益", items: ["会员专属权益", "会员价规则以后台配置为准"] }),
+  preset("user-profile-card", "用户资料卡", "用户中心", "展示用户资料入口", { title: "我的资料", description: "登录后查看头像、昵称、手机号和会员状态。" }),
+  preset("my-order-list", "我的订单列表", "用户中心", "展示报名和商城订单入口", { title: "我的订单" }),
+  preset("mall-product-grid", "商城商品宫格", "商城", "展示商城商品入口", { title: "商城商品", items: ["会议资料包", "会务周边"] }),
   preset("title", "标题栏", "基础展示", "分区标题", { text: "标题" }),
   preset("divider", "分割线", "基础展示", "内容分割", { style: "solid" }),
   preset("spacer", "留白", "基础展示", "页面留白", { height: 24 })
 ] as const;
 
-export const RESERVED_COMPONENT_PRESETS = [
-  preset("membership-benefits", "会员权益卡", "后续开放", "会员功能后续开放", { title: "会员权益" }, false),
-  preset("user-profile-card", "用户资料卡", "后续开放", "用户中心后续增强", { title: "用户资料" }, false),
-  preset("my-order-list", "我的订单列表", "后续开放", "订单中心后续开放", { title: "我的订单" }, false),
-  preset("mall-product-grid", "商城商品宫格", "后续开放", "商城功能后续开放", { title: "商品推荐" }, false)
-] as const;
+export const RESERVED_COMPONENT_PRESETS = [] as const;
 
 export const ALL_COMPONENT_PRESETS = [...ENABLED_COMPONENT_PRESETS, ...RESERVED_COMPONENT_PRESETS] as const;
 export const ENABLED_COMPONENT_TYPES = new Set(ENABLED_COMPONENT_PRESETS.map((item) => item.type));

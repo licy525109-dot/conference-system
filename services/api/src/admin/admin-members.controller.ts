@@ -45,4 +45,28 @@ export class AdminMembersController {
   assignMembership(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.membersService.assignMembership(body, request.currentAdmin!);
   }
+
+  @Get("member-benefits")
+  @RequireAdminPermissions("member:view")
+  listBenefits(@Query() query: Record<string, unknown>) {
+    return this.membersService.listBenefits(query);
+  }
+
+  @Post("member-benefits")
+  @RequireAdminPermissions("member:write")
+  createBenefit(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.membersService.createBenefit(body, request.currentAdmin!);
+  }
+
+  @Get("member-pricing-rules")
+  @RequireAdminPermissions("member:view")
+  listPriceRules(@Query() query: Record<string, unknown>) {
+    return this.membersService.listPriceRules(query);
+  }
+
+  @Post("member-pricing-rules")
+  @RequireAdminPermissions("member:write")
+  createPriceRule(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.membersService.createPriceRule(body, request.currentAdmin!);
+  }
 }

@@ -134,6 +134,34 @@ export class PublicOperationsService {
     const items = await this.prisma.invoiceApplication.findMany({ where: { userId: currentUser.id }, orderBy: { createdAt: "desc" } });
     return ok({ items: items.map(formatDateFields) });
   }
+
+  async myRefunds(currentUser: CurrentUser | undefined) {
+    if (!currentUser) throw new UnauthorizedException("Bearer token is required");
+    const items = await this.prisma.refund.findMany({
+      where: { userId: currentUser.id },
+      orderBy: { createdAt: "desc" },
+      take: 100
+    });
+    return ok({ items: items.map(formatDateFields) });
+  }
+
+  async myMallOrders(currentUser: CurrentUser | undefined) {
+    if (!currentUser) throw new UnauthorizedException("Bearer token is required");
+    const items = await this.prisma.mallOrder.findMany({
+      where: { userId: currentUser.id },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: { items: true, shipments: true, afterSales: true }
+    });
+    return ok({
+      items: items.map((item) => ({
+        ...formatDateFields(item),
+        items: item.items.map(formatDateFields),
+        shipments: item.shipments.map(formatDateFields),
+        afterSales: item.afterSales.map(formatDateFields)
+      }))
+    });
+  }
 }
 
 function ok<T>(data: T) {

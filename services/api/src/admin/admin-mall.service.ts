@@ -102,6 +102,17 @@ export class AdminMallService {
     return ok(formatSku(sku));
   }
 
+  async listSkus(query: Record<string, unknown>) {
+    const productId = readOptionalString(query, "productId");
+    const status = readOptionalString(query, "status");
+    const items = await this.prisma.productSku.findMany({
+      where: { ...(productId ? { productId } : {}), ...(status ? { status } : {}) },
+      orderBy: { createdAt: "desc" },
+      include: { product: { select: { title: true } } }
+    });
+    return ok({ items: items.map(formatSkuWithProduct) });
+  }
+
   async listOrders(query: Record<string, unknown>) {
     const page = readOptionalInt(query, "page") ?? 1;
     const pageSize = Math.min(readOptionalInt(query, "pageSize") ?? 20, 100);
@@ -140,6 +151,26 @@ export class AdminMallService {
     return ok(formatOrder(order));
   }
 
+  async listShipments(query: Record<string, unknown>) {
+    const status = readOptionalString(query, "status");
+    const items = await this.prisma.mallShipment.findMany({
+      where: { ...(status ? { status } : {}) },
+      orderBy: { createdAt: "desc" },
+      include: { order: { select: { orderNo: true, receiverName: true, receiverPhone: true } } }
+    });
+    return ok({ items: items.map(formatShipment) });
+  }
+
+  async listAfterSales(query: Record<string, unknown>) {
+    const status = readOptionalString(query, "status");
+    const items = await this.prisma.mallAfterSale.findMany({
+      where: { ...(status ? { status } : {}) },
+      orderBy: { createdAt: "desc" },
+      include: { order: { select: { orderNo: true, receiverName: true, receiverPhone: true } } }
+    });
+    return ok({ items: items.map(formatAfterSale) });
+  }
+
   async exportOrders() {
     const items = await this.prisma.mallOrder.findMany({ orderBy: { createdAt: "desc" }, take: 5000, include: { user: true, items: true } });
     return ok({ items: items.map(formatOrder), truncated: items.length >= 5000 });
@@ -172,6 +203,10 @@ function formatSku(item: Prisma.ProductSkuGetPayload<Record<string, never>>) {
   return { ...item, createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() };
 }
 
+function formatSkuWithProduct(item: Prisma.ProductSkuGetPayload<{ include: { product: { select: { title: true } } } }>) {
+  return { ...formatSku(item), productTitle: item.product.title };
+}
+
 function formatOrder(item: Prisma.MallOrderGetPayload<{ include: { user: true; items: true } }>) {
   return {
     ...item,
@@ -179,6 +214,29 @@ function formatOrder(item: Prisma.MallOrderGetPayload<{ include: { user: true; i
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
     user: item.user ? { id: item.user.id, nickname: item.user.nickname, wechatNickname: item.user.wechatNickname, phone: item.user.phone } : null
+  };
+}
+
+function formatShipment(item: Prisma.MallShipmentGetPayload<{ include: { order: { select: { orderNo: true; receiverName: true; receiverPhone: true } } } }>) {
+  return {
+    ...item,
+    shippedAt: item.shippedAt?.toISOString() ?? null,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    orderNo: item.order.orderNo,
+    receiverName: item.order.receiverName,
+    receiverPhone: item.order.receiverPhone
+  };
+}
+
+function formatAfterSale(item: Prisma.MallAfterSaleGetPayload<{ include: { order: { select: { orderNo: true; receiverName: true; receiverPhone: true } } } }>) {
+  return {
+    ...item,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    orderNo: item.order.orderNo,
+    receiverName: item.order.receiverName,
+    receiverPhone: item.order.receiverPhone
   };
 }
 

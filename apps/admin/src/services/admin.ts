@@ -607,12 +607,32 @@ export function assignMembership(input: Record<string, unknown>) {
   });
 }
 
+export function listMemberBenefits(params: { levelId?: string } = {}) {
+  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/member-benefits${toQuery(params)}`);
+}
+
+export function createMemberBenefit(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/member-benefits", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function listMemberPricingRules(params: { levelId?: string } = {}) {
+  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/member-pricing-rules${toQuery(params)}`);
+}
+
+export function createMemberPricingRule(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/member-pricing-rules", { method: "POST", body: JSON.stringify(input) });
+}
+
 export function getFinanceOverview() {
   return apiRequest<FinanceOverview>("/admin/finance/overview");
 }
 
 export function listFinancePayments(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
   return apiRequest<ApiList<FinancePayment>>(`/admin/finance/payments${toQuery(params)}`);
+}
+
+export function listPaymentExceptions(params: { page?: number; pageSize?: number; keyword?: string; conferenceId?: string } = {}) {
+  return apiRequest<{ items: Record<string, unknown>[]; total: number }>(`/admin/payment-exceptions${toQuery(params)}`);
 }
 
 export function listFinanceBatches() {
@@ -661,6 +681,10 @@ export function createProductSku(productId: string, input: Record<string, unknow
   });
 }
 
+export function listProductSkus(params: { productId?: string; status?: string } = {}) {
+  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/mall/skus${toQuery(params)}`);
+}
+
 export function listMallOrders(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
   return apiRequest<ApiList<MallOrder>>(`/admin/mall/orders${toQuery(params)}`);
 }
@@ -674,6 +698,14 @@ export function shipMallOrder(id: string, input: Record<string, unknown>) {
 
 export function verifyMallOrder(id: string) {
   return apiRequest(`/admin/mall/orders/${encodeURIComponent(id)}/verify`, { method: "POST" });
+}
+
+export function listMallShipments(params: { status?: string } = {}) {
+  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/mall/shipments${toQuery(params)}`);
+}
+
+export function listMallAfterSales(params: { status?: string } = {}) {
+  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/mall/aftersales${toQuery(params)}`);
 }
 
 export function getInventoryAlertRule(conferenceId: string) {
@@ -791,12 +823,20 @@ export function getKnowledgeBase(conferenceId: string) {
   return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-base`);
 }
 
+export function listKnowledgeBases(params: { page?: number; pageSize?: number; keyword?: string } = {}) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/knowledge-bases${toQuery(params)}`);
+}
+
 export function createKnowledgeDocument(conferenceId: string, input: Record<string, unknown>) {
   return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-documents`, { method: "POST", body: JSON.stringify(input) });
 }
 
 export function createCouponCampaign(input: Record<string, unknown>) {
   return apiRequest<Record<string, unknown>>("/admin/coupon-campaigns", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function listCouponCampaigns(params: { page?: number; pageSize?: number; keyword?: string } = {}) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/coupon-campaigns${toQuery(params)}`);
 }
 
 export function generateCouponCampaignQr(id: string) {
@@ -831,12 +871,20 @@ export function approveRefund(id: string) {
   return apiRequest<Record<string, unknown>>(`/admin/refunds/${encodeURIComponent(id)}/approve`, { method: "POST" });
 }
 
+export function rejectRefund(id: string, reason: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/refunds/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
+}
+
 export function listInvoices(params: { page?: number; pageSize?: number }) {
   return apiRequest<ApiList<Record<string, unknown>>>(`/admin/invoices${toQuery(params)}`);
 }
 
 export function approveInvoice(id: string) {
   return apiRequest<Record<string, unknown>>(`/admin/invoices/${encodeURIComponent(id)}/approve`, { method: "POST" });
+}
+
+export function rejectInvoice(id: string, reason: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/invoices/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
 }
 
 export function markInvoiceIssued(id: string) {
@@ -857,4 +905,15 @@ export function reconcileWechatBill(id: string) {
 
 export function listReconciliationResults(params: { page?: number; pageSize?: number }) {
   return apiRequest<ApiList<Record<string, unknown>>>(`/admin/finance/reconciliation-results${toQuery(params)}`);
+}
+
+export function getNotificationChannelConfig(channel: "wechat-subscribe" | "sms") {
+  return apiRequest<Record<string, unknown>>(`/admin/${channel === "sms" ? "sms-config" : "wechat-subscribe-config"}`);
+}
+
+export function updateNotificationChannelConfig(channel: "wechat-subscribe" | "sms", input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/admin/${channel === "sms" ? "sms-config" : "wechat-subscribe-config"}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
 }

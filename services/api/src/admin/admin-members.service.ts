@@ -106,6 +106,63 @@ export class AdminMembersService {
     return ok(formatMembership(membership));
   }
 
+  async listBenefits(query: Record<string, unknown>) {
+    const levelId = readOptionalString(query, "levelId");
+    const items = await this.prisma.memberBenefit.findMany({
+      where: { ...(levelId ? { levelId } : {}) },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+      include: { level: true }
+    });
+    return ok({ items: items.map(formatBenefit) });
+  }
+
+  async createBenefit(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const item = await this.prisma.memberBenefit.create({
+      data: {
+        levelId: readRequiredString(body, "levelId"),
+        title: readRequiredString(body, "title"),
+        description: readNullableString(body.description),
+        type: readOptionalString(body, "type") ?? "TEXT",
+        configJson: readNullableObject(body.configJson),
+        enabled: readOptionalBoolean(body, "enabled") ?? true,
+        sortOrder: readOptionalInt(body, "sortOrder") ?? 0
+      },
+      include: { level: true }
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "MemberBenefit", item.id, "Create member benefit", { levelId: item.levelId });
+    return ok(formatBenefit(item));
+  }
+
+  async listPriceRules(query: Record<string, unknown>) {
+    const levelId = readOptionalString(query, "levelId");
+    const items = await this.prisma.membershipPriceRule.findMany({
+      where: { ...(levelId ? { levelId } : {}) },
+      orderBy: { createdAt: "desc" },
+      include: { level: true }
+    });
+    return ok({ items: items.map(formatPriceRule) });
+  }
+
+  async createPriceRule(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const item = await this.prisma.membershipPriceRule.create({
+      data: {
+        levelId: readRequiredString(body, "levelId"),
+        conferenceId: readNullableString(body.conferenceId),
+        skuId: readNullableString(body.skuId),
+        discountPercent: readOptionalInt(body, "discountPercent"),
+        discountCent: readOptionalInt(body, "discountCent"),
+        enabled: readOptionalBoolean(body, "enabled") ?? true,
+        startAt: readOptionalDate(body, "startAt"),
+        endAt: readOptionalDate(body, "endAt")
+      },
+      include: { level: true }
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "MembershipPriceRule", item.id, "Create member pricing rule", { levelId: item.levelId });
+    return ok(formatPriceRule(item));
+  }
+
   async listUsers(query: Record<string, unknown>) {
     const page = readOptionalInt(query, "page") ?? 1;
     const pageSize = Math.min(readOptionalInt(query, "pageSize") ?? 20, 100);
@@ -159,6 +216,26 @@ function formatMembership(item: Prisma.UserMembershipGetPayload<{ include: { use
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
     user: formatUserBase(item.user),
+    level: { id: item.level.id, code: item.level.code, name: item.level.name }
+  };
+}
+
+function formatBenefit(item: Prisma.MemberBenefitGetPayload<{ include: { level: true } }>) {
+  return {
+    ...item,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    level: { id: item.level.id, code: item.level.code, name: item.level.name }
+  };
+}
+
+function formatPriceRule(item: Prisma.MembershipPriceRuleGetPayload<{ include: { level: true } }>) {
+  return {
+    ...item,
+    startAt: item.startAt?.toISOString() ?? null,
+    endAt: item.endAt?.toISOString() ?? null,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
     level: { id: item.level.id, code: item.level.code, name: item.level.name }
   };
 }

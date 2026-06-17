@@ -244,12 +244,31 @@ export class AdminOperationsService {
   }
 
   async getKnowledgeBase(conferenceId: string) {
+    const id = await this.findOrCreateKnowledgeBaseId(conferenceId);
     const kb = await this.prisma.knowledgeBase.upsert({
-      where: { id: await this.findOrCreateKnowledgeBaseId(conferenceId) },
+      where: { id },
       update: {},
-      create: { conferenceId, title: "会议知识库", enabled: false }
+      create: { conferenceId, title: "会议知识库", enabled: false },
+      include: { conference: { select: { title: true } }, documents: { orderBy: { createdAt: "desc" } } }
     });
-    return ok(formatDateFields(kb));
+    return ok(formatKnowledgeBase(kb));
+  }
+
+  async listKnowledgeBases(query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const keyword = readOptionalString(query.keyword);
+    const where: Prisma.KnowledgeBaseWhereInput = keyword ? { OR: [{ title: { contains: keyword, mode: "insensitive" } }, { conference: { title: { contains: keyword, mode: "insensitive" } } }] } : {};
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.knowledgeBase.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        skip,
+        take: pageSize,
+        include: { conference: { select: { title: true } }, documents: { orderBy: { createdAt: "desc" }, take: 20 } }
+      }),
+      this.prisma.knowledgeBase.count({ where })
+    ]);
+    return ok({ items: items.map(formatKnowledgeBase), total, page, pageSize });
   }
 
   async createKnowledgeDocument(conferenceId: string, input: unknown, admin: CurrentAdmin) {
@@ -373,6 +392,23 @@ export class AdminOperationsService {
     });
     await this.writeAudit(admin, AuditAction.CREATE, "CouponCampaign", campaign.id, "Create coupon campaign");
     return ok(formatCouponCampaign(campaign));
+  }
+
+  async listCouponCampaigns(query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const keyword = readOptionalString(query.keyword);
+    const where: Prisma.CouponCampaignWhereInput = keyword ? { name: { contains: keyword, mode: "insensitive" } } : {};
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.couponCampaign.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+        include: { coupons: { include: { coupon: true } }, conference: { select: { title: true } } }
+      }),
+      this.prisma.couponCampaign.count({ where })
+    ]);
+    return ok({ items: items.map(formatCouponCampaignListItem), total, page, pageSize });
   }
 
   async getCouponCampaign(id: string) {
@@ -535,6 +571,20 @@ export class AdminOperationsService {
     return ok({ items: items.map(formatDateFields) });
   }
 
+  async importWechatBill(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const billDate = readRequiredDate(body.billDate, "billDate");
+    const billType = readOptionalString(body.billType) ?? "TRADE";
+    const storagePath = readOptionalString(body.storagePath) ?? `manual-import:${billType}:${billDate.toISOString().slice(0, 10)}`;
+    const bill = await this.prisma.wechatBill.upsert({
+      where: { billDate_billType: { billDate, billType } },
+      update: { status: "DOWNLOADED", storagePath, summaryJson: { source: "manual-import" } },
+      create: { billDate, billType, createdBy: admin.id, status: "DOWNLOADED", storagePath, summaryJson: { source: "manual-import" } }
+    });
+    await this.writeAudit(admin, AuditAction.SYSTEM, "WechatBill", bill.id, "Import WeChat bill metadata", { billType, storagePath });
+    return ok(formatDateFields(bill));
+  }
+
   async downloadWechatBill(id: string) {
     const bill = await this.prisma.wechatBill.update({ where: { id }, data: { status: "DOWNLOADED", storagePath: `${process.env.WECHAT_PAY_BILL_STORAGE_PATH || "storage/wechat-bills"}/${id}.csv` } });
     return ok(formatDateFields(bill));
@@ -617,10 +667,27 @@ function formatDateFields(item: Record<string, unknown>): Record<string, unknown
   return output;
 }
 
-function formatCouponCampaign(campaign: Prisma.CouponCampaignGetPayload<{ include: { coupons: { include: { coupon: true } } } }>) {
+type CouponCampaignWithCoupons = Prisma.CouponCampaignGetPayload<{ include: { coupons: { include: { coupon: true } } } }>;
+
+function formatCouponCampaign(campaign: CouponCampaignWithCoupons) {
   return {
     ...formatDateFields(campaign),
     coupons: campaign.coupons.map((item) => ({ id: item.coupon.id, code: item.coupon.code, name: item.coupon.name }))
+  };
+}
+
+function formatCouponCampaignListItem(campaign: CouponCampaignWithCoupons & { conference: { title: string } | null }) {
+  return {
+    ...formatCouponCampaign(campaign),
+    conferenceTitle: campaign.conference?.title ?? null
+  };
+}
+
+function formatKnowledgeBase(kb: Prisma.KnowledgeBaseGetPayload<{ include: { conference: { select: { title: true } }; documents: true } }>) {
+  return {
+    ...formatDateFields(kb),
+    conferenceTitle: kb.conference.title,
+    documents: kb.documents.map(formatDateFields)
   };
 }
 

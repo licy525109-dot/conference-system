@@ -64,7 +64,7 @@ describe("AdminCmsService validation", () => {
     );
   });
 
-  it("rejects enabled reserved components when publishing", async () => {
+  it("publishes enabled CMS components that have user-side rendering", async () => {
     const service = new AdminCmsService(createAdminValidationPrismaMock("DRAFT", [
       {
         id: "member-1",
@@ -74,7 +74,10 @@ describe("AdminCmsService validation", () => {
       }
     ]));
 
-    await assert.rejects(() => service.publishPageVersion("version-1", admin), BadRequestException);
+    const response = await service.publishPageVersion("version-1", admin);
+
+    assert.equal(response.code, "OK");
+    assert.equal(response.data.status, "DRAFT");
   });
 });
 
@@ -120,12 +123,27 @@ function createAdminValidationPrismaMock(status: string, components: unknown[] =
         templateId: "page-1",
         status,
         title: "首页",
-        components
+        components,
+        themeJson: null
       }),
+      findFirst: async () => ({ versionNo: 3 }),
       update: async () => {
-        throw new Error("update should not be reached");
+        return { id: "version-1" };
       },
-      updateMany: async () => ({ count: 0 })
+      updateMany: async () => ({ count: 0 }),
+      create: async (input: { data: { status: string; versionNo: number } }) => ({
+        id: input.data.status === "PUBLISHED" ? "version-published" : "version-next-draft",
+        templateId: "page-1",
+        versionNo: input.data.versionNo,
+        status: input.data.status,
+        title: "首页",
+        components,
+        themeJson: null,
+        createdBy: admin.id,
+        publishedAt: input.data.status === "PUBLISHED" ? new Date("2026-06-17T00:00:00.000Z") : null,
+        createdAt: new Date("2026-06-17T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-17T00:00:00.000Z")
+      })
     },
     pageTemplate: {
       update: async () => ({ id: "page-1" })

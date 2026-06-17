@@ -13,7 +13,7 @@ import { AdminDashboardController } from "./admin-dashboard.controller";
 import { AdminDashboardService } from "./admin-dashboard.service";
 import { AdminExportsController } from "./admin-exports.controller";
 import { AdminExportsService } from "./admin-exports.service";
-import { AdminFinanceController } from "./admin-finance.controller";
+import { AdminFinanceController, AdminPaymentsController } from "./admin-finance.controller";
 import { AdminFinanceService } from "./admin-finance.service";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminManagementController } from "./admin-management.controller";
@@ -51,6 +51,7 @@ import { PublicOperationsService } from "./public-operations.service";
     AdminCmsController,
     AdminMembersController,
     AdminFinanceController,
+    AdminPaymentsController,
     AdminMallController,
     AdminExportsController,
     AdminPaymentExceptionsController,

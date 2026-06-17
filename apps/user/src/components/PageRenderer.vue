@@ -195,6 +195,48 @@
         </view>
       </view>
 
+      <view v-else-if="component.type === 'search'" class="cms-section cms-search">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "搜索会议" }}</text>
+        <input class="cms-search__input" :placeholder="stringConfig(component, 'placeholder') || '输入会议关键词'" confirm-type="search" @confirm="goPath('/pages/index/index')" />
+      </view>
+
+      <view v-else-if="component.type === 'coupon-card'" class="cms-section cms-coupon" @click="goPath(couponPath(component))">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "领取会议优惠券" }}</text>
+        <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "description") || "登录后可领取可用优惠券，创建订单时由系统重新计价。" }}</text>
+        <view class="cms-card__button"><text>{{ stringConfig(component, "buttonText") || "去领取" }}</text></view>
+      </view>
+
+      <view v-else-if="component.type === 'membership-benefits'" class="cms-section cms-member">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会员权益" }}</text>
+        <view class="cms-list-lines">
+          <text v-for="item in fallbackList(component, ['会员专属权益', '会员价规则以后台配置为准'])" :key="item" class="cms-list-line" :style="textStyle(component)">{{ item }}</text>
+        </view>
+        <view class="cms-card__button" @click="goPath('/pages/member/center')"><text>查看会员中心</text></view>
+      </view>
+
+      <view v-else-if="component.type === 'user-profile-card'" class="cms-section cms-profile" @click="goPath('/pages/member/center')">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "我的资料" }}</text>
+        <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "description") || "登录后查看头像、昵称、手机号和会员状态。" }}</text>
+      </view>
+
+      <view v-else-if="component.type === 'my-order-list'" class="cms-section cms-orders">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "我的订单" }}</text>
+        <view class="cms-action-grid">
+          <view class="cms-action-tile" @click="goPath('/pages/registrations/my')"><text>会议报名</text></view>
+          <view class="cms-action-tile" @click="goPath('/pages/mall/orders')"><text>商城订单</text></view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'mall-product-grid'" class="cms-section cms-mall">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "商城商品" }}</text>
+        <view class="cms-product-grid">
+          <view v-for="item in fallbackList(component, ['会议资料包', '会务周边'])" :key="item" class="cms-product-card" @click="goPath('/pages/mall/index')">
+            <view class="cms-product-card__image"><text>{{ item.slice(0, 1) }}</text></view>
+            <text>{{ item }}</text>
+          </view>
+        </view>
+      </view>
+
       <view v-else-if="component.type === 'ticket-price-list' || component.type === 'process-steps' || component.type === 'download-list' || component.type === 'testimonial-list' || component.type === 'tag-filter'" class="cms-section">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || titleFor(component.type) }}</text>
         <view class="cms-list-lines">
@@ -507,6 +549,26 @@ function callPhone(phone: string) {
   });
 }
 
+function goPath(path: string) {
+  if (!path) return;
+  uni.navigateTo({
+    url: path,
+    fail: () => {
+      uni.switchTab({ url: path, fail: () => undefined });
+    }
+  });
+}
+
+function couponPath(component: CmsComponent): string {
+  const claimCode = stringConfig(component, "claimCode");
+  return claimCode ? `/pages/coupon/claim?claimCode=${encodeURIComponent(claimCode)}` : "/pages/coupon/my";
+}
+
+function fallbackList(component: CmsComponent, fallback: string[]): string[] {
+  const items = stringListConfig(component, "items");
+  return items.length > 0 ? items : fallback;
+}
+
 function limitedConferences(component: CmsComponent): ConferenceListItem[] {
   return conferences.value.slice(0, Math.max(1, numberConfig(component, "limit", 10)));
 }
@@ -763,7 +825,13 @@ function titleFor(type: string): string {
     "process-steps": "报名流程",
     "download-list": "资料下载",
     "testimonial-list": "参会评价",
-    "tag-filter": "热门主题"
+    "tag-filter": "热门主题",
+    search: "搜索",
+    "coupon-card": "优惠券",
+    "membership-benefits": "会员权益",
+    "user-profile-card": "我的资料",
+    "my-order-list": "我的订单",
+    "mall-product-grid": "商城商品"
   };
   return map[type] ?? "内容";
 }
@@ -1606,6 +1674,75 @@ function parseTargetTime(value: string): number | null {
 
 .cms-card__button text {
   line-height: 1;
+}
+
+.cms-search {
+  gap: 20rpx;
+}
+
+.cms-search__input {
+  min-height: 76rpx;
+  padding: 0 24rpx;
+  border: 1px solid var(--cms-border);
+  border-radius: var(--cms-radius-full);
+  background: var(--cms-surface-soft);
+  color: var(--cms-text-primary);
+  font-size: 27rpx;
+}
+
+.cms-coupon,
+.cms-member,
+.cms-profile,
+.cms-orders,
+.cms-mall {
+  gap: 20rpx;
+}
+
+.cms-profile {
+  border-color: rgba(31, 77, 122, 0.16);
+  background: linear-gradient(135deg, var(--cms-surface-elevated), var(--cms-primary-soft));
+}
+
+.cms-action-grid,
+.cms-product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+}
+
+.cms-action-tile,
+.cms-product-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 132rpx;
+  padding: 20rpx;
+  border: 1px solid var(--cms-border);
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-surface-soft);
+  color: var(--cms-text-primary);
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
+.cms-action-tile {
+  align-items: center;
+}
+
+.cms-product-card {
+  gap: 14rpx;
+}
+
+.cms-product-card__image {
+  display: grid;
+  place-items: center;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-primary-soft);
+  color: var(--cms-primary-strong);
+  font-size: 30rpx;
+  font-weight: 900;
 }
 
 .cms-tabs {
