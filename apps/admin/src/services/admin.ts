@@ -719,6 +719,74 @@ export function createWecomCustomerGroupTask(id: string) {
   return apiRequest<Record<string, unknown>>(`/admin/customer-group-message-tasks/${encodeURIComponent(id)}/create-wecom-task`, { method: "POST" });
 }
 
+export function getWecomConfig() {
+  return apiRequest<Record<string, unknown>>("/admin/wecom/config");
+}
+
+export function updateWecomConfig(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/wecom/config", { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function testWecomAccessToken() {
+  return apiRequest<Record<string, unknown>>("/admin/wecom/config/test-token", { method: "POST" });
+}
+
+export function checkWecomPermissions() {
+  return apiRequest<Record<string, unknown>>("/admin/wecom/config/check-permissions", { method: "POST" });
+}
+
+export function listWecomCustomerGroups(params: { page?: number; pageSize?: number; keyword?: string }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/wecom/customer-groups${toQuery(params)}`);
+}
+
+export function syncWecomCustomerGroups() {
+  return apiRequest<Record<string, unknown>>("/admin/wecom/customer-groups/sync", { method: "POST" });
+}
+
+export function bindWecomCustomerGroupConference(id: string, input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/admin/wecom/customer-groups/${encodeURIComponent(id)}/bind-conference`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function listWecomWelcomeTemplates() {
+  return apiRequest<{ items: Record<string, unknown>[]; syncNotice?: string }>("/admin/wecom/welcome-templates");
+}
+
+export function createWecomWelcomeTemplate(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/wecom/welcome-templates", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateWecomWelcomeTemplate(id: string, input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/admin/wecom/welcome-templates/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function deleteWecomWelcomeTemplate(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/wecom/welcome-templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function listWecomGroupMessageTasks(params: { page?: number; pageSize?: number }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/wecom/group-message-tasks${toQuery(params)}`);
+}
+
+export function createWecomGroupMessageTask(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/wecom/group-message-tasks", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function createOfficialWecomGroupMessageTask(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/wecom/group-message-tasks/${encodeURIComponent(id)}/create-wecom-task`, { method: "POST" });
+}
+
+export function refreshWecomGroupMessageTaskResult(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/wecom/group-message-tasks/${encodeURIComponent(id)}/refresh-result`, { method: "POST" });
+}
+
+export function listWecomGroupMessageLogs(params: { page?: number; pageSize?: number }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/wecom/group-message-logs${toQuery(params)}`);
+}
+
+export function listWecomCallbackEvents(params: { page?: number; pageSize?: number }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/wecom/callback-events${toQuery(params)}`);
+}
+
 export function getKnowledgeBase(conferenceId: string) {
   return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-base`);
 }

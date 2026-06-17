@@ -319,11 +319,110 @@ model Conference {
   aiQuestionLogs           AiQuestionLog[]
   couponCampaigns          CouponCampaign[]
   customerGroupTasks       CustomerGroupMessageTask[]
+  wecomCustomerGroups      WecomCustomerGroup[]
 
   @@index([status])
   @@index([createdAt])
   @@index([status, sortOrder])
   @@map("conferences")
+}
+
+model WecomIntegration {
+  id                         String                  @id @default(cuid())
+  name                       String                  @default("default")
+  corpId                     String?
+  agentId                    String?
+  customerContactSecretEnc   String?
+  appSecretEnc               String?
+  callbackTokenEnc           String?
+  callbackEncodingAesKeyEnc  String?
+  customerContactCallbackUrl String?
+  appCallbackUrl             String?
+  enabled                    Boolean                 @default(false)
+  verified                   Boolean                 @default(false)
+  lastTokenCheckedAt         DateTime?
+  lastGroupSyncedAt          DateTime?
+  lastCallbackAt             DateTime?
+  remark                     String?
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+  accessTokens               WecomAccessTokenCache[]
+  customerGroups             WecomCustomerGroup[]
+  callbackEvents             WecomCallbackEvent[]
+
+  @@unique([name])
+  @@index([enabled])
+  @@index([updatedAt])
+  @@map("wecom_integrations")
+}
+
+model WecomAccessTokenCache {
+  id             String           @id @default(cuid())
+  integrationId  String
+  tokenType      String
+  accessTokenEnc String
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  integration    WecomIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, tokenType])
+  @@index([expiresAt])
+  @@map("wecom_access_token_caches")
+}
+
+model WecomCustomerGroup {
+  id            String           @id @default(cuid())
+  integrationId String
+  conferenceId  String?
+  chatId        String?          @unique
+  name          String
+  ownerUserId   String?
+  ownerName     String?
+  groupQrUrl    String?
+  joinLink      String?
+  status        String           @default("UNKNOWN")
+  syncStatus    String           @default("MANUAL")
+  lastSyncedAt  DateTime?
+  rawPayload    Json?
+  enabled       Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  integration   WecomIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  conference    Conference?      @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+
+  @@index([integrationId])
+  @@index([conferenceId])
+  @@index([ownerUserId])
+  @@index([status])
+  @@index([syncStatus])
+  @@index([lastSyncedAt])
+  @@map("wecom_customer_groups")
+}
+
+model WecomCallbackEvent {
+  id             String            @id @default(cuid())
+  integrationId  String?
+  eventSource    String
+  eventType      String?
+  changeType     String?
+  fromUserName   String?
+  externalUserId String?
+  chatId         String?
+  rawPayload     Json?
+  decryptedXml   String?
+  status         String            @default("RECEIVED")
+  errorMessage   String?
+  createdAt      DateTime          @default(now())
+  integration    WecomIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  @@index([integrationId])
+  @@index([eventSource])
+  @@index([eventType])
+  @@index([changeType])
+  @@index([chatId])
+  @@index([createdAt])
+  @@map("wecom_callback_events")
 }
 
 model ConferencePage {
