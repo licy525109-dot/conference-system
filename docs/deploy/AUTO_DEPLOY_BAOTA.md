@@ -52,6 +52,28 @@ BAOTA_ADMIN_ROOT=/www/wwwroot/admin.guanchaohuiji.com
 
 不要把 `.env.production`、数据库密码、微信支付证书、企微 Secret 写进 GitHub Actions。Actions 只负责 SSH 到服务器，生产密钥仍留在服务器。
 
+## pnpm PATH 排查
+
+如果 GitHub Actions 报：
+
+```text
+ERROR: missing required command: pnpm
+```
+
+但服务器手动执行：
+
+```bash
+bash -lc 'command -v pnpm && pnpm -v'
+```
+
+可以正常输出 pnpm，则说明 workflow 或 deploy script 没有在非交互 SSH shell 中加载宝塔 Node PATH。应确认 `baota-deploy.sh` 的 PATH 初始化在 `require_cmd pnpm` 之前，并确认 workflow 使用 `bash -lc` 执行。
+
+宝塔服务器当前 pnpm 路径：
+
+```text
+/www/server/nvm/versions/node/v24.16.0/bin/pnpm
+```
+
 ## 服务器脚本
 
 文件：
