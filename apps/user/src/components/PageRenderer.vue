@@ -45,18 +45,19 @@
         <view v-if="conferences.length === 0" class="cms-empty">暂无可报名会议</view>
         <view v-for="(item, index) in limitedConferences(component)" :key="item.id" :class="conferenceCardClass(component, 'cms-card')" :style="conferenceCardStyle(component)">
           <image
-            v-if="booleanConfig(component, 'showCover', true) && item.coverImageUrl"
+            v-if="showConferenceCover(component, item)"
             :class="conferenceImageClass(component, 'cms-card__image')"
             :style="conferenceImageStyle(component)"
-            :src="item.coverImageUrl"
+            :src="conferenceCoverUrl(item)"
             :mode="conferenceImageMode(component)"
+            @error="markConferenceCoverFailed(item.id)"
           />
           <view
             v-else-if="booleanConfig(component, 'showCover', true)"
             :class="conferenceImageClass(component, 'cms-card__image cms-card__image--empty')"
             :style="conferenceImageStyle(component)"
           >
-            <text>{{ item.title.slice(0, 1) || "会" }}</text>
+            <text>{{ conferenceCoverInitial(item) }}</text>
           </view>
           <view class="cms-card__body">
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
@@ -77,18 +78,19 @@
         <view v-if="conferences.length === 0" class="cms-empty">暂无可报名会议</view>
         <view v-for="(item, index) in limitedConferences(component).slice(0, 3)" :key="item.id" :class="conferenceCardClass(component, 'cms-mini-card')" :style="conferenceCardStyle(component)">
           <image
-            v-if="booleanConfig(component, 'showCover', true) && item.coverImageUrl"
+            v-if="showConferenceCover(component, item)"
             :class="conferenceImageClass(component, 'cms-mini-card__image')"
             :style="conferenceImageStyle(component)"
-            :src="item.coverImageUrl"
+            :src="conferenceCoverUrl(item)"
             :mode="conferenceImageMode(component)"
+            @error="markConferenceCoverFailed(item.id)"
           />
           <view
             v-else-if="booleanConfig(component, 'showCover', true)"
             :class="conferenceImageClass(component, 'cms-mini-card__image cms-card__image--empty')"
             :style="conferenceImageStyle(component)"
           >
-            <text>{{ item.title.slice(0, 1) || "会" }}</text>
+            <text>{{ conferenceCoverInitial(item) }}</text>
           </view>
           <view class="cms-card__body">
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
@@ -289,6 +291,7 @@ const props = defineProps<{
 }>();
 
 const nowTimestamp = ref(Date.now());
+const failedConferenceCoverIds = ref<Set<string>>(new Set());
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
 const visibleComponents = computed(() =>
@@ -319,6 +322,12 @@ onUnmounted(() => {
   }
 });
 watch(() => props.components, loadCustomFonts, { deep: true });
+watch(
+  () => conferences.value.map((item) => `${item.id}:${item.coverImageUrl ?? ""}`).join("|"),
+  () => {
+    failedConferenceCoverIds.value = new Set();
+  }
+);
 
 function stringConfig(component: CmsComponent, key: string): string {
   const value = component.config?.[key];
@@ -500,6 +509,25 @@ function callPhone(phone: string) {
 
 function limitedConferences(component: CmsComponent): ConferenceListItem[] {
   return conferences.value.slice(0, Math.max(1, numberConfig(component, "limit", 10)));
+}
+
+function showConferenceCover(component: CmsComponent, item: ConferenceListItem): boolean {
+  return Boolean(booleanConfig(component, "showCover", true) && conferenceCoverUrl(item) && !failedConferenceCoverIds.value.has(item.id));
+}
+
+function conferenceCoverUrl(item: ConferenceListItem): string {
+  return item.coverImageUrl?.trim() || "";
+}
+
+function conferenceCoverInitial(item: ConferenceListItem): string {
+  return item.title.slice(0, 1) || "会";
+}
+
+function markConferenceCoverFailed(id: string): void {
+  if (failedConferenceCoverIds.value.has(id)) {
+    return;
+  }
+  failedConferenceCoverIds.value = new Set([...failedConferenceCoverIds.value, id]);
 }
 
 function conferenceTabs(component: CmsComponent): string[] {

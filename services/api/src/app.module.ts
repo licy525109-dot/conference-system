@@ -10,9 +10,10 @@ import { MemberModule } from "./member/member.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { RegistrationModule } from "./registration/registration.module";
 import { RegistrationsModule } from "./registrations/registrations.module";
+import { WecomModule } from "./wecom/wecom.module";
 
 @Module({
-  imports: [AdminModule, AuthModule, CartModule, CmsModule, ConferencesModule, MallModule, MemberModule, PaymentsModule, RegistrationModule, RegistrationsModule],
+  imports: [AdminModule, AuthModule, CartModule, CmsModule, ConferencesModule, MallModule, MemberModule, PaymentsModule, RegistrationModule, RegistrationsModule, WecomModule],
   controllers: [HealthController]
 })
 export class AppModule {}

@@ -4,6 +4,13 @@
       <StatusTag :label="statusLabel" :tone="statusTone" />
       <text class="topline-price">{{ priceText || "查看票种" }}</text>
     </view>
+    <view class="cover">
+      <image v-if="hasCoverImage" class="cover-image" :src="normalizedCoverImageUrl" mode="aspectFill" @error="handleCoverError" />
+      <view v-else class="cover-placeholder">
+        <text class="cover-mark">{{ title.slice(0, 1) || "会" }}</text>
+        <text class="cover-label">会议报名</text>
+      </view>
+    </view>
     <view class="head">
       <view class="title-box">
         <text class="title">{{ title }}</text>
@@ -38,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import StatusTag from "./StatusTag.vue";
 import { formatDateTime } from "@/utils/date";
 
@@ -54,6 +61,7 @@ const props = withDefaults(
     registrationCount?: number;
     statusLabel?: string;
     statusTone?: "info" | "success" | "warning" | "danger" | "neutral";
+    coverImageUrl?: string | null;
   }>(),
   {
     summary: "",
@@ -63,7 +71,8 @@ const props = withDefaults(
     deadlineText: "",
     registrationCount: 0,
     statusLabel: "报名中",
-    statusTone: "success"
+    statusTone: "success",
+    coverImageUrl: ""
   }
 );
 
@@ -71,9 +80,20 @@ defineEmits<{
   open: [];
 }>();
 
+const imageLoadFailed = ref(false);
+const normalizedCoverImageUrl = computed(() => props.coverImageUrl?.trim() || "");
+const hasCoverImage = computed(() => Boolean(normalizedCoverImageUrl.value) && !imageLoadFailed.value);
 const registrationCountText = computed(() =>
   props.registrationCount > 0 ? `${props.registrationCount} 人已报名` : "名额以提交订单时系统校验为准"
 );
+
+watch(normalizedCoverImageUrl, () => {
+  imageLoadFailed.value = false;
+});
+
+function handleCoverError() {
+  imageLoadFailed.value = true;
+}
 </script>
 
 <style scoped>
@@ -103,6 +123,56 @@ const registrationCountText = computed(() =>
   font-size: 25rpx;
   font-weight: 900;
   line-height: 1.2;
+}
+
+.cover {
+  position: relative;
+  overflow: hidden;
+  height: 216rpx;
+  margin-bottom: 22rpx;
+  border-radius: var(--cms-radius-md);
+  background: linear-gradient(135deg, rgba(36, 82, 168, 0.12), rgba(30, 122, 124, 0.14));
+}
+
+.cover-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: var(--cms-surface-muted);
+}
+
+.cover-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(135deg, rgba(36, 82, 168, 0.16), rgba(31, 139, 110, 0.16)),
+    radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0) 34%);
+  color: var(--cms-primary-strong);
+}
+
+.cover-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 36rpx;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 12rpx 28rpx rgba(36, 82, 168, 0.12);
+}
+
+.cover-label {
+  margin-top: 14rpx;
+  color: var(--cms-text-primary);
+  font-size: 24rpx;
+  font-weight: 800;
 }
 
 .head {
