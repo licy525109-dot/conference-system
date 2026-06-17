@@ -1144,6 +1144,18 @@ function fieldsFor(type: string): ConfigField[] {
         { label: "图片独占一行铺满", value: "full" }
       ]
     },
+    {
+      key: "cardImageMode",
+      label: "封面铺满方式",
+      kind: "select",
+      fallback: "scaleToFill",
+      options: [
+        { label: "整图铺满", value: "scaleToFill" },
+        { label: "整图铺满（旧配置）", value: "aspectFit" },
+        { label: "等比裁切铺满", value: "aspectFill" },
+        { label: "完整显示", value: "contain" }
+      ]
+    },
     { key: "cardThumbWidth", label: "左侧缩略图宽度", kind: "range", fallback: 0, min: 0, max: 180 },
     { key: "cardThumbHeight", label: "左侧缩略图高度", kind: "range", fallback: 0, min: 0, max: 150 },
     { key: "cardImageHeight", label: "铺满图片高度", kind: "range", fallback: 120, min: 80, max: 260 },
@@ -1227,12 +1239,14 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "height", label: "横幅高度", kind: "range", fallback: 430, min: 260, max: 720 },
       {
         key: "imageMode",
-        label: "图片裁切方式",
+        label: "图片铺满方式",
         kind: "select",
-        fallback: "aspectFit",
+        fallback: "scaleToFill",
         options: [
-          { label: "完整显示", value: "aspectFit" },
-          { label: "铺满裁切", value: "aspectFill" },
+          { label: "整图铺满", value: "scaleToFill" },
+          { label: "整图铺满（旧配置）", value: "aspectFit" },
+          { label: "等比裁切铺满", value: "aspectFill" },
+          { label: "完整显示", value: "contain" },
           { label: "宽度铺满", value: "widthFix" }
         ]
       }
@@ -1244,10 +1258,12 @@ function fieldsFor(type: string): ConfigField[] {
         key: "imageMode",
         label: "图片显示方式",
         kind: "select",
-        fallback: "aspectFit",
+        fallback: "scaleToFill",
         options: [
-          { label: "完整显示", value: "aspectFit" },
-          { label: "铺满裁切", value: "aspectFill" },
+          { label: "整图铺满", value: "scaleToFill" },
+          { label: "整图铺满（旧配置）", value: "aspectFit" },
+          { label: "等比裁切铺满", value: "aspectFill" },
+          { label: "完整显示", value: "contain" },
           { label: "宽度铺满", value: "widthFix" }
         ]
       },
@@ -1336,6 +1352,7 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
           "showCover",
           "fullBleed",
           "cardImageLayout",
+          "cardImageMode",
           "cardImageHeight",
           "showSummary",
           "showTime",
@@ -1607,12 +1624,9 @@ const ComponentPreview = defineComponent({
       if (type === "hero") {
         const showContent = !booleanConfig(props.item, "imageOnly", false) && booleanConfig(props.item, "showContent", true);
         return h("div", { class: ["preview-hero-card", booleanConfig(props.item, "imageOnly", false) ? "is-image-only" : ""], style: previewHeroCardStyle(props.item) }, [
-          ...(value("imageUrl")
-            ? [
-                h("img", { class: "preview-visual-backdrop", src: value("imageUrl"), alt: "", style: { objectFit: "cover" } }),
-                h("img", { class: "preview-visual-foreground", src: value("imageUrl"), alt: "主视觉横幅", style: previewImageModeStyle(props.item) })
-              ]
-            : [h("div", { class: "preview-hero-empty" })]),
+          value("imageUrl")
+            ? h("img", { src: value("imageUrl"), alt: "主视觉横幅", style: previewImageModeStyle(props.item) })
+            : h("div", { class: "preview-hero-empty" }),
           showContent && booleanConfig(props.item, "showOverlay", true) ? h("div", { class: "preview-hero-card__shade" }) : null,
           showContent
             ? h("div", { class: "preview-hero-card__copy" }, [
@@ -1751,10 +1765,7 @@ const ComponentPreview = defineComponent({
         if (type === "carousel") {
           const images = list("images");
           return h("div", { class: ["preview-carousel", booleanConfig(props.item, "fullBleed", true) ? "is-full-bleed" : ""], style: previewCarouselStyle(props.item) }, images[0]
-            ? [
-                h("img", { class: "preview-visual-backdrop", src: images[0], alt: "", style: { objectFit: "cover" } }),
-                h("img", { class: "preview-visual-foreground", src: images[0], alt: "", style: previewImageModeStyle(props.item) })
-              ]
+            ? h("img", { src: images[0], alt: "", style: previewImageModeStyle(props.item) })
             : h("span", "暂无轮播图片"));
         }
         return h("div", { class: "preview-image-grid" }, list("images").map((item) => h("img", { src: item, alt: "" })));
@@ -1866,12 +1877,14 @@ function previewCoverStyle(component: EditableComponent) {
     return {
       width: `${size.width}px`,
       height: `${size.height}px`,
-      flexBasis: `${size.width}px`
+      flexBasis: `${size.width}px`,
+      objectFit: previewObjectFit(component.config.cardImageMode)
     };
   }
   return {
     height: `${numberValue(component, "cardImageHeight", 120)}px`,
-    borderRadius: `${numberValue(component, "cardRadius", 8)}px`
+    borderRadius: `${numberValue(component, "cardRadius", 8)}px`,
+    objectFit: previewObjectFit(component.config.cardImageMode)
   };
 }
 
@@ -1888,10 +1901,15 @@ function previewCarouselStyle(component: EditableComponent) {
 }
 
 function previewImageModeStyle(component: EditableComponent) {
-  const mode = String(component.config.imageMode ?? "aspectFit");
   return {
-    objectFit: mode === "aspectFill" ? "cover" : "contain"
+    objectFit: previewObjectFit(component.config.imageMode)
   };
+}
+
+function previewObjectFit(value: unknown): "fill" | "cover" | "contain" {
+  if (value === "contain" || value === "widthFix") return "contain";
+  if (value === "aspectFill") return "cover";
+  return "fill";
 }
 
 function previewThumbSize(component: EditableComponent) {
@@ -2844,7 +2862,7 @@ function splitPreviewLine(value: string): string[] {
   width: 100%;
   max-width: 100%;
   height: 168px;
-  object-fit: contain;
+  object-fit: fill;
   border-radius: var(--preview-radius);
   background: #fff8e8;
 }
@@ -3069,22 +3087,6 @@ function splitPreviewLine(value: string): string[] {
     linear-gradient(135deg, var(--preview-primary), var(--preview-secondary));
 }
 
-.phone-screen :deep(.preview-hero-card .preview-visual-backdrop),
-.phone-screen :deep(.preview-carousel .preview-visual-backdrop) {
-  z-index: 0;
-  object-fit: cover !important;
-  transform: scale(1.08);
-  opacity: 0.46;
-  filter: blur(10px);
-}
-
-.phone-screen :deep(.preview-hero-card .preview-visual-foreground),
-.phone-screen :deep(.preview-carousel .preview-visual-foreground) {
-  z-index: 1;
-  object-fit: contain !important;
-  background: transparent;
-}
-
 .phone-screen :deep(.preview-hero-card__shade) {
   position: absolute;
   inset: 0;
@@ -3192,18 +3194,7 @@ function splitPreviewLine(value: string): string[] {
 .preview-carousel img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-}
-
-.preview-carousel .preview-visual-backdrop {
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-}
-
-.preview-carousel .preview-visual-foreground {
-  position: relative;
-  z-index: 1;
+  object-fit: fill;
 }
 
 .preview-person,
