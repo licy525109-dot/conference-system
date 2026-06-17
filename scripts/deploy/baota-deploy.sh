@@ -17,7 +17,7 @@ log() {
   printf '\n== %s ==\n' "$1"
 }
 
-require_command() {
+require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "ERROR: missing required command: $1" >&2
     exit 127
@@ -56,12 +56,47 @@ clear_admin_root() {
 
 trap on_error ERR
 
-require_command git
-require_command pnpm
-require_command docker
-require_command curl
-require_command pm2
-require_command nginx
+echo "== 0. Load Node.js and pnpm runtime =="
+
+export PATH="/www/server/nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+if [ -d /www/server/nvm/versions/node ]; then
+  NODE_BIN="$(find /www/server/nvm/versions/node -maxdepth 3 -type f -name pnpm 2>/dev/null | head -n 1 | xargs dirname 2>/dev/null || true)"
+  if [ -n "$NODE_BIN" ]; then
+    export PATH="$NODE_BIN:$PATH"
+  fi
+fi
+
+if [ -n "${PNPM_HOME:-}" ]; then
+  export PATH="$PNPM_HOME:$PATH"
+else
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+  export PATH="$PNPM_HOME:$PATH"
+fi
+
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+  # shellcheck disable=SC1090
+  . "$HOME/.nvm/nvm.sh"
+  nvm use --lts >/dev/null 2>&1 || true
+fi
+
+if ! command -v pnpm >/dev/null 2>&1 && command -v corepack >/dev/null 2>&1; then
+  corepack enable || true
+  corepack prepare pnpm@11.5.2 --activate || true
+fi
+
+echo "node: $(command -v node || true)"
+echo "npm: $(command -v npm || true)"
+echo "pnpm: $(command -v pnpm || true)"
+node -v || true
+pnpm -v || true
+
+require_cmd git
+require_cmd pnpm
+require_cmd docker
+require_cmd curl
+require_cmd pm2
+require_cmd nginx
 
 PHASE="enter project"
 cd "$PROJECT_DIR"

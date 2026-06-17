@@ -74,7 +74,7 @@ jobs:
             echo "Deploy script missing: scripts/deploy/baota-deploy.sh" >&2
             exit 127
           fi
-          bash scripts/deploy/baota-deploy.sh
+          bash -lc 'cd "${PROJECT_DIR:-/www/wwwroot/conference-system}" && bash scripts/deploy/baota-deploy.sh'
           REMOTE_SCRIPT
 
       - name: Remove SSH key
