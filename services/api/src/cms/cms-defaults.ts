@@ -85,13 +85,13 @@ export const ENABLED_COMPONENT_PRESETS = [
     imageUrl: "",
     imageOnly: false,
     height: 430,
-    imageMode: "aspectFit",
+    imageMode: "scaleToFill",
     fullBleed: true
   }),
   preset("carousel", "轮播图", "基础展示", "多张图片轮播", {
     images: [],
     height: 320,
-    imageMode: "aspectFit",
+    imageMode: "scaleToFill",
     fullBleed: true,
     autoplay: true,
     indicatorDots: true
@@ -104,6 +104,7 @@ export const ENABLED_COMPONENT_PRESETS = [
     showLocation: true,
     showRegistrationCount: true,
     detailButtonText: "查看详情",
+    cardImageMode: "scaleToFill",
     cardImageLayout: "left",
     cardRadius: 14
   }),
@@ -171,6 +172,7 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
           showLocation: true,
           showRegistrationCount: true,
           detailButtonText: "查看详情",
+          cardImageMode: "scaleToFill",
           cardImageLayout: "left"
         }
       }
@@ -179,7 +181,7 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
 
   if (pageKey === "conference-detail") {
     return [
-      { id: "hero-default", type: "hero", enabled: true, config: { imageUrl: "", imageMode: "aspectFit", height: 430, showContent: true, showOverlay: true } },
+      { id: "hero-default", type: "hero", enabled: true, config: { imageUrl: "", imageMode: "scaleToFill", height: 430, showContent: true, showOverlay: true } },
       { id: "registration-button-default", type: "registration-button", enabled: true, config: { text: "立即报名" } }
     ];
   }
@@ -221,6 +223,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
           showLocation: true,
           showRegistrationCount: true,
           detailButtonText: "查看详情",
+          cardImageMode: "scaleToFill",
           cardImageLayout: "left"
         }
       }
@@ -294,6 +297,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
           showLocation: true,
           showRegistrationCount: true,
           detailButtonText: "进入会场",
+          cardImageMode: "scaleToFill",
           cardImageLayout: "full"
         }
       },
@@ -359,6 +363,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
           virtualRegistrationBase: 86,
           virtualRegistrationStep: 18,
           detailButtonText: "查看详情",
+          cardImageMode: "scaleToFill",
           cardImageLayout: "left",
           cardPadding: 24,
           cardGap: 18,
@@ -397,7 +402,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       { id: "salon-text", type: "text-image", enabled: true, config: { title: "为什么值得参加", text: "围绕关键议题、真实案例和同业交流，帮助参会者建立高质量连接。", imageUrl: "" } },
       { id: "salon-speakers", type: "speaker-cards", enabled: true, config: { title: "拟邀嘉宾", speakers: ["行业观察员｜趋势分享｜拆解年度机会", "企业增长负责人｜案例复盘｜分享实战路径", "会务主持人｜圆桌引导｜促进深度交流"] } },
       { id: "salon-agenda", type: "schedule-timeline", enabled: true, config: { title: "闭门流程", items: ["14:00｜签到入场｜身份确认与资料领取", "14:30｜主题分享｜趋势观察与案例拆解", "15:40｜圆桌讨论｜问题共创与答疑", "17:00｜自由交流｜建立合作连接"] } },
-      { id: "salon-list", type: "conference-list", enabled: true, config: { title: "可申请场次", limit: 3, showSummary: true, showTime: true, showLocation: true, detailButtonText: "申请席位", cardImageLayout: "full", cardImageHeight: 190 } },
+      { id: "salon-list", type: "conference-list", enabled: true, config: { title: "可申请场次", limit: 3, showSummary: true, showTime: true, showLocation: true, detailButtonText: "申请席位", cardImageMode: "scaleToFill", cardImageLayout: "full", cardImageHeight: 190 } },
       { id: "salon-faq", type: "faq", enabled: true, config: { title: "常见问题", items: ["报名后是否立即确认｜请以支付状态和我的报名记录为准", "是否支持团体参加｜可联系会务组确认席位", "现场需要携带什么｜请携带报名记录和有效证件"] } }
     ]
   },
@@ -545,7 +550,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       { id: "launch-countdown", type: "countdown", enabled: true, config: { title: "发布倒计时", targetAt: "" } },
       { id: "launch-text", type: "text-image", enabled: true, config: { title: "发布亮点", text: "围绕产品价值、关键能力和真实场景，帮助参会者快速理解发布会重点。", imageUrl: "" } },
       { id: "launch-agenda", type: "schedule-timeline", enabled: true, config: { title: "发布议程", items: ["14:00｜开场致辞｜发布主题介绍", "14:30｜产品演示｜核心能力与场景", "15:30｜客户案例｜实践反馈与答疑", "16:20｜报名交流｜现场咨询与预约"] } },
-      { id: "launch-list", type: "conference-list", enabled: true, config: { title: "可预约场次", limit: 4, showSummary: true, showTime: true, showLocation: true, detailButtonText: "预约详情", cardImageLayout: "full", cardImageHeight: 220 } }
+      { id: "launch-list", type: "conference-list", enabled: true, config: { title: "可预约场次", limit: 4, showSummary: true, showTime: true, showLocation: true, detailButtonText: "预约详情", cardImageMode: "scaleToFill", cardImageLayout: "full", cardImageHeight: 220 } }
     ]
   },
   {
@@ -574,7 +579,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       { id: "annual-stats", type: "stats-grid", enabled: true, config: { title: "大会规模", items: ["800+ 参会嘉宾", "40+ 合作伙伴", "12 场主题议程"] } },
       { id: "annual-speakers", type: "speaker-cards", enabled: true, config: { title: "年度嘉宾", speakers: ["品牌负责人｜年度分享｜战略与产品方向", "客户代表｜案例分享｜合作成果复盘", "行业嘉宾｜趋势观察｜生态共建机会"] } },
       { id: "annual-schedule", type: "schedule-timeline", enabled: true, config: { title: "年会议程", items: ["13:30｜签到入场｜嘉宾接待", "14:00｜年度主题｜品牌与业务复盘", "15:20｜案例分享｜客户与伙伴共创", "17:30｜交流晚宴｜自由交流与答谢"] } },
-      { id: "annual-list", type: "conference-list", enabled: true, config: { title: "报名入口", limit: 3, showSummary: true, showTime: true, showLocation: true, detailButtonText: "报名参会", cardImageLayout: "left" } }
+      { id: "annual-list", type: "conference-list", enabled: true, config: { title: "报名入口", limit: 3, showSummary: true, showTime: true, showLocation: true, detailButtonText: "报名参会", cardImageMode: "scaleToFill", cardImageLayout: "left" } }
     ]
   },
   {
@@ -601,7 +606,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     components: [
       { id: "online-hero", type: "hero", enabled: true, config: { kicker: "线上峰会", title: "线上预约，准时加入直播议程", description: "清晰展示直播安排、报名入口和资料获取方式。", buttonText: "预约直播", fullBleed: true } },
       { id: "online-live", type: "live-card", enabled: true, config: { title: "直播入口", text: "报名成功后，可在我的报名中查看参会记录和直播提醒。", url: "" } },
-      { id: "online-tabs", type: "conference-tabs", enabled: true, config: { title: "直播场次", tabs: ["全部", "主会场", "训练营", "回放"], limit: 5, showSummary: true, showTime: true, showLocation: false, detailButtonText: "查看场次" } },
+      { id: "online-tabs", type: "conference-tabs", enabled: true, config: { title: "直播场次", tabs: ["全部", "主会场", "训练营", "回放"], limit: 5, showSummary: true, showTime: true, showLocation: false, detailButtonText: "查看场次", cardImageMode: "scaleToFill" } },
       { id: "online-download", type: "download-list", enabled: true, config: { title: "学习资料", items: ["直播议程", "课件资料", "报名须知", "回放说明"] } },
       { id: "online-faq", type: "faq", enabled: true, config: { title: "线上参会问题", items: ["如何观看直播｜报名成功后查看我的报名记录", "是否提供回放｜以主办方后续发布为准", "资料在哪里领取｜请关注页面资料下载区"] } }
     ]

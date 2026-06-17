@@ -21,13 +21,7 @@
       <view v-if="component.type === 'hero'" :class="heroClass(component)" :style="heroStyle(component)">
         <image
           v-if="stringConfig(component, 'imageUrl')"
-          class="cms-hero__image cms-hero__image--backdrop"
-          :src="stringConfig(component, 'imageUrl')"
-          mode="aspectFill"
-        />
-        <image
-          v-if="stringConfig(component, 'imageUrl')"
-          class="cms-hero__image cms-hero__image--foreground"
+          class="cms-hero__image"
           :src="stringConfig(component, 'imageUrl')"
           :mode="heroImageMode(component)"
         />
@@ -55,7 +49,7 @@
             :class="conferenceImageClass(component, 'cms-card__image')"
             :style="conferenceImageStyle(component)"
             :src="item.coverImageUrl"
-            mode="aspectFill"
+            :mode="conferenceImageMode(component)"
           />
           <view
             v-else-if="booleanConfig(component, 'showCover', true)"
@@ -87,7 +81,7 @@
             :class="conferenceImageClass(component, 'cms-mini-card__image')"
             :style="conferenceImageStyle(component)"
             :src="item.coverImageUrl"
-            mode="aspectFill"
+            :mode="conferenceImageMode(component)"
           />
           <view
             v-else-if="booleanConfig(component, 'showCover', true)"
@@ -117,7 +111,6 @@
         >
           <swiper-item v-for="image in stringListConfig(component, 'images')" :key="image">
             <view class="cms-swiper__slide">
-              <image class="cms-swiper__backdrop" :src="image" mode="aspectFill" />
               <image class="cms-swiper__image" :src="image" :mode="carouselImageMode(component)" />
             </view>
           </swiper-item>
@@ -565,7 +558,7 @@ function heroStyle(component: CmsComponent): Record<string, string> {
 }
 
 function heroImageMode(component: CmsComponent): string {
-  return stringConfig(component, "imageMode") || "aspectFit";
+  return imageCoverMode(component, "imageMode");
 }
 
 function showHeroContent(component: CmsComponent): boolean {
@@ -589,7 +582,19 @@ function carouselStyle(component: CmsComponent): Record<string, string> {
 }
 
 function carouselImageMode(component: CmsComponent): string {
-  return stringConfig(component, "imageMode") || "aspectFit";
+  return imageCoverMode(component, "imageMode");
+}
+
+function conferenceImageMode(component: CmsComponent): string {
+  return imageCoverMode(component, "cardImageMode");
+}
+
+function imageCoverMode(component: CmsComponent, key: string): string {
+  const mode = stringConfig(component, key);
+  if (mode === "contain") return "aspectFit";
+  if (mode === "widthFix") return "widthFix";
+  if (mode === "aspectFill") return "aspectFill";
+  return "scaleToFill";
 }
 
 function textStyle(component: CmsComponent): Record<string, string> {
@@ -1069,23 +1074,12 @@ function parseTargetTime(value: string): number | null {
   background: var(--cms-surface-muted);
 }
 
-.cms-swiper__backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  width: 100%;
-  height: 100%;
-  transform: scale(1.08);
-  opacity: 0.46;
-  filter: blur(16rpx);
-}
-
 .cms-swiper__image {
   position: relative;
   z-index: 1;
   width: 100%;
   height: var(--cms-carousel-height, 320rpx);
-  background: transparent;
+  background: var(--cms-surface-muted);
 }
 
 .cms-empty-card {
@@ -1382,18 +1376,6 @@ function parseTargetTime(value: string): number | null {
   background: var(--cms-gradient-hero);
 }
 
-.cms-hero__image--backdrop {
-  z-index: 0;
-  transform: scale(1.08);
-  opacity: 0.5;
-  filter: blur(18rpx);
-}
-
-.cms-hero__image--foreground {
-  z-index: 1;
-  background: transparent;
-}
-
 .cms-hero__image--generated {
   z-index: 0;
   background:
@@ -1532,10 +1514,6 @@ function parseTargetTime(value: string): number | null {
 .cms-swiper__image,
 .cms-grid__image {
   border-radius: var(--cms-radius-lg);
-}
-
-.cms-swiper__backdrop {
-  border-radius: inherit;
 }
 
 .cms-carousel.is-full-bleed .cms-swiper,
