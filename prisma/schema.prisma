@@ -87,25 +87,57 @@ enum AuditAction {
   SYSTEM
 }
 
+enum NotificationChannelType {
+  MOCK
+  WECHAT_SUBSCRIBE
+  SMS
+}
+
+enum NotificationTemplateStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+}
+
+enum NotificationTaskStatus {
+  DRAFT
+  PENDING
+  SENDING
+  SENT
+  PARTIAL_FAILED
+  FAILED
+  CANCELLED
+}
+
+enum NotificationLogStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
 model User {
-  id               String         @id @default(cuid())
-  openid           String?        @unique
-  unionid          String?
-  nickname         String?
-  wechatNickname   String?
-  wechatAvatarUrl  String?
-  profileUpdatedAt DateTime?
-  lastActiveAt     DateTime?
-  phone            String?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  orders           Order[]
-  registrations    Registration[]
-  couponRedemptions CouponRedemption[]
-  memberships      UserMembership[]
-  cartItems        CartItem[]
-  registrationCartItems RegistrationCartItem[]
-  mallOrders       MallOrder[]
+  id                        String                     @id @default(cuid())
+  openid                    String?                    @unique
+  unionid                   String?
+  nickname                  String?
+  wechatNickname            String?
+  wechatAvatarUrl           String?
+  profileUpdatedAt          DateTime?
+  lastActiveAt              DateTime?
+  phone                     String?
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  orders                    Order[]
+  registrations             Registration[]
+  couponRedemptions         CouponRedemption[]
+  memberships               UserMembership[]
+  cartItems                 CartItem[]
+  registrationCartItems     RegistrationCartItem[]
+  mallOrders                MallOrder[]
+  notificationSubscriptions NotificationSubscription[]
+  notificationLogs          NotificationLog[]
+  adminWechatBindings       AdminWechatBinding[]
 
   @@index([createdAt])
   @@index([lastActiveAt])
@@ -113,15 +145,18 @@ model User {
 }
 
 model AdminUser {
-  id           String     @id @default(cuid())
-  username     String     @unique
-  passwordHash String
-  displayName  String?
-  enabled      Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  auditLogs    AuditLog[]
-  roles        AdminUserRole[]
+  id                    String                 @id @default(cuid())
+  username              String                 @unique
+  passwordHash          String
+  displayName           String?
+  enabled               Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  auditLogs             AuditLog[]
+  roles                 AdminUserRole[]
+  mobileBindings        AdminWechatBinding[]
+  notificationTemplates NotificationTemplate[] @relation("NotificationTemplateCreatedBy")
+  notificationTasks     NotificationTask[]     @relation("NotificationTaskCreatedBy")
 
   @@index([enabled])
   @@index([createdAt])
@@ -188,32 +223,53 @@ model RolePermission {
   @@map("role_permissions")
 }
 
+model AdminWechatBinding {
+  id            String    @id @default(cuid())
+  adminUserId   String
+  userId        String
+  openid        String?
+  enabled       Boolean   @default(true)
+  boundAt       DateTime  @default(now())
+  lastSessionAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  adminUser     AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([adminUserId, userId])
+  @@unique([openid])
+  @@index([adminUserId])
+  @@index([userId])
+  @@index([enabled])
+  @@map("admin_wechat_bindings")
+}
+
 model Conference {
-  id                   String            @id @default(cuid())
-  title                String
-  slug                 String            @unique
-  coverImageUrl        String?
-  summary              String?
-  location             String?
-  startsAt             DateTime
-  endsAt               DateTime
-  registrationStartsAt DateTime?
-  registrationEndsAt   DateTime?
-  checkInEnabled       Boolean           @default(false)
-  groupRegistrationEnabled Boolean        @default(true)
-  maxTicketsPerOrder   Int?
-  status               ConferenceStatus  @default(DRAFT)
-  sortOrder            Int               @default(0)
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-  page                 ConferencePage?
-  skus                 RegistrationSku[]
-  formDefinition       FormDefinition?
-  orders               Order[]
-  registrations        Registration[]
-  coupons              Coupon[]
-  promotionRules       PromotionRule[]
-  registrationCartItems RegistrationCartItem[]
+  id                       String                 @id @default(cuid())
+  title                    String
+  slug                     String                 @unique
+  coverImageUrl            String?
+  summary                  String?
+  location                 String?
+  startsAt                 DateTime
+  endsAt                   DateTime
+  registrationStartsAt     DateTime?
+  registrationEndsAt       DateTime?
+  checkInEnabled           Boolean                @default(false)
+  groupRegistrationEnabled Boolean                @default(true)
+  maxTicketsPerOrder       Int?
+  status                   ConferenceStatus       @default(DRAFT)
+  sortOrder                Int                    @default(0)
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  page                     ConferencePage?
+  skus                     RegistrationSku[]
+  formDefinition           FormDefinition?
+  orders                   Order[]
+  registrations            Registration[]
+  coupons                  Coupon[]
+  promotionRules           PromotionRule[]
+  registrationCartItems    RegistrationCartItem[]
 
   @@index([status])
   @@index([createdAt])
@@ -253,22 +309,22 @@ model MaterialCategory {
 }
 
 model MaterialAsset {
-  id          String            @id @default(cuid())
-  categoryId  String?
-  name        String
-  usage       String
-  fileType    String
-  url         String
-  sizeBytes   Int?
-  width       Int?
-  height      Int?
-  enabled     Boolean           @default(true)
-  remark      String?
-  createdBy   String?
-  updatedBy   String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  category    MaterialCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  id         String            @id @default(cuid())
+  categoryId String?
+  name       String
+  usage      String
+  fileType   String
+  url        String
+  sizeBytes  Int?
+  width      Int?
+  height     Int?
+  enabled    Boolean           @default(true)
+  remark     String?
+  createdBy  String?
+  updatedBy  String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  category   MaterialCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   @@index([categoryId])
   @@index([usage])
@@ -357,13 +413,13 @@ model ThemePreset {
 }
 
 model ActiveThemeConfig {
-  id            String   @id @default(cuid())
-  scope         String   @unique @default("global")
+  id            String    @id @default(cuid())
+  scope         String    @unique @default("global")
   themePresetId String?
   configJson    Json
   publishedAt   DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([themePresetId])
   @@map("active_theme_configs")
@@ -421,20 +477,20 @@ model PagePublishLog {
 }
 
 model MemberLevel {
-  id                String           @id @default(cuid())
-  code              String           @unique
-  name              String
-  description       String?
-  rank              Int              @default(0)
-  priceCent         Int              @default(0)
-  discountPercent   Int?
-  enabled           Boolean          @default(true)
-  benefitsJson      Json?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  benefits          MemberBenefit[]
-  memberships       UserMembership[]
-  priceRules        MembershipPriceRule[]
+  id              String                @id @default(cuid())
+  code            String                @unique
+  name            String
+  description     String?
+  rank            Int                   @default(0)
+  priceCent       Int                   @default(0)
+  discountPercent Int?
+  enabled         Boolean               @default(true)
+  benefitsJson    Json?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  benefits        MemberBenefit[]
+  memberships     UserMembership[]
+  priceRules      MembershipPriceRule[]
 
   @@index([enabled])
   @@index([rank])
@@ -482,16 +538,16 @@ model UserMembership {
 }
 
 model MembershipOrder {
-  id              String   @id @default(cuid())
-  orderNo         String   @unique
-  userId          String?
-  levelId         String
-  amountCent      Int
-  status          String   @default("PENDING")
-  paidAt          DateTime?
-  snapshotJson    Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id           String    @id @default(cuid())
+  orderNo      String    @unique
+  userId       String?
+  levelId      String
+  amountCent   Int
+  status       String    @default("PENDING")
+  paidAt       DateTime?
+  snapshotJson Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([userId])
   @@index([levelId])
@@ -501,18 +557,18 @@ model MembershipOrder {
 }
 
 model MembershipPriceRule {
-  id              String       @id @default(cuid())
+  id              String      @id @default(cuid())
   levelId         String
   conferenceId    String?
   skuId           String?
   discountPercent Int?
   discountCent    Int?
-  enabled         Boolean      @default(true)
+  enabled         Boolean     @default(true)
   startAt         DateTime?
   endAt           DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  level           MemberLevel  @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  level           MemberLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
 
   @@index([levelId])
   @@index([conferenceId])
@@ -540,19 +596,19 @@ model FinanceReconciliationBatch {
 }
 
 model FinanceReconciliationItem {
-  id              String                     @id @default(cuid())
-  batchId         String
-  orderNo         String?
-  outTradeNo      String?
-  transactionId   String?
-  localAmountCent Int?
+  id               String                     @id @default(cuid())
+  batchId          String
+  orderNo          String?
+  outTradeNo       String?
+  transactionId    String?
+  localAmountCent  Int?
   remoteAmountCent Int?
-  type            String
-  status          String                     @default("OPEN")
-  detailJson      Json?
-  createdAt       DateTime                   @default(now())
-  updatedAt       DateTime                   @updatedAt
-  batch           FinanceReconciliationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  type             String
+  status           String                     @default("OPEN")
+  detailJson       Json?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  batch            FinanceReconciliationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
   @@index([batchId])
   @@index([type])
@@ -563,14 +619,14 @@ model FinanceReconciliationItem {
 }
 
 model WechatBillImport {
-  id          String   @id @default(cuid())
-  fileName    String
-  status      String   @default("UPLOADED")
-  rowCount    Int      @default(0)
-  errorJson   Json?
-  createdBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  fileName  String
+  status    String   @default("UPLOADED")
+  rowCount  Int      @default(0)
+  errorJson Json?
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([createdAt])
@@ -578,13 +634,13 @@ model WechatBillImport {
 }
 
 model RefundRecord {
-  id          String   @id @default(cuid())
-  orderNo     String?
-  amountCent  Int
-  status      String   @default("RESERVED")
-  reason      String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  orderNo    String?
+  amountCent Int
+  status     String   @default("RESERVED")
+  reason     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([orderNo])
   @@index([status])
@@ -592,13 +648,13 @@ model RefundRecord {
 }
 
 model InvoiceRecord {
-  id          String   @id @default(cuid())
-  orderNo     String?
-  title       String
-  amountCent  Int
-  status      String   @default("RESERVED")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  orderNo    String?
+  title      String
+  amountCent Int
+  status     String   @default("RESERVED")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([orderNo])
   @@index([status])
@@ -622,16 +678,16 @@ model ProductCategory {
 }
 
 model Product {
-  id              String          @id @default(cuid())
+  id              String           @id @default(cuid())
   categoryId      String?
   title           String
   subtitle        String?
   descriptionJson Json?
   coverImageUrl   String?
-  status          String          @default("DRAFT")
-  sortOrder       Int             @default(0)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  status          String           @default("DRAFT")
+  sortOrder       Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   category        ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   skus            ProductSku[]
   images          ProductImage[]
@@ -643,18 +699,18 @@ model Product {
 }
 
 model ProductSku {
-  id            String          @id @default(cuid())
-  productId     String
-  name          String
-  priceCent     Int
-  stock         Int             @default(0)
-  soldCount     Int             @default(0)
-  status        String          @default("ACTIVE")
-  specsJson     Json?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  product       Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  cartItems     CartItem[]
+  id             String          @id @default(cuid())
+  productId      String
+  name           String
+  priceCent      Int
+  stock          Int             @default(0)
+  soldCount      Int             @default(0)
+  status         String          @default("ACTIVE")
+  specsJson      Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems      CartItem[]
   mallOrderItems MallOrderItem[]
 
   @@index([productId])
@@ -713,25 +769,25 @@ model RegistrationCartItem {
 }
 
 model MallOrder {
-  id              String          @id @default(cuid())
-  orderNo         String          @unique
-  userId          String?
-  originAmountCent Int
-  discountAmountCent Int          @default(0)
-  payableAmountCent Int
-  paidAmountCent  Int?
-  status          String          @default("PENDING")
-  receiverName    String?
-  receiverPhone   String?
-  receiverAddress String?
-  remark          String?
-  paidAt          DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  items           MallOrderItem[]
-  shipments       MallShipment[]
-  afterSales      MallAfterSale[]
+  id                 String          @id @default(cuid())
+  orderNo            String          @unique
+  userId             String?
+  originAmountCent   Int
+  discountAmountCent Int             @default(0)
+  payableAmountCent  Int
+  paidAmountCent     Int?
+  status             String          @default("PENDING")
+  receiverName       String?
+  receiverPhone      String?
+  receiverAddress    String?
+  remark             String?
+  paidAt             DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  user               User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items              MallOrderItem[]
+  shipments          MallShipment[]
+  afterSales         MallAfterSale[]
 
   @@index([userId])
   @@index([status])
@@ -758,15 +814,15 @@ model MallOrderItem {
 }
 
 model MallShipment {
-  id             String    @id @default(cuid())
-  orderId        String
-  company        String?
-  trackingNo     String?
-  status         String    @default("PENDING")
-  shippedAt      DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  order          MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  orderId    String
+  company    String?
+  trackingNo String?
+  status     String    @default("PENDING")
+  shippedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  order      MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([status])
@@ -789,20 +845,20 @@ model MallAfterSale {
 }
 
 model RegistrationSku {
-  id            String                @id @default(cuid())
+  id            String                 @id @default(cuid())
   conferenceId  String
   name          String
   description   String?
   priceCent     Int
-  stock         Int                   @default(0)
-  soldCount     Int                   @default(0)
-  status        RegistrationSkuStatus @default(ACTIVE)
+  stock         Int                    @default(0)
+  soldCount     Int                    @default(0)
+  status        RegistrationSkuStatus  @default(ACTIVE)
   saleStartAt   DateTime?
   saleEndAt     DateTime?
-  sortOrder     Int                   @default(0)
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
-  conference    Conference            @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  sortOrder     Int                    @default(0)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  conference    Conference             @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
   orders        Order[]
   orderItems    OrderItem[]
   registrations Registration[]
@@ -857,16 +913,16 @@ model FormField {
 }
 
 model Order {
-  id                       String          @id @default(cuid())
-  orderNo                  String          @unique
+  id                       String             @id @default(cuid())
+  orderNo                  String             @unique
   userId                   String?
   conferenceId             String
   skuId                    String
   originAmountCent         Int
-  discountAmountCent       Int             @default(0)
+  discountAmountCent       Int                @default(0)
   payableAmountCent        Int
   paidAmountCent           Int?
-  status                   OrderStatus     @default(PENDING)
+  status                   OrderStatus        @default(PENDING)
   submittedFormJson        Json
   registrationSnapshotJson Json?
   attendeeName             String?
@@ -874,11 +930,11 @@ model Order {
   expiredAt                DateTime?
   paidAt                   DateTime?
   closedAt                 DateTime?
-  createdAt                DateTime        @default(now())
-  updatedAt                DateTime        @updatedAt
-  user                     User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  conference               Conference      @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
-  sku                      RegistrationSku @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  user                     User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  conference               Conference         @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
+  sku                      RegistrationSku    @relation(fields: [skuId], references: [id], onDelete: Restrict)
   items                    OrderItem[]
   discounts                OrderDiscount[]
   couponRedemptions        CouponRedemption[]
@@ -897,7 +953,7 @@ model Order {
 }
 
 model OrderDiscount {
-  id              String       @id @default(cuid())
+  id              String         @id @default(cuid())
   orderId         String
   type            DiscountType
   title           String
@@ -905,9 +961,9 @@ model OrderDiscount {
   couponId        String?
   promotionRuleId String?
   snapshotJson    Json?
-  createdAt       DateTime     @default(now())
-  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  coupon          Coupon?      @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+  order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  coupon          Coupon?        @relation(fields: [couponId], references: [id], onDelete: SetNull)
   promotionRule   PromotionRule? @relation(fields: [promotionRuleId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
@@ -918,28 +974,28 @@ model OrderDiscount {
 }
 
 model Coupon {
-  id                      String                   @id @default(cuid())
-  code                    String                   @unique
-  name                    String
-  type                    CouponType
-  discountAmountCent      Int?
-  discountPercent         Int?
-  maxDiscountCent         Int?
-  minAmountCent           Int?
-  minQuantity             Int?
-  totalLimit              Int?
-  perUserLimit            Int?
-  enabled                 Boolean                  @default(true)
-  startAt                 DateTime?
-  endAt                   DateTime?
-  stackableWithPromotion  Boolean                  @default(false)
-  conferenceId            String?
-  allowedSkuIds           Json?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  conference              Conference?              @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
-  discounts               OrderDiscount[]
-  redemptions             CouponRedemption[]
+  id                     String             @id @default(cuid())
+  code                   String             @unique
+  name                   String
+  type                   CouponType
+  discountAmountCent     Int?
+  discountPercent        Int?
+  maxDiscountCent        Int?
+  minAmountCent          Int?
+  minQuantity            Int?
+  totalLimit             Int?
+  perUserLimit           Int?
+  enabled                Boolean            @default(true)
+  startAt                DateTime?
+  endAt                  DateTime?
+  stackableWithPromotion Boolean            @default(false)
+  conferenceId           String?
+  allowedSkuIds          Json?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  conference             Conference?        @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+  discounts              OrderDiscount[]
+  redemptions            CouponRedemption[]
 
   @@index([enabled])
   @@index([conferenceId])
@@ -968,22 +1024,22 @@ model CouponRedemption {
 }
 
 model PromotionRule {
-  id                    String          @id @default(cuid())
-  name                  String
-  type                  DiscountType    @default(FULL_REDUCTION)
-  conferenceId          String?
-  allowedSkuIds         Json?
-  minAmountCent         Int?
-  minQuantity           Int?
-  discountAmountCent    Int
-  enabled               Boolean         @default(true)
-  startAt               DateTime?
-  endAt                 DateTime?
-  stackableWithCoupon   Boolean         @default(false)
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
-  conference            Conference?     @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
-  discounts             OrderDiscount[]
+  id                  String          @id @default(cuid())
+  name                String
+  type                DiscountType    @default(FULL_REDUCTION)
+  conferenceId        String?
+  allowedSkuIds       Json?
+  minAmountCent       Int?
+  minQuantity         Int?
+  discountAmountCent  Int
+  enabled             Boolean         @default(true)
+  startAt             DateTime?
+  endAt               DateTime?
+  stackableWithCoupon Boolean         @default(false)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  conference          Conference?     @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+  discounts           OrderDiscount[]
 
   @@index([enabled])
   @@index([conferenceId])
@@ -1032,28 +1088,28 @@ model Payment {
 }
 
 model Registration {
-  id             String             @id @default(cuid())
-  registrationNo String             @unique
-  userId         String?
-  conferenceId   String
-  skuId          String
-  orderId        String             @unique
-  attendeeName   String
-  phone          String
-  formDataJson   Json
-  paidAmountCent Int
-  status         RegistrationStatus @default(CONFIRMED)
-  confirmedAt    DateTime           @default(now())
-  adminRemark    String?
+  id              String                 @id @default(cuid())
+  registrationNo  String                 @unique
+  userId          String?
+  conferenceId    String
+  skuId           String
+  orderId         String                 @unique
+  attendeeName    String
+  phone           String
+  formDataJson    Json
+  paidAmountCent  Int
+  status          RegistrationStatus     @default(CONFIRMED)
+  confirmedAt     DateTime               @default(now())
+  adminRemark     String?
   remarkUpdatedAt DateTime?
   remarkUpdatedBy String?
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  user           User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
-  conference     Conference         @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
-  sku            RegistrationSku    @relation(fields: [skuId], references: [id], onDelete: Restrict)
-  order          Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  attendees      RegistrationAttendee[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  user            User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  conference      Conference             @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
+  sku             RegistrationSku        @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  order           Order                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  attendees       RegistrationAttendee[]
 
   @@index([userId])
   @@index([conferenceId])
@@ -1066,7 +1122,7 @@ model Registration {
 }
 
 model RegistrationAttendee {
-  id             String        @id @default(cuid())
+  id             String          @id @default(cuid())
   registrationId String
   skuId          String
   name           String
@@ -1074,13 +1130,13 @@ model RegistrationAttendee {
   company        String?
   title          String?
   formDataJson   Json?
-  checkInStatus  CheckInStatus @default(NOT_REQUIRED)
+  checkInStatus  CheckInStatus   @default(NOT_REQUIRED)
   checkedInAt    DateTime?
   checkedInBy    String?
   adminRemark    String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  registration   Registration  @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  registration   Registration    @relation(fields: [registrationId], references: [id], onDelete: Cascade)
   sku            RegistrationSku @relation(fields: [skuId], references: [id], onDelete: Restrict)
 
   @@index([registrationId])
@@ -1108,4 +1164,100 @@ model AuditLog {
   @@index([entityType])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model NotificationSubscription {
+  id           String                  @id @default(cuid())
+  userId       String
+  channel      NotificationChannelType
+  templateCode String
+  openid       String?
+  phone        String?
+  enabled      Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel, templateCode])
+  @@index([userId])
+  @@index([channel])
+  @@index([templateCode])
+  @@index([enabled])
+  @@map("notification_subscriptions")
+}
+
+model NotificationTemplate {
+  id          String                     @id @default(cuid())
+  code        String                     @unique
+  name        String
+  channel     NotificationChannelType
+  status      NotificationTemplateStatus @default(DRAFT)
+  title       String?
+  templateKey String?
+  contentJson Json
+  remark      String?
+  createdById String?
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  createdBy   AdminUser?                 @relation("NotificationTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  tasks       NotificationTask[]
+  logs        NotificationLog[]
+
+  @@index([channel])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notification_templates")
+}
+
+model NotificationTask {
+  id          String                  @id @default(cuid())
+  name        String
+  templateId  String
+  channel     NotificationChannelType
+  targetType  String                  @default("MANUAL")
+  payloadJson Json?
+  status      NotificationTaskStatus  @default(DRAFT)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdById String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  template    NotificationTemplate    @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  createdBy   AdminUser?              @relation("NotificationTaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  logs        NotificationLog[]
+
+  @@index([templateId])
+  @@index([channel])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([createdAt])
+  @@map("notification_tasks")
+}
+
+model NotificationLog {
+  id                String                  @id @default(cuid())
+  taskId            String?
+  templateId        String?
+  userId            String?
+  channel           NotificationChannelType
+  recipient         String?
+  status            NotificationLogStatus   @default(PENDING)
+  providerMessageId String?
+  errorCode         String?
+  errorMessage      String?
+  payloadJson       Json?
+  sentAt            DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  task              NotificationTask?       @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  template          NotificationTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  user              User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@index([templateId])
+  @@index([userId])
+  @@index([channel])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notification_logs")
 }

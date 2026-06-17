@@ -31,6 +31,9 @@ import type {
   MaterialCategory,
   MallOrder,
   MemberLevel,
+  NotificationLog,
+  NotificationTask,
+  NotificationTemplate,
   Permission,
   Product,
   ProductCategory,
@@ -261,6 +264,53 @@ export function updatePromotionRule(id: string, input: Record<string, unknown>) 
     method: "PATCH",
     body: JSON.stringify(input)
   });
+}
+
+export function listNotificationTemplates(params: { page?: number; pageSize?: number; keyword?: string; channel?: string; status?: string }) {
+  return apiRequest<ApiList<NotificationTemplate>>(`/admin/notification-templates${toQuery(params)}`);
+}
+
+export function createNotificationTemplate(input: Record<string, unknown>) {
+  return apiRequest<NotificationTemplate>("/admin/notification-templates", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateNotificationTemplate(id: string, input: Record<string, unknown>) {
+  return apiRequest<NotificationTemplate>(`/admin/notification-templates/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listNotificationTasks(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
+  return apiRequest<ApiList<NotificationTask>>(`/admin/notification-tasks${toQuery(params)}`);
+}
+
+export function createNotificationTask(input: Record<string, unknown>) {
+  return apiRequest<NotificationTask>("/admin/notification-tasks", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function sendNotificationTaskNow(id: string) {
+  return apiRequest<{
+    task: NotificationTask;
+    result: {
+      total: number;
+      successCount: number;
+      failedCount: number;
+      skippedCount: number;
+    };
+  }>(`/admin/notification-tasks/${encodeURIComponent(id)}/send-now`, {
+    method: "POST"
+  });
+}
+
+export function listNotificationLogs(params: { page?: number; pageSize?: number; taskId?: string; status?: string }) {
+  return apiRequest<ApiList<NotificationLog>>(`/admin/notification-logs${toQuery(params)}`);
 }
 
 export function listAccounts() {

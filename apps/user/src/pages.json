@@ -49,6 +49,12 @@
       }
     },
     {
+      "path": "pages/admin/notifications/index",
+      "style": {
+        "navigationBarTitleText": "管理员通知中心"
+      }
+    },
+    {
       "path": "pages/mall/index",
       "style": {
         "navigationBarTitleText": "商城"
