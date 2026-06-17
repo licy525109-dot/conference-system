@@ -41,7 +41,7 @@ withDefaults(
   place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--admin-color-primary-soft);
   color: var(--admin-color-primary);
   font-weight: 900;

@@ -29,21 +29,22 @@ const placementClass = computed(() => (props.placement === "absolute" ? "is-abso
 const speed = computed(() => Math.max(6, Math.min(40, Number(props.theme.backgroundDynamicSpeed) || 18)));
 const density = computed(() => Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40)));
 const fromColor = computed(() => normalizeColor(props.theme.backgroundGradientFrom || props.theme.backgroundColor || "#f5f7fb"));
-const toColor = computed(() => normalizeColor(props.theme.backgroundGradientTo || props.theme.secondaryColor || "#14b8a6"));
-const accentColor = computed(() => normalizeColor(props.theme.accentColor || "#f59e0b"));
+const toColor = computed(() => normalizeColor(props.theme.backgroundGradientTo || props.theme.secondaryColor || "#3a8f79"));
+const accentColor = computed(() => normalizeColor(props.theme.accentColor || "#b58b47"));
+const primaryColor = computed(() => normalizeColor(props.theme.primaryColor || "#315d7d"));
 
 const rootStyle = computed(() => ({
   backgroundColor: props.theme.backgroundColor || "#f5f7fb"
 }));
 
 const baseStyle = computed(() => ({
-  background: `linear-gradient(135deg, ${fromColor.value}, ${toColor.value})`,
+  background: `linear-gradient(135deg, ${fromColor.value} 0%, ${toColor.value} 58%, ${accentColor.value} 130%)`,
   animation: `themeDynamicBase ${speed.value}s ease-in-out infinite alternate`
 }));
 
-const glowAStyle = computed(() => glowStyle(fromColor.value, toColor.value, 0.66, 0.2, 320 + density.value * 3, speed.value * 0.92, "themeDynamicGlowA"));
-const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.58, 0.18, 280 + density.value * 2.6, speed.value * 1.08, "themeDynamicGlowB"));
-const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.48, 0.16, 240 + density.value * 2.2, speed.value * 1.18, "themeDynamicGlowC"));
+const glowAStyle = computed(() => glowStyle(primaryColor.value, toColor.value, 0.52, 0.26, 360 + density.value * 3.6, speed.value * 0.82, "themeDynamicGlowA"));
+const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.48, 0.24, 320 + density.value * 3.2, speed.value * 0.96, "themeDynamicGlowB"));
+const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.44, 0.22, 280 + density.value * 2.8, speed.value * 1.08, "themeDynamicGlowC"));
 
 function glowStyle(colorA: string, colorB: string, alphaA: number, alphaB: number, size: number, duration: number, animationName: string): Record<string, string> {
   return {
@@ -110,15 +111,17 @@ function withAlpha(value: string, alpha: number): string {
 }
 
 .theme-dynamic-bg__base {
-  top: -18%;
-  left: -18%;
-  width: 136%;
-  height: 136%;
+  top: -24%;
+  left: -24%;
+  width: 148%;
+  height: 148%;
 }
 
 .theme-dynamic-bg__glow {
   border-radius: 9999rpx;
-  opacity: 0.78;
+  opacity: 0.92;
+  filter: blur(12rpx);
+  mix-blend-mode: multiply;
 }
 
 .theme-dynamic-bg__glow-a {
@@ -140,8 +143,8 @@ function withAlpha(value: string, alpha: number): string {
   right: 0;
   bottom: 0;
   left: 0;
-  height: 62%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(245, 247, 251, 0.68));
+  height: 72%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(245, 247, 246, 0.78));
 }
 
 @keyframes themeDynamicBase {

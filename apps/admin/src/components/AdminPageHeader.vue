@@ -43,12 +43,10 @@ withDefaults(
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-  padding: 22px;
+  padding: 20px;
   border: 1px solid rgb(221 230 242 / 88%);
   border-radius: var(--admin-radius-lg);
-  background:
-    linear-gradient(135deg, rgb(20 99 255 / 8%), rgb(24 194 156 / 5%)),
-    var(--admin-color-panel);
+  background: var(--admin-color-panel);
   box-shadow: var(--admin-shadow-soft);
 }
 
@@ -62,7 +60,7 @@ withDefaults(
   color: var(--admin-color-primary);
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .admin-page-header__title-row {
@@ -75,7 +73,7 @@ withDefaults(
 .admin-page-header__title {
   margin: 0;
   color: var(--admin-color-text);
-  font-size: 24px;
+  font-size: 23px;
   font-weight: 900;
   line-height: 1.25;
 }

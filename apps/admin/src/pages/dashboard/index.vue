@@ -251,10 +251,14 @@ function formatDate(date: Date) {
   text-align: left;
   cursor: pointer;
   box-shadow: var(--admin-shadow-soft);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.quick-action:hover {
+.quick-action:hover,
+.quick-action:focus-visible {
   border-color: var(--admin-color-primary);
+  outline: none;
+  box-shadow: var(--admin-shadow);
   transform: translateY(-1px);
 }
 
@@ -278,5 +282,19 @@ function formatDate(date: Date) {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+@media (max-width: 1180px) {
+  .quick-actions,
+  .dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .quick-actions,
+  .dashboard-metrics {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

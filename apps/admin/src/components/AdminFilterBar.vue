@@ -22,6 +22,17 @@
   box-shadow: var(--admin-shadow-soft);
 }
 
+@media (max-width: 900px) {
+  .admin-filter-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-filter-bar__actions {
+    justify-content: flex-start;
+  }
+}
+
 .admin-filter-bar__body,
 .admin-filter-bar__actions {
   display: flex;

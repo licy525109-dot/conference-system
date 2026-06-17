@@ -127,7 +127,7 @@ function statusTone(status: string): "info" | "success" | "warning" | "danger" |
 
 <style scoped>
 .page {
-  padding-bottom: 164rpx;
+  padding-bottom: calc(228rpx + env(safe-area-inset-bottom));
 }
 
 .hero {
