@@ -114,6 +114,7 @@ async function loadStatus() {
   try {
     await ensureLogin();
     paymentStatus.value = await getPaymentStatus(orderNo.value);
+    redirectToCredentialIfPaid();
   } catch (err) {
     console.error("[PAYMENT_STATUS_LOAD_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
@@ -194,6 +195,15 @@ function isInvalidWechatIdentityMessage(message: string | undefined): boolean {
 function goMyRegistrations() {
   uni.navigateTo({
     url: "/pages/registrations/my"
+  });
+}
+
+function redirectToCredentialIfPaid() {
+  if (paymentStatus.value?.status !== "PAID" || !paymentStatus.value.registrationId) {
+    return;
+  }
+  uni.redirectTo({
+    url: `/pages/registration-success/index?registrationId=${encodeURIComponent(paymentStatus.value.registrationId)}&orderNo=${encodeURIComponent(orderNo.value)}`
   });
 }
 </script>

@@ -4,6 +4,7 @@ import ConferencesPage from "../pages/conferences/index.vue";
 import ConferenceConfigPage from "../pages/conferences/config.vue";
 import OrdersPage from "../pages/orders/index.vue";
 import RegistrationsPage from "../pages/registrations/index.vue";
+import RegistrationDetailPage from "../pages/registrations/detail.vue";
 import CouponsPage from "../pages/coupons/index.vue";
 import PromotionsPage from "../pages/promotions/index.vue";
 import MaterialsPage from "../pages/materials/index.vue";
@@ -45,6 +46,7 @@ export const routes: AdminRoute[] = [
     hidden: true
   },
   { path: "/registrations", title: "报名名单", menuTitle: "报名名单", group: "会议业务", description: "报名记录、参会人、备注和核销", permission: "registration:view", component: RegistrationsPage },
+  { path: "/registrations/detail", title: "报名详情", menuTitle: "报名详情", group: "会议业务", description: "报名、订单、支付、表单快照和操作日志", permission: "registration:view", component: RegistrationDetailPage, hidden: true },
   { path: "/orders", title: "订单支付", menuTitle: "订单支付", group: "会议业务", description: "订单金额、支付流水和异常识别", permission: "order:view", component: OrdersPage },
   { path: "/coupons", title: "优惠券", menuTitle: "优惠券", group: "营销配置", badge: "灰度", description: "扩展营销能力，金额仍以后端计算为准", permission: "coupon:view", component: CouponsPage },
   { path: "/promotions", title: "满减规则", menuTitle: "满减规则", group: "营销配置", badge: "灰度", description: "扩展营销能力，金额仍以后端计算为准", permission: "promotion:view", component: PromotionsPage },

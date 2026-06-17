@@ -1,4 +1,4 @@
-import type { MyRegistrationItem } from "./registration-types";
+import type { MyRegistrationItem, RegistrationCredential } from "./registration-types";
 import { ensureLogin } from "./auth";
 import { request } from "./request";
 
@@ -77,6 +77,20 @@ export function getMyRegistrations(): Promise<MyRegistrationItem[]> {
     method: "GET",
     auth: true
   }).then((data) => data.items);
+}
+
+export function getRegistrationCredential(registrationId: string): Promise<RegistrationCredential> {
+  return request<RegistrationCredential>(`/registrations/${encodeURIComponent(registrationId)}/credential`, {
+    method: "GET",
+    auth: true
+  });
+}
+
+export function getOrderRegistrationCredential(orderNo: string): Promise<RegistrationCredential> {
+  return request<RegistrationCredential>(`/orders/${encodeURIComponent(orderNo)}/registration-credential`, {
+    method: "GET",
+    auth: true
+  });
 }
 
 function withLegacySingleItemFields<TInput extends QuoteRequest>(input: TInput): TInput & { skuId?: string; quantity?: number; formData?: Record<string, string | string[]> } {

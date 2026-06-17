@@ -91,6 +91,9 @@
           <el-descriptions-item label="商户订单号">{{ detail.outTradeNo || "-" }}</el-descriptions-item>
           <el-descriptions-item label="微信交易号">{{ detail.transactionId || "-" }}</el-descriptions-item>
         </el-descriptions>
+        <div v-if="detail.registration" class="inline-actions">
+          <el-button type="primary" @click="navigateTo('/registrations/detail', { id: detail.registration.id })">查看报名详情</el-button>
+        </div>
         <el-alert class="reserved-alert" title="退款与重新处理支付成功属于高风险预留能力，本页仅展示异常、记录人工处理备注，不修改支付状态。" type="info" :closable="false" />
         <section v-if="detail.paymentExceptions.length > 0" class="exception-panel">
           <h3>异常识别</h3>
@@ -230,9 +233,9 @@ async function deleteSingle(row: AdminOrder) {
   }
   deleting.value = true;
   try {
-    await deleteOrder(row.orderNo);
+    const result = await deleteOrder(row.orderNo);
     await load();
-    ElMessage.success("订单已删除");
+    ElMessage.success(`已删除 ${result.deleted} 单${result.skipped ? `，跳过 ${result.skipped} 单` : ""}`);
   } finally {
     deleting.value = false;
   }
@@ -258,7 +261,12 @@ async function deleteFiltered() {
       onlyExceptions: onlyExceptions.value
     });
     await load();
-    ElMessage.success(`已删除 ${result.deleted} 单，跳过 ${result.skipped} 单`);
+    const message = `已匹配 ${result.matched} 单，删除 ${result.deleted} 单，跳过 ${result.skipped} 单`;
+    if (result.deleted > 0) {
+      ElMessage.success(message);
+    } else {
+      ElMessage.warning(`${message}；仅未支付、无报名、无成功支付流水的订单可删除`);
+    }
   } finally {
     deleting.value = false;
   }

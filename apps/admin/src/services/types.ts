@@ -178,13 +178,56 @@ export interface AdminRegistrationDetail extends AdminRegistration {
   formDataJson: Record<string, unknown>;
   attendees: AdminRegistrationAttendee[];
   order: {
+    id?: string;
     orderNo: string;
     status: string;
+    originAmountCent?: number;
+    discountAmountCent?: number;
     payableAmountCent: number;
     paidAmountCent: number | null;
+    submittedFormJson?: Record<string, unknown>;
+    registrationSnapshotJson?: Record<string, unknown> | null;
+    createdAt?: string;
     paidAt: string | null;
+    items?: Array<{
+      id: string;
+      skuName: string;
+      unitPriceCent: number;
+      quantity: number;
+      totalAmountCent: number;
+    }>;
+    discounts?: AdminOrderDiscount[];
     payments: AdminPayment[];
   };
+}
+
+export interface AdminRegistrationAuditLog {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  summary: string | null;
+  metadataJson: Record<string, unknown> | null;
+  adminName: string;
+  createdAt: string;
+}
+
+export interface AdminRegistrationTimelineItem {
+  type: string;
+  title: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface AdminRegistrationFullDetail extends AdminRegistrationDetail {
+  credential: {
+    registrationNo: string;
+    credentialCode: string;
+    qrPayload: string;
+    checkInProgress: AdminRegistration["checkInProgress"];
+  };
+  auditLogs: AdminRegistrationAuditLog[];
+  timeline: AdminRegistrationTimelineItem[];
 }
 
 export interface AdminRegistrationAttendee {
@@ -262,10 +305,15 @@ export interface DashboardOverview {
     todayRevenueCent: number;
     totalRevenueCent: number;
     todayOrders: number;
+    createdOrders?: number;
+    successfulPayments?: number;
     paidOrders: number;
     pendingOrders: number;
     todayRegistrations: number;
     totalRegistrations: number;
+    abnormalOrders?: number;
+    refundAmountCent?: number;
+    invoiceApplicationCount?: number;
     checkedInCount: number;
     pendingCheckInCount: number;
     couponUsedCount: number;
@@ -309,6 +357,35 @@ export interface DashboardOverview {
     paidAmountCent: number;
     createdAt: string;
     conferenceTitle: string;
+  }>;
+}
+
+export interface DashboardConversion {
+  steps: Array<{
+    key: string;
+    label: string;
+    count: number;
+  }>;
+}
+
+export interface DashboardTrend {
+  items: Array<{
+    date: string;
+    total: number;
+    success: number;
+    failed: number;
+  }>;
+}
+
+export interface DashboardTicketSales {
+  items: Array<{
+    id: string;
+    name: string;
+    conferenceTitle: string;
+    stock: number;
+    soldCount: number;
+    revenueCent: number;
+    remainingStock: number;
   }>;
 }
 

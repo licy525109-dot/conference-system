@@ -118,6 +118,18 @@ export class AdminManagementController {
     return this.adminManagementService.listRegistrations(query);
   }
 
+  @Get("registrations/:id/detail")
+  @RequireAdminPermissions("registration:view")
+  getRegistrationDetail(@Param("id") id: string) {
+    return this.adminManagementService.getRegistrationDetail(id);
+  }
+
+  @Get("registrations/:id/audit-logs")
+  @RequireAdminPermissions("registration:view")
+  getRegistrationAuditLogs(@Param("id") id: string) {
+    return this.adminManagementService.getRegistrationAuditLogs(id);
+  }
+
   @Get("registrations/:id")
   @RequireAdminPermissions("registration:view")
   getRegistration(@Param("id") id: string) {

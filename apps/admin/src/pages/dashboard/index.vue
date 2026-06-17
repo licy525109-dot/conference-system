@@ -50,6 +50,36 @@
     </div>
 
     <el-row v-if="overview" :gutter="16">
+      <el-col :span="8">
+        <AdminSectionCard title="报名转化漏斗" subtitle="从下单到报名成功的核心转化。">
+          <div v-for="step in conversion?.steps ?? []" :key="step.key" class="funnel-row">
+            <span>{{ step.label }}</span>
+            <strong>{{ step.count }}</strong>
+            <div class="funnel-bar"><i :style="{ width: `${barPercent(step.count, maxConversionCount)}%` }" /></div>
+          </div>
+        </AdminSectionCard>
+      </el-col>
+      <el-col :span="8">
+        <AdminSectionCard title="支付成功率趋势" subtitle="按天统计支付成功和未成功流水。">
+          <div v-for="item in paymentTrend?.items ?? []" :key="item.date" class="trend-row">
+            <span>{{ item.date }}</span>
+            <strong>{{ item.total ? `${((item.success / item.total) * 100).toFixed(0)}%` : "0%" }}</strong>
+            <div class="trend-bar"><i :style="{ width: `${item.total ? (item.success / item.total) * 100 : 0}%` }" /></div>
+          </div>
+        </AdminSectionCard>
+      </el-col>
+      <el-col :span="8">
+        <AdminSectionCard title="异常订单趋势" subtitle="关注取消、关闭、失败等需跟进订单。">
+          <div v-for="item in abnormalTrend?.items ?? []" :key="item.date" class="trend-row danger">
+            <span>{{ item.date }}</span>
+            <strong>{{ item.failed }}</strong>
+            <div class="trend-bar"><i :style="{ width: `${barPercent(item.failed, maxAbnormalCount)}%` }" /></div>
+          </div>
+        </AdminSectionCard>
+      </el-col>
+    </el-row>
+
+    <el-row v-if="overview" :gutter="16">
       <el-col :span="12">
         <AdminSectionCard title="热门会议" subtitle="按报名热度排序，帮助判断主推会议。">
           <el-table :data="overview.hotConferences" empty-text="暂无会议数据">
@@ -102,10 +132,11 @@
     </el-row>
 
     <AdminSectionCard v-if="overview" title="热门票种" subtitle="按售卖量观察票种表现和库存压力。">
-      <el-table :data="overview.hotSkus" empty-text="暂无票种数据">
+      <el-table :data="ticketSales?.items ?? overview.hotSkus" empty-text="暂无票种数据">
         <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
         <el-table-column prop="name" label="票种" min-width="140" />
         <el-table-column prop="soldCount" label="已售" width="100" />
+        <el-table-column label="销售额" width="120"><template #default="{ row }">¥{{ formatCent(row.revenueCent ?? 0) }}</template></el-table-column>
         <el-table-column prop="remainingStock" label="剩余" width="100" />
       </el-table>
     </AdminSectionCard>
@@ -120,12 +151,16 @@ import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatCard from "../../components/AdminStatCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo } from "../../router";
-import { getDashboardOverview, listConferences } from "../../services/admin";
-import type { Conference, DashboardOverview } from "../../services/types";
+import { getDashboardConversion, getDashboardOrderAbnormalTrend, getDashboardOverview, getDashboardPaymentTrend, getDashboardTicketSales, listConferences } from "../../services/admin";
+import type { Conference, DashboardConversion, DashboardOverview, DashboardTicketSales, DashboardTrend } from "../../services/types";
 
 type MetricTone = "default" | "primary" | "success" | "warning" | "danger";
 
 const overview = ref<DashboardOverview | null>(null);
+const conversion = ref<DashboardConversion | null>(null);
+const paymentTrend = ref<DashboardTrend | null>(null);
+const abnormalTrend = ref<DashboardTrend | null>(null);
+const ticketSales = ref<DashboardTicketSales | null>(null);
 const conferences = ref<Conference[]>([]);
 const loading = ref(false);
 const error = ref("");
@@ -148,6 +183,8 @@ const quickActions = [
 ];
 
 const paymentAbnormalCount = computed(() => overview.value?.recentOrders.filter((item) => isPaymentAbnormal(item.status)).length ?? 0);
+const maxConversionCount = computed(() => Math.max(1, ...(conversion.value?.steps.map((item) => item.count) ?? [1])));
+const maxAbnormalCount = computed(() => Math.max(1, ...(abnormalTrend.value?.items.map((item) => item.failed) ?? [1])));
 
 const metricCards = computed<Array<{ label: string; value: string | number; note: string; tone: MetricTone }>>(() => {
   const cards = overview.value?.cards;
@@ -155,6 +192,8 @@ const metricCards = computed<Array<{ label: string; value: string | number; note
   return [
     { label: "今日报名人数", value: cards.todayRegistrations, note: "自然日确认报名", tone: "primary" },
     { label: "今日收入", value: `¥${formatCent(cards.todayRevenueCent)}`, note: "自然日已支付", tone: "success" },
+    { label: "订单创建数", value: cards.createdOrders ?? cards.todayOrders, note: "当前筛选范围", tone: "default" },
+    { label: "支付成功数", value: cards.successfulPayments ?? cards.paidOrders, note: "当前筛选范围", tone: "success" },
     { label: "总报名人数", value: cards.totalRegistrations, note: "当前筛选范围", tone: "default" },
     { label: "总收入", value: `¥${formatCent(cards.totalRevenueCent)}`, note: "当前筛选范围", tone: "success" },
     { label: "待支付订单", value: cards.pendingOrders, note: "当前筛选范围", tone: "warning" },
@@ -177,11 +216,18 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    overview.value = await getDashboardOverview({
+    const params = {
       dateFrom: dateRange.value?.[0],
       dateTo: dateRange.value?.[1],
       conferenceId: conferenceId.value
-    });
+    };
+    [overview.value, conversion.value, paymentTrend.value, abnormalTrend.value, ticketSales.value] = await Promise.all([
+      getDashboardOverview(params),
+      getDashboardConversion(params),
+      getDashboardPaymentTrend(params),
+      getDashboardOrderAbnormalTrend(params),
+      getDashboardTicketSales(params)
+    ]);
   } catch (err) {
     error.value = err instanceof Error ? err.message : "数据看板加载失败";
   } finally {
@@ -224,6 +270,10 @@ function formatCent(value: number) {
 
 function formatRate(value: number | null) {
   return value === null ? "暂无" : `${(value * 100).toFixed(1)}%`;
+}
+
+function barPercent(value: number, max: number) {
+  return Math.max(4, Math.min(100, (value / Math.max(1, max)) * 100));
 }
 
 function formatDate(date: Date) {
@@ -282,6 +332,42 @@ function formatDate(date: Date) {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.funnel-row,
+.trend-row {
+  display: grid;
+  grid-template-columns: 92px 48px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  color: var(--admin-color-text);
+  font-size: 13px;
+}
+
+.funnel-row strong,
+.trend-row strong {
+  text-align: right;
+}
+
+.funnel-bar,
+.trend-bar {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--admin-color-panel-muted);
+}
+
+.funnel-bar i,
+.trend-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--admin-color-primary);
+}
+
+.trend-row.danger .trend-bar i {
+  background: var(--admin-color-danger);
 }
 
 @media (max-width: 1180px) {

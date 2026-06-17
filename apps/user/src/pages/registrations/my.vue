@@ -54,6 +54,7 @@
           <text>确认时间：{{ formatDateTime(item.confirmedAt) }}</text>
           <text>会议时间：{{ formatDateTime(item.conference.startsAt) }}</text>
         </view>
+        <button class="ui-button-primary credential-button" @click="goCredential(item)">查看报名凭证</button>
       </view>
     </view>
     <WechatProfilePrompt />
@@ -122,6 +123,12 @@ function statusTone(status: string): "info" | "success" | "warning" | "danger" |
   if (status === "CANCELLED") return "neutral";
   if (status === "REFUNDED") return "warning";
   return "info";
+}
+
+function goCredential(item: MyRegistrationItem) {
+  uni.navigateTo({
+    url: `/pages/registration-success/index?registrationId=${encodeURIComponent(item.id)}&orderNo=${encodeURIComponent(item.order.orderNo)}`
+  });
 }
 </script>
 
@@ -249,5 +256,10 @@ function statusTone(status: string): "info" | "success" | "warning" | "danger" |
   color: var(--ui-color-muted);
   font-size: 24rpx;
   line-height: 1.45;
+}
+
+.credential-button {
+  width: 100%;
+  margin-top: 22rpx;
 }
 </style>
