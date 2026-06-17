@@ -27,9 +27,13 @@ import { AdminMaterialsService } from "./admin-materials.service";
 import { AdminMobileController } from "./admin-mobile.controller";
 import { AdminNotificationsController, NotificationsController } from "./admin-notifications.controller";
 import { AdminNotificationsService } from "./admin-notifications.service";
+import { AdminOperationsController } from "./admin-operations.controller";
+import { AdminOperationsService } from "./admin-operations.service";
 import { AdminPaymentExceptionsController } from "./admin-payment-exceptions.controller";
 import { AdminPaymentExceptionsService } from "./admin-payment-exceptions.service";
 import { AdminPermissionGuard } from "./admin-permission.guard";
+import { PublicOperationsController } from "./public-operations.controller";
+import { PublicOperationsService } from "./public-operations.service";
 
 @Module({
   imports: [AuthModule],
@@ -38,6 +42,8 @@ import { AdminPermissionGuard } from "./admin-permission.guard";
     AdminMobileController,
     NotificationsController,
     AdminNotificationsController,
+    AdminOperationsController,
+    PublicOperationsController,
     AdminManagementController,
     AdminDashboardController,
     AdminAccessController,
@@ -65,6 +71,8 @@ import { AdminPermissionGuard } from "./admin-permission.guard";
     AdminFinanceService,
     AdminMallService,
     AdminNotificationsService,
+    AdminOperationsService,
+    PublicOperationsService,
     AdminPaymentExceptionsService,
     PrismaService
   ],

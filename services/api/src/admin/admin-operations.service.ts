@@ -1,0 +1,725 @@
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  AuditAction,
+  CheckInStatus,
+  CheckinActionType,
+  CustomerGroupMessageStatus,
+  InvoiceStatus,
+  OrderStatus,
+  PaymentProvider,
+  Prisma,
+  RefundStatus
+} from "@prisma/client";
+import { PrismaService } from "../prisma.service";
+import { CurrentAdmin } from "./current-admin";
+
+@Injectable()
+export class AdminOperationsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async getInventoryAlertRule(conferenceId: string) {
+    await this.ensureConference(conferenceId);
+    const rule = await this.prisma.inventoryAlertRule.upsert({
+      where: { conferenceId },
+      update: {},
+      create: { conferenceId }
+    });
+    return ok(formatDateFields(rule));
+  }
+
+  async updateInventoryAlertRule(conferenceId: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    await this.ensureConference(conferenceId);
+    const rule = await this.prisma.inventoryAlertRule.upsert({
+      where: { conferenceId },
+      update: {
+        ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {}),
+        ...(typeof body.thresholdRemaining !== "undefined" ? { thresholdRemaining: readNonNegativeInt(body.thresholdRemaining, "thresholdRemaining") } : {}),
+        ...(typeof body.notifyMode !== "undefined" ? { notifyMode: readRequiredString(body, "notifyMode") } : {})
+      },
+      create: {
+        conferenceId,
+        enabled: typeof body.enabled === "boolean" ? body.enabled : false,
+        thresholdRemaining: typeof body.thresholdRemaining === "undefined" ? 10 : readNonNegativeInt(body.thresholdRemaining, "thresholdRemaining"),
+        notifyMode: readOptionalString(body.notifyMode) ?? "ADMIN_ONLY"
+      }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "InventoryAlertRule", rule.id, "Update inventory alert rule", { conferenceId });
+    return ok(formatDateFields(rule));
+  }
+
+  async scanInventoryAlerts(admin: CurrentAdmin) {
+    if (!isEnabled("INVENTORY_ALERT_ENABLED")) {
+      return ok({ scanned: 0, created: 0, skippedReason: "INVENTORY_ALERT_ENABLED=false" });
+    }
+    const rules = await this.prisma.inventoryAlertRule.findMany({ where: { enabled: true }, include: { conference: { include: { skus: true } } } });
+    let created = 0;
+    for (const rule of rules) {
+      for (const sku of rule.conference.skus) {
+        const remainingStock = Math.max(0, sku.stock - sku.soldCount);
+        if (remainingStock <= rule.thresholdRemaining) {
+          await this.prisma.inventoryAlertLog.create({
+            data: {
+              conferenceId: rule.conferenceId,
+              skuId: sku.id,
+              remainingStock,
+              thresholdRemaining: rule.thresholdRemaining,
+              message: `${rule.conference.title} / ${sku.name} 剩余库存 ${remainingStock}`
+            }
+          });
+          created += 1;
+        }
+      }
+      await this.prisma.inventoryAlertRule.update({ where: { id: rule.id }, data: { lastScannedAt: new Date() } });
+    }
+    await this.writeAudit(admin, AuditAction.SYSTEM, "InventoryAlertLog", null, "Scan inventory alerts", { scanned: rules.length, created });
+    return ok({ scanned: rules.length, created });
+  }
+
+  async listInventoryAlertLogs(query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const where: Prisma.InventoryAlertLogWhereInput = {
+      ...(readOptionalString(query.conferenceId) ? { conferenceId: readOptionalString(query.conferenceId) } : {}),
+      ...(readOptionalString(query.status) ? { status: readOptionalString(query.status) } : {})
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.inventoryAlertLog.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: pageSize, include: { conference: { select: { title: true } } } }),
+      this.prisma.inventoryAlertLog.count({ where })
+    ]);
+    return ok({ items: items.map((item) => ({ ...formatDateFields(item), conferenceTitle: item.conference.title })), total, page, pageSize });
+  }
+
+  async listCustomerGroups(query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const keyword = readOptionalString(query.keyword);
+    const where: Prisma.CustomerGroupWhereInput = keyword ? { name: { contains: keyword, mode: "insensitive" } } : {};
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.customerGroup.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: pageSize }),
+      this.prisma.customerGroup.count({ where })
+    ]);
+    return ok({ items: items.map(formatDateFields), total, page, pageSize });
+  }
+
+  async createCustomerGroup(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const group = await this.prisma.customerGroup.create({
+      data: {
+        wecomChatId: readNullableString(body.wecomChatId),
+        name: readRequiredString(body, "name"),
+        ownerUserId: readNullableString(body.ownerUserId),
+        ownerName: readNullableString(body.ownerName),
+        memberCount: readOptionalNonNegativeInt(body.memberCount) ?? 0,
+        status: readOptionalString(body.status) ?? "ACTIVE",
+        remark: readNullableString(body.remark)
+      }
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "CustomerGroup", group.id, "Create customer group");
+    return ok(formatDateFields(group));
+  }
+
+  async updateCustomerGroup(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    await this.ensureCustomerGroup(id);
+    const group = await this.prisma.customerGroup.update({
+      where: { id },
+      data: {
+        ...(typeof body.wecomChatId !== "undefined" ? { wecomChatId: readNullableString(body.wecomChatId) } : {}),
+        ...(typeof body.name !== "undefined" ? { name: readRequiredString(body, "name") } : {}),
+        ...(typeof body.ownerUserId !== "undefined" ? { ownerUserId: readNullableString(body.ownerUserId) } : {}),
+        ...(typeof body.ownerName !== "undefined" ? { ownerName: readNullableString(body.ownerName) } : {}),
+        ...(typeof body.memberCount !== "undefined" ? { memberCount: readNonNegativeInt(body.memberCount, "memberCount") } : {}),
+        ...(typeof body.status !== "undefined" ? { status: readRequiredString(body, "status") } : {}),
+        ...(typeof body.remark !== "undefined" ? { remark: readNullableString(body.remark) } : {})
+      }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "CustomerGroup", group.id, "Update customer group");
+    return ok(formatDateFields(group));
+  }
+
+  async syncCustomerGroupsFromWecom(admin: CurrentAdmin) {
+    if (!isEnabled("WECOM_CUSTOMER_GROUP_ENABLED")) {
+      return ok({ synced: 0, skippedReason: "WECOM_CUSTOMER_GROUP_ENABLED=false" });
+    }
+    await this.writeAudit(admin, AuditAction.SYSTEM, "CustomerGroup", null, "Sync WeCom customer groups requested");
+    return ok({ synced: 0, skippedReason: "WeCom customer group official API adapter reserved" });
+  }
+
+  async listGroupWelcomeTemplates() {
+    const items = await this.prisma.groupWelcomeTemplate.findMany({ orderBy: { createdAt: "desc" } });
+    return ok({ items: items.map(formatDateFields) });
+  }
+
+  async createGroupWelcomeTemplate(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const item = await this.prisma.groupWelcomeTemplate.create({
+      data: { name: readRequiredString(body, "name"), contentJson: readJsonObject(body.contentJson, "contentJson"), enabled: readOptionalBoolean(body.enabled) ?? true }
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "GroupWelcomeTemplate", item.id, "Create group welcome template");
+    return ok(formatDateFields(item));
+  }
+
+  async updateGroupWelcomeTemplate(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const item = await this.prisma.groupWelcomeTemplate.update({
+      where: { id },
+      data: {
+        ...(typeof body.name !== "undefined" ? { name: readRequiredString(body, "name") } : {}),
+        ...(typeof body.contentJson !== "undefined" ? { contentJson: readJsonObject(body.contentJson, "contentJson") } : {}),
+        ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {})
+      }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "GroupWelcomeTemplate", item.id, "Update group welcome template");
+    return ok(formatDateFields(item));
+  }
+
+  async listCustomerGroupMessageTasks(query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.customerGroupMessageTask.findMany({ orderBy: { createdAt: "desc" }, skip, take: pageSize, include: { logs: true, conference: { select: { title: true } } } }),
+      this.prisma.customerGroupMessageTask.count()
+    ]);
+    return ok({ items: items.map((item) => ({ ...formatDateFields(item), conferenceTitle: item.conference?.title ?? null, logCount: item.logs.length })), total, page, pageSize });
+  }
+
+  async createCustomerGroupMessageTask(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const item = await this.prisma.customerGroupMessageTask.create({
+      data: {
+        name: readRequiredString(body, "name"),
+        conferenceId: readNullableString(body.conferenceId),
+        contentJson: readJsonObject(body.contentJson, "contentJson"),
+        targetGroupIds: readOptionalJsonArray(body.targetGroupIds),
+        status: CustomerGroupMessageStatus.DRAFT,
+        needConfirm: readOptionalBoolean(body.needConfirm) ?? true,
+        confirmDeadline: readOptionalDate(body.confirmDeadline),
+        createdById: admin.id
+      }
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "CustomerGroupMessageTask", item.id, "Create customer group message task");
+    return ok(formatDateFields(item));
+  }
+
+  async createWecomCustomerGroupTask(id: string, admin: CurrentAdmin) {
+    const task = await this.prisma.customerGroupMessageTask.findUnique({ where: { id } });
+    if (!task) throw new NotFoundException("Customer group message task not found");
+    if (!isEnabled("WECOM_CUSTOMER_GROUP_ENABLED")) {
+      const updated = await this.prisma.customerGroupMessageTask.update({ where: { id }, data: { status: CustomerGroupMessageStatus.FAILED } });
+      return ok({ task: formatDateFields(updated), result: { created: false, reason: "WECOM_CUSTOMER_GROUP_ENABLED=false" } });
+    }
+    const groupIds = readStringArray(task.targetGroupIds);
+    const groups = groupIds.length ? await this.prisma.customerGroup.findMany({ where: { id: { in: groupIds } } }) : await this.prisma.customerGroup.findMany({ take: 100 });
+    const updated = await this.prisma.customerGroupMessageTask.update({
+      where: { id },
+      data: {
+        status: CustomerGroupMessageStatus.WAITING_CONFIRM,
+        wecomTaskId: `reserved_${id}`,
+        logs: {
+          create: groups.map((group) => ({
+            groupId: group.id,
+            ownerUserId: group.ownerUserId,
+            status: "WAITING_MEMBER_CONFIRM",
+            resultJson: { officialApi: "externalcontact/add_msg_template reserved" }
+          }))
+        }
+      }
+    });
+    await this.writeAudit(admin, AuditAction.SYSTEM, "CustomerGroupMessageTask", id, "Create WeCom customer group task");
+    return ok({ task: formatDateFields(updated), result: { created: true, groupCount: groups.length } });
+  }
+
+  async cancelCustomerGroupMessageTask(id: string, admin: CurrentAdmin) {
+    const updated = await this.prisma.customerGroupMessageTask.update({ where: { id }, data: { status: CustomerGroupMessageStatus.CANCELLED } });
+    await this.writeAudit(admin, AuditAction.UPDATE, "CustomerGroupMessageTask", id, "Cancel customer group message task");
+    return ok(formatDateFields(updated));
+  }
+
+  async getCustomerGroupMessageTaskResult(id: string) {
+    const task = await this.prisma.customerGroupMessageTask.findUnique({ where: { id }, include: { logs: { include: { group: true } } } });
+    if (!task) throw new NotFoundException("Customer group message task not found");
+    return ok({
+      task: formatDateFields(task),
+      logs: task.logs.map((log) => ({ ...formatDateFields(log), groupName: log.group?.name ?? null })),
+      summary: summarizeStatuses(task.logs.map((log) => log.status))
+    });
+  }
+
+  async getKnowledgeBase(conferenceId: string) {
+    const kb = await this.prisma.knowledgeBase.upsert({
+      where: { id: await this.findOrCreateKnowledgeBaseId(conferenceId) },
+      update: {},
+      create: { conferenceId, title: "会议知识库", enabled: false }
+    });
+    return ok(formatDateFields(kb));
+  }
+
+  async createKnowledgeDocument(conferenceId: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const kb = await this.ensureKnowledgeBase(conferenceId);
+    const contentText = readRequiredString(body, "contentText");
+    const chunks = chunkText(contentText);
+    const doc = await this.prisma.knowledgeDocument.create({
+      data: {
+        knowledgeBaseId: kb.id,
+        title: readRequiredString(body, "title"),
+        sourceType: readOptionalString(body.sourceType) ?? "TEXT",
+        contentText,
+        status: "INDEXED",
+        chunkCount: chunks.length,
+        chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) }
+      }
+    });
+    await this.prisma.knowledgeBase.update({ where: { id: kb.id }, data: { enabled: true } });
+    await this.writeAudit(admin, AuditAction.CREATE, "KnowledgeDocument", doc.id, "Create knowledge document");
+    return ok(formatDateFields(doc));
+  }
+
+  async updateKnowledgeDocument(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const contentText = typeof body.contentText === "undefined" ? undefined : readRequiredString(body, "contentText");
+    const doc = await this.prisma.$transaction(async (tx) => {
+      if (contentText) await tx.knowledgeChunk.deleteMany({ where: { documentId: id } });
+      const chunks = contentText ? chunkText(contentText) : [];
+      return tx.knowledgeDocument.update({
+        where: { id },
+        data: {
+          ...(typeof body.title !== "undefined" ? { title: readRequiredString(body, "title") } : {}),
+          ...(contentText ? { contentText, chunkCount: chunks.length, chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) } } : {})
+        }
+      });
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "KnowledgeDocument", id, "Update knowledge document");
+    return ok(formatDateFields(doc));
+  }
+
+  async deleteKnowledgeDocument(id: string, admin: CurrentAdmin) {
+    const doc = await this.prisma.knowledgeDocument.delete({ where: { id } });
+    await this.writeAudit(admin, AuditAction.DELETE, "KnowledgeDocument", id, "Delete knowledge document");
+    return ok(formatDateFields(doc));
+  }
+
+  async reindexKnowledgeDocument(id: string, admin: CurrentAdmin) {
+    const doc = await this.prisma.knowledgeDocument.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException("Knowledge document not found");
+    const chunks = chunkText(doc.contentText);
+    await this.prisma.$transaction([
+      this.prisma.knowledgeChunk.deleteMany({ where: { documentId: id } }),
+      this.prisma.knowledgeDocument.update({ where: { id }, data: { status: "INDEXED", chunkCount: chunks.length, chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) } } })
+    ]);
+    await this.writeAudit(admin, AuditAction.SYSTEM, "KnowledgeDocument", id, "Reindex knowledge document");
+    return ok({ id, chunkCount: chunks.length });
+  }
+
+  async listAiQuestionLogs(conferenceId: string, query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.aiQuestionLog.findMany({ where: { conferenceId }, orderBy: { createdAt: "desc" }, skip, take: pageSize }),
+      this.prisma.aiQuestionLog.count({ where: { conferenceId } })
+    ]);
+    return ok({ items: items.map(formatDateFields), total, page, pageSize });
+  }
+
+  async listAutoReplyRules() {
+    const items = await this.prisma.autoReplyRule.findMany({ orderBy: [{ priority: "desc" }, { createdAt: "desc" }] });
+    return ok({ items: items.map(formatDateFields) });
+  }
+
+  async createAutoReplyRule(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const rule = await this.prisma.autoReplyRule.create({
+      data: {
+        knowledgeBaseId: readNullableString(body.knowledgeBaseId),
+        keyword: readRequiredString(body, "keyword"),
+        answer: readRequiredString(body, "answer"),
+        enabled: readOptionalBoolean(body.enabled) ?? true,
+        priority: readOptionalNonNegativeInt(body.priority) ?? 0
+      }
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "AutoReplyRule", rule.id, "Create auto reply rule");
+    return ok(formatDateFields(rule));
+  }
+
+  async updateAutoReplyRule(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const rule = await this.prisma.autoReplyRule.update({
+      where: { id },
+      data: {
+        ...(typeof body.keyword !== "undefined" ? { keyword: readRequiredString(body, "keyword") } : {}),
+        ...(typeof body.answer !== "undefined" ? { answer: readRequiredString(body, "answer") } : {}),
+        ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {}),
+        ...(typeof body.priority !== "undefined" ? { priority: readNonNegativeInt(body.priority, "priority") } : {})
+      }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "AutoReplyRule", id, "Update auto reply rule");
+    return ok(formatDateFields(rule));
+  }
+
+  async createCouponCampaign(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const couponIds = readRequiredStringArray(body.couponIds, "couponIds");
+    const claimCode = readOptionalString(body.claimCode) ?? generateCode("CP");
+    const campaign = await this.prisma.couponCampaign.create({
+      data: {
+        conferenceId: readNullableString(body.conferenceId),
+        name: readRequiredString(body, "name"),
+        claimCode,
+        qrScene: readOptionalString(body.qrScene) ?? `coupon:${claimCode}`,
+        enabled: readOptionalBoolean(body.enabled) ?? true,
+        totalLimit: readOptionalNonNegativeInt(body.totalLimit),
+        startAt: readOptionalDate(body.startAt),
+        endAt: readOptionalDate(body.endAt),
+        coupons: { create: couponIds.map((couponId) => ({ couponId })) }
+      },
+      include: { coupons: { include: { coupon: true } } }
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "CouponCampaign", campaign.id, "Create coupon campaign");
+    return ok(formatCouponCampaign(campaign));
+  }
+
+  async getCouponCampaign(id: string) {
+    const campaign = await this.prisma.couponCampaign.findUnique({ where: { id }, include: { coupons: { include: { coupon: true } } } });
+    if (!campaign) throw new NotFoundException("Coupon campaign not found");
+    return ok(formatCouponCampaign(campaign));
+  }
+
+  async updateCouponCampaign(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const campaign = await this.prisma.couponCampaign.update({
+      where: { id },
+      data: {
+        ...(typeof body.name !== "undefined" ? { name: readRequiredString(body, "name") } : {}),
+        ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {}),
+        ...(typeof body.totalLimit !== "undefined" ? { totalLimit: readOptionalNonNegativeInt(body.totalLimit) } : {}),
+        ...(typeof body.startAt !== "undefined" ? { startAt: readOptionalDate(body.startAt) } : {}),
+        ...(typeof body.endAt !== "undefined" ? { endAt: readOptionalDate(body.endAt) } : {})
+      },
+      include: { coupons: { include: { coupon: true } } }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "CouponCampaign", id, "Update coupon campaign");
+    return ok(formatCouponCampaign(campaign));
+  }
+
+  async generateCouponCampaignQr(id: string) {
+    const campaign = await this.prisma.couponCampaign.findUnique({ where: { id } });
+    if (!campaign) throw new NotFoundException("Coupon campaign not found");
+    return ok({
+      id,
+      claimCode: campaign.claimCode,
+      qrScene: campaign.qrScene,
+      path: `/pages/coupon/claim?claimCode=${encodeURIComponent(campaign.claimCode)}`,
+      qrPayload: `coupon:${campaign.claimCode}`
+    });
+  }
+
+  async verifyCheckin(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const credentialCode = readRequiredString(body, "credentialCode");
+    const registrationNo = credentialCode.startsWith("CONF_REG:") ? credentialCode.split(":")[2] : credentialCode;
+    const registration = await this.prisma.registration.findUnique({ where: { registrationNo }, include: { attendees: true, conference: true } });
+    if (!registration) throw new NotFoundException("Registration not found");
+    if (!registration.conference.checkInEnabled) throw new ConflictException("当前会议无需现场核销");
+    const attendee = registration.attendees.find((item) => item.checkInStatus === CheckInStatus.PENDING) ?? registration.attendees[0];
+    if (!attendee) throw new NotFoundException("Registration attendee not found");
+    return this.applyCheckin(attendee.id, CheckinActionType.VERIFY, admin, readOptionalString(body.remark));
+  }
+
+  async manualCheckin(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    return this.applyCheckin(readRequiredString(body, "attendeeId"), CheckinActionType.MANUAL, admin, readOptionalString(body.remark));
+  }
+
+  async revokeCheckin(id: string, admin: CurrentAdmin) {
+    return this.applyCheckin(id, CheckinActionType.REVOKE, admin);
+  }
+
+  async listCheckinLogs(query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.checkinLog.findMany({ orderBy: { createdAt: "desc" }, skip, take: pageSize, include: { registration: { select: { registrationNo: true, attendeeName: true } }, attendee: { select: { name: true, phone: true } } } }),
+      this.prisma.checkinLog.count()
+    ]);
+    return ok({ items: items.map(formatDateFields), total, page, pageSize });
+  }
+
+  async checkinStats(query: Record<string, unknown>) {
+    const conferenceId = readOptionalString(query.conferenceId);
+    const where = conferenceId ? { registration: { conferenceId } } : {};
+    const [total, checkedIn, pending, notRequired] = await this.prisma.$transaction([
+      this.prisma.registrationAttendee.count({ where }),
+      this.prisma.registrationAttendee.count({ where: { ...where, checkInStatus: CheckInStatus.CHECKED_IN } }),
+      this.prisma.registrationAttendee.count({ where: { ...where, checkInStatus: CheckInStatus.PENDING } }),
+      this.prisma.registrationAttendee.count({ where: { ...where, checkInStatus: CheckInStatus.NOT_REQUIRED } })
+    ]);
+    return ok({ total, checkedIn, pending, notRequired });
+  }
+
+  async createRefund(input: unknown, admin: CurrentAdmin) {
+    if (!isEnabled("REFUND_ENABLED")) return ok({ skippedReason: "REFUND_ENABLED=false" });
+    const body = readObject(input);
+    const order = await this.prisma.order.findUnique({ where: { orderNo: readRequiredString(body, "orderNo") } });
+    if (!order || order.status !== OrderStatus.PAID) throw new ConflictException("Only paid registration orders can be refunded");
+    const amountCent = readNonNegativeInt(body.amountCent, "amountCent");
+    if (amountCent <= 0 || amountCent > (order.paidAmountCent ?? order.payableAmountCent)) throw new BadRequestException("退款金额不合法");
+    const refund = await this.prisma.refund.create({ data: { refundNo: generateCode("RF"), orderNo: order.orderNo, orderId: order.id, userId: order.userId, amountCent, reason: readNullableString(body.reason), status: RefundStatus.REQUESTED } });
+    await this.writeAudit(admin, AuditAction.CREATE, "Refund", refund.id, "Create refund request");
+    return ok(formatDateFields(refund));
+  }
+
+  async listRefunds(query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.refund.findMany({ orderBy: { createdAt: "desc" }, skip, take: pageSize }),
+      this.prisma.refund.count()
+    ]);
+    return ok({ items: items.map(formatDateFields), total, page, pageSize });
+  }
+
+  async approveRefund(id: string, admin: CurrentAdmin) {
+    const refund = await this.prisma.refund.update({ where: { id }, data: { status: RefundStatus.PROCESSING, approvedAt: new Date(), provider: PaymentProvider.WECHAT } });
+    await this.writeAudit(admin, AuditAction.UPDATE, "Refund", id, "Approve refund");
+    return ok(formatDateFields(refund));
+  }
+
+  async rejectRefund(id: string, input: unknown, admin: CurrentAdmin) {
+    const refund = await this.prisma.refund.update({ where: { id }, data: { status: RefundStatus.REJECTED, rejectReason: readOptionalString(readObject(input).reason) } });
+    await this.writeAudit(admin, AuditAction.UPDATE, "Refund", id, "Reject refund");
+    return ok(formatDateFields(refund));
+  }
+
+  async queryRefund(id: string) {
+    const refund = await this.prisma.refund.findUnique({ where: { id } });
+    if (!refund) throw new NotFoundException("Refund not found");
+    return ok(formatDateFields(refund));
+  }
+
+  async listInvoices(query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.invoiceApplication.findMany({ orderBy: { createdAt: "desc" }, skip, take: pageSize }),
+      this.prisma.invoiceApplication.count()
+    ]);
+    return ok({ items: items.map(formatDateFields), total, page, pageSize });
+  }
+
+  async approveInvoice(id: string, admin: CurrentAdmin) {
+    const item = await this.prisma.invoiceApplication.update({ where: { id }, data: { status: InvoiceStatus.APPROVED } });
+    await this.writeAudit(admin, AuditAction.UPDATE, "InvoiceApplication", id, "Approve invoice");
+    return ok(formatDateFields(item));
+  }
+
+  async rejectInvoice(id: string, input: unknown, admin: CurrentAdmin) {
+    const item = await this.prisma.invoiceApplication.update({ where: { id }, data: { status: InvoiceStatus.REJECTED, rejectReason: readOptionalString(readObject(input).reason) } });
+    await this.writeAudit(admin, AuditAction.UPDATE, "InvoiceApplication", id, "Reject invoice");
+    return ok(formatDateFields(item));
+  }
+
+  async markInvoiceIssued(id: string, admin: CurrentAdmin) {
+    const item = await this.prisma.invoiceApplication.update({ where: { id }, data: { status: InvoiceStatus.ISSUED, issuedAt: new Date() } });
+    await this.writeAudit(admin, AuditAction.UPDATE, "InvoiceApplication", id, "Mark invoice issued");
+    return ok(formatDateFields(item));
+  }
+
+  async createWechatBill(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const billDate = readRequiredDate(body.billDate, "billDate");
+    const billType = readOptionalString(body.billType) ?? "TRADE";
+    const bill = await this.prisma.wechatBill.upsert({
+      where: { billDate_billType: { billDate, billType } },
+      update: {},
+      create: { billDate, billType, createdBy: admin.id, status: "CREATED" }
+    });
+    return ok(formatDateFields(bill));
+  }
+
+  async listWechatBills() {
+    const items = await this.prisma.wechatBill.findMany({ orderBy: { createdAt: "desc" } });
+    return ok({ items: items.map(formatDateFields) });
+  }
+
+  async downloadWechatBill(id: string) {
+    const bill = await this.prisma.wechatBill.update({ where: { id }, data: { status: "DOWNLOADED", storagePath: `${process.env.WECHAT_PAY_BILL_STORAGE_PATH || "storage/wechat-bills"}/${id}.csv` } });
+    return ok(formatDateFields(bill));
+  }
+
+  async reconcileWechatBill(id: string, admin: CurrentAdmin) {
+    const bill = await this.prisma.wechatBill.findUnique({ where: { id } });
+    if (!bill) throw new NotFoundException("Wechat bill not found");
+    const payments = await this.prisma.payment.findMany({ where: { status: "SUCCESS" }, include: { order: true }, take: 1000 });
+    const resultData = payments
+      .filter((payment) => payment.amountCent !== payment.order.payableAmountCent)
+      .map((payment) => ({ billId: id, orderNo: payment.order.orderNo, outTradeNo: payment.outTradeNo, transactionId: payment.transactionId, localAmountCent: payment.order.payableAmountCent, remoteAmountCent: payment.amountCent, type: "AMOUNT_MISMATCH", detailJson: { source: "local-lightweight" } }));
+    await this.prisma.reconciliationResult.createMany({ data: resultData });
+    const updated = await this.prisma.wechatBill.update({ where: { id }, data: { status: "RECONCILED", summaryJson: { checkedPayments: payments.length, differenceCount: resultData.length } } });
+    await this.writeAudit(admin, AuditAction.SYSTEM, "WechatBill", id, "Reconcile WeChat bill", { differenceCount: resultData.length });
+    return ok(formatDateFields(updated));
+  }
+
+  async listReconciliationResults(query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.reconciliationResult.findMany({ orderBy: { createdAt: "desc" }, skip, take: pageSize }),
+      this.prisma.reconciliationResult.count()
+    ]);
+    return ok({ items: items.map(formatDateFields), total, page, pageSize });
+  }
+
+  private async applyCheckin(attendeeId: string, action: CheckinActionType, admin: CurrentAdmin, remark?: string) {
+    const attendee = await this.prisma.registrationAttendee.findUnique({ where: { id: attendeeId }, include: { registration: { include: { conference: true } } } });
+    if (!attendee) throw new NotFoundException("Registration attendee not found");
+    if (!attendee.registration.conference.checkInEnabled) throw new ConflictException("当前会议无需现场核销");
+    const afterStatus = action === CheckinActionType.REVOKE ? CheckInStatus.PENDING : CheckInStatus.CHECKED_IN;
+    if (action !== CheckinActionType.REVOKE && attendee.checkInStatus === CheckInStatus.CHECKED_IN) throw new ConflictException("参会人已核销，不能重复核销");
+    if (action === CheckinActionType.REVOKE && attendee.checkInStatus !== CheckInStatus.CHECKED_IN) throw new ConflictException("仅已核销记录可撤销");
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const next = await tx.registrationAttendee.update({ where: { id: attendeeId }, data: { checkInStatus: afterStatus, checkedInAt: afterStatus === CheckInStatus.CHECKED_IN ? new Date() : null, checkedInBy: afterStatus === CheckInStatus.CHECKED_IN ? admin.id : null } });
+      await tx.checkinLog.create({ data: { attendeeId, registrationId: attendee.registrationId, action, beforeStatus: attendee.checkInStatus, afterStatus, operatorId: admin.id, remark } });
+      return next;
+    });
+    return ok(formatDateFields(updated));
+  }
+
+  private async ensureConference(id: string) {
+    const conference = await this.prisma.conference.findUnique({ where: { id }, select: { id: true } });
+    if (!conference) throw new NotFoundException("Conference not found");
+  }
+
+  private async ensureCustomerGroup(id: string) {
+    const group = await this.prisma.customerGroup.findUnique({ where: { id }, select: { id: true } });
+    if (!group) throw new NotFoundException("Customer group not found");
+  }
+
+  private async findOrCreateKnowledgeBaseId(conferenceId: string) {
+    const existing = await this.prisma.knowledgeBase.findFirst({ where: { conferenceId }, select: { id: true } });
+    if (existing) return existing.id;
+    const created = await this.prisma.knowledgeBase.create({ data: { conferenceId, title: "会议知识库", enabled: false }, select: { id: true } });
+    return created.id;
+  }
+
+  private async ensureKnowledgeBase(conferenceId: string) {
+    const id = await this.findOrCreateKnowledgeBaseId(conferenceId);
+    return this.prisma.knowledgeBase.findUniqueOrThrow({ where: { id } });
+  }
+
+  private writeAudit(admin: CurrentAdmin, action: AuditAction, entityType: string, entityId: string | null, summary: string, metadataJson?: Prisma.InputJsonValue) {
+    return this.prisma.auditLog.create({ data: { adminUserId: admin.id, action, entityType, entityId, summary, metadataJson } });
+  }
+}
+
+function ok<T>(data: T) {
+  return { code: "OK" as const, message: "ok" as const, data };
+}
+
+function formatDateFields(item: Record<string, unknown>): Record<string, unknown> {
+  const output: Record<string, unknown> = { ...item };
+  for (const key of Object.keys(output)) {
+    const value = output[key];
+    if (value instanceof Date) output[key] = value.toISOString();
+  }
+  return output;
+}
+
+function formatCouponCampaign(campaign: Prisma.CouponCampaignGetPayload<{ include: { coupons: { include: { coupon: true } } } }>) {
+  return {
+    ...formatDateFields(campaign),
+    coupons: campaign.coupons.map((item) => ({ id: item.coupon.id, code: item.coupon.code, name: item.coupon.name }))
+  };
+}
+
+function summarizeStatuses(statuses: string[]) {
+  return statuses.reduce<Record<string, number>>((summary, status) => ({ ...summary, [status]: (summary[status] ?? 0) + 1 }), {});
+}
+
+function chunkText(text: string): string[] {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+  const chunks: string[] = [];
+  for (let index = 0; index < normalized.length; index += 500) chunks.push(normalized.slice(index, index + 500));
+  return chunks;
+}
+
+function extractKeywords(text: string): Prisma.InputJsonArray {
+  return Array.from(new Set(text.split(/[\s,，。！？；;:：]+/).filter((word) => word.length >= 2).slice(0, 20)));
+}
+
+function generateCode(prefix: string): string {
+  return `${prefix}${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
+
+function isEnabled(name: string): boolean {
+  return process.env[name] === "true";
+}
+
+function readObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new BadRequestException("请求体格式不正确");
+  return value as Record<string, unknown>;
+}
+
+function readRequiredString(body: Record<string, unknown>, key: string): string {
+  const value = body[key];
+  if (typeof value !== "string" || !value.trim()) throw new BadRequestException(`${key} 不能为空`);
+  return value.trim();
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readNullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readBoolean(value: unknown, key: string): boolean {
+  if (typeof value !== "boolean") throw new BadRequestException(`${key} 必须是布尔值`);
+  return value;
+}
+
+function readOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function readNonNegativeInt(value: unknown, key: string): number {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number.parseInt(value, 10) : Number.NaN;
+  if (!Number.isInteger(parsed) || parsed < 0) throw new BadRequestException(`${key} 必须是非负整数`);
+  return parsed;
+}
+
+function readOptionalNonNegativeInt(value: unknown): number | undefined {
+  return typeof value === "undefined" || value === null || value === "" ? undefined : readNonNegativeInt(value, "value");
+}
+
+function readJsonObject(value: unknown, key: string): Prisma.InputJsonObject {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new BadRequestException(`${key} 必须是 JSON 对象`);
+  return value as Prisma.InputJsonObject;
+}
+
+function readOptionalJsonArray(value: unknown): Prisma.InputJsonArray | undefined {
+  if (typeof value === "undefined" || value === null) return undefined;
+  if (!Array.isArray(value)) throw new BadRequestException("字段必须是数组");
+  return value as Prisma.InputJsonArray;
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function readRequiredStringArray(value: unknown, key: string): string[] {
+  const items = readStringArray(value);
+  if (items.length === 0) throw new BadRequestException(`${key} 不能为空`);
+  return items;
+}
+
+function readOptionalDate(value: unknown): Date | undefined {
+  if (typeof value === "undefined" || value === null || value === "") return undefined;
+  return readRequiredDate(value, "date");
+}
+
+function readRequiredDate(value: unknown, key: string): Date {
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) throw new BadRequestException(`${key} 日期格式不正确`);
+  return date;
+}
+
+function readPage(query: Record<string, unknown>) {
+  const page = Math.max(1, readOptionalNonNegativeInt(query.page) ?? 1);
+  const pageSize = Math.min(100, Math.max(1, readOptionalNonNegativeInt(query.pageSize) ?? 20));
+  return { page, pageSize, skip: (page - 1) * pageSize };
+}

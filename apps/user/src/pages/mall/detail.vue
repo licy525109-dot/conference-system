@@ -17,10 +17,10 @@
       </view>
 
       <ExtensionStatusNotice
-        status="商品支付后续开放"
-        title="当前仅支持加入购物车"
-        description="商品详情用于展示和收藏，暂不提供立即购买、商品支付、发货履约入口。"
-        tone="warning"
+        status="商城闭环"
+        title="商城订单独立履约"
+        description="商城订单与会议报名订单分开管理，商品金额以后端库存和规格价格计算为准。"
+        tone="info"
       />
 
       <view class="content">
@@ -53,18 +53,27 @@
           <text class="section-title">商品说明</text>
           <text class="muted">{{ descriptionText }}</text>
         </view>
+        <view class="receiver-card ui-card">
+          <text class="section-title">收货信息</text>
+          <input v-model="receiver.name" class="field" placeholder="收货人" />
+          <input v-model="receiver.phone" class="field" placeholder="手机号" />
+          <input v-model="receiver.address" class="field" placeholder="收货地址" />
+        </view>
       </view>
     </template>
     <EmptyState v-else title="商品不存在" description="该商品可能已下架或暂未开放展示。" mark="商" action-text="返回商城" @action="goMall" />
 
     <view v-if="product" class="bottom-actions">
       <view class="bottom-copy">
-        <text class="bottom-title">商品支付后续开放</text>
-        <text class="bottom-note">加入购物车不会进入商品支付</text>
+        <text class="bottom-title">{{ selectedSku ? `¥${formatCent(selectedSku.priceCent * quantity)}` : "请选择规格" }}</text>
+        <text class="bottom-note">商城订单独立管理</text>
       </view>
       <button class="ui-button-secondary action-button" @click="goCart">购物车</button>
       <button class="ui-button-primary action-button" :disabled="adding || !canAddProduct" @click="addToCart">
         {{ adding ? "加入中..." : "加入购物车" }}
+      </button>
+      <button class="ui-button-primary action-button" :disabled="buying || !canAddProduct" @click="buyNow">
+        {{ buying ? "下单中..." : "立即下单" }}
       </button>
     </view>
   </view>
@@ -82,6 +91,7 @@ import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { addProductCartItem } from "@/services/cart";
 import { getProductDetail, type Product, type ProductSku } from "@/services/mall";
+import { createMallOrder } from "@/services/operations";
 
 const productId = ref("");
 const product = ref<Product | null>(null);
@@ -90,6 +100,8 @@ const error = ref("");
 const selectedSkuId = ref("");
 const quantity = ref(1);
 const adding = ref(false);
+const buying = ref(false);
+const receiver = ref({ name: "", phone: "", address: "" });
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("mall-detail");
 const heroImage = computed(() => product.value?.coverImageUrl || product.value?.images[0]?.url || "");
 const selectedSku = computed(() => product.value?.skus.find((item) => item.id === selectedSkuId.value) ?? null);
@@ -124,6 +136,33 @@ async function load() {
     error.value = "商品详情加载失败，请稍后重试";
   } finally {
     loading.value = false;
+  }
+}
+
+async function buyNow() {
+  if (!canAddProduct.value || !selectedSkuId.value) {
+    uni.showToast({ title: "请选择可购买规格", icon: "none" });
+    return;
+  }
+  if (!receiver.value.name || !receiver.value.phone || !receiver.value.address) {
+    uni.showToast({ title: "请填写收货信息", icon: "none" });
+    return;
+  }
+  buying.value = true;
+  try {
+    await createMallOrder({
+      items: [{ skuId: selectedSkuId.value, quantity: quantity.value }],
+      receiverName: receiver.value.name,
+      receiverPhone: receiver.value.phone,
+      receiverAddress: receiver.value.address
+    });
+    uni.showToast({ title: "订单已创建", icon: "success" });
+    uni.navigateTo({ url: "/pages/mall/orders" });
+  } catch (err) {
+    console.error("[MALL_CREATE_ORDER_ERROR]", err);
+    uni.showToast({ title: "下单失败，请检查商城开关", icon: "none" });
+  } finally {
+    buying.value = false;
   }
 }
 
@@ -277,8 +316,24 @@ function toDescriptionText(value: unknown): string {
 }
 
 .description-card,
-.quantity-box {
+.quantity-box,
+.receiver-card {
   padding: 24rpx;
+}
+
+.receiver-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.field {
+  min-height: 78rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid var(--ui-color-border);
+  border-radius: var(--ui-radius-md);
+  background: #fff;
+  font-size: 26rpx;
 }
 
 .quantity-box {

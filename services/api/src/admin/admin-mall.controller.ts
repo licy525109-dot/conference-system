@@ -51,4 +51,22 @@ export class AdminMallController {
   listOrders(@Query() query: Record<string, unknown>) {
     return this.mallService.listOrders(query);
   }
+
+  @Post("orders/:id/ship")
+  @RequireAdminPermissions("mall:write")
+  shipOrder(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.mallService.shipOrder(id, body, request.currentAdmin!);
+  }
+
+  @Post("orders/:id/verify")
+  @RequireAdminPermissions("mall:write")
+  verifyOrder(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.mallService.verifyOrder(id, request.currentAdmin!);
+  }
+
+  @Get("orders-export")
+  @RequireAdminPermissions("mall:view")
+  exportOrders() {
+    return this.mallService.exportOrders();
+  }
 }

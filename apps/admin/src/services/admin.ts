@@ -664,3 +664,129 @@ export function createProductSku(productId: string, input: Record<string, unknow
 export function listMallOrders(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
   return apiRequest<ApiList<MallOrder>>(`/admin/mall/orders${toQuery(params)}`);
 }
+
+export function shipMallOrder(id: string, input: Record<string, unknown>) {
+  return apiRequest(`/admin/mall/orders/${encodeURIComponent(id)}/ship`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function verifyMallOrder(id: string) {
+  return apiRequest(`/admin/mall/orders/${encodeURIComponent(id)}/verify`, { method: "POST" });
+}
+
+export function getInventoryAlertRule(conferenceId: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/inventory-alert-rule`);
+}
+
+export function updateInventoryAlertRule(conferenceId: string, input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/inventory-alert-rule`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function scanInventoryAlerts() {
+  return apiRequest<Record<string, unknown>>("/admin/inventory-alerts/scan", { method: "POST" });
+}
+
+export function listInventoryAlertLogs(params: { page?: number; pageSize?: number; conferenceId?: string; status?: string }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/inventory-alert-logs${toQuery(params)}`);
+}
+
+export function listCustomerGroups(params: { page?: number; pageSize?: number; keyword?: string }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/customer-groups${toQuery(params)}`);
+}
+
+export function createCustomerGroup(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/customer-groups", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function syncCustomerGroupsFromWecom() {
+  return apiRequest<Record<string, unknown>>("/admin/customer-groups/sync-wecom", { method: "POST" });
+}
+
+export function listCustomerGroupMessageTasks(params: { page?: number; pageSize?: number }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/customer-group-message-tasks${toQuery(params)}`);
+}
+
+export function createCustomerGroupMessageTask(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/customer-group-message-tasks", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function createWecomCustomerGroupTask(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/customer-group-message-tasks/${encodeURIComponent(id)}/create-wecom-task`, { method: "POST" });
+}
+
+export function getKnowledgeBase(conferenceId: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-base`);
+}
+
+export function createKnowledgeDocument(conferenceId: string, input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-documents`, { method: "POST", body: JSON.stringify(input) });
+}
+
+export function createCouponCampaign(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/coupon-campaigns", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function generateCouponCampaignQr(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/coupon-campaigns/${encodeURIComponent(id)}/generate-qr`, { method: "POST" });
+}
+
+export function verifyCheckin(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/checkin/verify", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function manualCheckin(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/checkin/manual", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function listCheckinLogs(params: { page?: number; pageSize?: number }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/checkin/logs${toQuery(params)}`);
+}
+
+export function getCheckinStats(params: { conferenceId?: string } = {}) {
+  return apiRequest<Record<string, unknown>>(`/admin/checkin/stats${toQuery(params)}`);
+}
+
+export function listRefunds(params: { page?: number; pageSize?: number }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/refunds${toQuery(params)}`);
+}
+
+export function createRefund(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/refunds", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function approveRefund(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/refunds/${encodeURIComponent(id)}/approve`, { method: "POST" });
+}
+
+export function listInvoices(params: { page?: number; pageSize?: number }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/invoices${toQuery(params)}`);
+}
+
+export function approveInvoice(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/invoices/${encodeURIComponent(id)}/approve`, { method: "POST" });
+}
+
+export function markInvoiceIssued(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/invoices/${encodeURIComponent(id)}/mark-issued`, { method: "POST" });
+}
+
+export function createWechatBill(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/finance/wechat-bills", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function listWechatBills() {
+  return apiRequest<{ items: Record<string, unknown>[] }>("/admin/finance/wechat-bills");
+}
+
+export function reconcileWechatBill(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/finance/wechat-bills/${encodeURIComponent(id)}/reconcile`, { method: "POST" });
+}
+
+export function listReconciliationResults(params: { page?: number; pageSize?: number }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/finance/reconciliation-results${toQuery(params)}`);
+}
