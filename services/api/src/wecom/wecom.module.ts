@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AdminModule } from "../admin/admin.module";
 import { PrismaService } from "../prisma.service";
 import { WecomClientAdapter } from "./adapters/wecom-client.adapter";
 import { AdminWecomCallbackEventsController } from "./admin-wecom-callback-events.controller";
@@ -15,6 +16,7 @@ import { WecomTokenService } from "./services/wecom-token.service";
 import { WecomWelcomeTemplateService } from "./services/wecom-welcome-template.service";
 
 @Module({
+  imports: [AdminModule],
   controllers: [
     AdminWecomConfigController,
     AdminWecomCustomerGroupsController,
