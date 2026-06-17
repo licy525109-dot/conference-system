@@ -153,6 +153,7 @@ export class AdminMembersService {
         skuId: readNullableString(body.skuId),
         discountPercent: readOptionalInt(body, "discountPercent"),
         discountCent: readOptionalInt(body, "discountCent"),
+        fixedPriceCent: readOptionalInt(body, "fixedPriceCent"),
         enabled: readOptionalBoolean(body, "enabled") ?? true,
         startAt: readOptionalDate(body, "startAt"),
         endAt: readOptionalDate(body, "endAt")

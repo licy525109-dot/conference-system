@@ -36,6 +36,7 @@ export interface RegistrationQuoteResponse {
   items?: RegistrationQuoteItem[];
   discounts?: PriceDiscount[];
   messages?: string[];
+  memberPricing?: MemberPricingSummary;
 }
 
 export interface RegistrationOrderResponse extends RegistrationQuoteResponse {
@@ -50,6 +51,26 @@ export interface RegistrationQuoteItem {
   quantity: number;
   unitPriceCent: number;
   subtotalCent: number;
+  memberUnitPriceCent?: number;
+  memberSubtotalCent?: number;
+  memberDiscountAmountCent?: number;
+}
+
+export interface MemberPricingSummary {
+  levelId: string;
+  levelCode: string;
+  levelName: string;
+  discountAmountCent: number;
+  items: MemberPricingItemSummary[];
+}
+
+export interface MemberPricingItemSummary {
+  skuId: string;
+  skuName: string;
+  quantity: number;
+  originalUnitPriceCent: number;
+  memberUnitPriceCent: number;
+  discountAmountCent: number;
 }
 
 type RegistrationFormData = Record<string, Prisma.InputJsonValue>;
@@ -69,7 +90,7 @@ const EXPIRED_WECHAT_LOGIN_MESSAGE = "登录状态已过期，请重新进入小
 export class RegistrationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async quote(input: unknown): Promise<ApiResponse<RegistrationQuoteResponse>> {
+  async quote(input: unknown, currentUser?: CurrentUser): Promise<ApiResponse<RegistrationQuoteResponse>> {
     const request = parseBaseRegistrationRequest(input);
     const conference = await this.ensurePublishedConference(request.conferenceId);
     enforceTicketLimit(conference, request.totalQuantity);
@@ -78,7 +99,7 @@ export class RegistrationService {
       conferenceId: request.conferenceId,
       items: pricedItems,
       couponCode: readOptionalCouponCode(input),
-      userId: null
+      userId: currentUser?.id ?? null
     });
     const firstItem = pricedItems[0];
     if (!firstItem) {
@@ -96,9 +117,12 @@ export class RegistrationService {
     };
 
     if (request.usesItemsShape) {
-      response.items = pricedItems;
+      response.items = pricing.items;
       response.discounts = pricing.discounts;
       response.messages = pricing.messages;
+    }
+    if (pricing.memberPricing) {
+      response.memberPricing = pricing.memberPricing;
     }
 
     return ok(response);
@@ -136,7 +160,7 @@ export class RegistrationService {
       userId: currentUser.id
     });
     const expiredAt = new Date(this.getCurrentTime().getTime() + ORDER_EXPIRES_IN_MS);
-    const snapshotItems = pricedItems.map((item) => ({ ...item })) as Prisma.InputJsonArray;
+    const snapshotItems = pricing.items.map((item) => ({ ...item })) as Prisma.InputJsonArray;
     const snapshotAttendees = attendees.map((attendee) => ({ ...attendee })) as Prisma.InputJsonArray;
     const snapshot = {
       conferenceId: request.conferenceId,
@@ -145,6 +169,8 @@ export class RegistrationService {
       attendeeName,
       phone,
       formData: primaryAttendee.formData,
+      pricing: serializePricingSnapshot(pricing),
+      memberPricing: pricing.memberPricing ? serializeMemberPricingSnapshot(pricing.memberPricing) : null,
       ...(request.usesItemsShape ? { items: snapshotItems, attendees: snapshotAttendees } : {})
     } satisfies Prisma.InputJsonObject;
 
@@ -152,7 +178,7 @@ export class RegistrationService {
       userId: currentUser.id,
       conferenceId: request.conferenceId,
       skuId: primaryItem.skuId,
-      items: pricedItems,
+      items: pricing.items,
       attendeeName,
       phone,
       expiredAt,
@@ -179,9 +205,12 @@ export class RegistrationService {
     };
 
     if (request.usesItemsShape) {
-      response.items = pricedItems;
+      response.items = pricing.items;
       response.discounts = pricing.discounts;
       response.messages = pricing.messages;
+    }
+    if (pricing.memberPricing) {
+      response.memberPricing = pricing.memberPricing;
     }
 
     return ok(response);
@@ -312,14 +341,20 @@ export class RegistrationService {
     userId: string | null;
   }): Promise<PriceCalculation> {
     const originAmountCent = calculateAmount(input.items).originAmountCent;
+    const memberPricing = await this.applyMemberPricing(input.userId, input.conferenceId, input.items);
+    const pricedItems = memberPricing?.items ?? input.items;
+    const discountBaseAmountCent = calculateEffectiveAmount(pricedItems);
     const totalQuantity = input.items.reduce((sum, item) => sum + item.quantity, 0);
-    const promotion = await this.findBestPromotion(input.conferenceId, input.items, originAmountCent, totalQuantity);
+    const promotion = await this.findBestPromotion(input.conferenceId, pricedItems, discountBaseAmountCent, totalQuantity);
     const coupon = input.couponCode
-      ? await this.findApplicableCoupon(input.couponCode, input.conferenceId, input.items, originAmountCent, totalQuantity, input.userId)
+      ? await this.findApplicableCoupon(input.couponCode, input.conferenceId, pricedItems, discountBaseAmountCent, totalQuantity, input.userId)
       : null;
     const canStack = Boolean(promotion && coupon && promotion.stackableWithCoupon && coupon.stackableWithPromotion);
     const discounts: PriceDiscount[] = [];
     const messages: string[] = [];
+    if (memberPricing?.discount) {
+      discounts.push(memberPricing.discount);
+    }
 
     if (promotion && (!coupon || canStack || promotion.discount.amountCent >= coupon.discount.amountCent)) {
       discounts.push(promotion.discount);
@@ -340,16 +375,102 @@ export class RegistrationService {
       originAmountCent,
       discountAmountCent,
       payableAmountCent: Math.max(0, originAmountCent - discountAmountCent),
+      memberBaseAmountCent: discountBaseAmountCent,
+      items: pricedItems,
       discounts,
       messages,
+      memberPricing: memberPricing?.summary ?? null,
       couponId: discounts.some((discount) => discount.couponId === coupon?.id) ? coupon?.id ?? null : null
+    };
+  }
+
+  private async applyMemberPricing(
+    userId: string | null,
+    conferenceId: string,
+    items: PricedRegistrationItem[]
+  ): Promise<AppliedMemberPricing | null> {
+    if (!userId) {
+      return null;
+    }
+    const prismaAny = this.prisma as PrismaService & {
+      userMembership?: {
+        findMany(args: unknown): Promise<UserMembershipRecord[]>;
+      };
+      membershipPriceRule?: {
+        findMany(args: unknown): Promise<MembershipPriceRuleRecord[]>;
+      };
+    };
+    if (!prismaAny.userMembership?.findMany || !prismaAny.membershipPriceRule?.findMany) {
+      return null;
+    }
+
+    const now = this.getCurrentTime();
+    const memberships = await prismaAny.userMembership.findMany({
+      where: {
+        userId,
+        status: "ACTIVE",
+        startsAt: { lte: now },
+        OR: [{ endsAt: null }, { endsAt: { gte: now } }],
+        level: { enabled: true }
+      },
+      include: { level: true }
+    });
+    const membership = memberships
+      .filter((item) => item.level.enabled && item.startsAt <= now && (!item.endsAt || item.endsAt >= now))
+      .sort((left, right) => right.level.rank - left.level.rank || right.createdAt.getTime() - left.createdAt.getTime())[0];
+    if (!membership) {
+      return null;
+    }
+
+    const rules = (
+      await prismaAny.membershipPriceRule.findMany({
+        where: {
+          levelId: membership.levelId,
+          enabled: true,
+          OR: [{ conferenceId }, { conferenceId: null }]
+        }
+      })
+    ).filter((rule) => isMemberRuleApplicable(rule, now, conferenceId));
+
+    const pricedItems = items.map((item) => applyBestMemberRuleToItem(item, rules));
+    const itemSummaries: MemberPricingItemSummary[] = pricedItems
+      .filter((item) => (item.memberDiscountAmountCent ?? 0) > 0 && typeof item.memberUnitPriceCent === "number")
+      .map((item) => ({
+        skuId: item.skuId,
+        skuName: item.skuName,
+        quantity: item.quantity,
+        originalUnitPriceCent: item.unitPriceCent,
+        memberUnitPriceCent: item.memberUnitPriceCent ?? item.unitPriceCent,
+        discountAmountCent: item.memberDiscountAmountCent ?? 0
+      }));
+    const discountAmountCent = itemSummaries.reduce((sum, item) => sum + item.discountAmountCent, 0);
+    if (discountAmountCent <= 0) {
+      return null;
+    }
+
+    const summary: MemberPricingSummary = {
+      levelId: membership.level.id,
+      levelCode: membership.level.code,
+      levelName: membership.level.name,
+      discountAmountCent,
+      items: itemSummaries
+    };
+    return {
+      items: pricedItems,
+      summary,
+      discount: {
+        type: DiscountType.MEMBER_PRICE,
+        title: `${membership.level.name}会员价`,
+        amountCent: discountAmountCent,
+        snapshot: serializeMemberPricingSnapshot(summary)
+      }
     };
   }
 
   private async findBestPromotion(
     conferenceId: string,
     items: PricedRegistrationItem[],
-    originAmountCent: number,
+    discountBaseAmountCent: number,
     totalQuantity: number
   ): Promise<AppliedPromotion | null> {
     const prismaAny = this.prisma as PrismaService & {
@@ -372,13 +493,13 @@ export class RegistrationService {
 
     const applicable = rules
       .filter((rule) => isWithinWindow(rule, now))
-      .filter((rule) => promotionMatches(rule, items, originAmountCent, totalQuantity))
+      .filter((rule) => promotionMatches(rule, items, discountBaseAmountCent, totalQuantity))
       .map((rule) => ({
         rule,
         discount: {
           type: DiscountType.FULL_REDUCTION,
           title: rule.name,
-          amountCent: Math.min(rule.discountAmountCent, originAmountCent),
+          amountCent: Math.min(rule.discountAmountCent, discountBaseAmountCent),
           promotionRuleId: rule.id,
           snapshot: serializePromotionSnapshot(rule)
         } satisfies PriceDiscount
@@ -393,7 +514,7 @@ export class RegistrationService {
     code: string,
     conferenceId: string,
     items: PricedRegistrationItem[],
-    originAmountCent: number,
+    discountBaseAmountCent: number,
     totalQuantity: number,
     userId: string | null
   ): Promise<AppliedCoupon | null> {
@@ -413,7 +534,7 @@ export class RegistrationService {
     if (!coupon) {
       throw new BadRequestException("优惠券不存在");
     }
-    validateCoupon(coupon, this.getCurrentTime(), conferenceId, items, originAmountCent, totalQuantity);
+    validateCoupon(coupon, this.getCurrentTime(), conferenceId, items, discountBaseAmountCent, totalQuantity);
 
     if (prismaAny.couponRedemption?.count) {
       if (typeof coupon.totalLimit === "number") {
@@ -434,7 +555,7 @@ export class RegistrationService {
       }
     }
 
-    const scopedAmountCent = filterAllowedItems(items, coupon.allowedSkuIds).reduce((sum, item) => sum + item.subtotalCent, 0);
+    const scopedAmountCent = filterAllowedItems(items, coupon.allowedSkuIds).reduce((sum, item) => sum + effectiveSubtotalCent(item), 0);
     const amountCent = calculateCouponAmount(coupon, scopedAmountCent);
     return {
       ...coupon,
@@ -604,6 +725,14 @@ function calculateAmount(items: PricedRegistrationItem[]) {
   } as const;
 }
 
+function calculateEffectiveAmount(items: PricedRegistrationItem[]): number {
+  return items.reduce((sum, item) => sum + effectiveSubtotalCent(item), 0);
+}
+
+function effectiveSubtotalCent(item: PricedRegistrationItem): number {
+  return item.memberSubtotalCent ?? item.subtotalCent;
+}
+
 function readOptionalCouponCode(input: unknown): string | null {
   if (!isRecord(input) || typeof input.couponCode !== "string") {
     return null;
@@ -619,12 +748,12 @@ function isWithinWindow(record: { startAt: Date | null; endAt: Date | null }, no
 function promotionMatches(
   rule: PromotionRuleRecord,
   items: PricedRegistrationItem[],
-  originAmountCent: number,
+  discountBaseAmountCent: number,
   totalQuantity: number
 ): boolean {
   const scopedItems = filterAllowedItems(items, rule.allowedSkuIds);
   const scopedQuantity = scopedItems.reduce((sum, item) => sum + item.quantity, 0);
-  const scopedAmount = scopedItems.reduce((sum, item) => sum + item.subtotalCent, 0);
+  const scopedAmount = scopedItems.reduce((sum, item) => sum + effectiveSubtotalCent(item), 0);
   if (scopedItems.length === 0) {
     return false;
   }
@@ -634,7 +763,7 @@ function promotionMatches(
   if (typeof rule.minAmountCent === "number" && scopedAmount < rule.minAmountCent) {
     return false;
   }
-  return totalQuantity > 0 && originAmountCent > 0;
+  return totalQuantity > 0 && discountBaseAmountCent > 0;
 }
 
 function validateCoupon(
@@ -642,7 +771,7 @@ function validateCoupon(
   now: Date,
   conferenceId: string,
   items: PricedRegistrationItem[],
-  originAmountCent: number,
+  discountBaseAmountCent: number,
   totalQuantity: number
 ): void {
   if (!coupon.enabled) {
@@ -660,7 +789,7 @@ function validateCoupon(
   if (filterAllowedItems(items, coupon.allowedSkuIds).length === 0) {
     throw new BadRequestException("优惠券不适用于当前票种");
   }
-  if (typeof coupon.minAmountCent === "number" && originAmountCent < coupon.minAmountCent) {
+  if (typeof coupon.minAmountCent === "number" && discountBaseAmountCent < coupon.minAmountCent) {
     throw new BadRequestException("未达到优惠券使用金额");
   }
   if (typeof coupon.minQuantity === "number" && totalQuantity < coupon.minQuantity) {
@@ -711,6 +840,84 @@ function serializeCouponSnapshot(coupon: CouponRecord): Prisma.InputJsonObject {
     conferenceId: coupon.conferenceId,
     allowedSkuIds: readAllowedSkuIds(coupon.allowedSkuIds)
   };
+}
+
+function serializeMemberPricingSnapshot(summary: MemberPricingSummary): Prisma.InputJsonObject {
+  return {
+    levelId: summary.levelId,
+    levelCode: summary.levelCode,
+    levelName: summary.levelName,
+    discountAmountCent: summary.discountAmountCent,
+    items: summary.items.map((item) => ({ ...item }))
+  };
+}
+
+function serializePricingSnapshot(pricing: PriceCalculation): Prisma.InputJsonObject {
+  return {
+    originAmountCent: pricing.originAmountCent,
+    memberBaseAmountCent: pricing.memberBaseAmountCent,
+    discountAmountCent: pricing.discountAmountCent,
+    payableAmountCent: pricing.payableAmountCent,
+    discounts: pricing.discounts.map((discount) => ({
+      type: discount.type,
+      title: discount.title,
+      amountCent: discount.amountCent,
+      couponId: discount.couponId ?? null,
+      promotionRuleId: discount.promotionRuleId ?? null,
+      snapshot: discount.snapshot ?? null
+    }))
+  };
+}
+
+function isMemberRuleApplicable(rule: MembershipPriceRuleRecord, now: Date, conferenceId: string): boolean {
+  if (!rule.enabled || !isWithinWindow(rule, now)) {
+    return false;
+  }
+  return !rule.conferenceId || rule.conferenceId === conferenceId;
+}
+
+function applyBestMemberRuleToItem(item: PricedRegistrationItem, rules: MembershipPriceRuleRecord[]): PricedRegistrationItem {
+  const candidates = rules
+    .filter((rule) => !rule.skuId || rule.skuId === item.skuId)
+    .map((rule) => {
+      const memberUnitPriceCent = calculateMemberUnitPrice(item.unitPriceCent, rule);
+      const discountAmountCent = Math.max(0, item.unitPriceCent - memberUnitPriceCent) * item.quantity;
+      return { rule, memberUnitPriceCent, discountAmountCent };
+    })
+    .filter((candidate) => candidate.discountAmountCent > 0)
+    .sort(
+      (left, right) =>
+        right.discountAmountCent - left.discountAmountCent ||
+        Number(Boolean(right.rule.skuId)) - Number(Boolean(left.rule.skuId)) ||
+        Number(Boolean(right.rule.conferenceId)) - Number(Boolean(left.rule.conferenceId))
+    );
+  const best = candidates[0];
+  if (!best) {
+    return item;
+  }
+  return {
+    ...item,
+    memberUnitPriceCent: best.memberUnitPriceCent,
+    memberSubtotalCent: best.memberUnitPriceCent * item.quantity,
+    memberDiscountAmountCent: best.discountAmountCent
+  };
+}
+
+function calculateMemberUnitPrice(originalUnitPriceCent: number, rule: MembershipPriceRuleRecord): number {
+  if (typeof rule.fixedPriceCent === "number") {
+    return clampCent(rule.fixedPriceCent, originalUnitPriceCent);
+  }
+  if (typeof rule.discountPercent === "number") {
+    return clampCent(Math.floor((originalUnitPriceCent * rule.discountPercent) / 10000), originalUnitPriceCent);
+  }
+  if (typeof rule.discountCent === "number") {
+    return clampCent(originalUnitPriceCent - rule.discountCent, originalUnitPriceCent);
+  }
+  return originalUnitPriceCent;
+}
+
+function clampCent(value: number, maxCent: number): number {
+  return Math.max(0, Math.min(maxCent, value));
 }
 
 function filterAllowedItems(items: PricedRegistrationItem[], allowedSkuIds: Prisma.JsonValue | null): PricedRegistrationItem[] {
@@ -982,14 +1189,20 @@ interface RegistrationAttendeeInput {
 
 interface PricedRegistrationItem extends RegistrationQuoteItem {
   subtotalCent: number;
+  memberUnitPriceCent?: number;
+  memberSubtotalCent?: number;
+  memberDiscountAmountCent?: number;
 }
 
 interface PriceCalculation {
   originAmountCent: number;
+  memberBaseAmountCent: number;
   discountAmountCent: number;
   payableAmountCent: number;
+  items: PricedRegistrationItem[];
   discounts: PriceDiscount[];
   messages: string[];
+  memberPricing: MemberPricingSummary | null;
   couponId: string | null;
 }
 
@@ -1040,6 +1253,44 @@ interface CouponRecord {
 
 interface AppliedCoupon extends CouponRecord {
   discount: PriceDiscount;
+}
+
+interface AppliedMemberPricing {
+  items: PricedRegistrationItem[];
+  summary: MemberPricingSummary;
+  discount: PriceDiscount;
+}
+
+interface MemberLevelRecord {
+  id: string;
+  code: string;
+  name: string;
+  rank: number;
+  enabled: boolean;
+}
+
+interface UserMembershipRecord {
+  id: string;
+  userId: string;
+  levelId: string;
+  status: string;
+  startsAt: Date;
+  endsAt: Date | null;
+  createdAt: Date;
+  level: MemberLevelRecord;
+}
+
+interface MembershipPriceRuleRecord {
+  id: string;
+  levelId: string;
+  conferenceId: string | null;
+  skuId: string | null;
+  discountPercent: number | null;
+  discountCent: number | null;
+  fixedPriceCent: number | null;
+  enabled: boolean;
+  startAt: Date | null;
+  endAt: Date | null;
 }
 
 interface PublishedConferenceConfig {

@@ -29,7 +29,7 @@
 | 会议管理 | `/registrations` | 报名名单 | `/admin/registrations*` | Registration, RegistrationAttendee | 我的报名/凭证 | 无 | 是 | 报名详情、凭证和操作日志已接入。 |
 | 会议管理 | `/inventory-alerts` | OperationalWorkflowsPage | `/admin/conferences/:id/inventory-alert-rule`, `/admin/inventory-alerts/scan`, `/admin/inventory-alert-logs` | InventoryAlertRule, InventoryAlertLog | 不需要 | 灰度 | 否 | 有真实规则和日志，但通知任务联动仍按配置保守启用。 |
 | 会议管理 | `/checkin/verify` | OperationalWorkflowsPage | `/admin/checkin/verify`, `/admin/checkin/manual`, `/admin/checkin/:id/revoke` | CheckinLog, RegistrationAttendee | 凭证页展示签到码/状态 | 灰度 | 否 | 核销状态机已接入，仍需补扫码端专项 E2E。 |
-| 会议管理 | `/checkin/logs` | OperationalWorkflowsPage | `/admin/checkin/logs` | CheckinLog | 凭证页 | 灰度 | 否 | 日志真实，正式开放前需更多重复核销/撤销测试。 |
+| 会议管理 | `/checkin/logs` | OperationalWorkflowsPage | `/admin/checkin/logs` | CheckinLog | 凭证页 | 灰度 | 否 | 日志真实，重复核销和撤销已有单测；扫码端 E2E 仍缺。 |
 | 会议管理 | `/checkin/stats` | OperationalWorkflowsPage | `/admin/checkin/stats` | RegistrationAttendee | 不需要 | 灰度 | 否 | 统计真实，仍按会议配置逐步开放。 |
 | 订单交易 | `/orders` | 订单支付 | `/admin/orders*` | Order, Payment | 支付/我的报名 | 无 | 是 | 单删/筛选删除受后端规则保护。 |
 | 订单交易 | `/payment-exceptions` | OperationalWorkflowsPage | `/admin/payment-exceptions` | Order, Payment | 不需要 | 辅助 | 否 | 只读异常辅助，不允许后台改成功支付状态。 |
@@ -52,10 +52,10 @@
 | AI 知识库 | `/ai/suggestions` | OperationalWorkflowsPage | `/conferences/:id/ai/suggestions` | KnowledgeDocument | AI 助手 | 辅助 | 否 | 当前基于文档生成基础推荐。 |
 | AI 知识库 | `/ai/question-logs` | OperationalWorkflowsPage | `/admin/conferences/:id/ai-question-logs` | AiQuestionLog | AI 助手 | 灰度 | 否 | 页面已接入框架，按会议日志查询需继续细化筛选。 |
 | AI 知识库 | `/ai/config` | OperationalWorkflowsPage | 环境变量 + 审计日志 | AuditLog | 不需要 | 辅助 | 否 | AI provider/key 不进入前端。 |
-| 会员 | `/members/users` | 会员管理 | `/admin/memberships`, `/admin/users` | MemberLevel, MembershipOrder | 会员中心 | 后续 | 否 | 会员价尚未完全作为正式报名计价策略开放。 |
-| 会员 | `/members/levels` | 会员等级 | `/admin/member-levels*` | MemberLevel | 会员中心 | 后续 | 否 | 等级真实，但计价仍需专项回归。 |
+| 会员 | `/members/users` | 会员管理 | `/admin/memberships`, `/admin/users` | MemberLevel, MembershipOrder | 会员中心 | 后续 | 否 | 手动授予会员真实，会员购买自动开通仍未完成。 |
+| 会员 | `/members/levels` | 会员等级 | `/admin/member-levels*` | MemberLevel | 会员中心 | 后续 | 否 | 等级真实，会员购买自动开通仍未完成。 |
 | 会员 | `/members/benefits` | OperationalWorkflowsPage | `/admin/member-benefits` | MemberBenefit | CMS 会员权益/会员中心 | 后续 | 否 | 权益展示已接入，权益发放自动化未完成。 |
-| 会员 | `/members/pricing-rules` | OperationalWorkflowsPage | `/admin/member-pricing-rules` | MembershipPriceRule | quote/create order | 后续 | 否 | 规则配置真实，正式开放需金额测试兜底。 |
+| 会员 | `/members/pricing-rules` | OperationalWorkflowsPage | `/admin/member-pricing-rules` | MembershipPriceRule | quote/create order | 无 | 是 | 会员价已进入 quote/create order，支持固定价、折扣基点、立减，并保存订单计价快照。 |
 | 商城 | `/mall/products` | 商品管理 | `/admin/mall/products*` | Product, ProductSku, ProductImage | 商城首页/详情 | 灰度 | 否 | 商品展示真实，支付/履约仍灰度。 |
 | 商城 | `/mall/categories` | OperationalWorkflowsPage | `/admin/mall/categories*` | ProductCategory | 商城首页 | 灰度 | 否 | 分类真实。 |
 | 商城 | `/mall/skus` | OperationalWorkflowsPage | `/admin/mall/skus` | ProductSku | 商品详情 | 灰度 | 否 | 库存真实，需发货/售后联动测试。 |
@@ -63,7 +63,7 @@
 | 商城 | `/mall/fulfillment` | OperationalWorkflowsPage | `/admin/mall/shipments` | MallShipment | 我的商城订单 | 灰度 | 否 | 发货记录真实，核销流程需完善。 |
 | 商城 | `/mall/aftersales` | OperationalWorkflowsPage | `/admin/mall/aftersales` | MallAfterSale | 我的商城订单 | 灰度 | 否 | 售后列表真实，退款联动仍灰度。 |
 | 财务管理 | `/finance/payments` | FinancePage | `/admin/finance/payments`, `/admin/payments` | Payment | 不需要 | 辅助 | 否 | 只读流水核对。 |
-| 财务管理 | `/finance/refunds` | OperationalWorkflowsPage | `/admin/refunds*`, `/my/refunds` | Refund | 我的退款 | 灰度 | 否 | 后台审批状态机真实，微信退款默认关闭。 |
+| 财务管理 | `/finance/refunds` | OperationalWorkflowsPage | `/admin/refunds*`, `/my/refunds` | Refund | 我的退款 | 灰度 | 否 | 后台审批状态机和幂等已有单测，微信退款默认关闭。 |
 | 财务管理 | `/finance/invoices` | OperationalWorkflowsPage | `/admin/invoices*`, `/invoices`, `/my/invoices` | InvoiceApplication | 我的发票 | 灰度 | 否 | 自有发票流程真实，未接微信电子发票。 |
 | 财务管理 | `/finance/reconciliation` | FinancePage | `/admin/finance/*`, `/admin/finance/reconciliation-results` | ReconciliationResult | 不需要 | 辅助 | 否 | 本地轻量对账，不影响支付主链路。 |
 | 财务管理 | `/finance/wechat-bills` | OperationalWorkflowsPage | `/admin/finance/wechat-bills*` | WechatBill, ReconciliationResult | 不需要 | 辅助 | 否 | 支持创建/导入/下载占位/对账，真实微信下载默认关闭。 |
@@ -106,8 +106,8 @@
 
 ## 后续测试缺口
 
-- 会员价、优惠券、满减组合计价需补金额不可篡改单元测试。
+- 优惠券、满减组合计价需继续补更多边界测试。
 - 签到扫码、重复核销、撤销核销需补 E2E。
-- 退款审批、微信退款回调金额校验需补 mock/provider 双路径测试。
+- 微信退款回调金额校验需补 mock/provider 双路径测试。
 - 商城 SKU 库存扣减、商城支付、发货核销、售后退款联动需补专项测试。
 - AI provider 真实接入、企微客户群真实权限检测需在有企业配置后做联调。

@@ -42,6 +42,7 @@ enum PaymentStatus {
 enum DiscountType {
   FULL_REDUCTION
   COUPON
+  MEMBER_PRICE
 }
 
 enum CouponType {
@@ -711,6 +712,7 @@ model MembershipPriceRule {
   skuId           String?
   discountPercent Int?
   discountCent    Int?
+  fixedPriceCent  Int?
   enabled         Boolean     @default(true)
   startAt         DateTime?
   endAt           DateTime?

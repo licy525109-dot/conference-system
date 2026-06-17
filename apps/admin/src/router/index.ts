@@ -82,7 +82,7 @@ export const routes: AdminRoute[] = [
   { path: "/members/users", title: "会员管理", menuTitle: "会员管理", group: "会员", badge: "后续", description: "用户会员状态、等级授予和会员记录", permission: "member:view", component: MemberUsersPage },
   { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "会员", badge: "后续", description: "会员等级、价格和权益展示配置", permission: "member:view", component: MemberLevelsPage },
   { path: "/members/benefits", title: "会员权益", menuTitle: "会员权益", group: "会员", badge: "后续", description: "会员权益包、展示说明和领取规则入口。", permission: "member:view", component: OperationalWorkflowsPage },
-  { path: "/members/pricing-rules", title: "会员价规则", menuTitle: "会员价规则", group: "会员", badge: "后续", description: "会员价参与报名计价前的规则配置入口。", permission: "member:view", component: OperationalWorkflowsPage },
+  { path: "/members/pricing-rules", title: "会员价规则", menuTitle: "会员价规则", group: "会员", description: "会员价已参与报名 quote/create order，订单保存计价快照。", permission: "member:view", component: OperationalWorkflowsPage },
   { path: "/mall/products", title: "商品管理", menuTitle: "商品管理", group: "商城", badge: "灰度", description: "商城商品、封面、状态和规格入口", permission: "mall:view", component: MallProductsPage },
   { path: "/mall/categories", title: "商品分类", menuTitle: "商品分类", group: "商城", badge: "灰度", description: "商城商品分类、排序和展示入口。", permission: "mall:view", component: OperationalWorkflowsPage },
   { path: "/mall/skus", title: "SKU 库存", menuTitle: "SKU 库存", group: "商城", badge: "灰度", description: "SKU 库存、锁定库存和库存流水入口。", permission: "mall:view", component: OperationalWorkflowsPage },
