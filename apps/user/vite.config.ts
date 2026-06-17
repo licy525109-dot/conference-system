@@ -6,16 +6,24 @@ import { fileURLToPath } from "node:url";
 
 const uni = "default" in uniPlugin ? uniPlugin.default : uniPlugin;
 const configDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(configDir, "../..");
 const miniProgramDistDir = resolve(configDir, "dist/build/mp-weixin");
 const productionApiBaseUrl = "https://guanchaohuiji.com/api";
 const forbiddenProductionBuildPatterns = [/localhost/i, /127\.0\.0\.1/, /192\.168/, /:3000/, /vConsole/i];
 const textFileExtensions = new Set([".js", ".json", ".wxml", ".wxss", ".map", ".txt"]);
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, configDir, "VITE_");
+  const envDir = mode === "production" ? configDir : repoRoot;
+  const env = loadEnv(mode, envDir, "VITE_");
   const enableVConsole = env.VITE_ENABLE_VCONSOLE === "true" || process.env.VITE_ENABLE_VCONSOLE === "true";
 
+  if (mode === "production") {
+    assertProductionApiBaseUrl("user", env.VITE_API_BASE_URL);
+    assertProductionApiBaseUrl("mp-weixin", env.VITE_MP_WEIXIN_API_BASE_URL);
+  }
+
   return {
+    envDir,
     plugins: [uni(), configureMiniProgramProductionBuild(enableVConsole)]
   };
 });
@@ -57,6 +65,28 @@ function verifyMiniProgramProductionBuild(enableVConsole: boolean): void {
   if (!enableVConsole && readAppJsonDebug() !== false) {
     throw new Error("mp-weixin production build must not enable app.json debug by default");
   }
+}
+
+function assertProductionApiBaseUrl(appName: string, value: string | undefined): void {
+  const apiBaseUrl = value?.trim();
+  if (!apiBaseUrl) {
+    throw new Error(`${appName} production build requires API_BASE_URL=${productionApiBaseUrl}`);
+  }
+
+  if (apiBaseUrl !== productionApiBaseUrl) {
+    throw new Error(`${appName} production build must use ${productionApiBaseUrl}, got ${apiBaseUrl}`);
+  }
+
+  if (isLocalOrPrivateUrl(apiBaseUrl)) {
+    throw new Error(`${appName} production build must not use a local or private API URL: ${apiBaseUrl}`);
+  }
+}
+
+function isLocalOrPrivateUrl(value: string): boolean {
+  return /(^|\/\/)(localhost|127\.0\.0\.1|\[?::1\]?)(?::|\/|$)/i.test(value)
+    || /(^|\/\/)10\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::|\/|$)/.test(value)
+    || /(^|\/\/)172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(?::|\/|$)/.test(value)
+    || /(^|\/\/)192\.168\.\d{1,3}\.\d{1,3}(?::|\/|$)/.test(value);
 }
 
 function readAppJsonDebug(): unknown {

@@ -108,13 +108,13 @@ wait_for_postgres
 pnpm install --frozen-lockfile
 
 echo "Generating Prisma client."
-pnpm exec prisma generate --schema prisma/schema.prisma
+pnpm --filter @conference/api exec prisma generate --schema ../../prisma/schema.prisma
 
 echo "Running Prisma migrate deploy."
 echo "Do not use prisma migrate dev in production."
 echo "Do not use prisma migrate reset in production."
 echo "Production migration rollback is manual and application-specific."
-pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+pnpm --filter @conference/api exec prisma migrate deploy --schema ../../prisma/schema.prisma
 
 pnpm build:api
 
