@@ -168,13 +168,16 @@
           <el-option v-for="item in memberLevels" :key="item.id" :label="item.name" :value="item.id" />
         </el-select>
         <el-input v-if="section === 'member-benefits'" v-model="memberForm.title" placeholder="权益标题" style="width: 220px" />
-        <el-input-number v-if="section === 'member-pricing'" v-model="memberForm.discountPercent" :min="0" :max="10000" />
+        <el-input-number v-if="section === 'member-pricing'" v-model="memberForm.fixedPriceCent" :min="0" placeholder="固定价(分)" />
+        <el-input-number v-if="section === 'member-pricing'" v-model="memberForm.discountPercent" :min="0" :max="10000" placeholder="折扣基点" />
+        <el-input-number v-if="section === 'member-pricing'" v-model="memberForm.discountCent" :min="0" placeholder="立减(分)" />
         <template #actions><el-button type="primary" :disabled="!memberForm.levelId" @click="saveMemberConfig">保存配置</el-button></template>
       </AdminFilterBar>
-      <AdminSectionCard :title="section === 'member-benefits' ? '会员权益' : '会员价规则'" subtitle="当前会员价规则已入库；是否参与报名计价以计价服务开关和测试覆盖为准。">
+      <AdminSectionCard :title="section === 'member-benefits' ? '会员权益' : '会员价规则'" subtitle="会员价规则已参与报名 quote/create order；订单会保存会员价和优惠明细快照。">
         <el-table :data="section === 'member-benefits' ? memberBenefits : memberPriceRules" empty-text="暂无配置">
           <el-table-column prop="title" label="标题/等级" min-width="180"><template #default="{ row }">{{ row.title || row.level?.name }}</template></el-table-column>
           <el-table-column prop="type" label="类型" width="120" />
+          <el-table-column prop="fixedPriceCent" label="固定价分" width="120" />
           <el-table-column prop="discountPercent" label="折扣基点" width="120" />
           <el-table-column prop="discountCent" label="减免分" width="110" />
           <el-table-column label="启用" width="90"><template #default="{ row }"><AdminStatusBadge :status="Boolean(row.enabled)" /></template></el-table-column>
@@ -298,7 +301,13 @@ const knowledgeForm = reactive({ title: "", contentText: "" });
 const memberLevels = ref<MemberLevel[]>([]);
 const memberBenefits = ref<Record<string, unknown>[]>([]);
 const memberPriceRules = ref<Record<string, unknown>[]>([]);
-const memberForm = reactive({ levelId: "", title: "", discountPercent: 9000 });
+const memberForm = reactive({
+  levelId: "",
+  title: "",
+  fixedPriceCent: undefined as number | undefined,
+  discountPercent: 9000,
+  discountCent: undefined as number | undefined
+});
 const mallRows = ref<Record<string, unknown>[]>([]);
 const financeRows = ref<Record<string, unknown>[]>([]);
 const billDate = ref("");
@@ -456,8 +465,16 @@ async function loadMemberConfig() {
 
 async function saveMemberConfig() {
   if (section.value === "member-benefits") await createMemberBenefit({ levelId: memberForm.levelId, title: memberForm.title || "会员权益", type: "TEXT", enabled: true });
-  else await createMemberPricingRule({ levelId: memberForm.levelId, discountPercent: memberForm.discountPercent, enabled: true });
-  Object.assign(memberForm, { title: "", discountPercent: 9000 });
+  else {
+    await createMemberPricingRule({
+      levelId: memberForm.levelId,
+      fixedPriceCent: memberForm.fixedPriceCent,
+      discountPercent: memberForm.discountPercent,
+      discountCent: memberForm.discountCent,
+      enabled: true
+    });
+  }
+  Object.assign(memberForm, { title: "", fixedPriceCent: undefined, discountPercent: 9000, discountCent: undefined });
   await loadMemberConfig();
   ElMessage.success("会员配置已保存");
 }

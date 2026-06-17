@@ -5,9 +5,9 @@
       eyebrow="会员"
       badge="后续开放"
       badge-tone="neutral"
-      subtitle="维护会员等级、价格和展示权益；当前会员价尚未正式参与报名计价。"
+      subtitle="维护会员等级、价格和展示权益；会员价规则已参与报名 quote/create order。"
     >
-      <AdminFeatureBadge label="会员价状态" description="当前会员价尚未正式参与报名计价。" tone="warning" />
+      <AdminFeatureBadge label="会员价状态" description="已参与报名计价；会员购买自动开通仍需后续完善。" tone="success" />
       <template #actions>
         <el-button type="primary" @click="openCreate">新增等级</el-button>
       </template>
@@ -33,7 +33,7 @@
         <el-form-item label="说明"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="等级序"><el-input-number v-model="form.rank" :min="0" /></el-form-item>
         <el-form-item label="价格(元)"><el-input-number v-model="form.priceYuan" :min="0" :precision="2" /></el-form-item>
-        <el-form-item label="折扣基点"><el-input-number v-model="form.discountPercent" :min="0" :max="10000" /><span class="muted-text">9000 表示 9 折，仅展示预留</span></el-form-item>
+        <el-form-item label="折扣基点"><el-input-number v-model="form.discountPercent" :min="0" :max="10000" /><span class="muted-text">9000 表示 9 折；具体报名会员价以会员价规则为准</span></el-form-item>
         <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
       </el-form>
       <template #footer>

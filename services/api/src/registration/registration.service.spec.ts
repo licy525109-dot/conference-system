@@ -101,6 +101,30 @@ describe("RegistrationService quote", () => {
     assert.equal(response.data.payableAmountCent, 200000);
   });
 
+  it("applies active member fixed pricing when quote has a user token", async () => {
+    const service = createService(
+      createPrismaMock({
+        userMemberships: [userMembership()],
+        membershipPriceRules: [membershipPriceRule({ fixedPriceCent: 60000 })]
+      })
+    );
+
+    const response = await service.quote(
+      {
+        conferenceId: "published-conf",
+        items: [{ skuId: "active-sku", quantity: 1 }]
+      },
+      currentUser
+    );
+
+    assert.equal(response.data.originAmountCent, 100000);
+    assert.equal(response.data.discountAmountCent, 40000);
+    assert.equal(response.data.payableAmountCent, 60000);
+    assert.equal(response.data.memberPricing?.levelName, "金牌会员");
+    assert.equal(response.data.items?.[0]?.memberUnitPriceCent, 60000);
+    assert.equal(response.data.discounts?.[0]?.type, DiscountType.MEMBER_PRICE);
+  });
+
   it("quotes multiple SKU items", async () => {
     const service = createService(createPrismaMock());
 
@@ -307,19 +331,27 @@ describe("RegistrationService create order", () => {
     assert.equal(prisma.orders[0]?.payableAmountCent, 100000);
     assert.equal(prisma.orders[0]?.attendeeName, "张三");
     assert.equal(prisma.orders[0]?.phone, "13800000000");
-    assert.deepEqual(prisma.orders[0]?.registrationSnapshotJson, {
-      conferenceId: "published-conf",
-      skuId: "active-sku",
-      skuName: "Active SKU",
-      attendeeName: "张三",
-      phone: "13800000000",
-      formData: {
-        name: "张三",
-        phone: "13800000000",
-        company: "某某公司",
-        position: "总经理"
-      }
-    });
+	    assert.deepEqual(prisma.orders[0]?.registrationSnapshotJson, {
+	      conferenceId: "published-conf",
+	      skuId: "active-sku",
+	      skuName: "Active SKU",
+	      attendeeName: "张三",
+	      phone: "13800000000",
+	      formData: {
+	        name: "张三",
+	        phone: "13800000000",
+	        company: "某某公司",
+	        position: "总经理"
+	      },
+	      pricing: {
+	        originAmountCent: 100000,
+	        memberBaseAmountCent: 100000,
+	        discountAmountCent: 0,
+	        payableAmountCent: 100000,
+	        discounts: []
+	      },
+	      memberPricing: null
+	    });
     assert.equal(prisma.orderItems[0]?.unitPriceCent, 100000);
     assert.equal(prisma.orderItems[0]?.totalAmountCent, 100000);
     assert.equal(prisma.registrations.length, 0);
@@ -346,17 +378,25 @@ describe("RegistrationService create order", () => {
     assert.equal(response.data.orderNo, "REG2026060600NOHONE");
     assert.equal(prisma.orders[0]?.attendeeName, "李四");
     assert.equal(prisma.orders[0]?.phone, "");
-    assert.deepEqual(prisma.orders[0]?.registrationSnapshotJson, {
-      conferenceId: "published-conf",
-      skuId: "active-sku",
-      skuName: "Active SKU",
-      attendeeName: "李四",
-      phone: "",
-      formData: {
-        name: "李四"
-      }
-    });
-  });
+	    assert.deepEqual(prisma.orders[0]?.registrationSnapshotJson, {
+	      conferenceId: "published-conf",
+	      skuId: "active-sku",
+	      skuName: "Active SKU",
+	      attendeeName: "李四",
+	      phone: "",
+	      formData: {
+	        name: "李四"
+	      },
+	      pricing: {
+	        originAmountCent: 100000,
+	        memberBaseAmountCent: 100000,
+	        discountAmountCent: 0,
+	        payableAmountCent: 100000,
+	        discounts: []
+	      },
+	      memberPricing: null
+	    });
+	  });
 
   it("re-reads SKU price when creating an order", async () => {
     const prisma = createPrismaMock({
@@ -433,6 +473,36 @@ describe("RegistrationService create order", () => {
     assert.equal(prisma.orderDiscounts[0]?.amountCent, 20000);
     assert.deepEqual((prisma.orderDiscounts[0]?.snapshotJson as { code?: string }).code, "BETTER");
     assert.equal(prisma.couponRedemptions[0]?.status, CouponRedemptionStatus.PENDING);
+  });
+
+  it("stacks member pricing before coupons and keeps order items at original SKU price", async () => {
+    const prisma = createPrismaMock({
+      userMemberships: [userMembership()],
+      membershipPriceRules: [membershipPriceRule({ fixedPriceCent: 90000 })],
+      coupons: [coupon({ id: "coupon-member", code: "MEMBER20", discountAmountCent: 20000 })]
+    });
+    const service = createService(prisma, ["REG202606060MEMBER"]);
+
+    const response = await service.createOrder({ ...validOrderInput(), couponCode: "MEMBER20" }, currentUser);
+
+    assert.equal(response.data.originAmountCent, 100000);
+    assert.equal(response.data.discountAmountCent, 30000);
+    assert.equal(response.data.payableAmountCent, 70000);
+    assert.equal(response.data.memberPricing?.discountAmountCent, 10000);
+    assert.equal(prisma.orderItems[0]?.unitPriceCent, 100000);
+    assert.equal(prisma.orderItems[0]?.totalAmountCent, 100000);
+    assert.equal(prisma.orderDiscounts.length, 2);
+    assert.equal(prisma.orderDiscounts[0]?.type, DiscountType.MEMBER_PRICE);
+    assert.equal(prisma.orderDiscounts[1]?.type, DiscountType.COUPON);
+    assert.equal(prisma.couponRedemptions[0]?.status, CouponRedemptionStatus.PENDING);
+    const snapshot = prisma.orders[0]?.registrationSnapshotJson as {
+      pricing?: { memberBaseAmountCent?: number; payableAmountCent?: number };
+      memberPricing?: { levelCode?: string; discountAmountCent?: number };
+    };
+    assert.equal(snapshot.pricing?.memberBaseAmountCent, 90000);
+    assert.equal(snapshot.pricing?.payableAmountCent, 70000);
+    assert.equal(snapshot.memberPricing?.levelCode, "gold");
+    assert.equal(snapshot.memberPricing?.discountAmountCent, 10000);
   });
 
   it("stacks coupon and promotion only when both sides allow stacking", async () => {
@@ -637,9 +707,9 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
   const orders: OrderRecord[] = [];
   const orderItems: OrderItemRecord[] = [];
   const orderDiscounts: OrderDiscountRecord[] = [];
-  const couponRedemptions: CouponRedemptionRecord[] = [...(options.couponRedemptions ?? [])];
-  const registrations: unknown[] = [];
-  const payments: unknown[] = [];
+	  const couponRedemptions: CouponRedemptionRecord[] = [...(options.couponRedemptions ?? [])];
+	  const registrations: unknown[] = [];
+	  const payments: unknown[] = [];
 
   const configuredFormDefinitions = applyFormFieldKeyFilter(formDefinitions, options.formFieldKeys);
   const mock: PrismaMockShape = {
@@ -747,7 +817,7 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
         return (options.coupons ?? []).find((item) => item.code === code) ?? null;
       }
     },
-    couponRedemption: {
+	    couponRedemption: {
       count: async (args: CouponRedemptionCountArgs) =>
         couponRedemptions.filter((item) => {
           if (item.couponId !== args.where.couponId) {
@@ -765,10 +835,18 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
           userId: args.data.userId,
           orderId: args.data.orderId,
           status: CouponRedemptionStatus.PENDING
-        });
-      }
-    },
-    registration: {
+	        });
+	      }
+	    },
+	    userMembership: {
+	      findMany: async (args: UserMembershipFindManyArgs) =>
+	        (options.userMemberships ?? []).filter((item) => item.userId === args.where.userId && item.status === args.where.status)
+	    },
+	    membershipPriceRule: {
+	      findMany: async (args: MembershipPriceRuleFindManyArgs) =>
+	        (options.membershipPriceRules ?? []).filter((item) => item.levelId === args.where.levelId && item.enabled === args.where.enabled)
+	    },
+	    registration: {
       create: async () => {
         registrations.push({});
         throw new Error("Registration should not be created while creating a pending order");
@@ -1004,6 +1082,48 @@ function coupon(overrides: Partial<CouponRecord> = {}): CouponRecord {
   };
 }
 
+function memberLevel(overrides: Partial<MemberLevelRecord> = {}): MemberLevelRecord {
+  return {
+    id: "level-gold",
+    code: "gold",
+    name: "金牌会员",
+    rank: 10,
+    enabled: true,
+    ...overrides
+  };
+}
+
+function userMembership(overrides: Partial<UserMembershipRecord> = {}): UserMembershipRecord {
+  const level = overrides.level ?? memberLevel();
+  return {
+    id: "membership-1",
+    userId: currentUser.id,
+    levelId: level.id,
+    status: "ACTIVE",
+    startsAt: new Date("2026-01-01T00:00:00.000Z"),
+    endsAt: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    level,
+    ...overrides
+  };
+}
+
+function membershipPriceRule(overrides: Partial<MembershipPriceRuleRecord> = {}): MembershipPriceRuleRecord {
+  return {
+    id: "member-price-rule-1",
+    levelId: "level-gold",
+    conferenceId: null,
+    skuId: null,
+    discountPercent: null,
+    discountCent: null,
+    fixedPriceCent: null,
+    enabled: true,
+    startAt: null,
+    endAt: null,
+    ...overrides
+  };
+}
+
 function getSku(id: string) {
   const sku = skus.find((item) => item.id === id);
   assert.ok(sku);
@@ -1014,10 +1134,12 @@ interface PrismaMockOptions {
   conflictingOrderNos?: string[];
   formFieldKeys?: string[];
   skuOverrides?: Record<string, Partial<(typeof skus)[number]>>;
-  promotionRules?: PromotionRuleRecord[];
-  coupons?: CouponRecord[];
-  couponRedemptions?: CouponRedemptionRecord[];
-}
+	  promotionRules?: PromotionRuleRecord[];
+	  coupons?: CouponRecord[];
+	  couponRedemptions?: CouponRedemptionRecord[];
+	  userMemberships?: UserMembershipRecord[];
+	  membershipPriceRules?: MembershipPriceRuleRecord[];
+	}
 
 interface PrismaMockShape {
   orders: OrderRecord[];
@@ -1052,11 +1174,17 @@ interface PrismaMockShape {
   coupon: {
     findUnique(args: CouponFindUniqueArgs): Promise<CouponRecord | null>;
   };
-  couponRedemption: {
-    count(args: CouponRedemptionCountArgs): Promise<number>;
-    create(args: CouponRedemptionCreateArgs): Promise<void>;
-  };
-  registration: {
+	  couponRedemption: {
+	    count(args: CouponRedemptionCountArgs): Promise<number>;
+	    create(args: CouponRedemptionCreateArgs): Promise<void>;
+	  };
+	  userMembership: {
+	    findMany(args: UserMembershipFindManyArgs): Promise<UserMembershipRecord[]>;
+	  };
+	  membershipPriceRule: {
+	    findMany(args: MembershipPriceRuleFindManyArgs): Promise<MembershipPriceRuleRecord[]>;
+	  };
+	  registration: {
     create(): Promise<never>;
   };
   payment: {
@@ -1139,6 +1267,20 @@ interface CouponRedemptionCreateArgs {
   };
 }
 
+interface UserMembershipFindManyArgs {
+  where: {
+    userId: string;
+    status: string;
+  };
+}
+
+interface MembershipPriceRuleFindManyArgs {
+  where: {
+    levelId: string;
+    enabled: boolean;
+  };
+}
+
 interface OrderRecord extends OrderRecordData {
   id: string;
 }
@@ -1185,6 +1327,38 @@ interface CouponRedemptionRecord {
   userId: string | null;
   orderId?: string;
   status: CouponRedemptionStatus;
+}
+
+interface MemberLevelRecord {
+  id: string;
+  code: string;
+  name: string;
+  rank: number;
+  enabled: boolean;
+}
+
+interface UserMembershipRecord {
+  id: string;
+  userId: string;
+  levelId: string;
+  status: string;
+  startsAt: Date;
+  endsAt: Date | null;
+  createdAt: Date;
+  level: MemberLevelRecord;
+}
+
+interface MembershipPriceRuleRecord {
+  id: string;
+  levelId: string;
+  conferenceId: string | null;
+  skuId: string | null;
+  discountPercent: number | null;
+  discountCent: number | null;
+  fixedPriceCent: number | null;
+  enabled: boolean;
+  startAt: Date | null;
+  endAt: Date | null;
 }
 
 interface PromotionRuleRecord {

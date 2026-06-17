@@ -21,9 +21,13 @@ export interface QuoteResponse extends QuoteRequest {
     skuName: string;
     unitPriceCent: number;
     subtotalCent: number;
+    memberUnitPriceCent?: number;
+    memberSubtotalCent?: number;
+    memberDiscountAmountCent?: number;
   }>;
   discounts?: RegistrationDiscount[];
   messages?: string[];
+  memberPricing?: MemberPricingSummary;
 }
 
 export interface CreateOrderRequest extends QuoteRequest {
@@ -48,18 +52,32 @@ export interface RegistrationOrderAttendee {
 }
 
 export interface RegistrationDiscount {
-  type: "FULL_REDUCTION" | "COUPON";
+  type: "FULL_REDUCTION" | "COUPON" | "MEMBER_PRICE";
   title: string;
   amountCent: number;
   couponId?: string;
   promotionRuleId?: string;
 }
 
+export interface MemberPricingSummary {
+  levelId: string;
+  levelCode: string;
+  levelName: string;
+  discountAmountCent: number;
+  items: Array<{
+    skuId: string;
+    skuName: string;
+    quantity: number;
+    originalUnitPriceCent: number;
+    memberUnitPriceCent: number;
+    discountAmountCent: number;
+  }>;
+}
+
 export function quoteRegistration(input: QuoteRequest): Promise<QuoteResponse> {
   return request<QuoteResponse>("/registration/quote", {
     method: "POST",
-    data: withLegacySingleItemFields(input),
-    auth: false
+    data: withLegacySingleItemFields(input)
   });
 }
 

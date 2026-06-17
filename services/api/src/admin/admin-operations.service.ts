@@ -495,6 +495,11 @@ export class AdminOperationsService {
     if (!order || order.status !== OrderStatus.PAID) throw new ConflictException("Only paid registration orders can be refunded");
     const amountCent = readNonNegativeInt(body.amountCent, "amountCent");
     if (amountCent <= 0 || amountCent > (order.paidAmountCent ?? order.payableAmountCent)) throw new BadRequestException("退款金额不合法");
+    const existing = await this.prisma.refund.findFirst({ where: { orderNo: order.orderNo, status: { in: [RefundStatus.REQUESTED, RefundStatus.APPROVED, RefundStatus.PROCESSING] } } });
+    if (existing) {
+      if (existing.amountCent !== amountCent) throw new ConflictException("该订单已有处理中退款申请");
+      return ok(formatDateFields(existing));
+    }
     const refund = await this.prisma.refund.create({ data: { refundNo: generateCode("RF"), orderNo: order.orderNo, orderId: order.id, userId: order.userId, amountCent, reason: readNullableString(body.reason), status: RefundStatus.REQUESTED } });
     await this.writeAudit(admin, AuditAction.CREATE, "Refund", refund.id, "Create refund request");
     return ok(formatDateFields(refund));
@@ -510,12 +515,21 @@ export class AdminOperationsService {
   }
 
   async approveRefund(id: string, admin: CurrentAdmin) {
-    const refund = await this.prisma.refund.update({ where: { id }, data: { status: RefundStatus.PROCESSING, approvedAt: new Date(), provider: PaymentProvider.WECHAT } });
+    const current = await this.prisma.refund.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException("Refund not found");
+    const idempotentStatuses: RefundStatus[] = [RefundStatus.APPROVED, RefundStatus.PROCESSING];
+    if (idempotentStatuses.includes(current.status)) return ok(formatDateFields(current));
+    if (current.status !== RefundStatus.REQUESTED) throw new ConflictException("当前退款状态不可批准");
+    const refund = await this.prisma.refund.update({ where: { id }, data: { status: RefundStatus.APPROVED, approvedAt: new Date(), provider: PaymentProvider.WECHAT } });
     await this.writeAudit(admin, AuditAction.UPDATE, "Refund", id, "Approve refund");
     return ok(formatDateFields(refund));
   }
 
   async rejectRefund(id: string, input: unknown, admin: CurrentAdmin) {
+    const current = await this.prisma.refund.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException("Refund not found");
+    if (current.status === RefundStatus.REJECTED) return ok(formatDateFields(current));
+    if (current.status !== RefundStatus.REQUESTED) throw new ConflictException("当前退款状态不可驳回");
     const refund = await this.prisma.refund.update({ where: { id }, data: { status: RefundStatus.REJECTED, rejectReason: readOptionalString(readObject(input).reason) } });
     await this.writeAudit(admin, AuditAction.UPDATE, "Refund", id, "Reject refund");
     return ok(formatDateFields(refund));

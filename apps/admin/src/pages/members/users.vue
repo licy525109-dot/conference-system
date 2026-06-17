@@ -5,9 +5,9 @@
       eyebrow="会员"
       badge="后续开放"
       badge-tone="neutral"
-      subtitle="查看小程序用户，手动授予会员等级；当前会员价尚未正式参与报名计价。"
+      subtitle="查看小程序用户，手动授予会员等级；会员价已参与报名 quote/create order。"
     >
-      <AdminFeatureBadge label="会员价状态" description="当前会员价尚未正式参与报名计价。" tone="warning" />
+      <AdminFeatureBadge label="会员价状态" description="已参与报名计价；会员购买自动开通仍需后续完善。" tone="success" />
       <template #actions>
         <el-button type="primary" @click="openAssign">授予会员</el-button>
       </template>

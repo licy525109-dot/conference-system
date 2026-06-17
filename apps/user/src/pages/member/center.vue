@@ -4,18 +4,18 @@
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <view class="topbar ui-card">
       <view>
-        <text class="eyebrow">扩展能力</text>
+        <text class="eyebrow">会员</text>
         <text class="title">会员与账号</text>
-        <text class="subtitle">会员权益用于展示和后续运营，不参与当前会议报名价格计算。</text>
+        <text class="subtitle">会员价会在会议报名报价和下单时自动计算，订单金额以后端为准。</text>
       </view>
       <button class="ui-button-secondary ui-button-compact" @click="goHome">首页</button>
     </view>
 
     <ExtensionStatusNotice
-      status="后续参与定价"
+      status="已参与报名计价"
       title="会员权益展示中"
-      description="当前报名缴费金额仍以提交订单时系统计算结果为准，会员等级不会自动抵扣报名费。"
-      tone="warning"
+      description="有效会员等级会匹配后台会员价规则；会员购买自动开通仍在完善中。"
+      tone="success"
     />
 
     <view class="profile-card ui-card">
@@ -46,11 +46,11 @@
         <template v-if="membership">
           <text class="member-name">{{ membership.level.name }}</text>
           <text class="muted">有效期至：{{ membership.endsAt ? formatDate(membership.endsAt) : "长期有效" }}</text>
-          <text class="muted">权益展示已开通，报名定价仍以后端订单计算为准。</text>
+          <text class="muted">报名会员价会以后端 quote/create order 计算结果为准。</text>
         </template>
         <template v-else>
           <text class="member-name">普通用户</text>
-          <text class="muted">暂无会员等级。会议报名价格不会因会员状态自动变化。</text>
+          <text class="muted">暂无会员等级，报名按普通票价和可用营销优惠计算。</text>
         </template>
       </view>
 
