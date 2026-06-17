@@ -463,7 +463,8 @@ export function createCmsBackgroundStyle(config: ThemeConfig, target: "body" | "
   if (config.backgroundMode === "dynamic-gradient") {
     return {
       backgroundImage: dynamicGradientBackground(config),
-      backgroundSize: "420% 420%"
+      backgroundSize: "240% 240%",
+      backgroundPosition: "center top"
     };
   }
 
@@ -481,11 +482,11 @@ export function dynamicGradientBackground(config: ThemeConfig): string {
   const from = config.backgroundGradientFrom || theme.colors.pageBg;
   const to = config.backgroundGradientTo || theme.colors.secondarySoft;
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 44));
-  const scale = Math.max(22, Math.round(density / 1.7));
+  const scale = Math.max(30, Math.round(density / 1.45));
   const overlay = config.backgroundBottomFilter === false
     ? ""
-    : `linear-gradient(180deg, rgba(255,255,255,0.02), ${theme.colors.pageBg} 116%), `;
-  return `${overlay}radial-gradient(circle at 10% 12%, ${alpha(theme.colors.primary, 0.42)} 0, transparent ${scale}%), radial-gradient(circle at 88% 18%, ${alpha(theme.colors.secondary, 0.38)} 0, transparent ${scale + 12}%), radial-gradient(circle at 52% 76%, ${alpha(theme.colors.accent, 0.34)} 0, transparent ${scale + 18}%), radial-gradient(circle at 70% 46%, ${alpha(theme.colors.info, 0.24)} 0, transparent ${scale + 8}%), linear-gradient(135deg, ${from} 0%, ${to} 62%, ${theme.colors.accentSoft} 140%)`;
+    : `linear-gradient(180deg, rgba(255,255,255,0.02), ${alpha(theme.colors.pageBg, 0.72)} 118%), `;
+  return `${overlay}radial-gradient(circle at 12% 10%, ${alpha(theme.colors.primary, 0.34)} 0, transparent ${scale}%), radial-gradient(circle at 88% 16%, ${alpha(theme.colors.secondary, 0.32)} 0, transparent ${scale + 12}%), radial-gradient(circle at 18% 82%, ${alpha(theme.colors.accent, 0.18)} 0, transparent ${scale + 20}%), linear-gradient(132deg, ${from} 0%, ${to} 62%, ${theme.colors.accentSoft} 142%)`;
 }
 
 function normalizePresetId(value: unknown): CmsThemePresetId {

@@ -79,7 +79,13 @@ page {
   padding: 30rpx var(--cms-space-page-x) calc(228rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
   background: var(--cms-gradient-page);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+.ui-page > :not(.theme-dynamic-bg):not(.page-bg-video) {
+  position: relative;
+  z-index: 1;
 }
 
 .page-bg-video {

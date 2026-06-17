@@ -23,7 +23,7 @@ export const DEFAULT_THEME_CONFIG = {
   backgroundImageUrl: "",
   backgroundVideoUrl: "",
   backgroundDynamicDensity: 40,
-  backgroundDynamicSpeed: 18,
+  backgroundDynamicSpeed: 30,
   backgroundBottomFilter: true,
   backgroundApplyTo: "body",
   themeApplyMode: "all",
@@ -92,7 +92,7 @@ export const ENABLED_COMPONENT_PRESETS = [
     images: [],
     height: 320,
     imageMode: "aspectFit",
-    fullBleed: false,
+    fullBleed: true,
     autoplay: true,
     indicatorDots: true
   }),

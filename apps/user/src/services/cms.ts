@@ -103,7 +103,7 @@ export const DEFAULT_THEME: ThemeConfig = {
   backgroundImageUrl: "",
   backgroundVideoUrl: "",
   backgroundDynamicDensity: 40,
-  backgroundDynamicSpeed: 18,
+  backgroundDynamicSpeed: 30,
   backgroundBottomFilter: true,
   backgroundApplyTo: "body",
   themeApplyMode: "all",
