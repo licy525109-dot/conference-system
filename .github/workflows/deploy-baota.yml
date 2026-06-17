@@ -1,0 +1,84 @@
+name: Deploy Baota Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baota-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy production on Baota
+    runs-on: ubuntu-latest
+    env:
+      BAOTA_PROJECT_DIR: ${{ vars.BAOTA_PROJECT_DIR || '/www/wwwroot/conference-system' }}
+      BAOTA_ADMIN_ROOT: ${{ vars.BAOTA_ADMIN_ROOT || '/www/wwwroot/admin.guanchaohuiji.com' }}
+      DEPLOY_BRANCH: main
+    steps:
+      - name: Validate required secrets
+        shell: bash
+        env:
+          BAOTA_HOST: ${{ secrets.BAOTA_HOST }}
+          BAOTA_PORT: ${{ secrets.BAOTA_PORT }}
+          BAOTA_USER: ${{ secrets.BAOTA_USER }}
+          BAOTA_SSH_KEY: ${{ secrets.BAOTA_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          for name in BAOTA_HOST BAOTA_PORT BAOTA_USER BAOTA_SSH_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required GitHub Secret: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Prepare SSH key
+        shell: bash
+        env:
+          BAOTA_SSH_KEY: ${{ secrets.BAOTA_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$BAOTA_SSH_KEY" > "$RUNNER_TEMP/ssh/baota_key"
+          chmod 600 "$RUNNER_TEMP/ssh/baota_key"
+
+      - name: Execute server deploy script
+        shell: bash
+        env:
+          BAOTA_HOST: ${{ secrets.BAOTA_HOST }}
+          BAOTA_PORT: ${{ secrets.BAOTA_PORT }}
+          BAOTA_USER: ${{ secrets.BAOTA_USER }}
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(
+            -i "$RUNNER_TEMP/ssh/baota_key"
+            -p "$BAOTA_PORT"
+            -o StrictHostKeyChecking=accept-new
+            -o IdentitiesOnly=yes
+          )
+          ssh "${SSH_OPTS[@]}" "${BAOTA_USER}@${BAOTA_HOST}" \
+            "PROJECT_DIR='${BAOTA_PROJECT_DIR}' ADMIN_ROOT='${BAOTA_ADMIN_ROOT}' BRANCH='${DEPLOY_BRANCH}' bash -s" <<'REMOTE_SCRIPT'
+          set -Eeuo pipefail
+          cd "$PROJECT_DIR"
+          echo "== Bootstrap deploy script from origin/${BRANCH} =="
+          git fetch origin
+          git checkout "$BRANCH"
+          git pull --ff-only origin "$BRANCH"
+          if [[ ! -f scripts/deploy/baota-deploy.sh ]]; then
+            echo "Deploy script missing: scripts/deploy/baota-deploy.sh" >&2
+            exit 127
+          fi
+          bash scripts/deploy/baota-deploy.sh
+          REMOTE_SCRIPT
+
+      - name: Remove SSH key
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/ssh/baota_key"

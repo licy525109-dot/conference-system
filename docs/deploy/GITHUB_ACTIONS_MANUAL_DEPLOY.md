@@ -1,18 +1,21 @@
-# GitHub Actions Manual Deploy Guide
+# GitHub Actions Deploy Guide
 
-## 1. Manual Deploy Only
+## 1. Current Deploy Policy
 
-Current policy:
+Current policy after the Baota auto-deploy upgrade:
 
-- Only `workflow_dispatch` manual deployment is allowed.
-- `push` to `main` must not automatically deploy.
-- A human must review and merge the PR before manually triggering deployment.
-- A human must confirm the server script was reviewed before the first run.
+- Push to `main` runs production deployment automatically through `Deploy Baota Production`.
+- `workflow_dispatch` remains available for manual redeploy.
+- GitHub Actions only SSHes to the server and runs the server-side deploy script.
+- Production `.env.production`, database credentials, WeChat Pay certificates, and WeCom secrets stay on the server.
 
-Workflows added as release automation presets:
+Workflows:
 
+- `.github/workflows/deploy-baota.yml`
 - `.github/workflows/deploy-baota.manual.yml`
 - `.github/workflows/miniprogram-preview.manual.yml`
+
+`deploy-baota.manual.yml` is retained as a compatibility manual entry. Prefer `Deploy Baota Production` for current production deployment.
 
 ## 2. Required Secrets
 
@@ -32,41 +35,36 @@ Do not put real secret values in workflow YAML files.
 
 ## 3. First Run Checklist
 
-Before running `Manual Baota Deploy`:
+Before enabling automatic deployment from `main`:
 
-1. Review `scripts/deploy/baota-deploy.example.sh`.
-2. Preferred: copy the reviewed non-interactive CI script to the server:
-
-   ```bash
-   /www/scripts/conference-system-deploy-ci.sh
-   ```
-
-   This script must be safe for non-interactive CI use and must not prompt for `deploy`.
-
-3. Fallback: if the CI-specific script is not available, copy the reviewed script to the legacy server path:
+1. Confirm GitHub Secrets are configured.
+2. Confirm the server project path exists:
 
    ```bash
-   /www/scripts/conference-system-deploy.sh
+   /www/wwwroot/conference-system
    ```
 
-   The workflow will run it as `CONFIRM_DEPLOY=YES /www/scripts/conference-system-deploy.sh`.
-
-4. Make the selected server script executable:
+3. Confirm the server can pull GitHub:
 
    ```bash
-   chmod +x /www/scripts/conference-system-deploy-ci.sh
-   # or
-   chmod +x /www/scripts/conference-system-deploy.sh
+   cd /www/wwwroot/conference-system
+   git fetch origin
    ```
 
-5. Confirm the server script still uses API health check:
+4. Confirm the production env and Docker Compose file exist:
+
+   ```bash
+   test -f /www/wwwroot/conference-system/.env.production
+   test -f /www/wwwroot/conference-system/docker-compose.prod.yml
+   ```
+
+5. Confirm API health before deployment:
 
    ```bash
    curl http://127.0.0.1:3001/api/health
    ```
 
-6. Configure GitHub Secrets.
-7. Trigger the workflow manually. No interactive `deploy` input is required after SSH connects.
+6. Push to `main` or trigger `Deploy Baota Production` manually.
 
 Before running `Manual Mini Program Preview`:
 
@@ -79,18 +77,17 @@ Before running `Manual Mini Program Preview`:
 
 ## 4. Failure and Rollback
 
-If Baota deployment fails before rsync:
+If Baota deployment fails before static publishing:
 
 - Check workflow logs.
 - Check SSH connectivity and required Secrets.
-- Check whether `/www/scripts/conference-system-deploy-ci.sh` exists and is executable.
-- If using the fallback path, check whether `/www/scripts/conference-system-deploy.sh` exists and is executable.
+- Check whether `/www/wwwroot/conference-system/scripts/deploy/baota-deploy.sh` exists after pull.
 - No server rollback may be needed if static files were not updated.
 
-If deployment fails after rsync:
+If deployment fails after static publishing:
 
-- Use `docs/deploy/BAOTA_RELEASE_GUIDE.md` rollback flow.
-- Use `scripts/deploy/baota-rollback.example.sh` only after reviewing and copying it to the server.
+- Use the backup directory printed by `scripts/deploy/baota-deploy.sh`.
+- Restore `admin-static` using `docs/deploy/AUTO_DEPLOY_BAOTA.md`.
 - Remember that database migrations are not automatically rolled back.
 
 If Mini Program preview/upload fails:
@@ -108,33 +105,33 @@ Options:
 - Rename workflow files so GitHub no longer detects them.
 - Restrict repository Actions permissions.
 - Remove required Secrets.
-- Remove or disable `/www/scripts/conference-system-deploy-ci.sh` and `/www/scripts/conference-system-deploy.sh` on the server.
+- Remove or disable `/www/wwwroot/conference-system/scripts/deploy/baota-deploy.sh` on the server.
 
-Do not add a `push` trigger as a shortcut.
+To pause automatic production deploy, disable `.github/workflows/deploy-baota.yml` in GitHub Actions or remove one required Secret.
 
 ## 6. Why Manual Review Remains Required
 
 This project contains payment, registration, user data, and production deployment concerns.
 
-Manual review remains required because:
+Review still matters because:
 
 - Frontend-only changes and backend/API changes have different deployment risk.
 - Prisma migrations require database backup and manual rollback planning.
 - WeChat Pay prepay/notify and amount calculation must not be changed casually.
 - Mini Program publishing still depends on WeChat platform settings and human review.
-- Secrets are server/GitHub assets and should not be exposed to CI unless needed.
+- Secrets are server/GitHub assets and must not be printed or copied into logs.
 
-## 7. Manual Deploy Workflow Behavior
+## 7. Deploy Workflow Behavior
 
-`deploy-baota.manual.yml`:
+`deploy-baota.yml`:
 
 - Does not check out or build code on GitHub runner.
 - Connects to the server over SSH.
-- Prefers `/www/scripts/conference-system-deploy-ci.sh`.
-- Falls back to `CONFIRM_DEPLOY=YES /www/scripts/conference-system-deploy.sh`.
-- Does not require an interactive `deploy` prompt after SSH connects.
-- Fails clearly if neither server script exists or is executable.
-- Does not contain real server host, username, SSH key, or deployment commands.
+- Bootstraps the latest `main` on the server so the repo deploy script is current.
+- Runs `scripts/deploy/baota-deploy.sh` on the server.
+- Does not require interactive input.
+- Fails clearly if required secrets or the server deploy script are missing.
+- Does not contain real server host, username, SSH key, production env content, or database credentials.
 
 `miniprogram-preview.manual.yml`:
 

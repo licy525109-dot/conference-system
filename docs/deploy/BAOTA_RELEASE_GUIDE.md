@@ -29,9 +29,28 @@ These files and directories live on the server and must not be committed to GitH
 
 If an example is needed, add a template or `.example` file in Git. Do not copy real server files into the repository.
 
-## 3. Frontend-Only Deployment Flow
+## 3. Automatic Production Deployment Flow
 
-Use this path when changes only affect:
+Current default production release path is the automatic workflow:
+
+```text
+.github/workflows/deploy-baota.yml
+```
+
+It runs on push to `main` and can also be triggered manually. The workflow SSHes to the server and runs:
+
+```bash
+cd /www/wwwroot/conference-system
+bash scripts/deploy/baota-deploy.sh
+```
+
+The script backs up `.env.production`, PostgreSQL, and admin static files before publishing. It then installs dependencies, runs Prisma generate/migrate deploy, builds API/Admin, publishes Admin static files, reloads Nginx, restarts PM2, and checks local/public API health. See `docs/deploy/AUTO_DEPLOY_BAOTA.md`.
+
+Use this path for normal production deployment after merging to `main`, including backend/API and Prisma migration changes.
+
+## 4. Legacy Frontend-Only Manual Flow
+
+Use this manual path only when changes affect:
 
 - `apps/user/**`
 - `apps/admin/**`
@@ -52,19 +71,7 @@ rsync -a --delete --exclude='.user.ini' apps/admin/dist/ /www/wwwroot/admin.guan
 curl http://127.0.0.1:3001/api/health
 ```
 
-The example script `scripts/deploy/baota-deploy.example.sh` follows this flow and refuses backend/migration deltas by default.
-
-For GitHub Actions manual deployment, prefer installing a reviewed non-interactive wrapper at:
-
-```bash
-/www/scripts/conference-system-deploy-ci.sh
-```
-
-If the CI wrapper is not available, the manual workflow can fall back to:
-
-```bash
-CONFIRM_DEPLOY=YES /www/scripts/conference-system-deploy.sh
-```
+The old example script `scripts/deploy/baota-deploy.example.sh` follows this legacy frontend-only flow. The current automatic deployment uses `scripts/deploy/baota-deploy.sh`.
 
 Frontend-only releases do not require:
 
@@ -73,7 +80,7 @@ Frontend-only releases do not require:
 - Editing `.env.production`
 - Restarting PostgreSQL or Redis
 
-## 4. Backend/API Deployment Flow
+## 5. Backend/API Deployment Flow
 
 Use this path only when `services/api/**` or shared backend runtime behavior changed.
 
@@ -97,11 +104,11 @@ pm2 restart conference-api
 curl http://127.0.0.1:3001/api/health
 ```
 
-If Prisma migrations changed, follow section 5 before restarting the API.
+If Prisma migrations changed, follow section 6 before restarting the API.
 
 The backend template `scripts/deploy/baota-api-deploy.example.sh` requires explicit confirmation, loads `.env.production`, waits for PostgreSQL, runs `prisma migrate deploy`, builds the API, restarts PM2, and validates health.
 
-## 5. Prisma Migration Deployment Flow
+## 6. Prisma Migration Deployment Flow
 
 Production migration rules:
 
@@ -111,11 +118,12 @@ Production migration rules:
 - Migration rollback is not automatic.
 - Back up PostgreSQL before running migrations.
 
-Example backup command, adjust container name, user, and database to match the server:
+Example backup command:
 
 ```bash
 mkdir -p /www/backup/conference-system
-docker exec -t <postgres_container> pg_dump -U <postgres_user> <postgres_db> > "/www/backup/conference-system/backup-$(date +%Y%m%d-%H%M%S).sql"
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  pg_dump -U conference -d conference_dev > "/www/backup/conference-system/backup-$(date +%Y%m%d-%H%M%S).sql"
 ```
 
 Example migration command after loading production env:
@@ -125,19 +133,19 @@ cd /www/wwwroot/conference-system
 set -a
 source /www/wwwroot/conference-system/.env.production
 set +a
-pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+pnpm --filter @conference/api exec prisma migrate deploy --schema ../../prisma/schema.prisma
 ```
 
 Do not print the contents of `.env.production` in terminal output or logs.
 
-## 6. API Port Notes
+## 7. API Port Notes
 
 - `3001` is the real `conference-api` port.
 - `3000` is `certificate-site`.
 - Health checks must use `http://127.0.0.1:3001/api/health`.
 - Nginx reverse proxy and WeChat callback configuration must point to the real conference API route, not the certificate site.
 
-## 7. Rsync and `.user.ini`
+## 8. Rsync and `.user.ini`
 
 Baota may place `.user.ini` in web root directories. When deploying static files, always exclude it:
 
@@ -147,7 +155,7 @@ rsync -a --delete --exclude='.user.ini' <source>/ <target>/
 
 Do not run a command that deletes the whole web root. Deploy into the static target directory and preserve Baota-managed files.
 
-## 8. Deployment Verification Commands
+## 9. Deployment Verification Commands
 
 After frontend-only deployment:
 
@@ -179,7 +187,7 @@ Manual smoke checks:
 - Orders
 - CMS pages
 
-## 9. Common Faults
+## 10. Common Faults
 
 ### Prisma Cannot Find `DATABASE_URL`
 
@@ -244,7 +252,7 @@ Mini Program workflow requires:
 
 Secrets must be configured in GitHub repository settings and must never be written into workflow files.
 
-## 10. Rollback Flow
+## 11. Rollback Flow
 
 Code/static rollback:
 
@@ -263,7 +271,7 @@ Important:
 - Backend rollback may require `build:api` and `pm2 restart conference-api`.
 - If a migration changed data or schema, prepare a manual database recovery plan before rollback.
 
-## 11. When Server Deployment Is Not Needed
+## 12. When Server Deployment Is Not Needed
 
 No server deployment is needed when a PR only changes:
 
