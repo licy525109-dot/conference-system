@@ -300,6 +300,80 @@ export interface PromotionRule {
   updatedAt: string;
 }
 
+export type NotificationChannelType = "MOCK" | "WECHAT_SUBSCRIBE" | "SMS";
+export type NotificationTemplateStatus = "DRAFT" | "ACTIVE" | "DISABLED";
+export type NotificationTaskStatus = "DRAFT" | "PENDING" | "SENDING" | "SENT" | "PARTIAL_FAILED" | "FAILED" | "CANCELLED";
+export type NotificationLogStatus = "PENDING" | "SUCCESS" | "FAILED" | "SKIPPED";
+
+export interface NotificationTemplate {
+  id: string;
+  code: string;
+  name: string;
+  channel: NotificationChannelType;
+  status: NotificationTemplateStatus;
+  title: string | null;
+  templateKey: string | null;
+  contentJson: Record<string, unknown>;
+  remark: string | null;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationTask {
+  id: string;
+  name: string;
+  templateId: string;
+  channel: NotificationChannelType;
+  targetType: string;
+  payloadJson: Record<string, unknown> | null;
+  status: NotificationTaskStatus;
+  scheduledAt: string | null;
+  sentAt: string | null;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  template?: {
+    id: string;
+    code: string;
+    name: string;
+    title: string | null;
+  };
+  logCount: number;
+}
+
+export interface NotificationLog {
+  id: string;
+  taskId: string | null;
+  templateId: string | null;
+  userId: string | null;
+  channel: NotificationChannelType;
+  recipient: string | null;
+  status: NotificationLogStatus;
+  providerMessageId: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  payloadJson: Record<string, unknown> | null;
+  sentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  task?: {
+    id: string;
+    name: string;
+  } | null;
+  template?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
+  user?: {
+    id: string;
+    openid: string | null;
+    wechatNickname: string | null;
+    nickname: string | null;
+  } | null;
+}
+
 export interface DashboardOverview {
   cards: {
     todayRevenueCent: number;

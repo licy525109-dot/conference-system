@@ -7,6 +7,7 @@ import RegistrationsPage from "../pages/registrations/index.vue";
 import RegistrationDetailPage from "../pages/registrations/detail.vue";
 import CouponsPage from "../pages/coupons/index.vue";
 import PromotionsPage from "../pages/promotions/index.vue";
+import NotificationsPage from "../pages/notifications/index.vue";
 import MaterialsPage from "../pages/materials/index.vue";
 import CmsPagesPage from "../pages/cms/pages.vue";
 import ThemesPage from "../pages/cms/themes.vue";
@@ -50,6 +51,7 @@ export const routes: AdminRoute[] = [
   { path: "/orders", title: "订单支付", menuTitle: "订单支付", group: "会议业务", description: "订单金额、支付流水和异常识别", permission: "order:view", component: OrdersPage },
   { path: "/coupons", title: "优惠券", menuTitle: "优惠券", group: "营销配置", badge: "灰度", description: "扩展营销能力，金额仍以后端计算为准", permission: "coupon:view", component: CouponsPage },
   { path: "/promotions", title: "满减规则", menuTitle: "满减规则", group: "营销配置", badge: "灰度", description: "扩展营销能力，金额仍以后端计算为准", permission: "promotion:view", component: PromotionsPage },
+  { path: "/notifications", title: "通知中心", menuTitle: "通知中心", group: "营销配置", badge: "灰度", description: "通知模板、发送任务和发送日志", permission: "notification:view", component: NotificationsPage },
   { path: "/pages", title: "页面装修", menuTitle: "页面装修", group: "页面装修", description: "CMS 页面版本、组件和发布预览", permission: "page:view", component: CmsPagesPage },
   { path: "/themes", title: "主题配置", menuTitle: "主题配置", group: "页面装修", description: "小程序/H5 主题色、圆角和卡片风格", permission: "theme:view", component: ThemesPage },
   { path: "/tabbar", title: "底部导航", menuTitle: "底部导航", group: "页面装修", description: "小程序动态底部导航配置", permission: "tabbar:view", component: TabbarPage },

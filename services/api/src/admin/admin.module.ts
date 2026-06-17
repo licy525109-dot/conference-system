@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AuthModule } from "../auth/auth.module";
 import { PrismaService } from "../prisma.service";
 import { AdminAccessController } from "./admin-access.controller";
 import { AdminAccessService } from "./admin-access.service";
@@ -23,13 +24,20 @@ import { AdminMembersController } from "./admin-members.controller";
 import { AdminMembersService } from "./admin-members.service";
 import { AdminMaterialsController } from "./admin-materials.controller";
 import { AdminMaterialsService } from "./admin-materials.service";
+import { AdminMobileController } from "./admin-mobile.controller";
+import { AdminNotificationsController, NotificationsController } from "./admin-notifications.controller";
+import { AdminNotificationsService } from "./admin-notifications.service";
 import { AdminPaymentExceptionsController } from "./admin-payment-exceptions.controller";
 import { AdminPaymentExceptionsService } from "./admin-payment-exceptions.service";
 import { AdminPermissionGuard } from "./admin-permission.guard";
 
 @Module({
+  imports: [AuthModule],
   controllers: [
     AdminAuthController,
+    AdminMobileController,
+    NotificationsController,
+    AdminNotificationsController,
     AdminManagementController,
     AdminDashboardController,
     AdminAccessController,
@@ -56,6 +64,7 @@ import { AdminPermissionGuard } from "./admin-permission.guard";
     AdminMembersService,
     AdminFinanceService,
     AdminMallService,
+    AdminNotificationsService,
     AdminPaymentExceptionsService,
     PrismaService
   ],

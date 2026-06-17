@@ -6,6 +6,7 @@ export interface JwtPayload {
   type?: "user" | "admin";
   username?: string;
   iat: number;
+  exp?: number;
 }
 
 const JWT_HEADER = {
@@ -43,13 +44,17 @@ export function verifyJwt(token: string, secret: string): JwtPayload | null {
     if (typeof payload.sub !== "string" || typeof payload.iat !== "number") {
       return null;
     }
+    if (typeof payload.exp === "number" && payload.exp < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
 
     return {
       sub: payload.sub,
       openid: typeof payload.openid === "string" ? payload.openid : null,
       type: payload.type === "admin" || payload.type === "user" ? payload.type : undefined,
       username: typeof payload.username === "string" ? payload.username : undefined,
-      iat: payload.iat
+      iat: payload.iat,
+      exp: typeof payload.exp === "number" ? payload.exp : undefined
     };
   } catch {
     return null;

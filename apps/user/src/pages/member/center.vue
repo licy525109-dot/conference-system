@@ -27,6 +27,8 @@
       </view>
     </view>
 
+    <button v-if="hasAdminAccess" class="admin-entry ui-button-primary" @click="goAdminNotifications">管理员通知中心</button>
+
     <LoadingState v-if="loading" title="加载会员信息中" description="正在读取账号、会员等级和权益说明。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="load" @secondary="goHome" />
 
@@ -92,6 +94,7 @@ import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { ensureLogin, getStoredUser, type CurrentUser } from "@/services/auth";
+import { createMobileAdminSession } from "@/services/admin-mobile";
 import { getMemberLevels, getMyMembership, type CurrentMembership, type MemberLevel } from "@/services/member";
 import { goHome } from "@/utils/navigation";
 
@@ -100,12 +103,14 @@ const error = ref("");
 const user = ref<CurrentUser | null>(getStoredUser());
 const membership = ref<CurrentMembership | null>(null);
 const levels = ref<MemberLevel[]>([]);
+const hasAdminAccess = ref(false);
 const displayName = computed(() => user.value?.wechatNickname || user.value?.nickname || "微信用户");
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("member-center");
 
 onMounted(() => {
   void refreshTheme();
   void load();
+  void checkAdminAccess();
 });
 
 async function load() {
@@ -123,6 +128,19 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+async function checkAdminAccess() {
+  try {
+    await createMobileAdminSession();
+    hasAdminAccess.value = true;
+  } catch {
+    hasAdminAccess.value = false;
+  }
+}
+
+function goAdminNotifications() {
+  uni.navigateTo({ url: "/pages/admin/notifications/index" });
 }
 
 function formatCent(value: number) {
@@ -194,6 +212,10 @@ function formatDiscount(value: number) {
 
 .profile-card {
   justify-content: flex-start;
+}
+
+.admin-entry {
+  width: 100%;
 }
 
 .avatar {

@@ -1,7 +1,8 @@
 import { pbkdf2Sync, timingSafeEqual } from "node:crypto";
-import { BadRequestException, Injectable, InternalServerErrorException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, UnauthorizedException } from "@nestjs/common";
 import { AuditAction } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { CurrentUser } from "../auth/current-user";
 import { signJwt, verifyJwt } from "../auth/jwt";
 import { AdminAccessService } from "./admin-access.service";
 import { CurrentAdmin } from "./current-admin";
@@ -70,6 +71,128 @@ export class AdminAuthService {
     });
   }
 
+  async loginAndBindMobile(input: unknown, currentUser: CurrentUser): Promise<ApiResponse<AdminLoginResponse & { binding: MobileAdminBinding }>> {
+    if (!isRecord(input)) {
+      throw new BadRequestException("Request body must be a JSON object");
+    }
+
+    const username = readRequiredString(input, "username");
+    const password = readRequiredString(input, "password");
+    const adminUser = await this.prisma.adminUser.findUnique({
+      where: { username },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        passwordHash: true,
+        enabled: true
+      }
+    });
+
+    if (!adminUser || !adminUser.enabled || !verifyPassword(password, adminUser.passwordHash)) {
+      throw new UnauthorizedException("Invalid username or password");
+    }
+
+    if (!currentUser.openid) {
+      throw new BadRequestException("当前微信用户缺少 openid，无法绑定管理员手机入口");
+    }
+
+    const existingOpenidBinding = await this.prisma.adminWechatBinding.findUnique({
+      where: { openid: currentUser.openid },
+      select: { id: true, adminUserId: true }
+    });
+    if (existingOpenidBinding && existingOpenidBinding.adminUserId !== adminUser.id) {
+      throw new ConflictException("当前微信已绑定其他管理员账号");
+    }
+
+    await this.access().ensureBuiltInAccess();
+    const binding = await this.prisma.adminWechatBinding.upsert({
+      where: {
+        adminUserId_userId: {
+          adminUserId: adminUser.id,
+          userId: currentUser.id
+        }
+      },
+      update: {
+        openid: currentUser.openid,
+        enabled: true,
+        lastSessionAt: new Date()
+      },
+      create: {
+        adminUserId: adminUser.id,
+        userId: currentUser.id,
+        openid: currentUser.openid,
+        enabled: true,
+        lastSessionAt: new Date()
+      },
+      select: mobileBindingSelect
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        adminUserId: adminUser.id,
+        action: AuditAction.LOGIN,
+        entityType: "AdminWechatBinding",
+        entityId: binding.id,
+        summary: "Admin mobile login and bind",
+        metadataJson: {
+          userId: currentUser.id
+        }
+      }
+    });
+
+    const admin = await this.buildCurrentAdmin(adminUser);
+    return ok({
+      token: this.signAdminToken(admin, 2 * 60 * 60),
+      admin,
+      binding: formatMobileBinding(binding)
+    });
+  }
+
+  async createMobileSession(currentUser: CurrentUser): Promise<ApiResponse<AdminLoginResponse & { binding: MobileAdminBinding }>> {
+    if (!currentUser.openid) {
+      throw new UnauthorizedException("当前微信用户未绑定管理员账号");
+    }
+
+    const binding = await this.prisma.adminWechatBinding.findFirst({
+      where: {
+        userId: currentUser.id,
+        openid: currentUser.openid,
+        enabled: true,
+        adminUser: {
+          enabled: true
+        }
+      },
+      select: {
+        ...mobileBindingSelect,
+        adminUser: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            enabled: true
+          }
+        }
+      }
+    });
+
+    if (!binding?.adminUser) {
+      throw new UnauthorizedException("当前微信用户未绑定管理员账号");
+    }
+
+    await this.prisma.adminWechatBinding.update({
+      where: { id: binding.id },
+      data: { lastSessionAt: new Date() }
+    });
+
+    const admin = await this.buildCurrentAdmin(binding.adminUser);
+    return ok({
+      token: this.signAdminToken(admin, 2 * 60 * 60),
+      admin,
+      binding: formatMobileBinding(binding)
+    });
+  }
+
   async getCurrentAdminFromToken(token: string): Promise<CurrentAdmin> {
     const payload = verifyJwt(token, this.getJwtSecret());
     if (!payload || payload.type !== "admin") {
@@ -90,26 +213,32 @@ export class AdminAuthService {
       throw new UnauthorizedException("Invalid admin bearer token");
     }
 
-    return {
-      id: admin.id,
-      username: admin.username,
-      displayName: admin.displayName,
-      permissions: await this.access().getAdminPermissions(admin.id)
-    };
+    return this.buildCurrentAdmin(admin);
   }
 
   private access(): AdminAccessService {
     return this.accessService ?? new AdminAccessService(this.prisma);
   }
 
-  private signAdminToken(admin: CurrentAdmin): string {
+  private async buildCurrentAdmin(adminUser: { id: string; username: string; displayName: string | null }): Promise<CurrentAdmin> {
+    return {
+      id: adminUser.id,
+      username: adminUser.username,
+      displayName: adminUser.displayName,
+      permissions: await this.access().getAdminPermissions(adminUser.id)
+    };
+  }
+
+  private signAdminToken(admin: CurrentAdmin, expiresInSeconds?: number): string {
+    const now = Math.floor(Date.now() / 1000);
     return signJwt(
       {
         sub: admin.id,
         openid: null,
         type: "admin",
         username: admin.username,
-        iat: Math.floor(Date.now() / 1000)
+        iat: now,
+        ...(expiresInSeconds ? { exp: now + expiresInSeconds } : {})
       },
       this.getJwtSecret()
     );
@@ -130,6 +259,46 @@ function ok<TData>(data: TData): ApiResponse<TData> {
     code: "OK",
     message: "ok",
     data
+  };
+}
+
+export interface MobileAdminBinding {
+  id: string;
+  adminUserId: string;
+  userId: string;
+  openid: string | null;
+  enabled: boolean;
+  boundAt: string;
+  lastSessionAt: string | null;
+}
+
+const mobileBindingSelect = {
+  id: true,
+  adminUserId: true,
+  userId: true,
+  openid: true,
+  enabled: true,
+  boundAt: true,
+  lastSessionAt: true
+} as const;
+
+function formatMobileBinding(binding: {
+  id: string;
+  adminUserId: string;
+  userId: string;
+  openid: string | null;
+  enabled: boolean;
+  boundAt: Date;
+  lastSessionAt: Date | null;
+}): MobileAdminBinding {
+  return {
+    id: binding.id,
+    adminUserId: binding.adminUserId,
+    userId: binding.userId,
+    openid: binding.openid,
+    enabled: binding.enabled,
+    boundAt: binding.boundAt.toISOString(),
+    lastSessionAt: binding.lastSessionAt?.toISOString() ?? null
   };
 }
 
