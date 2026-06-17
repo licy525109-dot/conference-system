@@ -27,6 +27,7 @@ const props = withDefaults(
 const visible = computed(() => props.active && props.theme.backgroundMode === "dynamic-gradient");
 const placementClass = computed(() => (props.placement === "absolute" ? "is-absolute" : "is-fixed"));
 const speed = computed(() => Math.max(6, Math.min(40, Number(props.theme.backgroundDynamicSpeed) || 18)));
+const motionSeconds = computed(() => Math.max(5, Math.round(20 - speed.value * 0.34)));
 const density = computed(() => Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40)));
 const fromColor = computed(() => normalizeColor(props.theme.backgroundGradientFrom || props.theme.backgroundColor || "#f5f7fb"));
 const toColor = computed(() => normalizeColor(props.theme.backgroundGradientTo || props.theme.secondaryColor || "#3a8f79"));
@@ -38,20 +39,26 @@ const rootStyle = computed(() => ({
 }));
 
 const baseStyle = computed(() => ({
-  background: `linear-gradient(135deg, ${fromColor.value} 0%, ${toColor.value} 58%, ${accentColor.value} 130%)`,
-  animation: `themeDynamicBase ${speed.value}s ease-in-out infinite alternate`
+  background: [
+    `radial-gradient(circle at 16% 14%, ${withAlpha(primaryColor.value, 0.48)} 0, transparent 34%)`,
+    `radial-gradient(circle at 88% 18%, ${withAlpha(toColor.value, 0.42)} 0, transparent 38%)`,
+    `radial-gradient(circle at 22% 82%, ${withAlpha(accentColor.value, 0.26)} 0, transparent 42%)`,
+    `linear-gradient(132deg, ${fromColor.value} 0%, ${toColor.value} 58%, ${withAlpha(accentColor.value, 0.42)} 132%)`
+  ].join(", "),
+  backgroundSize: "190% 190%",
+  animation: `themeDynamicBase ${motionSeconds.value}s ease-in-out infinite alternate`
 }));
 
-const glowAStyle = computed(() => glowStyle(primaryColor.value, toColor.value, 0.52, 0.26, 360 + density.value * 3.6, speed.value * 0.82, "themeDynamicGlowA"));
-const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.48, 0.24, 320 + density.value * 3.2, speed.value * 0.96, "themeDynamicGlowB"));
-const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.44, 0.22, 280 + density.value * 2.8, speed.value * 1.08, "themeDynamicGlowC"));
+const glowAStyle = computed(() => glowStyle(primaryColor.value, toColor.value, 0.28, 0.12, 520 + density.value * 3.8, motionSeconds.value * 0.78, "themeDynamicGlowA"));
+const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.26, 0.12, 480 + density.value * 3.4, motionSeconds.value * 0.9, "themeDynamicGlowB"));
+const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.18, 0.08, 420 + density.value * 3.2, motionSeconds.value * 0.84, "themeDynamicGlowC"));
 
 function glowStyle(colorA: string, colorB: string, alphaA: number, alphaB: number, size: number, duration: number, animationName: string): Record<string, string> {
   return {
     width: `${Math.round(size)}rpx`,
     height: `${Math.round(size * 0.78)}rpx`,
-    background: `linear-gradient(135deg, ${withAlpha(colorA, alphaA)}, ${withAlpha(colorB, alphaB)})`,
-    animation: `${animationName} ${Math.max(6, Math.round(duration))}s ease-in-out infinite alternate`
+    background: `radial-gradient(circle at 50% 50%, ${withAlpha(colorA, alphaA)} 0, ${withAlpha(colorB, alphaB)} 42%, rgba(255,255,255,0) 72%)`,
+    animation: `${animationName} ${Math.max(5, Math.round(duration))}s ease-in-out infinite alternate`
   };
 }
 
@@ -119,9 +126,9 @@ function withAlpha(value: string, alpha: number): string {
 
 .theme-dynamic-bg__glow {
   border-radius: 9999rpx;
-  opacity: 0.92;
-  filter: blur(12rpx);
-  mix-blend-mode: multiply;
+  opacity: 0.72;
+  filter: blur(36rpx);
+  mix-blend-mode: normal;
 }
 
 .theme-dynamic-bg__glow-a {
@@ -135,51 +142,52 @@ function withAlpha(value: string, alpha: number): string {
 }
 
 .theme-dynamic-bg__glow-c {
-  right: 12%;
-  bottom: -12%;
+  right: -18%;
+  bottom: 2%;
+  opacity: 0.5;
 }
 
 .theme-dynamic-bg__filter {
   right: 0;
   bottom: 0;
   left: 0;
-  height: 72%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(245, 247, 246, 0.78));
+  height: 56%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(245, 247, 246, 0.54));
 }
 
 @keyframes themeDynamicBase {
   from {
-    transform: translate(-2%, -1%) scale(1);
+    transform: translate(-5%, -4%) scale(1);
   }
   to {
-    transform: translate(3%, 2%) scale(1.04);
+    transform: translate(6%, 5%) scale(1.08);
   }
 }
 
 @keyframes themeDynamicGlowA {
   from {
-    transform: translate(-10%, -8%) scale(1);
+    transform: translate(-18%, -12%) scale(1);
   }
   to {
-    transform: translate(22%, 18%) scale(1.16);
+    transform: translate(26%, 22%) scale(1.2);
   }
 }
 
 @keyframes themeDynamicGlowB {
   from {
-    transform: translate(16%, -8%) scale(1.08);
+    transform: translate(18%, -12%) scale(1.08);
   }
   to {
-    transform: translate(-20%, 22%) scale(0.96);
+    transform: translate(-24%, 24%) scale(0.94);
   }
 }
 
 @keyframes themeDynamicGlowC {
   from {
-    transform: translate(10%, 12%) scale(1);
+    transform: translate(12%, 18%) scale(1);
   }
   to {
-    transform: translate(-16%, -18%) scale(1.18);
+    transform: translate(-24%, -24%) scale(1.2);
   }
 }
 </style>

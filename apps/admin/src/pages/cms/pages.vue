@@ -1128,7 +1128,10 @@ function fieldsFor(type: string): ConfigField[] {
       ]
     }
   ];
-  const withTextStyle = (fields: ConfigField[], fontSize = 26) => [...fields, ...titleStyleFields, { ...textStyleFields[0], fallback: fontSize }, ...textStyleFields.slice(1)];
+  const layoutFields: ConfigField[] = [
+    { key: "fullBleed", label: "组件铺满屏幕宽度", kind: "switch", fallback: "false" }
+  ];
+  const withTextStyle = (fields: ConfigField[], fontSize = 26) => [...fields, ...layoutFields, ...titleStyleFields, { ...textStyleFields[0], fallback: fontSize }, ...textStyleFields.slice(1)];
   const conferenceDisplayFields: ConfigField[] = [
     { key: "showCover", label: "显示会议封面", kind: "switch", fallback: "true" },
     {
@@ -1248,7 +1251,7 @@ function fieldsFor(type: string): ConfigField[] {
           { label: "宽度铺满", value: "widthFix" }
         ]
       },
-      { key: "fullBleed", label: "铺满屏幕宽度", kind: "switch", fallback: "false" },
+      { key: "fullBleed", label: "铺满屏幕宽度", kind: "switch", fallback: "true" },
       { key: "autoplay", label: "自动轮播", kind: "switch", fallback: "true" },
       { key: "indicatorDots", label: "显示指示点", kind: "switch", fallback: "true" }
     ],
@@ -1262,7 +1265,7 @@ function fieldsFor(type: string): ConfigField[] {
     "promotion-bar": withTextStyle([{ key: "text", label: "提示文字", placeholder: "满减活动进行中" }], 28),
     "rich-text": withTextStyle([{ key: "html", label: "图文内容", kind: "textarea", rows: 6, placeholder: "填写图文内容，可使用简单段落和换行" }], 28),
     "safe-html": withTextStyle([{ key: "html", label: "图文内容", kind: "textarea", rows: 6, placeholder: "填写安全图文内容" }], 28),
-    "image-grid": [{ key: "images", label: "图片宫格", kind: "list", placeholder: "每行一个图片地址", rows: 5 }],
+    "image-grid": [{ key: "images", label: "图片宫格", kind: "list", placeholder: "每行一个图片地址", rows: 5 }, ...layoutFields],
     video: withTextStyle([...commonTitle, { key: "url", label: "视频地址", placeholder: "请输入视频地址" }], 26),
     countdown: withTextStyle([...commonTitle, { key: "targetAt", label: "目标时间", placeholder: "例如 2026-08-01 09:00" }], 26),
     notice: withTextStyle([{ key: "text", label: "公告内容", placeholder: "请输入公告" }], 28),
@@ -1331,6 +1334,7 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
         title: "显示控制",
         fields: fieldsByKeys(fields, [
           "showCover",
+          "fullBleed",
           "cardImageLayout",
           "cardImageHeight",
           "showSummary",
@@ -1603,9 +1607,12 @@ const ComponentPreview = defineComponent({
       if (type === "hero") {
         const showContent = !booleanConfig(props.item, "imageOnly", false) && booleanConfig(props.item, "showContent", true);
         return h("div", { class: ["preview-hero-card", booleanConfig(props.item, "imageOnly", false) ? "is-image-only" : ""], style: previewHeroCardStyle(props.item) }, [
-          value("imageUrl")
-            ? h("img", { src: value("imageUrl"), alt: "主视觉横幅", style: previewImageModeStyle(props.item) })
-            : h("div", { class: "preview-hero-empty" }),
+          ...(value("imageUrl")
+            ? [
+                h("img", { class: "preview-visual-backdrop", src: value("imageUrl"), alt: "", style: { objectFit: "cover" } }),
+                h("img", { class: "preview-visual-foreground", src: value("imageUrl"), alt: "主视觉横幅", style: previewImageModeStyle(props.item) })
+              ]
+            : [h("div", { class: "preview-hero-empty" })]),
           showContent && booleanConfig(props.item, "showOverlay", true) ? h("div", { class: "preview-hero-card__shade" }) : null,
           showContent
             ? h("div", { class: "preview-hero-card__copy" }, [
@@ -1619,7 +1626,7 @@ const ComponentPreview = defineComponent({
       }
       if (type === "conference-list") {
         const limit = numberValue(props.item, "limit", 10);
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: ["preview-section", booleanConfig(props.item, "fullBleed", false) ? "is-full-bleed" : ""] }, [
           h("strong", { style: titleStyle() }, value("title", "可报名会议")),
           ...meetings()
             .slice(0, limit)
@@ -1643,7 +1650,7 @@ const ComponentPreview = defineComponent({
       if (type === "conference-tabs") {
         const tabs = list("tabs");
         const nextTabs = tabs.length > 0 ? tabs : Array.from(new Set(meetings().map((meeting) => meeting.location))).slice(0, 4);
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: ["preview-section", booleanConfig(props.item, "fullBleed", false) ? "is-full-bleed" : ""] }, [
           h("strong", { style: titleStyle() }, value("title", "会议分类切换")),
           h("div", { class: "preview-tabs" }, nextTabs.map((item, index) => h("span", { class: index === 0 ? "active" : "" }, item))),
           ...meetings()
@@ -1743,7 +1750,12 @@ const ComponentPreview = defineComponent({
       if (type === "image-grid" || type === "carousel") {
         if (type === "carousel") {
           const images = list("images");
-          return h("div", { class: ["preview-carousel", booleanConfig(props.item, "fullBleed", false) ? "is-full-bleed" : ""], style: previewCarouselStyle(props.item) }, images[0] ? h("img", { src: images[0], alt: "", style: previewImageModeStyle(props.item) }) : h("span", "暂无轮播图片"));
+          return h("div", { class: ["preview-carousel", booleanConfig(props.item, "fullBleed", true) ? "is-full-bleed" : ""], style: previewCarouselStyle(props.item) }, images[0]
+            ? [
+                h("img", { class: "preview-visual-backdrop", src: images[0], alt: "", style: { objectFit: "cover" } }),
+                h("img", { class: "preview-visual-foreground", src: images[0], alt: "", style: previewImageModeStyle(props.item) })
+              ]
+            : h("span", "暂无轮播图片"));
         }
         return h("div", { class: "preview-image-grid" }, list("images").map((item) => h("img", { src: item, alt: "" })));
       }
@@ -2925,6 +2937,12 @@ function splitPreviewLine(value: string): string[] {
   background: var(--preview-card);
 }
 
+.phone-screen :deep(.preview-section.is-full-bleed) {
+  margin-right: -10px;
+  margin-left: -10px;
+  border-radius: 0;
+}
+
 .preview-section p {
   margin: 8px 0 0;
   color: #5b6b80;
@@ -3051,15 +3069,32 @@ function splitPreviewLine(value: string): string[] {
     linear-gradient(135deg, var(--preview-primary), var(--preview-secondary));
 }
 
+.phone-screen :deep(.preview-hero-card .preview-visual-backdrop),
+.phone-screen :deep(.preview-carousel .preview-visual-backdrop) {
+  z-index: 0;
+  object-fit: cover !important;
+  transform: scale(1.08);
+  opacity: 0.46;
+  filter: blur(10px);
+}
+
+.phone-screen :deep(.preview-hero-card .preview-visual-foreground),
+.phone-screen :deep(.preview-carousel .preview-visual-foreground) {
+  z-index: 1;
+  object-fit: contain !important;
+  background: transparent;
+}
+
 .phone-screen :deep(.preview-hero-card__shade) {
   position: absolute;
   inset: 0;
+  z-index: 2;
   background: linear-gradient(90deg, rgb(10 16 28 / 74%), rgb(10 16 28 / 34%) 58%, rgb(10 16 28 / 8%));
 }
 
 .phone-screen :deep(.preview-hero-card__copy) {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   display: flex;
   min-height: inherit;
   flex-direction: column;
@@ -3143,6 +3178,7 @@ function splitPreviewLine(value: string): string[] {
 }
 
 .preview-carousel {
+  position: relative;
   display: grid;
   place-items: center;
   min-height: 112px;
@@ -3157,6 +3193,17 @@ function splitPreviewLine(value: string): string[] {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.preview-carousel .preview-visual-backdrop {
+  position: absolute;
+  inset: 0;
+  object-fit: cover;
+}
+
+.preview-carousel .preview-visual-foreground {
+  position: relative;
+  z-index: 1;
 }
 
 .preview-person,

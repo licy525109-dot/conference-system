@@ -4,7 +4,7 @@
     <view
       v-for="(component, index) in visibleComponents"
       :key="component.id"
-      :class="blockClass(index)"
+      :class="blockClass(component, index)"
       :style="blockStyle(index)"
     >
       <ThemeDynamicBackground v-if="showHeaderDynamicBackground(index)" :theme="props.theme" placement="absolute" />
@@ -21,7 +21,13 @@
       <view v-if="component.type === 'hero'" :class="heroClass(component)" :style="heroStyle(component)">
         <image
           v-if="stringConfig(component, 'imageUrl')"
-          class="cms-hero__image"
+          class="cms-hero__image cms-hero__image--backdrop"
+          :src="stringConfig(component, 'imageUrl')"
+          mode="aspectFill"
+        />
+        <image
+          v-if="stringConfig(component, 'imageUrl')"
+          class="cms-hero__image cms-hero__image--foreground"
           :src="stringConfig(component, 'imageUrl')"
           :mode="heroImageMode(component)"
         />
@@ -110,7 +116,10 @@
           :autoplay="booleanConfig(component, 'autoplay', true)"
         >
           <swiper-item v-for="image in stringListConfig(component, 'images')" :key="image">
-            <image class="cms-swiper__image" :src="image" :mode="carouselImageMode(component)" />
+            <view class="cms-swiper__slide">
+              <image class="cms-swiper__backdrop" :src="image" mode="aspectFill" />
+              <image class="cms-swiper__image" :src="image" :mode="carouselImageMode(component)" />
+            </view>
           </swiper-item>
         </swiper>
         <view v-else class="cms-empty cms-empty-card">暂无轮播图片</view>
@@ -337,10 +346,11 @@ function headerBackgroundStyle(): Record<string, string> {
   return createCmsBackgroundStyle(props.theme, "header");
 }
 
-function blockClass(index: number): string[] {
+function blockClass(component: CmsComponent, index: number): string[] {
   return [
     "cms-block",
-    props.theme.backgroundApplyTo === "header" && index === 0 ? "is-header-block" : ""
+    props.theme.backgroundApplyTo === "header" && index === 0 ? "is-header-block" : "",
+    isGenericFullBleed(component) ? "is-component-full-bleed" : ""
   ].filter(Boolean);
 }
 
@@ -351,6 +361,11 @@ function blockStyle(index: number): Record<string, string> {
 
 function showHeaderDynamicBackground(index: number): boolean {
   return index === 0 && props.theme.backgroundApplyTo === "header" && props.theme.backgroundMode === "dynamic-gradient";
+}
+
+function isGenericFullBleed(component: CmsComponent): boolean {
+  if (!booleanConfig(component, "fullBleed", false)) return false;
+  return !["hero", "carousel", "floating-registration-button"].includes(component.type);
 }
 
 function arrayConfig(component: CmsComponent, key: string): unknown[] {
@@ -563,7 +578,7 @@ function showHeroShade(component: CmsComponent): boolean {
 }
 
 function carouselClass(component: CmsComponent): string[] {
-  return ["cms-carousel", booleanConfig(component, "fullBleed", false) ? "is-full-bleed" : ""].filter(Boolean);
+  return ["cms-carousel", booleanConfig(component, "fullBleed", true) ? "is-full-bleed" : ""].filter(Boolean);
 }
 
 function carouselStyle(component: CmsComponent): Record<string, string> {
@@ -1042,10 +1057,35 @@ function parseTargetTime(value: string): number | null {
   background: var(--ui-color-surface-muted);
 }
 
-.cms-swiper__image {
+.cms-carousel.is-full-bleed .cms-swiper {
+  border-radius: 0;
+}
+
+.cms-swiper__slide {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   height: var(--cms-carousel-height, 320rpx);
-  background: var(--ui-color-surface-muted);
+  background: var(--cms-surface-muted);
+}
+
+.cms-swiper__backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  transform: scale(1.08);
+  opacity: 0.46;
+  filter: blur(16rpx);
+}
+
+.cms-swiper__image {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: var(--cms-carousel-height, 320rpx);
+  background: transparent;
 }
 
 .cms-empty-card {
@@ -1330,7 +1370,7 @@ function parseTargetTime(value: string): number | null {
 .cms-hero.is-full-bleed {
   margin-right: -28rpx;
   margin-left: -28rpx;
-  border-radius: 0 0 var(--cms-radius-xxl) var(--cms-radius-xxl);
+  border-radius: 0;
 }
 
 .cms-hero__image {
@@ -1342,7 +1382,20 @@ function parseTargetTime(value: string): number | null {
   background: var(--cms-gradient-hero);
 }
 
+.cms-hero__image--backdrop {
+  z-index: 0;
+  transform: scale(1.08);
+  opacity: 0.5;
+  filter: blur(18rpx);
+}
+
+.cms-hero__image--foreground {
+  z-index: 1;
+  background: transparent;
+}
+
 .cms-hero__image--generated {
+  z-index: 0;
   background:
     radial-gradient(circle at 12% 16%, rgba(255, 255, 255, 0.38) 0, transparent 26%),
     radial-gradient(circle at 86% 18%, rgba(255, 255, 255, 0.18) 0, transparent 24%),
@@ -1446,6 +1499,20 @@ function parseTargetTime(value: string): number | null {
   box-shadow: var(--cms-shadow-md);
 }
 
+.cms-block.is-component-full-bleed > .cms-section,
+.cms-block.is-component-full-bleed > .cms-card,
+.cms-block.is-component-full-bleed > .cms-mini-card,
+.cms-block.is-component-full-bleed > .cms-grid,
+.cms-block.is-component-full-bleed > .cms-notice,
+.cms-block.is-component-full-bleed > .cms-title,
+.cms-block.is-component-full-bleed > .cms-register {
+  margin-right: -28rpx;
+  margin-left: -28rpx;
+  border-right-width: 0;
+  border-left-width: 0;
+  border-radius: 0;
+}
+
 .cms-section__title,
 .cms-title {
   color: var(--cms-text-primary);
@@ -1465,6 +1532,15 @@ function parseTargetTime(value: string): number | null {
 .cms-swiper__image,
 .cms-grid__image {
   border-radius: var(--cms-radius-lg);
+}
+
+.cms-swiper__backdrop {
+  border-radius: inherit;
+}
+
+.cms-carousel.is-full-bleed .cms-swiper,
+.cms-carousel.is-full-bleed .cms-swiper__image {
+  border-radius: 0;
 }
 
 .cms-card.is-conference-card,
