@@ -124,6 +124,10 @@ body {
 
 .menu-group-title small,
 .menu-item-copy small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   padding: 2px 6px;
   border-radius: 999px;
   background: rgb(255 255 255 / 10%);
@@ -177,6 +181,18 @@ body {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+}
+
+.menu-item-copy > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-menu.el-menu--collapse .menu-group-title small,
+.admin-menu.el-menu--collapse .menu-item-copy small {
+  display: none;
 }
 
 .admin-header {

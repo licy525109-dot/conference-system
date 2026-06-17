@@ -3,12 +3,12 @@
     <AdminPageHeader
       v-if="!embedded"
       title="优惠券"
-      eyebrow="营销配置"
+      eyebrow="营销活动"
       badge="灰度能力"
       badge-tone="warning"
       subtitle="配置固定金额或折扣券；订单创建时后端会重新计算优惠，前端金额仅用于展示。"
     >
-      <AdminFeatureBadge label="营销配置 / 灰度能力" description="不改变 quote、下单和支付金额计算逻辑。" tone="warning" />
+      <AdminFeatureBadge label="营销活动 / 灰度能力" description="不改变 quote、下单和支付金额计算逻辑。" tone="warning" />
       <template #actions>
         <el-button type="primary" @click="openCreate">新增优惠券</el-button>
       </template>

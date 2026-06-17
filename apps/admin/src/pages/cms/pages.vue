@@ -2,7 +2,7 @@
   <section class="admin-page cms-page">
     <div class="page-header cms-hero">
       <div>
-        <h1 class="page-title">页面装修工作台</h1>
+        <h1 class="page-title">页面装修控制台</h1>
         <p class="page-subtitle">左侧管理页面与组件，中间专注预览和排序，右侧集中编辑页面参数与组件配置。</p>
       </div>
       <div class="inline-actions">

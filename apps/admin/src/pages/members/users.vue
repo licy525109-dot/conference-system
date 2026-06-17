@@ -1,13 +1,13 @@
 <template>
   <section class="admin-page">
     <AdminPageHeader
-      title="用户与会员"
-      eyebrow="扩展能力"
+      title="会员管理"
+      eyebrow="会员"
       badge="后续开放"
       badge-tone="neutral"
-      subtitle="查看小程序用户，手动授予会员等级；会员能力后续才参与报名定价，当前不影响会议订单金额。"
+      subtitle="查看小程序用户，手动授予会员等级；当前会员价尚未正式参与报名计价。"
     >
-      <AdminFeatureBadge label="扩展能力 / 后续参与报名定价" description="第一版报名缴费主线不依赖会员能力，授予会员不会改变报名订单金额。" tone="warning" />
+      <AdminFeatureBadge label="会员价状态" description="当前会员价尚未正式参与报名计价。" tone="warning" />
       <template #actions>
         <el-button type="primary" @click="openAssign">授予会员</el-button>
       </template>

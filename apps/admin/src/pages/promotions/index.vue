@@ -3,12 +3,12 @@
     <AdminPageHeader
       v-if="!embedded"
       title="满减规则"
-      eyebrow="营销配置"
+      eyebrow="营销活动"
       badge="灰度能力"
       badge-tone="warning"
       subtitle="配置满金额或满张数优惠；订单创建时由后端重新计算，不以后台展示值作为支付依据。"
     >
-      <AdminFeatureBadge label="营销配置 / 灰度能力" description="不改变 quote、下单和支付金额计算逻辑。" tone="warning" />
+      <AdminFeatureBadge label="营销活动 / 灰度能力" description="不改变 quote、下单和支付金额计算逻辑。" tone="warning" />
       <template #actions>
         <el-button type="primary" @click="openCreate">新增满减</el-button>
       </template>

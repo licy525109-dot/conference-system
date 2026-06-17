@@ -1,13 +1,13 @@
 <template>
   <section class="admin-page">
     <AdminPageHeader
-      title="商城商品"
-      eyebrow="扩展能力"
+      title="商品管理"
+      eyebrow="商城"
       badge="灰度中"
       badge-tone="warning"
-      subtitle="商城能力灰度中，商品支付和履约后续完善；商品与 SKU 独立于会议报名订单。"
+      subtitle="当前商城为灰度能力，建议正式配置商品、库存和售后流程后再开放给用户。"
     >
-      <AdminFeatureBadge label="商城能力灰度中" description="当前不伪装成完整电商后台，商品支付和履约后续完善。" tone="warning" />
+      <AdminFeatureBadge label="商城灰度能力" description="商品、库存和售后流程完整配置后再开放用户端导航。" tone="warning" />
       <template #actions>
         <el-button @click="categoryVisible = true">新增分类</el-button>
         <el-button type="primary" @click="openCreate">新增商品</el-button>

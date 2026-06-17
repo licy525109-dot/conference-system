@@ -16,8 +16,8 @@
       title="微信订阅消息和短信只通过官方能力发送；未开启对应 env 时，发送任务会记录为跳过。"
     />
 
-    <el-tabs v-model="activeTab" class="tabs">
-      <el-tab-pane label="模板" name="templates">
+    <section class="notification-section">
+      <template v-if="visibleSection === 'templates'">
         <section class="table-panel">
           <el-table :data="templates" empty-text="暂无通知模板">
             <el-table-column prop="code" label="编码" min-width="180" />
@@ -29,9 +29,9 @@
             <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openTemplateEdit(row)">编辑</el-button></template></el-table-column>
           </el-table>
         </section>
-      </el-tab-pane>
+      </template>
 
-      <el-tab-pane label="任务" name="tasks">
+      <template v-else-if="visibleSection === 'tasks'">
         <section class="table-panel">
           <el-table :data="tasks" empty-text="暂无通知任务">
             <el-table-column prop="name" label="任务" min-width="200" />
@@ -48,9 +48,9 @@
             </el-table-column>
           </el-table>
         </section>
-      </el-tab-pane>
+      </template>
 
-      <el-tab-pane label="发送日志" name="logs">
+      <template v-else>
         <section class="table-panel">
           <el-table :data="logs" empty-text="暂无发送日志">
             <el-table-column label="任务" min-width="180"><template #default="{ row }">{{ row.task?.name || row.taskId || "-" }}</template></el-table-column>
@@ -62,8 +62,8 @@
             <el-table-column label="创建时间" width="180"><template #default="{ row }">{{ formatTime(row.createdAt) }}</template></el-table-column>
           </el-table>
         </section>
-      </el-tab-pane>
-    </el-tabs>
+      </template>
+    </section>
 
     <el-dialog v-model="templateDialogVisible" :title="templateForm.id ? '编辑模板' : '新建模板'" width="680px">
       <el-form :model="templateForm" label-width="116px">
@@ -117,6 +117,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import { currentRoute } from "../../router";
 import {
   createNotificationTask,
   createNotificationTemplate,
@@ -152,6 +153,14 @@ const taskForm = reactive({
   payloadText: "{}"
 });
 const activeTemplates = computed(() => templates.value.filter((item) => item.status === "ACTIVE"));
+const routeSection = computed(() => {
+  const path = currentRoute.value.path;
+  if (path.endsWith("/tasks")) return "tasks";
+  if (path.endsWith("/logs")) return "logs";
+  if (path.endsWith("/templates")) return "templates";
+  return "";
+});
+const visibleSection = computed(() => routeSection.value || activeTab.value);
 
 onMounted(() => void loadAll());
 
@@ -308,7 +317,7 @@ function formatTime(value: string) {
   margin-bottom: 16px;
 }
 
-.tabs {
+.notification-section {
   margin-top: 12px;
 }
 </style>

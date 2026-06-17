@@ -2,12 +2,12 @@
   <section class="admin-page">
     <AdminPageHeader
       title="商城订单"
-      eyebrow="扩展能力"
+      eyebrow="商城"
       badge="灰度中"
       badge-tone="warning"
-      subtitle="商城订单为独立预留链路，商品支付和履约后续完善，当前不接会议报名支付。"
+      subtitle="当前商城为灰度能力，建议正式配置商品、库存和售后流程后再开放给用户。"
     >
-      <AdminFeatureBadge label="商城能力灰度中" description="不与会议订单支付状态混用，不作为完整电商履约后台。" tone="warning" />
+      <AdminFeatureBadge label="商城灰度能力" description="商城订单不与会议报名订单混用，售后和履约流程完整后再开放。" tone="warning" />
       <template #actions>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </template>

@@ -2,7 +2,7 @@
   <section class="admin-page">
     <AdminPageHeader
       title="报名详情"
-      eyebrow="会议业务"
+      eyebrow="会议管理"
       subtitle="串联报名、订单、支付、参会人、表单快照和操作日志。"
     >
       <template #actions>

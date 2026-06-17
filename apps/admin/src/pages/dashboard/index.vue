@@ -3,7 +3,7 @@
     <AdminPageHeader
       title="数据看板"
       subtitle="聚焦会议报名、订单支付、收入和库存预警，优先服务日常运营判断。"
-      eyebrow="工作台"
+      eyebrow="控制台"
     >
       <template #actions>
         <el-button type="primary" :loading="loading" @click="load">刷新数据</el-button>

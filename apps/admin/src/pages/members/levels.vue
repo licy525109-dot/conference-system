@@ -2,12 +2,12 @@
   <section class="admin-page">
     <AdminPageHeader
       title="会员等级"
-      eyebrow="扩展能力"
+      eyebrow="会员"
       badge="后续开放"
       badge-tone="neutral"
-      subtitle="维护会员等级、价格和展示权益；会员能力后续才参与报名定价，第一版不改变会议订单金额。"
+      subtitle="维护会员等级、价格和展示权益；当前会员价尚未正式参与报名计价。"
     >
-      <AdminFeatureBadge label="扩展能力 / 后续参与报名定价" description="会员权益只做预留展示，不影响报名规格、quote 和订单金额。" tone="warning" />
+      <AdminFeatureBadge label="会员价状态" description="当前会员价尚未正式参与报名计价。" tone="warning" />
       <template #actions>
         <el-button type="primary" @click="openCreate">新增等级</el-button>
       </template>

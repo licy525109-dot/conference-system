@@ -1,6 +1,6 @@
 <template>
   <section class="admin-page">
-    <AdminPageHeader title="会议管理" subtitle="维护会议基础信息、上下架状态，并进入会议配置中心。" eyebrow="会议业务">
+    <AdminPageHeader title="会议管理" subtitle="维护会议基础信息、上下架状态，并进入会议配置中心。" eyebrow="会议管理">
       <template #actions>
         <el-button type="primary" @click="openCreate">新建会议</el-button>
       </template>

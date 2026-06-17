@@ -1,13 +1,13 @@
 <template>
   <section class="admin-page">
     <AdminPageHeader
-      title="财务与对账"
-      eyebrow="扩展能力"
+      :title="pageTitle"
+      eyebrow="财务管理"
       badge="灰度辅助"
       badge-tone="warning"
-      subtitle="对账辅助 / 灰度能力，基于本地订单与支付记录做只读汇总和差异扫描，不调用微信账单下载。"
+      subtitle="财务管理灰度能力，基于本地订单与支付记录做只读汇总和差异扫描，不调用微信账单下载。"
     >
-      <AdminFeatureBadge label="对账辅助 / 灰度能力，不等同完整财务系统" description="第一版只服务运营核对，不作为正式财务结算依据。" tone="warning" />
+      <AdminFeatureBadge label="财务辅助能力" description="第一版只服务运营核对，不作为正式财务结算依据。" tone="warning" />
       <template #actions>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <el-button type="primary" @click="scan">生成对账批次</el-button>
@@ -75,6 +75,7 @@ import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatCard from "../../components/AdminStatCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import { currentRoute } from "../../router";
 import { createFinanceBatch, getFinanceOverview, listFinanceBatches, listFinancePayments } from "../../services/admin";
 import type { FinanceBatch, FinanceOverview, FinancePayment } from "../../services/types";
 
@@ -84,6 +85,7 @@ const payments = ref<FinancePayment[]>([]);
 const paymentKeyword = ref("");
 const paymentStatus = ref("");
 const loading = ref(false);
+const pageTitle = computed(() => (currentRoute.value.title === "支付流水" ? "支付流水" : "财务对账"));
 
 const cards = computed(() => {
   const data = overview.value?.cards;

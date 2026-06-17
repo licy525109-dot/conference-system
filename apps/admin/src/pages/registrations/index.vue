@@ -2,7 +2,7 @@
   <section class="admin-page">
     <AdminPageHeader
       title="报名名单"
-      eyebrow="会议业务"
+      eyebrow="会议管理"
       subtitle="查看报名记录、参会人信息、内部备注和核销进度。手动核销属于敏感操作，执行前会二次确认。"
     >
       <template #actions>

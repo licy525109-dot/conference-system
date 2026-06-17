@@ -72,13 +72,18 @@ const brandLogoUrl = ref("");
 const brandMarkText = computed(() => brandTitle.value.trim().slice(0, 1) || "会");
 
 const GROUP_META: Record<string, { order: number; badge?: string; className?: string }> = {
-  工作台: { order: 0 },
-  会议业务: { order: 10 },
-  营销配置: { order: 20, badge: "灰度" },
-  企微客户群: { order: 30 },
-  页面装修: { order: 40 },
-  扩展能力: { order: 50, badge: "预留", className: "is-extension-group" },
-  系统管理: { order: 60 }
+  控制台: { order: 0 },
+  会议管理: { order: 10 },
+  订单交易: { order: 20 },
+  营销活动: { order: 30 },
+  通知中心: { order: 40 },
+  企微客户群: { order: 50 },
+  "AI 知识库": { order: 60 },
+  会员: { order: 70 },
+  商城: { order: 80 },
+  财务管理: { order: 90 },
+  页面装修: { order: 100 },
+  系统管理: { order: 110 }
 };
 
 const menuRoutes = computed(() => routes.filter((route) => !route.hidden && hasPermission(route.permission)));
@@ -122,6 +127,6 @@ function quickGo(path: string) {
 }
 
 function isMutedRoute(route: AdminRoute): boolean {
-  return route.group === "扩展能力" || route.badge === "后续" || route.badge === "辅助" || route.badge === "高级";
+  return route.badge === "预留" || route.badge === "后续" || route.badge === "辅助" || route.badge === "高级";
 }
 </script>

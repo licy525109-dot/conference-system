@@ -2,7 +2,7 @@
   <section class="admin-page">
     <AdminPageHeader
       title="订单支付"
-      eyebrow="会议业务"
+      eyebrow="订单交易"
       subtitle="查看会议报名订单、金额、支付流水和异常状态；后台不提供手动改支付状态。"
     >
       <template #actions>

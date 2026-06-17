@@ -3,7 +3,7 @@
     <AdminPageHeader
       title="会议配置详情"
       :subtitle="conference?.title || '请选择会议'"
-      eyebrow="会议业务"
+      eyebrow="会议管理"
       badge="配置中心"
       badge-tone="info"
     >
@@ -72,7 +72,7 @@
           <AdminSectionCard title="优惠券" subtitle="固定金额或折扣券，可限定当前会议。">
             <CouponsPage :conference-id="conferenceId" embedded />
           </AdminSectionCard>
-          <AdminSectionCard title="满减规则" subtitle="满金额或满张数优惠，作为营销配置灰度使用。">
+          <AdminSectionCard title="满减规则" subtitle="满金额或满张数优惠，作为营销活动灰度使用。">
             <PromotionsPage :conference-id="conferenceId" embedded />
           </AdminSectionCard>
         </div>

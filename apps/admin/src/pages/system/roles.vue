@@ -75,7 +75,21 @@ const permissionGroups = computed(() => {
     const groupName = permissionMenuGroup(permission);
     groups.set(groupName, [...(groups.get(groupName) ?? []), permission]);
   }
-  const order = ["工作台", "会议业务", "营销配置", "页面装修", "扩展能力", "系统管理", "其他权限"];
+  const order = [
+    "控制台",
+    "会议管理",
+    "订单交易",
+    "营销活动",
+    "通知中心",
+    "企微客户群",
+    "AI 知识库",
+    "会员",
+    "商城",
+    "财务管理",
+    "页面装修",
+    "系统管理",
+    "其他权限"
+  ];
   return Array.from(groups.entries())
     .map(([name, items]) => ({ name, items }))
     .sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
@@ -124,10 +138,16 @@ async function save() {
 function permissionMenuGroup(permission: Permission): string {
   const route = routes.find((item) => item.permission === permission.code);
   if (route) return route.group;
-  if (permission.code.startsWith("conference:") || permission.code.startsWith("order:") || permission.code.startsWith("registration:")) return "会议业务";
-  if (permission.code.startsWith("coupon:") || permission.code.startsWith("promotion:")) return "营销配置";
+  if (permission.code.startsWith("conference:") || permission.code.startsWith("registration:") || permission.code.startsWith("checkin:") || permission.code.startsWith("inventory:")) return "会议管理";
+  if (permission.code.startsWith("order:") || permission.code.startsWith("payment:")) return "订单交易";
+  if (permission.code.startsWith("coupon:") || permission.code.startsWith("promotion:")) return "营销活动";
+  if (permission.code.startsWith("notification:") || permission.code.startsWith("sms:")) return "通知中心";
+  if (permission.code.startsWith("wecom:")) return "企微客户群";
+  if (permission.code.startsWith("ai:") || permission.code.startsWith("knowledge:")) return "AI 知识库";
+  if (permission.code.startsWith("member:")) return "会员";
+  if (permission.code.startsWith("mall:")) return "商城";
+  if (permission.code.startsWith("finance:") || permission.code.startsWith("refund:") || permission.code.startsWith("invoice:")) return "财务管理";
   if (permission.code.startsWith("page:") || permission.code.startsWith("theme:") || permission.code.startsWith("tabbar:") || permission.code.startsWith("material:")) return "页面装修";
-  if (permission.code.startsWith("member:") || permission.code.startsWith("mall:") || permission.code.startsWith("finance:")) return "扩展能力";
   if (permission.code.startsWith("system:")) return "系统管理";
   return "其他权限";
 }

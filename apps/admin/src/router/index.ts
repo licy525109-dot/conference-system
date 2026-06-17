@@ -8,12 +8,12 @@ import RegistrationDetailPage from "../pages/registrations/detail.vue";
 import CouponsPage from "../pages/coupons/index.vue";
 import PromotionsPage from "../pages/promotions/index.vue";
 import NotificationsPage from "../pages/notifications/index.vue";
-import OperationsPage from "../pages/operations/index.vue";
 import WecomPage from "../pages/wecom/index.vue";
 import MaterialsPage from "../pages/materials/index.vue";
 import CmsPagesPage from "../pages/cms/pages.vue";
 import ThemesPage from "../pages/cms/themes.vue";
 import TabbarPage from "../pages/cms/tabbar.vue";
+import ReservedPage from "../pages/common/ReservedPage.vue";
 import FinancePage from "../pages/finance/index.vue";
 import MallOrdersPage from "../pages/mall/orders.vue";
 import MallProductsPage from "../pages/mall/products.vue";
@@ -29,32 +29,43 @@ export interface AdminRoute {
   menuTitle: string;
   group: string;
   description?: string;
-  badge?: "灰度" | "后续" | "辅助" | "高级";
+  badge?: "灰度" | "预留" | "后续" | "辅助" | "高级";
   permission?: string;
   component: Component;
   hidden?: boolean;
 }
 
 export const routes: AdminRoute[] = [
-  { path: "/dashboard", title: "数据看板", menuTitle: "数据看板", group: "工作台", description: "核心报名、收入和订单指标", permission: "dashboard:view", component: DashboardPage },
-  { path: "/conferences", title: "会议管理", menuTitle: "会议管理", group: "会议业务", description: "会议基础信息、上下架和配置入口", permission: "conference:view", component: ConferencesPage },
+  { path: "/dashboard", title: "数据看板", menuTitle: "数据看板", group: "控制台", description: "核心报名、收入和订单指标", permission: "dashboard:view", component: DashboardPage },
+  { path: "/conferences", title: "会议管理", menuTitle: "会议管理", group: "会议管理", description: "会议基础信息、上下架和配置入口", permission: "conference:view", component: ConferencesPage },
   {
     path: "/conferences/config",
     title: "会议配置详情",
     menuTitle: "会议配置详情",
-    group: "会议业务",
+    group: "会议管理",
     description: "票种、表单字段、优惠和页面装修",
     permission: "conference:view",
     component: ConferenceConfigPage,
     hidden: true
   },
-  { path: "/registrations", title: "报名名单", menuTitle: "报名名单", group: "会议业务", description: "报名记录、参会人、备注和核销", permission: "registration:view", component: RegistrationsPage },
-  { path: "/registrations/detail", title: "报名详情", menuTitle: "报名详情", group: "会议业务", description: "报名、订单、支付、表单快照和操作日志", permission: "registration:view", component: RegistrationDetailPage, hidden: true },
-  { path: "/orders", title: "订单支付", menuTitle: "订单支付", group: "会议业务", description: "订单金额、支付流水和异常识别", permission: "order:view", component: OrdersPage },
-  { path: "/coupons", title: "优惠券", menuTitle: "优惠券", group: "营销配置", badge: "灰度", description: "扩展营销能力，金额仍以后端计算为准", permission: "coupon:view", component: CouponsPage },
-  { path: "/promotions", title: "满减规则", menuTitle: "满减规则", group: "营销配置", badge: "灰度", description: "扩展营销能力，金额仍以后端计算为准", permission: "promotion:view", component: PromotionsPage },
-  { path: "/notifications", title: "通知中心", menuTitle: "通知中心", group: "营销配置", badge: "灰度", description: "通知模板、发送任务和发送日志", permission: "notification:view", component: NotificationsPage },
-  { path: "/operations", title: "运营闭环", menuTitle: "运营闭环", group: "营销配置", badge: "灰度", description: "客户群、知识库、签到、退款发票和对账", permission: "dashboard:view", component: OperationsPage },
+  { path: "/registrations", title: "报名名单", menuTitle: "报名名单", group: "会议管理", description: "报名记录、参会人、备注和核销", permission: "registration:view", component: RegistrationsPage },
+  { path: "/registrations/detail", title: "报名详情", menuTitle: "报名详情", group: "会议管理", description: "报名、订单、支付、表单快照和操作日志", permission: "registration:view", component: RegistrationDetailPage, hidden: true },
+  { path: "/inventory-alerts", title: "库存预警", menuTitle: "库存预警", group: "会议管理", badge: "预留", description: "会议库存阈值、扫描任务和预警日志入口。", permission: "conference:view", component: ReservedPage },
+  { path: "/checkin/verify", title: "签到核销", menuTitle: "签到核销", group: "会议管理", badge: "预留", description: "扫码核销、手动核销和重复核销拦截入口。", permission: "registration:view", component: ReservedPage },
+  { path: "/checkin/logs", title: "签到记录", menuTitle: "签到记录", group: "会议管理", badge: "预留", description: "签到核销日志和撤销记录入口。", permission: "registration:view", component: ReservedPage },
+  { path: "/checkin/stats", title: "签到统计", menuTitle: "签到统计", group: "会议管理", badge: "预留", description: "会议签到率、票种签到率和异常统计入口。", permission: "registration:view", component: ReservedPage },
+  { path: "/orders", title: "订单支付", menuTitle: "订单支付", group: "订单交易", description: "订单金额、支付流水和异常识别", permission: "order:view", component: OrdersPage },
+  { path: "/payment-exceptions", title: "支付异常", menuTitle: "支付异常", group: "订单交易", badge: "预留", description: "支付异常审核、处理备注和异常闭环入口。", permission: "order:view", component: ReservedPage },
+  { path: "/payment-records", title: "支付记录", menuTitle: "支付记录", group: "订单交易", badge: "预留", description: "支付流水查询和支付渠道记录入口。", permission: "finance:view", component: ReservedPage },
+  { path: "/coupons", title: "优惠券", menuTitle: "优惠券", group: "营销活动", badge: "灰度", description: "优惠码、用券限制和后端计价规则。", permission: "coupon:view", component: CouponsPage },
+  { path: "/coupon-campaigns", title: "券活动", menuTitle: "券活动", group: "营销活动", badge: "预留", description: "优惠券活动批次、领取二维码和领取记录入口。", permission: "coupon:view", component: ReservedPage },
+  { path: "/promotions", title: "满减规则", menuTitle: "满减规则", group: "营销活动", badge: "灰度", description: "满金额或满张数优惠，金额以后端计算为准。", permission: "promotion:view", component: PromotionsPage },
+  { path: "/notifications", title: "通知中心", menuTitle: "通知中心", group: "通知中心", badge: "灰度", description: "通知模板、发送任务和发送日志", permission: "notification:view", component: NotificationsPage },
+  { path: "/notifications/templates", title: "通知模板", menuTitle: "通知模板", group: "通知中心", badge: "灰度", description: "微信订阅消息、短信和 mock 通知模板。", permission: "notification:view", component: NotificationsPage },
+  { path: "/notifications/tasks", title: "通知任务", menuTitle: "通知任务", group: "通知中心", badge: "灰度", description: "按任务表发送并记录跳过、失败和成功结果。", permission: "notification:view", component: NotificationsPage },
+  { path: "/notifications/logs", title: "发送日志", menuTitle: "发送日志", group: "通知中心", badge: "灰度", description: "通知发送明细、失败原因和跳过原因。", permission: "notification:view", component: NotificationsPage },
+  { path: "/notifications/wechat-subscribe", title: "微信订阅消息", menuTitle: "微信订阅消息", group: "通知中心", badge: "预留", description: "微信订阅消息模板映射和发送开关入口。", permission: "notification:view", component: ReservedPage },
+  { path: "/notifications/sms", title: "短信配置", menuTitle: "短信配置", group: "通知中心", badge: "预留", description: "短信供应商、签名、模板和发送开关入口。", permission: "notification:view", component: ReservedPage },
   { path: "/wecom/config", title: "企微接入配置", menuTitle: "接入配置", group: "企微客户群", description: "企业微信接口配置、连接测试、回调地址和同步入口", permission: "wecom:view", component: WecomPage },
   { path: "/wecom/groups", title: "客户群列表", menuTitle: "客户群列表", group: "企微客户群", description: "同步和管理企业微信外部客户群", permission: "wecom:view", component: WecomPage },
   { path: "/wecom/bindings", title: "群绑定会议", menuTitle: "群绑定会议", group: "企微客户群", description: "将客户群绑定到会议和入群入口", permission: "wecom:write", component: WecomPage },
@@ -62,17 +73,34 @@ export const routes: AdminRoute[] = [
   { path: "/wecom/tasks", title: "群发任务", menuTitle: "群发任务", group: "企微客户群", description: "按企业微信规则创建待成员确认的群发任务", permission: "wecom:view", component: WecomPage },
   { path: "/wecom/logs", title: "群发日志", menuTitle: "群发日志", group: "企微客户群", description: "查看成员确认、发送结果和失败原因", permission: "wecom:view", component: WecomPage },
   { path: "/wecom/callback-events", title: "回调事件", menuTitle: "回调事件", group: "企微客户群", description: "查看客户联系和应用回调事件", permission: "wecom:view", component: WecomPage },
+  { path: "/ai/knowledge-bases", title: "知识库列表", menuTitle: "知识库列表", group: "AI 知识库", badge: "预留", description: "会议知识库总览和启用状态入口。", permission: "knowledge:view", component: ReservedPage },
+  { path: "/ai/conference-knowledge", title: "会议知识库", menuTitle: "会议知识库", group: "AI 知识库", badge: "预留", description: "单会议资料、问答范围和兜底规则入口。", permission: "knowledge:view", component: ReservedPage },
+  { path: "/ai/documents", title: "文档管理", menuTitle: "文档管理", group: "AI 知识库", badge: "预留", description: "知识文档上传、分块、重建索引入口。", permission: "knowledge:view", component: ReservedPage },
+  { path: "/ai/suggestions", title: "推荐问题", menuTitle: "推荐问题", group: "AI 知识库", badge: "预留", description: "会议助手推荐问题配置入口。", permission: "knowledge:view", component: ReservedPage },
+  { path: "/ai/question-logs", title: "问答日志", menuTitle: "问答日志", group: "AI 知识库", badge: "预留", description: "用户提问、命中资料和兜底回复记录入口。", permission: "knowledge:view", component: ReservedPage },
+  { path: "/ai/config", title: "AI 配置", menuTitle: "AI 配置", group: "AI 知识库", badge: "预留", description: "AI provider、模型和功能开关入口。", permission: "knowledge:view", component: ReservedPage },
+  { path: "/members/users", title: "会员管理", menuTitle: "会员管理", group: "会员", badge: "后续", description: "用户会员状态、等级授予和会员记录", permission: "member:view", component: MemberUsersPage },
+  { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "会员", badge: "后续", description: "会员等级、价格和权益展示配置", permission: "member:view", component: MemberLevelsPage },
+  { path: "/members/benefits", title: "会员权益", menuTitle: "会员权益", group: "会员", badge: "预留", description: "会员权益包、展示说明和领取规则入口。", permission: "member:view", component: ReservedPage },
+  { path: "/members/pricing-rules", title: "会员价规则", menuTitle: "会员价规则", group: "会员", badge: "预留", description: "会员价参与报名计价前的规则配置入口。", permission: "member:view", component: ReservedPage },
+  { path: "/mall/products", title: "商品管理", menuTitle: "商品管理", group: "商城", badge: "灰度", description: "商城商品、封面、状态和规格入口", permission: "mall:view", component: MallProductsPage },
+  { path: "/mall/categories", title: "商品分类", menuTitle: "商品分类", group: "商城", badge: "预留", description: "商城商品分类、排序和展示入口。", permission: "mall:view", component: ReservedPage },
+  { path: "/mall/skus", title: "SKU 库存", menuTitle: "SKU 库存", group: "商城", badge: "预留", description: "SKU 库存、锁定库存和库存流水入口。", permission: "mall:view", component: ReservedPage },
+  { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "商城", badge: "灰度", description: "商城订单查询，不与会议报名订单混用", permission: "mall:view", component: MallOrdersPage },
+  { path: "/mall/fulfillment", title: "发货核销", menuTitle: "发货核销", group: "商城", badge: "预留", description: "商城发货、到店核销和履约日志入口。", permission: "mall:view", component: ReservedPage },
+  { path: "/mall/aftersales", title: "商城售后", menuTitle: "商城售后", group: "商城", badge: "预留", description: "售后申请、处理记录和退款联动入口。", permission: "mall:view", component: ReservedPage },
+  { path: "/finance/payments", title: "支付流水", menuTitle: "支付流水", group: "财务管理", badge: "辅助", description: "基于系统内支付记录的只读查询。", permission: "finance:view", component: FinancePage },
+  { path: "/finance/refunds", title: "退款管理", menuTitle: "退款管理", group: "财务管理", badge: "预留", description: "退款审批、退款查询和退款回调入口。", permission: "finance:view", component: ReservedPage },
+  { path: "/finance/invoices", title: "发票申请", menuTitle: "发票申请", group: "财务管理", badge: "预留", description: "发票申请审核、驳回和开票记录入口。", permission: "finance:view", component: ReservedPage },
+  { path: "/finance/reconciliation", title: "财务对账", menuTitle: "财务对账", group: "财务管理", badge: "辅助", description: "本地订单和支付记录差异扫描。", permission: "finance:view", component: FinancePage },
+  { path: "/finance/wechat-bills", title: "微信账单", menuTitle: "微信账单", group: "财务管理", badge: "预留", description: "微信账单申请、下载和对账入口。", permission: "finance:view", component: ReservedPage },
+  { path: "/finance", title: "财务管理", menuTitle: "财务管理", group: "财务管理", description: "财务对账和支付流水入口。", permission: "finance:view", component: FinancePage, hidden: true },
   { path: "/pages", title: "页面装修", menuTitle: "页面装修", group: "页面装修", description: "CMS 页面版本、组件和发布预览", permission: "page:view", component: CmsPagesPage },
   { path: "/themes", title: "主题配置", menuTitle: "主题配置", group: "页面装修", description: "小程序/H5 主题色、圆角和卡片风格", permission: "theme:view", component: ThemesPage },
   { path: "/tabbar", title: "底部导航", menuTitle: "底部导航", group: "页面装修", description: "小程序动态底部导航配置", permission: "tabbar:view", component: TabbarPage },
   { path: "/materials", title: "素材管理", menuTitle: "素材管理", group: "页面装修", description: "图片、图标、视频和字体素材", permission: "material:view", component: MaterialsPage },
-  { path: "/members/users", title: "会员管理", menuTitle: "会员管理", group: "扩展能力", badge: "后续", description: "会员能力预留，暂不参与会议定价", permission: "member:view", component: MemberUsersPage },
-  { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "扩展能力", badge: "后续", description: "会员权益展示预留", permission: "member:view", component: MemberLevelsPage },
-  { path: "/mall/products", title: "商城商品", menuTitle: "商城商品", group: "扩展能力", badge: "灰度", description: "商城能力灰度中，商品支付和履约后续完善", permission: "mall:view", component: MallProductsPage },
-  { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "扩展能力", badge: "灰度", description: "商城订单灰度中，不与会议支付混用", permission: "mall:view", component: MallOrdersPage },
-  { path: "/finance", title: "财务对账", menuTitle: "财务对账", group: "扩展能力", badge: "辅助", description: "对账辅助，不等同完整财务系统", permission: "finance:view", component: FinancePage },
   { path: "/system/audit-logs", title: "操作日志", menuTitle: "操作日志", group: "系统管理", description: "登录、编辑、导出、核销和异常处理记录", permission: "system:audit", component: AuditLogsPage },
-  { path: "/system/accounts", title: "账号管理", menuTitle: "账号管理", group: "系统管理", description: "后台账号和角色分配", permission: "system:account", component: AccountsPage },
+  { path: "/system/accounts", title: "管理员账号", menuTitle: "管理员账号", group: "系统管理", description: "后台账号和角色分配", permission: "system:account", component: AccountsPage },
   { path: "/system/roles", title: "角色权限", menuTitle: "角色权限", group: "系统管理", badge: "高级", description: "高级权限配置，谨慎调整", permission: "system:role", component: RolesPage }
 ];
 
