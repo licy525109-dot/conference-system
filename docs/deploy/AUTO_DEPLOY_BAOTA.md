@@ -79,6 +79,30 @@ BACKUP_ROOT=/www/backup
 PM2_PROCESS=conference-api
 ```
 
+## pnpm PATH 排查
+
+如果 GitHub Actions 报：
+
+```text
+ERROR: missing required command: pnpm
+```
+
+原因通常是 GitHub Actions 通过 SSH 执行非交互 shell，没有加载服务器上的 Node / pnpm PATH。
+
+宝塔服务器当前 pnpm 路径：
+
+```text
+/www/server/nvm/versions/node/v24.16.0/bin/pnpm
+```
+
+可在服务器执行：
+
+```bash
+bash -lc 'command -v node; command -v pnpm; node -v; pnpm -v'
+```
+
+如果能输出 pnpm，说明需要修复 workflow 的 `bash -lc` 和 deploy script 的 PATH 初始化，而不是重新安装 pnpm。
+
 ## 部署步骤
 
 脚本按阶段输出日志，失败即退出：

@@ -56,6 +56,40 @@ clear_admin_root() {
 
 trap on_error ERR
 
+log "0. Load Node.js and pnpm runtime"
+export PATH="/www/server/nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+if [[ -d /www/server/nvm/versions/node ]]; then
+  NODE_PNPM="$(find /www/server/nvm/versions/node -maxdepth 3 -type f -name pnpm -print -quit 2>/dev/null || true)"
+  if [[ -n "$NODE_PNPM" ]]; then
+    export PATH="$(dirname "$NODE_PNPM"):$PATH"
+  fi
+fi
+
+if [[ -n "${PNPM_HOME:-}" ]]; then
+  export PATH="$PNPM_HOME:$PATH"
+else
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+  export PATH="$PNPM_HOME:$PATH"
+fi
+
+if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+  # shellcheck disable=SC1090
+  . "$HOME/.nvm/nvm.sh"
+  nvm use --lts >/dev/null 2>&1 || true
+fi
+
+if ! command -v pnpm >/dev/null 2>&1 && command -v corepack >/dev/null 2>&1; then
+  corepack enable || true
+  corepack prepare pnpm@11.5.2 --activate || true
+fi
+
+echo "node: $(command -v node || true)"
+echo "npm: $(command -v npm || true)"
+echo "pnpm: $(command -v pnpm || true)"
+node -v || true
+pnpm -v || true
+
 require_command git
 require_command pnpm
 require_command docker
