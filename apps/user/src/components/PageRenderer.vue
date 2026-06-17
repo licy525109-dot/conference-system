@@ -18,25 +18,25 @@
         object-fit="cover"
         :controls="false"
       />
-      <view v-if="component.type === 'hero'" :class="['cms-hero', booleanConfig(component, 'fullBleed', true) ? 'is-full-bleed' : '']">
+      <view v-if="component.type === 'hero'" :class="heroClass(component)" :style="heroStyle(component)">
         <image
           v-if="stringConfig(component, 'imageUrl')"
           class="cms-hero__image"
           :src="stringConfig(component, 'imageUrl')"
-          :mode="stringConfig(component, 'imageMode') || 'aspectFill'"
+          :mode="heroImageMode(component)"
         />
         <view v-else class="cms-hero__image cms-hero__image--generated" />
-        <view class="cms-hero__shade" />
-        <view class="cms-hero__content">
+        <view v-if="showHeroShade(component)" class="cms-hero__shade" />
+        <view v-if="showHeroContent(component)" class="cms-hero__content">
           <text v-if="heroKicker(component)" class="cms-hero__kicker">{{ heroKicker(component) }}</text>
           <text class="cms-hero__title" :style="titleStyle(component)">{{ heroTitle(component) }}</text>
           <text v-if="heroDescription(component)" class="cms-hero__desc" :style="textStyle(component)">{{ heroDescription(component) }}</text>
           <view v-if="heroMetaLines(component).length > 0" class="cms-hero__meta">
             <text v-for="line in heroMetaLines(component)" :key="line">{{ line }}</text>
           </view>
-          <button v-if="booleanConfig(component, 'showButton', true)" class="cms-hero__button" @click="$emit('register')">
-            {{ stringConfig(component, "buttonText") || "立即报名" }}
-          </button>
+          <view v-if="booleanConfig(component, 'showButton', true)" class="cms-hero__button" @click="$emit('register')">
+            <text>{{ stringConfig(component, "buttonText") || "立即报名" }}</text>
+          </view>
         </view>
       </view>
 
@@ -51,11 +51,20 @@
             :src="item.coverImageUrl"
             mode="aspectFill"
           />
+          <view
+            v-else-if="booleanConfig(component, 'showCover', true)"
+            :class="conferenceImageClass(component, 'cms-card__image cms-card__image--empty')"
+            :style="conferenceImageStyle(component)"
+          >
+            <text>{{ item.title.slice(0, 1) || "会" }}</text>
+          </view>
           <view class="cms-card__body">
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
             <text v-if="booleanConfig(component, 'showSummary', true)" class="cms-card__text" :style="conferenceTextStyle(component, 'summary')">{{ item.summary || summaryFallback(component) }}</text>
             <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-card__meta" :style="conferenceTextStyle(component, 'meta')">{{ line }}</text>
-            <button class="cms-card__button" @click.stop="$emit('openConference', item.id)">{{ detailButtonText(component) }}</button>
+            <view class="cms-card__button" @click.stop="$emit('openConference', item.id)">
+              <text>{{ detailButtonText(component) }}</text>
+            </view>
           </view>
         </view>
       </view>
@@ -74,19 +83,34 @@
             :src="item.coverImageUrl"
             mode="aspectFill"
           />
+          <view
+            v-else-if="booleanConfig(component, 'showCover', true)"
+            :class="conferenceImageClass(component, 'cms-mini-card__image cms-card__image--empty')"
+            :style="conferenceImageStyle(component)"
+          >
+            <text>{{ item.title.slice(0, 1) || "会" }}</text>
+          </view>
           <view class="cms-card__body">
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
             <text v-if="booleanConfig(component, 'showSummary', false)" class="cms-card__text" :style="conferenceTextStyle(component, 'summary')">{{ item.summary || summaryFallback(component) }}</text>
             <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-card__meta" :style="conferenceTextStyle(component, 'meta')">{{ line }}</text>
-            <button class="cms-card__button" @click.stop="$emit('openConference', item.id)">{{ detailButtonText(component) }}</button>
+            <view class="cms-card__button" @click.stop="$emit('openConference', item.id)">
+              <text>{{ detailButtonText(component) }}</text>
+            </view>
           </view>
         </view>
       </view>
 
-      <view v-else-if="component.type === 'carousel'" class="cms-carousel">
-        <swiper v-if="stringListConfig(component, 'images').length > 0" class="cms-swiper" indicator-dots circular autoplay>
+      <view v-else-if="component.type === 'carousel'" :class="carouselClass(component)" :style="carouselStyle(component)">
+        <swiper
+          v-if="stringListConfig(component, 'images').length > 0"
+          class="cms-swiper"
+          :indicator-dots="booleanConfig(component, 'indicatorDots', true)"
+          :circular="booleanConfig(component, 'circular', true)"
+          :autoplay="booleanConfig(component, 'autoplay', true)"
+        >
           <swiper-item v-for="image in stringListConfig(component, 'images')" :key="image">
-            <image class="cms-swiper__image" :src="image" mode="aspectFill" />
+            <image class="cms-swiper__image" :src="image" :mode="carouselImageMode(component)" />
           </swiper-item>
         </swiper>
         <view v-else class="cms-empty cms-empty-card">暂无轮播图片</view>
@@ -106,6 +130,7 @@
 
       <view v-else-if="component.type === 'image-grid'" class="cms-grid">
         <image v-for="image in arrayConfig(component, 'images')" :key="String(image)" class="cms-grid__image" :src="String(image)" mode="aspectFill" />
+        <view v-if="arrayConfig(component, 'images').length === 0" class="cms-empty cms-empty-card">暂无图片</view>
       </view>
 
       <view v-else-if="component.type === 'video'" class="cms-section">
@@ -509,6 +534,49 @@ function heroMetaLines(component: CmsComponent): string[] {
   ].filter(Boolean);
 }
 
+function heroClass(component: CmsComponent): string[] {
+  return [
+    "cms-hero",
+    booleanConfig(component, "fullBleed", true) ? "is-full-bleed" : "",
+    booleanConfig(component, "imageOnly", false) ? "is-image-only" : ""
+  ].filter(Boolean);
+}
+
+function heroStyle(component: CmsComponent): Record<string, string> {
+  const height = Math.max(260, numberConfig(component, "height", 430));
+  return {
+    "--cms-hero-height": `${height}rpx`
+  };
+}
+
+function heroImageMode(component: CmsComponent): string {
+  return stringConfig(component, "imageMode") || "aspectFit";
+}
+
+function showHeroContent(component: CmsComponent): boolean {
+  if (booleanConfig(component, "imageOnly", false)) return false;
+  return booleanConfig(component, "showContent", true);
+}
+
+function showHeroShade(component: CmsComponent): boolean {
+  return showHeroContent(component) && booleanConfig(component, "showOverlay", true);
+}
+
+function carouselClass(component: CmsComponent): string[] {
+  return ["cms-carousel", booleanConfig(component, "fullBleed", false) ? "is-full-bleed" : ""].filter(Boolean);
+}
+
+function carouselStyle(component: CmsComponent): Record<string, string> {
+  const height = Math.max(160, numberConfig(component, "height", 320));
+  return {
+    "--cms-carousel-height": `${height}rpx`
+  };
+}
+
+function carouselImageMode(component: CmsComponent): string {
+  return stringConfig(component, "imageMode") || "aspectFit";
+}
+
 function textStyle(component: CmsComponent): Record<string, string> {
   const fontSize = numberConfig(component, "fontSize", 0);
   const fontFamily = stringConfig(component, "fontFamily");
@@ -858,6 +926,7 @@ function parseTargetTime(value: string): number | null {
   font-size: 28rpx;
   line-height: 1.35;
   white-space: normal;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -874,6 +943,7 @@ function parseTargetTime(value: string): number | null {
   display: block;
   margin-top: 0;
   white-space: normal;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -887,6 +957,9 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-card__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   align-self: flex-start;
   min-width: 148rpx;
   min-height: 58rpx;
@@ -957,8 +1030,13 @@ function parseTargetTime(value: string): number | null {
   margin-top: 22rpx;
 }
 
+.cms-carousel.is-full-bleed {
+  margin-right: -28rpx;
+  margin-left: -28rpx;
+}
+
 .cms-swiper {
-  height: 320rpx;
+  height: var(--cms-carousel-height, 320rpx);
   overflow: hidden;
   border-radius: var(--cms-radius);
   background: var(--ui-color-surface-muted);
@@ -966,7 +1044,7 @@ function parseTargetTime(value: string): number | null {
 
 .cms-swiper__image {
   width: 100%;
-  height: 320rpx;
+  height: var(--cms-carousel-height, 320rpx);
   background: var(--ui-color-surface-muted);
 }
 
@@ -983,6 +1061,11 @@ function parseTargetTime(value: string): number | null {
   flex-wrap: wrap;
   gap: 12rpx;
   margin-top: 22rpx;
+}
+
+.cms-grid .cms-empty-card {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .cms-grid__image {
@@ -1239,7 +1322,7 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-hero {
-  min-height: 430rpx;
+  min-height: var(--cms-hero-height, 430rpx);
   background: var(--cms-gradient-hero);
   box-shadow: var(--cms-shadow-lg);
 }
@@ -1278,7 +1361,7 @@ function parseTargetTime(value: string): number | null {
   position: relative;
   z-index: 2;
   display: flex;
-  min-height: 430rpx;
+  min-height: var(--cms-hero-height, 430rpx);
   flex-direction: column;
   justify-content: flex-end;
   gap: 14rpx;
@@ -1303,6 +1386,7 @@ function parseTargetTime(value: string): number | null {
   font-size: var(--cms-title-size);
   font-weight: 900;
   line-height: 1.18;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -1312,6 +1396,7 @@ function parseTargetTime(value: string): number | null {
   color: rgba(255, 255, 255, 0.84);
   font-size: 27rpx;
   line-height: 1.52;
+  overflow-wrap: anywhere;
 }
 
 .cms-hero__meta {
@@ -1329,6 +1414,9 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-hero__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   align-self: flex-start;
   min-width: 190rpx;
   min-height: 72rpx;
@@ -1342,6 +1430,10 @@ function parseTargetTime(value: string): number | null {
   font-weight: 900;
   line-height: 72rpx;
   box-shadow: 0 18rpx 40rpx rgba(0, 0, 0, 0.18);
+}
+
+.cms-hero__button text {
+  line-height: 1;
 }
 
 .cms-section,
@@ -1390,10 +1482,21 @@ function parseTargetTime(value: string): number | null {
   background: var(--cms-surface-muted);
 }
 
+.cms-card__image--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cms-gradient-soft);
+  color: var(--cms-primary-strong);
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
 .cms-card__title {
   color: var(--cms-text-primary);
   font-size: 30rpx;
   line-height: 1.32;
+  overflow-wrap: anywhere;
 }
 
 .cms-card__body {
@@ -1404,15 +1507,23 @@ function parseTargetTime(value: string): number | null {
   padding: 8rpx 13rpx;
   background: var(--cms-primary-soft);
   color: var(--cms-primary-strong);
+  overflow-wrap: anywhere;
 }
 
 .cms-card__button,
 .cms-button,
 .cms-floating {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--cms-radius-full);
   background: var(--cms-gradient-cta);
   color: var(--cms-text-inverse);
   box-shadow: 0 16rpx 32rpx rgba(31, 77, 122, 0.18);
+}
+
+.cms-card__button text {
+  line-height: 1;
 }
 
 .cms-tabs {

@@ -233,7 +233,7 @@ interface HomeConferenceDetailText {
 <style scoped>
 .page {
   position: relative;
-  padding-bottom: 164rpx;
+  padding-bottom: calc(228rpx + env(safe-area-inset-bottom));
   overflow: hidden;
 }
 

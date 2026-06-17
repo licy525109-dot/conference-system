@@ -27,8 +27,7 @@ withDefaults(
   padding: 16px;
   border: 1px solid rgb(221 230 242 / 86%);
   border-radius: var(--admin-radius);
-  background:
-    linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%);
   box-shadow: var(--admin-shadow-soft);
 }
 
@@ -54,19 +53,19 @@ withDefaults(
 }
 
 .admin-stat-card.is-primary {
-  border-color: rgb(20 99 255 / 18%);
-  background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
+  border-color: rgb(49 93 125 / 18%);
+  background: linear-gradient(180deg, #ffffff 0%, #f3f7fa 100%);
 }
 
 .admin-stat-card.is-success {
-  border-color: rgb(15 159 110 / 18%);
+  border-color: rgb(31 122 91 / 18%);
 }
 
 .admin-stat-card.is-warning {
-  border-color: rgb(183 110 0 / 22%);
+  border-color: rgb(165 107 31 / 22%);
 }
 
 .admin-stat-card.is-danger {
-  border-color: rgb(217 45 32 / 20%);
+  border-color: rgb(185 56 56 / 20%);
 }
 </style>

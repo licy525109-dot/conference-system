@@ -1215,22 +1215,43 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "title", label: "主标题", placeholder: "选择会议，完成报名缴费" },
       { key: "description", label: "说明文字", kind: "textarea", rows: 2, placeholder: "填写横幅说明" },
       { key: "buttonText", label: "按钮文字", placeholder: "立即报名" },
+      { key: "showContent", label: "显示文案区域", kind: "switch", fallback: "true" },
+      { key: "showOverlay", label: "显示遮罩", kind: "switch", fallback: "true" },
       { key: "showButton", label: "显示按钮", kind: "switch", fallback: "true" },
       { key: "imageUrl", label: "横幅图片地址", placeholder: "从素材库选择或粘贴图片地址" },
+      { key: "imageOnly", label: "仅显示图片", kind: "switch", fallback: "false" },
       { key: "fullBleed", label: "横幅铺满屏幕宽度", kind: "switch", fallback: "true" },
+      { key: "height", label: "横幅高度", kind: "range", fallback: 430, min: 260, max: 720 },
       {
         key: "imageMode",
         label: "图片裁切方式",
         kind: "select",
-        fallback: "aspectFill",
+        fallback: "aspectFit",
         options: [
-          { label: "铺满裁切", value: "aspectFill" },
           { label: "完整显示", value: "aspectFit" },
+          { label: "铺满裁切", value: "aspectFill" },
           { label: "宽度铺满", value: "widthFix" }
         ]
       }
     ],
-    carousel: [{ key: "images", label: "轮播图片", kind: "list", placeholder: "每行一个图片地址", rows: 5 }],
+    carousel: [
+      { key: "images", label: "轮播图片", kind: "list", placeholder: "每行一个图片地址", rows: 5 },
+      { key: "height", label: "轮播高度", kind: "range", fallback: 320, min: 160, max: 680 },
+      {
+        key: "imageMode",
+        label: "图片显示方式",
+        kind: "select",
+        fallback: "aspectFit",
+        options: [
+          { label: "完整显示", value: "aspectFit" },
+          { label: "铺满裁切", value: "aspectFill" },
+          { label: "宽度铺满", value: "widthFix" }
+        ]
+      },
+      { key: "fullBleed", label: "铺满屏幕宽度", kind: "switch", fallback: "false" },
+      { key: "autoplay", label: "自动轮播", kind: "switch", fallback: "true" },
+      { key: "indicatorDots", label: "显示指示点", kind: "switch", fallback: "true" }
+    ],
     "conference-list": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 10 }, ...conferenceDisplayFields], 26),
     "conference-tabs": withTextStyle([...commonTitle, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
     "speaker-cards": withTextStyle([...commonTitle, { key: "speakers", label: "嘉宾信息", kind: "list", placeholder: "每行一位嘉宾，例如：张三｜主讲嘉宾", rows: 5 }], 26),
@@ -1287,6 +1308,20 @@ function fieldsFor(type: string): ConfigField[] {
 function groupedFieldsFor(type: string): ConfigFieldGroup[] {
   const fields = fieldsFor(type);
   if (fields.length === 0) return [];
+
+  if (type === "hero") {
+    return compactGroups([
+      { key: "content", title: "横幅内容", fields: fieldsByKeys(fields, ["kicker", "title", "description", "buttonText", "showContent", "showButton"]) },
+      { key: "media", title: "图片与布局", fields: fieldsByKeys(fields, ["imageUrl", "imageOnly", "showOverlay", "fullBleed", "height", "imageMode"]) }
+    ]);
+  }
+
+  if (type === "carousel") {
+    return compactGroups([
+      { key: "images", title: "轮播图片", fields: fieldsByKeys(fields, ["images"]) },
+      { key: "display", title: "显示与播放", fields: fieldsByKeys(fields, ["height", "imageMode", "fullBleed", "autoplay", "indicatorDots"]) }
+    ]);
+  }
 
   if (type === "conference-list" || type === "conference-tabs") {
     return compactGroups([
@@ -1566,15 +1601,20 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "hero") {
-        return h("div", { class: "preview-hero-card" }, [
-          value("imageUrl") ? h("img", { src: value("imageUrl"), alt: "主视觉横幅" }) : h("div", { class: "preview-hero-empty" }),
-          h("div", { class: "preview-hero-card__shade" }),
-          h("div", { class: "preview-hero-card__copy" }, [
-            h("span", value("kicker", "会议报名")),
-            h("strong", { style: titleStyle() }, value("title", "选择会议，完成报名缴费")),
-            h("p", { style: textStyle() }, value("description", "查看会议安排、选择报名规格，支付成功后自动生成参会记录。")),
-            booleanConfig(props.item, "showButton", true) ? h("button", value("buttonText", "立即报名")) : null
-          ])
+        const showContent = !booleanConfig(props.item, "imageOnly", false) && booleanConfig(props.item, "showContent", true);
+        return h("div", { class: ["preview-hero-card", booleanConfig(props.item, "imageOnly", false) ? "is-image-only" : ""], style: previewHeroCardStyle(props.item) }, [
+          value("imageUrl")
+            ? h("img", { src: value("imageUrl"), alt: "主视觉横幅", style: previewImageModeStyle(props.item) })
+            : h("div", { class: "preview-hero-empty" }),
+          showContent && booleanConfig(props.item, "showOverlay", true) ? h("div", { class: "preview-hero-card__shade" }) : null,
+          showContent
+            ? h("div", { class: "preview-hero-card__copy" }, [
+                h("span", value("kicker", "会议报名")),
+                h("strong", { style: titleStyle() }, value("title", "选择会议，完成报名缴费")),
+                h("p", { style: textStyle() }, value("description", "查看会议安排、选择报名规格，支付成功后自动生成参会记录。")),
+                booleanConfig(props.item, "showButton", true) ? h("button", value("buttonText", "立即报名")) : null
+              ])
+            : null
         ]);
       }
       if (type === "conference-list") {
@@ -1587,7 +1627,9 @@ const ComponentPreview = defineComponent({
               h("div", { class: previewMeetingClass(props.item, "preview-meeting"), style: previewMeetingStyle(props.item) }, [
                 booleanConfig(props.item, "showCover", true) && meeting.image
                   ? h("img", { class: previewCoverClass(props.item, "preview-meeting-cover"), style: previewCoverStyle(props.item), src: meeting.image, alt: meeting.title })
-                  : null,
+                  : booleanConfig(props.item, "showCover", true)
+                    ? h("span", { class: `${previewCoverClass(props.item, "preview-meeting-cover")} is-empty`, style: previewCoverStyle(props.item) }, meeting.title.slice(0, 1) || "会")
+                    : null,
                 h("div", { class: "preview-meeting-body" }, [
                   h("b", { style: previewCardTextStyle(props.item, "title") }, meeting.title),
                   booleanConfig(props.item, "showSummary", true) ? h("span", { style: previewCardTextStyle(props.item, "summary") }, meeting.summary || summaryFallbackText(props.item)) : null,
@@ -1610,7 +1652,9 @@ const ComponentPreview = defineComponent({
               h("div", { class: previewMeetingClass(props.item, "preview-mini-meeting"), style: previewMeetingStyle(props.item) }, [
                 booleanConfig(props.item, "showCover", true) && meeting.image
                   ? h("img", { class: previewCoverClass(props.item, "preview-mini-meeting-cover"), style: previewCoverStyle(props.item), src: meeting.image, alt: meeting.title })
-                  : null,
+                  : booleanConfig(props.item, "showCover", true)
+                    ? h("span", { class: `${previewCoverClass(props.item, "preview-mini-meeting-cover")} is-empty`, style: previewCoverStyle(props.item) }, meeting.title.slice(0, 1) || "会")
+                    : null,
                 h("div", { class: "preview-meeting-body" }, [
                   h("b", { style: previewCardTextStyle(props.item, "title") }, meeting.title),
                   booleanConfig(props.item, "showSummary", false) ? h("span", { style: previewCardTextStyle(props.item, "summary") }, meeting.summary || summaryFallbackText(props.item)) : null,
@@ -1699,7 +1743,7 @@ const ComponentPreview = defineComponent({
       if (type === "image-grid" || type === "carousel") {
         if (type === "carousel") {
           const images = list("images");
-          return h("div", { class: "preview-carousel" }, images[0] ? h("img", { src: images[0], alt: "" }) : h("span", "暂无轮播图片"));
+          return h("div", { class: ["preview-carousel", booleanConfig(props.item, "fullBleed", false) ? "is-full-bleed" : ""], style: previewCarouselStyle(props.item) }, images[0] ? h("img", { src: images[0], alt: "", style: previewImageModeStyle(props.item) }) : h("span", "暂无轮播图片"));
         }
         return h("div", { class: "preview-image-grid" }, list("images").map((item) => h("img", { src: item, alt: "" })));
       }
@@ -1816,6 +1860,25 @@ function previewCoverStyle(component: EditableComponent) {
   return {
     height: `${numberValue(component, "cardImageHeight", 120)}px`,
     borderRadius: `${numberValue(component, "cardRadius", 8)}px`
+  };
+}
+
+function previewHeroCardStyle(component: EditableComponent) {
+  return {
+    minHeight: `${Math.max(132, Math.round(numberValue(component, "height", 430) / 2.25))}px`
+  };
+}
+
+function previewCarouselStyle(component: EditableComponent) {
+  return {
+    height: `${Math.max(88, Math.round(numberValue(component, "height", 320) / 2.35))}px`
+  };
+}
+
+function previewImageModeStyle(component: EditableComponent) {
+  const mode = String(component.config.imageMode ?? "aspectFit");
+  return {
+    objectFit: mode === "aspectFill" ? "cover" : "contain"
   };
 }
 
@@ -2913,6 +2976,15 @@ function splitPreviewLine(value: string): string[] {
   background: #eef3fb;
 }
 
+.phone-screen :deep(.preview-meeting-cover.is-empty),
+.phone-screen :deep(.preview-mini-meeting-cover.is-empty) {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #e8f0f5, #f7eedf);
+  color: var(--preview-primary);
+  font-weight: 900;
+}
+
 .phone-screen :deep(.preview-meeting-cover.is-cover-full__image),
 .phone-screen :deep(.preview-mini-meeting-cover.is-cover-full__image) {
   width: 100%;
@@ -2989,7 +3061,7 @@ function splitPreviewLine(value: string): string[] {
   position: relative;
   z-index: 1;
   display: flex;
-  min-height: 190px;
+  min-height: inherit;
   flex-direction: column;
   justify-content: flex-end;
   gap: 7px;
@@ -3073,7 +3145,7 @@ function splitPreviewLine(value: string): string[] {
 .preview-carousel {
   display: grid;
   place-items: center;
-  min-height: 132px;
+  min-height: 112px;
   overflow: hidden;
   border-radius: var(--preview-radius);
   background: #eef3fb;
@@ -3083,8 +3155,8 @@ function splitPreviewLine(value: string): string[] {
 
 .preview-carousel img {
   width: 100%;
-  height: 132px;
-  object-fit: cover;
+  height: 100%;
+  object-fit: contain;
 }
 
 .preview-person,

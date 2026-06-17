@@ -2,10 +2,10 @@ import { Prisma } from "@prisma/client";
 
 export const DEFAULT_THEME_CONFIG = {
   visualPreset: "business-blue",
-  primaryColor: "#1f4d7a",
-  secondaryColor: "#4d8dd9",
-  accentColor: "#c7923e",
-  backgroundColor: "#f4f7fb",
+  primaryColor: "#315d7d",
+  secondaryColor: "#3a8f79",
+  accentColor: "#b58b47",
+  backgroundColor: "#f5f7f6",
   cardBackground: "#ffffff",
   radius: 8,
   buttonStyle: "solid",
@@ -18,8 +18,8 @@ export const DEFAULT_THEME_CONFIG = {
   browserTitle: "会务运营平台",
   browserIconUrl: "",
   backgroundMode: "solid",
-  backgroundGradientFrom: "#f7fafe",
-  backgroundGradientTo: "#eaf1f8",
+  backgroundGradientFrom: "#fbfcfb",
+  backgroundGradientTo: "#edf3f0",
   backgroundImageUrl: "",
   backgroundVideoUrl: "",
   backgroundDynamicDensity: 40,
@@ -79,11 +79,23 @@ export const ENABLED_COMPONENT_PRESETS = [
     title: "选择会议，完成报名缴费",
     description: "展示会议定位、关键信息和报名入口，适合作为页面第一屏。",
     buttonText: "立即报名",
+    showContent: true,
+    showOverlay: true,
     showButton: true,
     imageUrl: "",
+    imageOnly: false,
+    height: 430,
+    imageMode: "aspectFit",
     fullBleed: true
   }),
-  preset("carousel", "轮播图", "基础展示", "多张图片轮播", { images: [] }),
+  preset("carousel", "轮播图", "基础展示", "多张图片轮播", {
+    images: [],
+    height: 320,
+    imageMode: "aspectFit",
+    fullBleed: false,
+    autoplay: true,
+    indicatorDots: true
+  }),
   preset("conference-list", "会议卡片列表", "会议", "展示可报名会议列表", {
     title: "可报名会议",
     limit: 10,
@@ -167,7 +179,7 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
 
   if (pageKey === "conference-detail") {
     return [
-      { id: "hero-default", type: "hero", enabled: true, config: { imageUrl: "" } },
+      { id: "hero-default", type: "hero", enabled: true, config: { imageUrl: "", imageMode: "aspectFit", height: 430, showContent: true, showOverlay: true } },
       { id: "registration-button-default", type: "registration-button", enabled: true, config: { text: "立即报名" } }
     ];
   }

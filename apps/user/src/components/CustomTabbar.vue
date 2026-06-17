@@ -1,9 +1,9 @@
 <template>
   <view v-if="tabbar.enabled && visibleItems.length > 0" class="custom-tabbar">
-    <view v-for="item in visibleItems" :key="item.id" class="custom-tabbar__item" :class="{ active: isActive(item) }" @click="go(item)">
+    <view v-for="item in visibleItems" :key="item.id" class="custom-tabbar__item" :class="{ active: isActive(item) }" hover-class="custom-tabbar__item--pressed" hover-stay-time="100" @click="go(item)">
       <image v-if="iconFor(item)" class="custom-tabbar__icon" :src="iconFor(item)" mode="aspectFit" />
-      <view v-else class="custom-tabbar__dot" />
-      <text>{{ item.title }}</text>
+      <view v-else class="custom-tabbar__glyph">{{ fallbackGlyph(item) }}</view>
+      <text class="custom-tabbar__label">{{ item.title }}</text>
       <text v-if="item.badgeText" class="custom-tabbar__badge">{{ item.badgeText }}</text>
     </view>
   </view>
@@ -32,6 +32,16 @@ function isActive(item: TabbarItem): boolean {
 
 function iconFor(item: TabbarItem): string {
   return (isActive(item) ? item.selectedIconUrl : item.iconUrl) || "";
+}
+
+function fallbackGlyph(item: TabbarItem): string {
+  const title = item.title.trim();
+  if (!title) return "•";
+  if (title.includes("报名")) return "票";
+  if (title.includes("购物") || title.includes("车")) return "购";
+  if (title.includes("会员")) return "会";
+  if (title.includes("商城")) return "商";
+  return title.slice(0, 1);
 }
 
 function go(item: TabbarItem) {
@@ -83,8 +93,8 @@ function isTabbarLikePage(url: string): boolean {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  min-height: 112rpx;
-  padding: 12rpx 18rpx calc(12rpx + env(safe-area-inset-bottom));
+  min-height: 124rpx;
+  padding: 14rpx 18rpx calc(14rpx + env(safe-area-inset-bottom));
   border-top: 1px solid var(--cms-border);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--ui-shadow-bottom);
@@ -102,6 +112,11 @@ function isTabbarLikePage(url: string): boolean {
   color: var(--ui-color-muted);
   font-size: 22rpx;
   font-weight: 700;
+  transition: transform 140ms ease, color 140ms ease;
+}
+
+.custom-tabbar__item--pressed {
+  transform: translateY(1rpx) scale(0.98);
 }
 
 .custom-tabbar__item.active {
@@ -110,20 +125,36 @@ function isTabbarLikePage(url: string): boolean {
 }
 
 .custom-tabbar__icon,
-.custom-tabbar__dot {
-  width: 42rpx;
-  height: 42rpx;
+.custom-tabbar__glyph {
+  width: 44rpx;
+  height: 44rpx;
 }
 
-.custom-tabbar__dot {
-  border-radius: var(--cms-radius-sm);
+.custom-tabbar__glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14rpx;
   background: var(--cms-primary-soft);
-  opacity: 1;
+  color: var(--cms-primary-strong);
+  font-size: 20rpx;
+  font-weight: 900;
+  line-height: 1;
 }
 
-.custom-tabbar__item.active .custom-tabbar__dot {
+.custom-tabbar__item.active .custom-tabbar__glyph {
   background: var(--cms-gradient-cta);
-  box-shadow: 0 8rpx 18rpx rgba(31, 77, 122, 0.22);
+  color: #ffffff;
+  box-shadow: 0 8rpx 18rpx rgba(49, 93, 125, 0.22);
+}
+
+.custom-tabbar__label {
+  max-width: 132rpx;
+  overflow: hidden;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .custom-tabbar__badge {

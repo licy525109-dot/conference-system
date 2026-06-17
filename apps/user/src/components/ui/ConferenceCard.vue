@@ -1,11 +1,14 @@
 <template>
-  <view class="card ui-card" @click="$emit('open')">
+  <view class="card ui-card" hover-class="card--pressed" hover-stay-time="120" @click="$emit('open')">
+    <view class="topline">
+      <StatusTag :label="statusLabel" :tone="statusTone" />
+      <text class="topline-price">{{ priceText || "查看票种" }}</text>
+    </view>
     <view class="head">
       <view class="title-box">
         <text class="title">{{ title }}</text>
         <text class="summary">{{ summary || "会议报名已开放，查看详情后选择报名规格。" }}</text>
       </view>
-      <StatusTag :label="statusLabel" :tone="statusTone" />
     </view>
     <view class="meta-grid">
       <view class="meta">
@@ -27,7 +30,9 @@
     </view>
     <view class="foot">
       <text class="foot-note">{{ registrationCountText }}</text>
-      <button class="ui-button-primary ui-button-compact action" @click.stop="$emit('open')">查看详情</button>
+      <view class="action" @click.stop="$emit('open')">
+        <text>查看详情</text>
+      </view>
     </view>
   </view>
 </template>
@@ -75,18 +80,29 @@ const registrationCountText = computed(() =>
 .card {
   position: relative;
   overflow: hidden;
-  padding: 30rpx;
+  padding: 26rpx;
   background: var(--cms-gradient-card);
+  transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
-.card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 10rpx;
-  height: 100%;
-  background: var(--cms-gradient-cta);
+.card--pressed {
+  transform: scale(0.992);
+  box-shadow: var(--cms-shadow-sm);
+}
+
+.topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
+}
+
+.topline-price {
+  color: var(--cms-primary-strong);
+  font-size: 25rpx;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
 .head {
@@ -104,9 +120,10 @@ const registrationCountText = computed(() =>
 .title {
   display: block;
   color: var(--ui-color-text);
-  font-size: 35rpx;
+  font-size: 33rpx;
   font-weight: 900;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .summary {
@@ -115,6 +132,7 @@ const registrationCountText = computed(() =>
   color: var(--ui-color-muted);
   font-size: 26rpx;
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .meta-grid {
@@ -122,7 +140,7 @@ const registrationCountText = computed(() =>
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18rpx;
   margin-top: 24rpx;
-  padding: 20rpx;
+  padding: 18rpx;
   border: 1px solid var(--cms-border);
   border-radius: var(--cms-radius-md);
   background: var(--cms-surface-soft);
@@ -146,6 +164,7 @@ const registrationCountText = computed(() =>
   font-size: 25rpx;
   font-weight: 800;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .price {
@@ -165,10 +184,25 @@ const registrationCountText = computed(() =>
   color: var(--ui-color-muted);
   font-size: 24rpx;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 172rpx;
-  box-shadow: 0 14rpx 28rpx rgba(31, 77, 122, 0.18);
+  min-height: 66rpx;
+  padding: 0 24rpx;
+  border-radius: var(--cms-radius-full);
+  background: var(--cms-gradient-cta);
+  color: #ffffff;
+  font-size: 25rpx;
+  font-weight: 900;
+  box-shadow: 0 12rpx 26rpx rgba(49, 93, 125, 0.18);
+}
+
+.action text {
+  line-height: 1;
 }
 </style>

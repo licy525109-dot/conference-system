@@ -121,7 +121,7 @@ function extensionNoticeFor(key: string):
   display: flex;
   flex-direction: column;
   gap: 22rpx;
-  padding-bottom: 164rpx;
+  padding-bottom: calc(228rpx + env(safe-area-inset-bottom));
   overflow: hidden;
 }
 

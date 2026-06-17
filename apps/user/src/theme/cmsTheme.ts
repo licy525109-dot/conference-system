@@ -69,52 +69,52 @@ export interface CmsResolvedTheme {
 export const CMS_THEME_PRESETS: Record<CmsThemePresetId, CmsResolvedTheme> = {
   "business-blue": {
     id: "business-blue",
-    name: "Business Blue",
+    name: "Conference Calm",
     dark: false,
     colors: {
-      pageBg: "#F4F7FB",
-      pageBgSoft: "#EAF1F8",
+      pageBg: "#F5F7F6",
+      pageBgSoft: "#EDF3F0",
       surface: "#FFFFFF",
-      surfaceSoft: "#F8FAFD",
-      surfaceMuted: "#EEF4FA",
+      surfaceSoft: "#F8FAF8",
+      surfaceMuted: "#EEF4F0",
       surfaceElevated: "#FFFFFF",
-      textPrimary: "#111827",
+      textPrimary: "#17202F",
       textSecondary: "#667085",
       textTertiary: "#93A0B2",
       textInverse: "#FFFFFF",
-      primary: "#1F4D7A",
-      primaryStrong: "#173B62",
-      primarySoft: "#E6EEF7",
-      secondary: "#4D8DD9",
-      secondarySoft: "#EAF3FF",
-      accent: "#C7923E",
-      accentSoft: "#FFF4DF",
-      border: "#E4EAF2",
-      divider: "#EEF2F7",
-      success: "#11845B",
-      successSoft: "#E8F7F1",
-      warning: "#B76E00",
-      warningSoft: "#FFF6DF",
-      danger: "#C7352F",
-      dangerSoft: "#FFF1EF",
-      info: "#1F5FBF",
-      infoSoft: "#E8F1FF",
-      overlay: "rgba(17, 24, 39, 0.42)"
+      primary: "#315D7D",
+      primaryStrong: "#244861",
+      primarySoft: "#E7F0F5",
+      secondary: "#3A8F79",
+      secondarySoft: "#E3F2EE",
+      accent: "#B58B47",
+      accentSoft: "#F8EFDF",
+      border: "#DDE7EE",
+      divider: "#EDF2F4",
+      success: "#1F7A5B",
+      successSoft: "#E6F3EE",
+      warning: "#A56B1F",
+      warningSoft: "#FBF1DF",
+      danger: "#B93838",
+      dangerSoft: "#F9E8E8",
+      info: "#315D7D",
+      infoSoft: "#E7F0F5",
+      overlay: "rgba(23, 32, 47, 0.42)"
     },
     gradients: {
-      page: "linear-gradient(180deg, #F7FAFE 0%, #EFF5FB 100%)",
-      hero: "linear-gradient(135deg, #1F4D7A 0%, #4D8DD9 100%)",
-      card: "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,253,0.96))",
-      cta: "linear-gradient(135deg, #1F4D7A 0%, #4D8DD9 100%)",
-      soft: "linear-gradient(135deg, #EEF4FA 0%, #F8FAFD 100%)"
+      page: "linear-gradient(180deg, #FBFCFB 0%, #EDF3F0 100%)",
+      hero: "linear-gradient(135deg, #244861 0%, #3A8F79 58%, #B58B47 140%)",
+      card: "linear-gradient(180deg, rgba(255,255,255,0.99), rgba(248,250,248,0.97))",
+      cta: "linear-gradient(135deg, #315D7D 0%, #3A8F79 100%)",
+      soft: "linear-gradient(135deg, #E7F0F5 0%, #F8EFDF 100%)"
     },
-    radius: { sm: 10, md: 14, lg: 18, xl: 24, xxl: 30, full: 999 },
-    spacing: { pageX: 28, sectionY: 28, cardGap: 18, cardPadding: 28 },
+    radius: { sm: 8, md: 10, lg: 12, xl: 14, xxl: 18, full: 999 },
+    spacing: { pageX: 28, sectionY: 24, cardGap: 16, cardPadding: 24 },
     shadow: {
-      sm: "0 8rpx 20rpx rgba(17, 31, 55, 0.05)",
-      md: "0 18rpx 44rpx rgba(17, 31, 55, 0.08)",
-      lg: "0 28rpx 70rpx rgba(17, 31, 55, 0.12)",
-      floating: "0 -10rpx 34rpx rgba(17, 31, 55, 0.12)",
+      sm: "0 6rpx 18rpx rgba(23, 32, 47, 0.05)",
+      md: "0 14rpx 34rpx rgba(23, 32, 47, 0.07)",
+      lg: "0 24rpx 56rpx rgba(23, 32, 47, 0.1)",
+      floating: "0 -10rpx 30rpx rgba(23, 32, 47, 0.12)",
       glow: "0 0 0 rgba(0,0,0,0)"
     }
   },
@@ -348,8 +348,8 @@ export function resolveCmsTheme(config: ThemeConfig): CmsResolvedTheme {
     gradients: {
       ...preset.gradients,
       page: `linear-gradient(180deg, ${pageBg} 0%, ${preset.colors.pageBgSoft} 100%)`,
-      hero: `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`,
-      cta: `linear-gradient(135deg, ${primary} 0%, ${accent} 100%)`
+      hero: `linear-gradient(135deg, ${primary} 0%, ${secondary} 62%, ${accent} 140%)`,
+      cta: `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`
     },
     radius: {
       sm: Math.max(6, radius),
@@ -463,7 +463,7 @@ export function createCmsBackgroundStyle(config: ThemeConfig, target: "body" | "
   if (config.backgroundMode === "dynamic-gradient") {
     return {
       backgroundImage: dynamicGradientBackground(config),
-      backgroundSize: "360% 360%"
+      backgroundSize: "420% 420%"
     };
   }
 
@@ -481,11 +481,11 @@ export function dynamicGradientBackground(config: ThemeConfig): string {
   const from = config.backgroundGradientFrom || theme.colors.pageBg;
   const to = config.backgroundGradientTo || theme.colors.secondarySoft;
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 44));
-  const scale = Math.max(18, Math.round(density / 2.1));
+  const scale = Math.max(22, Math.round(density / 1.7));
   const overlay = config.backgroundBottomFilter === false
     ? ""
-    : `linear-gradient(180deg, rgba(255,255,255,0.02), ${theme.colors.pageBg} 110%), `;
-  return `${overlay}radial-gradient(circle at 10% 12%, ${alpha(theme.colors.primary, 0.34)} 0, transparent ${scale}%), radial-gradient(circle at 88% 18%, ${alpha(theme.colors.secondary, 0.30)} 0, transparent ${scale + 10}%), radial-gradient(circle at 52% 76%, ${alpha(theme.colors.accent, 0.26)} 0, transparent ${scale + 18}%), linear-gradient(135deg, ${from}, ${to})`;
+    : `linear-gradient(180deg, rgba(255,255,255,0.02), ${theme.colors.pageBg} 116%), `;
+  return `${overlay}radial-gradient(circle at 10% 12%, ${alpha(theme.colors.primary, 0.42)} 0, transparent ${scale}%), radial-gradient(circle at 88% 18%, ${alpha(theme.colors.secondary, 0.38)} 0, transparent ${scale + 12}%), radial-gradient(circle at 52% 76%, ${alpha(theme.colors.accent, 0.34)} 0, transparent ${scale + 18}%), radial-gradient(circle at 70% 46%, ${alpha(theme.colors.info, 0.24)} 0, transparent ${scale + 8}%), linear-gradient(135deg, ${from} 0%, ${to} 62%, ${theme.colors.accentSoft} 140%)`;
 }
 
 function normalizePresetId(value: unknown): CmsThemePresetId {

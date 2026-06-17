@@ -32,7 +32,7 @@ withDefaults(
   border: 1px solid var(--admin-color-border);
   border-radius: var(--admin-radius);
   background: var(--admin-color-panel);
-  box-shadow: var(--admin-shadow);
+  box-shadow: var(--admin-shadow-soft);
 }
 
 .admin-section-card__head {
@@ -46,7 +46,7 @@ withDefaults(
 .admin-section-card h2 {
   margin: 0;
   color: var(--admin-color-text);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 900;
 }
 

@@ -255,10 +255,10 @@ interface PalettePreset {
 
 const DEFAULT_THEME: ThemeConfig = {
   visualPreset: "business-blue",
-  primaryColor: "#1f4d7a",
-  secondaryColor: "#4d8dd9",
-  accentColor: "#c7923e",
-  backgroundColor: "#f4f7fb",
+  primaryColor: "#315d7d",
+  secondaryColor: "#3a8f79",
+  accentColor: "#b58b47",
+  backgroundColor: "#f5f7f6",
   cardBackground: "#ffffff",
   radius: 8,
   buttonStyle: "solid",
@@ -271,8 +271,8 @@ const DEFAULT_THEME: ThemeConfig = {
   browserTitle: "会务运营平台",
   browserIconUrl: "",
   backgroundMode: "solid",
-  backgroundGradientFrom: "#f7fafe",
-  backgroundGradientTo: "#eaf1f8",
+  backgroundGradientFrom: "#fbfcfb",
+  backgroundGradientTo: "#edf3f0",
   backgroundImageUrl: "",
   backgroundVideoUrl: "",
   backgroundDynamicDensity: 40,
@@ -285,18 +285,18 @@ const DEFAULT_THEME: ThemeConfig = {
 
 const palettePresets: PalettePreset[] = [
   {
-    name: "Business Blue",
+    name: "Conference Calm",
     subtitle: "商务会议、发布会、标准会务",
-    colors: ["#1f4d7a", "#4d8dd9", "#c7923e", "#f4f7fb"],
+    colors: ["#315d7d", "#3a8f79", "#b58b47", "#f5f7f6"],
     values: {
       visualPreset: "business-blue",
-      primaryColor: "#1f4d7a",
-      secondaryColor: "#4d8dd9",
-      accentColor: "#c7923e",
-      backgroundColor: "#f4f7fb",
+      primaryColor: "#315d7d",
+      secondaryColor: "#3a8f79",
+      accentColor: "#b58b47",
+      backgroundColor: "#f5f7f6",
       cardBackground: "#ffffff",
-      backgroundGradientFrom: "#f7fafe",
-      backgroundGradientTo: "#eaf1f8",
+      backgroundGradientFrom: "#fbfcfb",
+      backgroundGradientTo: "#edf3f0",
       bannerStyle: "immersive",
       shadow: "soft"
     }
@@ -535,9 +535,19 @@ function dynamicGradient(config: ThemeConfig): string {
   const from = config.backgroundGradientFrom || config.backgroundColor;
   const to = config.backgroundGradientTo || config.secondaryColor;
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  const dotOpacity = Math.min(0.48, 0.16 + density / 360);
-  const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,251,0.58)), ";
-  return `${overlay}radial-gradient(circle at 12% 18%, rgba(255,255,255,${dotOpacity}) 0, transparent ${Math.max(18, density / 2.1)}%), radial-gradient(circle at 86% 18%, rgba(20,184,166,${Math.min(0.42, dotOpacity)}) 0, transparent ${Math.max(22, density / 1.9)}%), radial-gradient(circle at 48% 76%, rgba(245,158,11,${Math.min(0.34, dotOpacity)}) 0, transparent ${Math.max(26, density / 1.55)}%), radial-gradient(circle at 68% 42%, rgba(59,130,246,${Math.min(0.32, dotOpacity)}) 0, transparent ${Math.max(24, density / 1.7)}%), linear-gradient(135deg, ${from}, ${to})`;
+  const scale = Math.max(22, Math.round(density / 1.7));
+  const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,246,0.68)), ";
+  return `${overlay}radial-gradient(circle at 12% 18%, ${hexAlpha(config.primaryColor, 0.42)} 0, transparent ${scale}%), radial-gradient(circle at 86% 18%, ${hexAlpha(config.secondaryColor, 0.38)} 0, transparent ${scale + 12}%), radial-gradient(circle at 48% 76%, ${hexAlpha(config.accentColor, 0.34)} 0, transparent ${scale + 18}%), radial-gradient(circle at 68% 42%, ${hexAlpha(config.primaryColor, 0.2)} 0, transparent ${scale + 8}%), linear-gradient(135deg, ${from} 0%, ${to} 62%, ${hexAlpha(config.accentColor, 0.2)} 140%)`;
+}
+
+function hexAlpha(value: string | undefined, alpha: number): string {
+  const color = String(value || "#315d7d").trim();
+  if (/^rgba?\(/i.test(color)) return color;
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return `rgba(49, 93, 125, ${alpha})`;
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 </script>
 
@@ -701,9 +711,9 @@ function dynamicGradient(config: ThemeConfig): string {
   inset: -18%;
   z-index: 0;
   background:
-    radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.46), transparent 18%),
-    radial-gradient(circle at 80% 20%, rgba(20, 184, 166, 0.3), transparent 22%),
-    radial-gradient(circle at 55% 82%, rgba(245, 158, 11, 0.26), transparent 24%);
+    radial-gradient(circle at 20% 30%, color-mix(in srgb, var(--theme-primary) 42%, transparent), transparent 18%),
+    radial-gradient(circle at 80% 20%, color-mix(in srgb, var(--theme-secondary) 34%, transparent), transparent 22%),
+    radial-gradient(circle at 55% 82%, color-mix(in srgb, var(--theme-accent) 30%, transparent), transparent 24%);
   filter: blur(10px);
   animation: themePreviewFloat 9s ease-in-out infinite alternate;
 }
