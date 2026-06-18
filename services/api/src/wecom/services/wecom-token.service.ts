@@ -4,14 +4,26 @@ import { PrismaService } from "../../prisma.service";
 import { WecomClientAdapter } from "../adapters/wecom-client.adapter";
 import { decryptSecret, encryptSecret } from "../wecom.crypto";
 
+export type WecomAccessTokenMode = "self_built_app" | "legacy_customer_contact";
+
 @Injectable()
 export class WecomTokenService {
   constructor(private readonly prisma: PrismaService, private readonly client: WecomClientAdapter) {}
 
-  async getAccessToken(integration: WecomIntegration, tokenType: "customer_contact" | "app", forceRefresh = false) {
+  getEffectiveMode(integration: WecomIntegration): WecomAccessTokenMode {
+    if (integration.authMode === "SELF_BUILT_APP") return "self_built_app";
+    if (integration.authMode === "LEGACY_CUSTOMER_CONTACT") return "legacy_customer_contact";
+    return integration.appSecretEnc ? "self_built_app" : "legacy_customer_contact";
+  }
+
+  async getConfiguredAccessToken(integration: WecomIntegration, forceRefresh = false) {
+    return this.getAccessToken(integration, this.getEffectiveMode(integration), forceRefresh);
+  }
+
+  async getAccessToken(integration: WecomIntegration, tokenType: WecomAccessTokenMode, forceRefresh = false) {
     if (!integration.corpId) throw new BadRequestException("请先配置企业 ID CorpID");
-    const secret = tokenType === "customer_contact" ? decryptSecret(integration.customerContactSecretEnc) : decryptSecret(integration.appSecretEnc);
-    if (!secret) throw new BadRequestException(tokenType === "customer_contact" ? "请先配置客户联系 Secret" : "请先配置自建应用 Secret");
+    const secret = tokenType === "legacy_customer_contact" ? decryptSecret(integration.customerContactSecretEnc) : decryptSecret(integration.appSecretEnc);
+    if (!secret) throw new BadRequestException(tokenType === "legacy_customer_contact" ? "请先配置旧版客户联系 Secret" : "请先配置自建应用 Secret");
 
     const cached = await this.prisma.wecomAccessTokenCache.findUnique({ where: { integrationId_tokenType: { integrationId: integration.id, tokenType } } });
     if (cached && !forceRefresh && cached.expiresAt.getTime() > Date.now() + 60_000) {

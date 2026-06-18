@@ -23,6 +23,9 @@
         <el-option label="底部导航图标" value="tabbar_icon" />
         <el-option label="支付结果页" value="payment_result" />
         <el-option label="页面字体" value="page_font" />
+        <el-option label="商品封面" value="product_cover" />
+        <el-option label="商品详情图" value="product_detail" />
+        <el-option label="企微群二维码" value="wecom_qr" />
       </el-select>
       <el-select v-model="enabledFilter" clearable placeholder="状态" style="width: 130px">
         <el-option label="启用" value="true" />
@@ -68,12 +71,31 @@
       <el-form :model="form" label-width="110px">
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="分类"><el-select v-model="form.categoryId" clearable><el-option v-for="item in categories" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
-        <el-form-item label="使用位置"><el-input v-model="form.usage" placeholder="如 home_banner / conference_cover / page_font" /></el-form-item>
-        <el-form-item label="上传文件"><input type="file" accept="image/*,video/mp4,.ttf,.otf,.woff,.woff2" @change="onFileChange" /></el-form-item>
+        <el-form-item>
+          <template #label>使用位置<MaterialSpecHelp :spec="currentUploadSpec" /></template>
+          <el-select v-model="form.usage" filterable allow-create default-first-option placeholder="如 home_banner / conference_cover / page_font">
+            <el-option label="首页横幅 / Hero" value="home_banner" />
+            <el-option label="会议封面" value="conference_cover" />
+            <el-option label="详情头图" value="conference_header" />
+            <el-option label="底部导航图标" value="tabbar_icon" />
+            <el-option label="页面字体" value="page_font" />
+            <el-option label="商品封面" value="product_cover" />
+            <el-option label="商品详情图" value="product_detail" />
+            <el-option label="企微群二维码" value="wecom_qr" />
+          </el-select>
+          <p class="upload-tip">{{ currentUploadSpecText }}</p>
+        </el-form-item>
+        <el-form-item>
+          <template #label>上传文件<MaterialSpecHelp :spec="currentUploadSpec" /></template>
+          <input type="file" accept="image/*,video/mp4,.ttf,.otf,.woff,.woff2" @change="onFileChange" />
+        </el-form-item>
         <el-form-item v-if="form.file || uploadProgress > 0" label="上传进度">
           <el-progress :percentage="uploadProgress" />
         </el-form-item>
-        <el-form-item label="外部 URL"><el-input v-model="form.url" placeholder="不上传文件时填写" /></el-form-item>
+        <el-form-item>
+          <template #label>外部 URL<MaterialSpecHelp :spec="currentUploadSpec" /></template>
+          <el-input v-model="form.url" placeholder="不上传文件时填写；请确保外部素材也符合建议尺寸与大小" />
+        </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
@@ -91,12 +113,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
+import { materialSpecs, materialSpecText, materialUsageSpecMap, validateMaterialFile } from "../../constants/materialSpecs";
 import { createMaterial, createMaterialCategory, disableMaterial, listMaterialCategories, listMaterials } from "../../services/admin";
 import type { MaterialAsset, MaterialCategory } from "../../services/types";
 
@@ -114,6 +138,8 @@ const categorySaving = ref(false);
 const uploadProgress = ref(0);
 const form = reactive({ name: "", categoryId: "", usage: "home_banner", url: "", remark: "", file: undefined as File | undefined });
 const categoryForm = reactive({ name: "", code: "", description: "" });
+const currentUploadSpec = computed(() => materialSpecs[materialUsageSpecMap[form.usage] ?? "materialUpload"]);
+const currentUploadSpecText = computed(() => materialSpecText(currentUploadSpec.value));
 
 onMounted(async () => {
   await loadCategories();
@@ -150,7 +176,19 @@ function openCreate() {
 
 function onFileChange(event: Event) {
   const input = event.target as HTMLInputElement;
-  form.file = input.files?.[0];
+  const file = input.files?.[0];
+  if (!file) {
+    form.file = undefined;
+    return;
+  }
+  const validation = validateMaterialFile(file, currentUploadSpec.value);
+  if (validation) {
+    input.value = "";
+    form.file = undefined;
+    void showError("素材不符合要求", validation);
+    return;
+  }
+  form.file = file;
 }
 
 async function save() {
@@ -235,6 +273,7 @@ function validateMaterialForm(): string {
   if (!form.name.trim()) return "请填写素材名称";
   if (!form.usage.trim()) return "请填写使用位置，例如 home_banner、conference_cover 或 page_font";
   if (!form.file && !form.url.trim()) return "请上传文件，或填写外部 URL";
+  if (form.file) return validateMaterialFile(form.file, currentUploadSpec.value);
   return "";
 }
 
@@ -266,5 +305,12 @@ async function showError(title: string, message: string) {
   color: var(--admin-color-primary);
   font-size: 13px;
   font-weight: 800;
+}
+
+.upload-tip {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

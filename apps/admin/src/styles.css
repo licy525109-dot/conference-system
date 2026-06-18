@@ -107,6 +107,41 @@ body {
   background: transparent;
 }
 
+.admin-menu-tools {
+  padding: 0 14px 10px;
+}
+
+.admin-menu-tools .el-input__wrapper {
+  background: rgb(255 255 255 / 9%);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 10%) inset;
+}
+
+.admin-menu-tools .el-input__inner {
+  color: #ffffff;
+}
+
+.menu-group {
+  margin: 4px 0 8px;
+}
+
+.menu-group-toggle {
+  width: calc(100% - 24px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 12px;
+  padding: 12px 8px 5px;
+  border: 0;
+  background: transparent;
+  color: rgb(255 255 255 / 45%);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
 .admin-menu .el-menu-item-group__title {
   padding: 18px 20px 7px !important;
   color: rgb(255 255 255 / 45%);
@@ -115,11 +150,28 @@ body {
 }
 
 .menu-group-title {
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+}
+
+.menu-group-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-group-arrow {
+  flex: 0 0 auto;
+  transition: transform 160ms ease;
+}
+
+.menu-group-arrow.is-open {
+  transform: rotate(180deg);
 }
 
 .menu-group-title small,
@@ -193,6 +245,12 @@ body {
 .admin-menu.el-menu--collapse .menu-group-title small,
 .admin-menu.el-menu--collapse .menu-item-copy small {
   display: none;
+}
+
+.admin-menu-empty {
+  margin: 18px 20px;
+  color: rgb(255 255 255 / 48%);
+  font-size: 12px;
 }
 
 .admin-header {

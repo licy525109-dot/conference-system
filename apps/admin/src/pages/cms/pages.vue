@@ -244,9 +244,10 @@
             <el-form-item label="微信分享描述">
               <el-input v-model="pageMeta.shareDescription" type="textarea" :rows="2" placeholder="转发卡片描述" />
             </el-form-item>
-            <el-form-item label="微信分享封面">
+            <el-form-item>
+              <template #label>微信分享封面<MaterialSpecHelp spec-key="shareCover" /></template>
               <div class="field-row">
-                <el-input v-model="pageMeta.shareImageUrl" placeholder="从素材库选择或粘贴图片地址" />
+                <el-input v-model="pageMeta.shareImageUrl" placeholder="建议 500x400 或 5:4，JPG/PNG，单张不超过 1MB" />
                 <el-button @click="openPageMetaImagePicker">应用素材库</el-button>
               </div>
             </el-form-item>
@@ -265,7 +266,11 @@
             <el-collapse v-model="expandedConfigGroupIds[selectedComponent.id]" class="config-group-collapse">
               <el-collapse-item v-for="group in groupedFieldsFor(selectedComponent.type)" :key="group.key" :title="group.title" :name="group.key">
                 <el-form label-position="top" class="config-form">
-                  <el-form-item v-for="field in group.fields" :key="field.key" :label="field.label">
+                  <el-form-item v-for="field in group.fields" :key="field.key">
+                    <template #label>
+                      {{ field.label }}
+                      <MaterialSpecHelp v-if="materialSpecKeyForField(selectedComponent.type, field)" :spec-key="materialSpecKeyForField(selectedComponent.type, field)" />
+                    </template>
                     <el-input-number
                       v-if="field.kind === 'number'"
                       :model-value="numberValue(selectedComponent, field.key, field.fallback)"
@@ -327,6 +332,7 @@
                     </div>
                     <el-button v-if="field.kind === 'list' && isImageField(field)" class="material-button" @click="openMaterialPicker(selectedComponent, field)">
                       从素材库添加图片
+                      <MaterialSpecHelp :spec-key="materialSpecKeyForField(selectedComponent.type, field) || 'imageGrid'" />
                     </el-button>
                   </el-form-item>
                 </el-form>
@@ -467,6 +473,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import {
   createPage,
   createPageLibraryTemplate,
@@ -482,6 +489,7 @@ import {
   updatePageVersion
 } from "../../services/admin";
 import { routeQuery } from "../../router";
+import type { MaterialSpecKey } from "../../constants/materialSpecs";
 import type {
   CmsComponent,
   CmsComponentSupportStatus,
@@ -1438,6 +1446,17 @@ function isImageField(field: ConfigField): boolean {
 
 function isFontField(field: ConfigField): boolean {
   return ["fontAssetUrl", "titleFontAssetUrl"].includes(field.key);
+}
+
+function materialSpecKeyForField(componentType: string, field: ConfigField): MaterialSpecKey | undefined {
+  if (isFontField(field)) return "fontFile";
+  if (!isImageField(field)) return undefined;
+  if (componentType === "hero") return "heroImage";
+  if (componentType === "carousel") return "carouselImage";
+  if (componentType === "image-grid") return "imageGrid";
+  if (componentType === "text-image") return "contentImage";
+  if (componentType === "sponsor-wall") return "sponsorLogo";
+  return field.key === "images" ? "imageGrid" : "contentImage";
 }
 
 async function openMaterialPicker(component: EditableComponent, field: ConfigField) {
