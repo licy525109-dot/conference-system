@@ -3,6 +3,8 @@ import { OrderStatus, PaymentProvider, PaymentStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { PaymentSuccessService } from "./payment-success.service";
+import { readWechatPayConfig } from "./wechat-pay.config";
+import { WechatPayEncryptedResource, WechatPayHeaders, WechatPayNotifyVerifier } from "./wechat-pay.notify-verifier";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -26,11 +28,17 @@ export interface PaymentStatusResponse {
   registrationId: string | null;
 }
 
+export interface WechatRefundNotifySuccessResponse {
+  code: "SUCCESS";
+  message: "OK";
+}
+
 @Injectable()
 export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly paymentSuccessService: PaymentSuccessService = new PaymentSuccessService(prisma)
+    private readonly paymentSuccessService: PaymentSuccessService = new PaymentSuccessService(prisma),
+    private readonly refundNotifyVerifier: WechatPayNotifyVerifier = new WechatPayNotifyVerifier()
   ) {}
 
   async confirmMockPayment(input: unknown, currentUser: CurrentUser | undefined): Promise<ApiResponse<MockPaymentConfirmResponse>> {
@@ -124,8 +132,71 @@ export class PaymentsService {
     });
   }
 
+  async handleRefundNotify(input: { body: unknown; rawBody: Buffer; headers: WechatPayHeaders }): Promise<WechatRefundNotifySuccessResponse> {
+    const config = readWechatPayConfig();
+    this.refundNotifyVerifier.verifySignature({ headers: input.headers, rawBody: input.rawBody });
+    const body = readRefundNotifyBody(input.body);
+    const decrypted = this.refundNotifyVerifier.decryptResource(body.resource, config.apiV3Key);
+    const refund = parseRefundNotifyResource(decrypted);
+    await this.applyRefundNotify(refund);
+    return { code: "SUCCESS", message: "OK" };
+  }
+
   protected getCurrentTime(): Date {
     return new Date();
+  }
+
+  private async applyRefundNotify(input: ParsedRefundNotify) {
+    const resultStatus = input.status === "SUCCESS" ? "SUCCESS" : "FAILED";
+    const registrationRefund = await this.prisma.refund.findFirst({
+      where: { OR: [{ outRefundNo: input.outRefundNo }, { refundNo: input.outRefundNo }] },
+      include: { order: true }
+    });
+    if (registrationRefund) {
+      if (registrationRefund.amountCent !== input.amountCent) throw new ConflictException("WeChat refund amount does not match registration refund amount");
+      if (registrationRefund.status === resultStatus) return;
+      await this.prisma.$transaction(async (tx) => {
+        await tx.refund.update({
+          where: { id: registrationRefund.id },
+          data: {
+            provider: PaymentProvider.WECHAT,
+            providerRefundId: input.providerRefundId,
+            status: resultStatus,
+            processedAt: input.successTime ?? new Date(),
+            failedReason: resultStatus === "FAILED" ? input.status : null
+          }
+        });
+        if (resultStatus === "SUCCESS" && registrationRefund.order && registrationRefund.amountCent >= (registrationRefund.order.paidAmountCent ?? registrationRefund.order.payableAmountCent)) {
+          await tx.order.update({ where: { id: registrationRefund.order.id }, data: { status: OrderStatus.REFUNDED } });
+          await tx.registration.updateMany({ where: { orderId: registrationRefund.order.id }, data: { status: "REFUNDED" } });
+        }
+      });
+      return;
+    }
+
+    const mallRefund = await this.prisma.mallRefund.findFirst({
+      where: { OR: [{ outRefundNo: input.outRefundNo }, { refundNo: input.outRefundNo }] },
+      include: { order: true }
+    });
+    if (!mallRefund) throw new NotFoundException("Refund out_refund_no not found");
+    if (mallRefund.amountCent !== input.amountCent) throw new ConflictException("WeChat refund amount does not match mall refund amount");
+    if (mallRefund.status === resultStatus) return;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.mallRefund.update({
+        where: { id: mallRefund.id },
+        data: {
+          provider: PaymentProvider.WECHAT,
+          providerRefundId: input.providerRefundId,
+          status: resultStatus,
+          processedAt: input.successTime ?? new Date(),
+          failedReason: resultStatus === "FAILED" ? input.status : null
+        }
+      });
+      if (resultStatus === "SUCCESS" && mallRefund.amountCent >= (mallRefund.order.paidAmountCent ?? mallRefund.order.payableAmountCent)) {
+        await tx.mallOrder.update({ where: { id: mallRefund.mallOrderId }, data: { status: "REFUNDED" } });
+        if (mallRefund.afterSaleId) await tx.mallAfterSale.update({ where: { id: mallRefund.afterSaleId }, data: { status: "COMPLETED", handledAt: input.successTime ?? new Date() } });
+      }
+    });
   }
 }
 
@@ -152,6 +223,58 @@ function readOrderNo(input: unknown): string {
   }
 
   return orderNo;
+}
+
+interface RefundNotifyBody {
+  id?: string;
+  eventType?: string;
+  resourceType?: string;
+  resource: WechatPayEncryptedResource;
+}
+
+interface ParsedRefundNotify {
+  outRefundNo: string;
+  providerRefundId: string;
+  status: string;
+  amountCent: number;
+  successTime: Date | null;
+}
+
+function readRefundNotifyBody(input: unknown): RefundNotifyBody {
+  if (!isRecord(input)) throw new BadRequestException("Refund notify body must be a JSON object");
+  const resource = input.resource;
+  if (!isRecord(resource)) throw new BadRequestException("Refund notify resource is required");
+  return {
+    id: typeof input.id === "string" ? input.id : undefined,
+    eventType: typeof input.event_type === "string" ? input.event_type : undefined,
+    resourceType: typeof input.resource_type === "string" ? input.resource_type : undefined,
+    resource: {
+      algorithm: readRequiredString(resource, "algorithm"),
+      ciphertext: readRequiredString(resource, "ciphertext"),
+      nonce: readRequiredString(resource, "nonce"),
+      associated_data: typeof resource.associated_data === "string" ? resource.associated_data : undefined
+    }
+  };
+}
+
+function parseRefundNotifyResource(input: Record<string, unknown>): ParsedRefundNotify {
+  const amount = input.amount;
+  if (!isRecord(amount) || !Number.isInteger(amount.refund)) throw new BadRequestException("WeChat refund notify amount.refund is required");
+  const refundAmountCent = amount.refund as number;
+  const successTime = typeof input.success_time === "string" ? new Date(input.success_time) : null;
+  return {
+    outRefundNo: readRequiredString(input, "out_refund_no"),
+    providerRefundId: readRequiredString(input, "refund_id"),
+    status: readRequiredString(input, "refund_status"),
+    amountCent: refundAmountCent,
+    successTime: successTime && !Number.isNaN(successTime.getTime()) ? successTime : null
+  };
+}
+
+function readRequiredString(input: Record<string, unknown>, field: string): string {
+  const value = input[field];
+  if (typeof value !== "string" || !value.trim()) throw new BadRequestException(`${field} is required`);
+  return value.trim();
 }
 
 function toMockOutTradeNo(orderNo: string): string {

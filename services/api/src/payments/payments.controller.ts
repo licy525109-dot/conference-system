@@ -59,11 +59,24 @@ export class PaymentsController {
 
   @Post("wechat/refund-notify")
   @HttpCode(200)
-  refundNotifyWechat() {
-    return {
-      code: "SUCCESS",
-      message: "refund notify adapter reserved"
-    };
+  refundNotifyWechat(
+    @Body() body: unknown,
+    @Req() request: RequestWithRawBody,
+    @Headers("wechatpay-timestamp") timestamp: string | undefined,
+    @Headers("wechatpay-nonce") nonce: string | undefined,
+    @Headers("wechatpay-signature") signature: string | undefined,
+    @Headers("wechatpay-serial") serial: string | undefined
+  ) {
+    return this.paymentsService.handleRefundNotify({
+      body,
+      rawBody: request.rawBody ?? Buffer.from(JSON.stringify(body), "utf8"),
+      headers: {
+        timestamp: timestamp ?? "",
+        nonce: nonce ?? "",
+        signature: signature ?? "",
+        serial: serial ?? ""
+      }
+    });
   }
 }
 

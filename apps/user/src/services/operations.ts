@@ -74,7 +74,7 @@ export function getConferenceAiSuggestions(conferenceId: string) {
   return request<AiSuggestionResponse>(`/conferences/${encodeURIComponent(conferenceId)}/ai/suggestions`, { auth: false });
 }
 
-export async function createInvoiceApplication(input: { orderNo: string; title: string; taxNo?: string; email?: string }) {
+export async function createInvoiceApplication(input: { sourceType?: "REGISTRATION" | "MALL"; orderNo: string; title: string; taxNo?: string; invoiceType?: string; email?: string; phone?: string; remark?: string }) {
   await ensureLogin();
   return request<Record<string, unknown>>("/invoices", { method: "POST", data: input });
 }
@@ -86,7 +86,23 @@ export async function getMyInvoices() {
 
 export async function getMyRefunds() {
   await ensureLogin();
-  return request<{ items: Array<Record<string, unknown>> }>("/my/refunds");
+  return request<{ items: FinanceRefund[] }>("/my/refunds");
+}
+
+export interface FinanceRefund {
+  id: string;
+  sourceType: "REGISTRATION" | "MALL";
+  refundNo: string;
+  orderNo: string | null;
+  amountCent: number;
+  status: string;
+  reason: string | null;
+  rejectReason: string | null;
+  failedReason: string | null;
+  requestedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  afterSaleStatus?: string | null;
 }
 
 export async function createMallOrder(input: {

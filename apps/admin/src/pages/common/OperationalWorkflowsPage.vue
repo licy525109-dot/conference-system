@@ -404,10 +404,10 @@ async function saveMemberConfig() {
 }
 
 async function loadFinance() {
-  if (section.value === "finance-refunds") financeRows.value = (await listRefunds({ page: 1, pageSize: 100 })).items;
-  else if (section.value === "finance-invoices") financeRows.value = (await listInvoices({ page: 1, pageSize: 100 })).items;
-  else if (section.value === "finance-wechat-bills") financeRows.value = (await listWechatBills()).items;
-  else financeRows.value = (await listReconciliationResults({ page: 1, pageSize: 100 })).items;
+  if (section.value === "finance-refunds") financeRows.value = (await listRefunds({ page: 1, pageSize: 100 })).items as unknown as Record<string, unknown>[];
+  else if (section.value === "finance-invoices") financeRows.value = (await listInvoices({ page: 1, pageSize: 100 })).items as unknown as Record<string, unknown>[];
+  else if (section.value === "finance-wechat-bills") financeRows.value = (await listWechatBills()).items as unknown as Record<string, unknown>[];
+  else financeRows.value = (await listReconciliationResults({ page: 1, pageSize: 100 })).items as unknown as Record<string, unknown>[];
 }
 
 async function approveRefundRow(id: string) {

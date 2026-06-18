@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
+import { AdminFinanceService } from "./admin-finance.service";
 import { AdminOperationsService } from "./admin-operations.service";
 import { AdminPermissionGuard } from "./admin-permission.guard";
 import { RequestWithCurrentAdmin } from "./current-admin";
@@ -8,7 +9,10 @@ import { RequireAdminPermissions } from "./require-permissions.decorator";
 @Controller("admin")
 @UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
 export class AdminOperationsController {
-  constructor(private readonly operations: AdminOperationsService) {}
+  constructor(
+    private readonly operations: AdminOperationsService,
+    private readonly finance: AdminFinanceService
+  ) {}
 
   @Get("conferences/:id/inventory-alert-rule")
   @RequireAdminPermissions("inventory-alert:view")
@@ -295,90 +299,90 @@ export class AdminOperationsController {
   @Post("refunds")
   @RequireAdminPermissions("refund:write")
   createRefund(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
-    return this.operations.createRefund(body, request.currentAdmin!);
+    return this.finance.createRefund(body, request.currentAdmin!);
   }
 
   @Get("refunds")
   @RequireAdminPermissions("refund:view")
   refunds(@Query() query: Record<string, unknown>) {
-    return this.operations.listRefunds(query);
+    return this.finance.listRefunds(query);
   }
 
   @Post("refunds/:id/approve")
   @RequireAdminPermissions("refund:write")
   approveRefund(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
-    return this.operations.approveRefund(id, request.currentAdmin!);
+    return this.finance.approveRefund(id, request.currentAdmin!);
   }
 
   @Post("refunds/:id/reject")
   @RequireAdminPermissions("refund:write")
   rejectRefund(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
-    return this.operations.rejectRefund(id, body, request.currentAdmin!);
+    return this.finance.rejectRefund(id, body, request.currentAdmin!);
   }
 
   @Post("refunds/:id/query")
   @RequireAdminPermissions("refund:view")
   queryRefund(@Param("id") id: string) {
-    return this.operations.queryRefund(id);
+    return this.finance.queryRefund(id);
   }
 
   @Get("invoices")
   @RequireAdminPermissions("invoice:view")
   invoices(@Query() query: Record<string, unknown>) {
-    return this.operations.listInvoices(query);
+    return this.finance.listInvoices(query);
   }
 
   @Post("invoices/:id/approve")
   @RequireAdminPermissions("invoice:write")
   approveInvoice(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
-    return this.operations.approveInvoice(id, request.currentAdmin!);
+    return this.finance.approveInvoice(id, request.currentAdmin!);
   }
 
   @Post("invoices/:id/reject")
   @RequireAdminPermissions("invoice:write")
   rejectInvoice(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
-    return this.operations.rejectInvoice(id, body, request.currentAdmin!);
+    return this.finance.rejectInvoice(id, body, request.currentAdmin!);
   }
 
   @Post("invoices/:id/mark-issued")
   @RequireAdminPermissions("invoice:write")
-  markInvoiceIssued(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
-    return this.operations.markInvoiceIssued(id, request.currentAdmin!);
+  markInvoiceIssued(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.finance.markInvoiceIssued(id, body, request.currentAdmin!);
   }
 
   @Post("finance/wechat-bills")
   @RequireAdminPermissions("finance:write")
   createWechatBill(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
-    return this.operations.createWechatBill(body, request.currentAdmin!);
+    return this.finance.createWechatBill(body, request.currentAdmin!);
   }
 
   @Get("finance/wechat-bills")
   @RequireAdminPermissions("finance:view")
-  wechatBills() {
-    return this.operations.listWechatBills();
+  wechatBills(@Query() query: Record<string, unknown>) {
+    return this.finance.listWechatBills(query);
   }
 
   @Post("finance/wechat-bills/import")
   @RequireAdminPermissions("finance:write")
   importWechatBill(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
-    return this.operations.importWechatBill(body, request.currentAdmin!);
+    return this.finance.importWechatBill(body, request.currentAdmin!);
   }
 
   @Post("finance/wechat-bills/:id/download")
   @RequireAdminPermissions("finance:write")
-  downloadWechatBill(@Param("id") id: string) {
-    return this.operations.downloadWechatBill(id);
+  downloadWechatBill(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.finance.downloadWechatBill(id, request.currentAdmin!);
   }
 
   @Post("finance/wechat-bills/:id/reconcile")
   @RequireAdminPermissions("finance:write")
-  reconcileWechatBill(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
-    return this.operations.reconcileWechatBill(id, request.currentAdmin!);
+  reconcileWechatBill(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.finance.reconcileWechatBill(id, request.currentAdmin!, body);
   }
 
   @Get("finance/reconciliation-results")
   @RequireAdminPermissions("finance:view")
   reconciliationResults(@Query() query: Record<string, unknown>) {
-    return this.operations.listReconciliationResults(query);
+    return this.finance.listReconciliationResults(query);
   }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { AdminFinanceService } from "./admin-finance.service";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminPermissionGuard } from "./admin-permission.guard";
@@ -24,20 +24,122 @@ export class AdminFinanceController {
 
   @Get("reconciliation-batches")
   @RequireAdminPermissions("finance:view")
-  batches() {
-    return this.financeService.listBatches();
+  batches(@Query() query: Record<string, unknown>) {
+    return this.financeService.listBatches(query);
   }
 
   @Post("reconciliation-batches")
   @RequireAdminPermissions("finance:write")
-  createBatch(@Req() request: RequestWithCurrentAdmin) {
-    return this.financeService.createBatch(request.currentAdmin!);
+  createBatch(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.createBatch(request.currentAdmin!, body);
   }
 
   @Get("differences")
   @RequireAdminPermissions("finance:view")
-  differences() {
-    return this.financeService.listDifferences();
+  differences(@Query() query: Record<string, unknown>) {
+    return this.financeService.listDifferences(query);
+  }
+
+  @Post("differences/:id/mark-reviewed")
+  @RequireAdminPermissions("reconciliation:write")
+  markDifferenceReviewed(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.markDifferenceReviewed(id, body, request.currentAdmin!);
+  }
+
+  @Get("refunds")
+  @RequireAdminPermissions("refund:view")
+  refunds(@Query() query: Record<string, unknown>) {
+    return this.financeService.listRefunds(query);
+  }
+
+  @Post("refunds")
+  @RequireAdminPermissions("refund:write")
+  createRefund(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.createRefund(body, request.currentAdmin!);
+  }
+
+  @Post("refunds/:id/approve")
+  @RequireAdminPermissions("refund:write")
+  approveRefund(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.approveRefund(id, request.currentAdmin!);
+  }
+
+  @Post("refunds/:id/reject")
+  @RequireAdminPermissions("refund:write")
+  rejectRefund(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.rejectRefund(id, body, request.currentAdmin!);
+  }
+
+  @Post("refunds/:id/query")
+  @RequireAdminPermissions("refund:view")
+  queryRefund(@Param("id") id: string) {
+    return this.financeService.queryRefund(id);
+  }
+
+  @Get("invoices")
+  @RequireAdminPermissions("invoice:view")
+  invoices(@Query() query: Record<string, unknown>) {
+    return this.financeService.listInvoices(query);
+  }
+
+  @Post("invoices/:id/approve")
+  @RequireAdminPermissions("invoice:write")
+  approveInvoice(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.approveInvoice(id, request.currentAdmin!);
+  }
+
+  @Post("invoices/:id/reject")
+  @RequireAdminPermissions("invoice:write")
+  rejectInvoice(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.rejectInvoice(id, body, request.currentAdmin!);
+  }
+
+  @Post("invoices/:id/mark-issued")
+  @RequireAdminPermissions("invoice:write")
+  markInvoiceIssued(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.markInvoiceIssued(id, body, request.currentAdmin!);
+  }
+
+  @Post("wechat-bills")
+  @RequireAdminPermissions("wechat-bill:write")
+  createWechatBill(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.createWechatBill(body, request.currentAdmin!);
+  }
+
+  @Get("wechat-bills")
+  @RequireAdminPermissions("wechat-bill:view")
+  wechatBills(@Query() query: Record<string, unknown>) {
+    return this.financeService.listWechatBills(query);
+  }
+
+  @Post("wechat-bills/import")
+  @RequireAdminPermissions("wechat-bill:write")
+  importWechatBill(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.importWechatBill(body, request.currentAdmin!);
+  }
+
+  @Post("wechat-bills/:id/download")
+  @RequireAdminPermissions("wechat-bill:write")
+  downloadWechatBill(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.downloadWechatBill(id, request.currentAdmin!);
+  }
+
+  @Post("wechat-bills/:id/reconcile")
+  @RequireAdminPermissions("reconciliation:write")
+  reconcileWechatBill(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.reconcileWechatBill(id, request.currentAdmin!, body);
+  }
+
+  @Get("reconciliation-results")
+  @RequireAdminPermissions("reconciliation:view")
+  reconciliationResults(@Query() query: Record<string, unknown>) {
+    return this.financeService.listReconciliationResults(query);
+  }
+
+  @Post("reconciliation-results/:id/mark-reviewed")
+  @RequireAdminPermissions("reconciliation:write")
+  markReconciliationReviewed(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.financeService.markReconciliationReviewed(id, body, request.currentAdmin!);
   }
 }
 

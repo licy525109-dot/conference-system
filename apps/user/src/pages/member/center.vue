@@ -31,6 +31,7 @@
     <view class="quick-links ui-card">
       <button class="ui-button-secondary" @click="goPage('/pages/coupon/my')">我的优惠券</button>
       <button class="ui-button-secondary" @click="goPage('/pages/mall/orders')">商城订单</button>
+      <button class="ui-button-secondary" @click="goPage('/pages/refund/index')">我的退款</button>
       <button class="ui-button-secondary" @click="goPage('/pages/invoice/index')">发票申请</button>
     </view>
 
