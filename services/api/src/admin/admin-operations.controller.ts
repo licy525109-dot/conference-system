@@ -112,10 +112,34 @@ export class AdminOperationsController {
     return this.operations.getKnowledgeBase(id);
   }
 
+  @Patch("conferences/:id/knowledge-base")
+  @RequireAdminPermissions("ai-kb:write")
+  updateConferenceKnowledgeBase(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.operations.updateConferenceKnowledgeBase(id, body, request.currentAdmin!);
+  }
+
   @Get("knowledge-bases")
   @RequireAdminPermissions("ai-kb:view")
   knowledgeBases(@Query() query: Record<string, unknown>) {
     return this.operations.listKnowledgeBases(query);
+  }
+
+  @Post("knowledge-bases")
+  @RequireAdminPermissions("ai-kb:write")
+  createKnowledgeBase(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.operations.createKnowledgeBase(body, request.currentAdmin!);
+  }
+
+  @Patch("knowledge-bases/:id")
+  @RequireAdminPermissions("ai-kb:write")
+  updateKnowledgeBase(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.operations.updateKnowledgeBase(id, body, request.currentAdmin!);
+  }
+
+  @Get("conferences/:id/knowledge-documents")
+  @RequireAdminPermissions("ai-kb:view")
+  knowledgeDocuments(@Param("id") id: string, @Query() query: Record<string, unknown>) {
+    return this.operations.listKnowledgeDocuments(id, query);
   }
 
   @Post("conferences/:id/knowledge-documents")
@@ -136,6 +160,12 @@ export class AdminOperationsController {
     return this.operations.reindexKnowledgeDocument(id, request.currentAdmin!);
   }
 
+  @Post("knowledge-documents/:id/rebuild")
+  @RequireAdminPermissions("ai-kb:write")
+  rebuildKnowledgeDocument(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.operations.reindexKnowledgeDocument(id, request.currentAdmin!);
+  }
+
   @Post("knowledge-documents/:id/delete")
   @RequireAdminPermissions("ai-kb:write")
   deleteKnowledgeDocument(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
@@ -152,6 +182,36 @@ export class AdminOperationsController {
   @RequireAdminPermissions("ai-kb:view")
   aiQuestionLogs(@Param("id") id: string, @Query() query: Record<string, unknown>) {
     return this.operations.listAiQuestionLogs(id, query);
+  }
+
+  @Get("conferences/:id/ai-suggestions")
+  @RequireAdminPermissions("ai-kb:view")
+  aiSuggestions(@Param("id") id: string) {
+    return this.operations.listAiSuggestions(id);
+  }
+
+  @Post("conferences/:id/ai-suggestions")
+  @RequireAdminPermissions("ai-kb:write")
+  createAiSuggestions(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.operations.createAiSuggestions(id, body, request.currentAdmin!);
+  }
+
+  @Patch("ai-suggestions/:id")
+  @RequireAdminPermissions("ai-kb:write")
+  updateAiSuggestion(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.operations.updateAiSuggestion(id, body, request.currentAdmin!);
+  }
+
+  @Get("ai-config")
+  @RequireAdminPermissions("ai-kb:view")
+  aiConfig() {
+    return this.operations.getAiConfig();
+  }
+
+  @Patch("ai-config")
+  @RequireAdminPermissions("ai-kb:write")
+  updateAiConfig(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.operations.updateAiConfig(body, request.currentAdmin!);
   }
 
   @Get("auto-reply-rules")

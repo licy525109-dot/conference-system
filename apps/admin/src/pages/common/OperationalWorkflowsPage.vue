@@ -138,30 +138,6 @@
       </AdminSectionCard>
     </template>
 
-    <template v-else-if="section.startsWith('ai')">
-      <AdminFilterBar>
-        <el-select v-model="conferenceId" filterable placeholder="选择会议" style="width: 280px" @change="loadAi">
-          <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
-        </el-select>
-        <el-input v-if="section === 'ai-documents'" v-model="knowledgeForm.title" placeholder="文档标题" style="width: 220px" />
-        <template #actions><el-button v-if="section === 'ai-documents'" type="primary" :disabled="!conferenceId || !knowledgeForm.title" @click="createDocument">新增文档</el-button></template>
-      </AdminFilterBar>
-      <AdminSectionCard title="知识库列表">
-        <el-table :data="knowledgeBases" empty-text="暂无知识库">
-          <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
-          <el-table-column prop="title" label="知识库" min-width="160" />
-          <el-table-column label="启用" width="90"><template #default="{ row }"><AdminStatusBadge :status="Boolean(row.enabled)" /></template></el-table-column>
-          <el-table-column label="文档数" width="90"><template #default="{ row }">{{ asRows(row.documents).length }}</template></el-table-column>
-        </el-table>
-      </AdminSectionCard>
-      <AdminSectionCard v-if="section === 'ai-documents'" title="录入会议资料">
-        <el-input v-model="knowledgeForm.contentText" type="textarea" :rows="6" placeholder="粘贴会议介绍、议程、嘉宾、交通等资料" />
-      </AdminSectionCard>
-      <AdminSectionCard v-if="section === 'ai-question-logs'" title="问答日志">
-        <el-table :data="aiQuestionLogs" empty-text="暂无问答日志"><el-table-column prop="question" label="问题" min-width="220" /><el-table-column prop="answer" label="回答" min-width="260" /><el-table-column prop="provider" label="Provider" width="110" /><el-table-column prop="createdAt" label="时间" width="190" /></el-table>
-      </AdminSectionCard>
-    </template>
-
     <template v-else-if="section.startsWith('member')">
       <AdminFilterBar>
         <el-select v-model="memberForm.levelId" placeholder="会员等级" style="width: 220px">
@@ -240,14 +216,12 @@ import {
   approveInvoice,
   approveRefund,
   createCouponCampaign,
-  createKnowledgeDocument,
   createMemberBenefit,
   createMemberPricingRule,
   createWechatBill,
   generateCouponCampaignQr,
   getCheckinStats,
   getInventoryAlertRule,
-  getKnowledgeBase,
   getNotificationChannelConfig,
   listCheckinLogs,
   listConferences,
@@ -256,7 +230,6 @@ import {
   listFinancePayments,
   listInventoryAlertLogs,
   listInvoices,
-  listKnowledgeBases,
   listMallAfterSales,
   listMallOrders,
   listMallShipments,
@@ -295,9 +268,6 @@ const couponCampaigns = ref<Record<string, unknown>[]>([]);
 const campaignForm = reactive({ name: "", couponIds: [] as string[] });
 const qrInfo = ref("");
 const channelConfig = ref<Record<string, unknown> | null>(null);
-const knowledgeBases = ref<Record<string, unknown>[]>([]);
-const aiQuestionLogs = ref<Record<string, unknown>[]>([]);
-const knowledgeForm = reactive({ title: "", contentText: "" });
 const memberLevels = ref<MemberLevel[]>([]);
 const memberBenefits = ref<Record<string, unknown>[]>([]);
 const memberPriceRules = ref<Record<string, unknown>[]>([]);
@@ -323,9 +293,6 @@ const section = computed(() => {
   if (path.includes("coupon-campaigns")) return "coupon-campaigns";
   if (path.includes("wechat-subscribe")) return "notification-config-wechat";
   if (path.includes("notifications/sms")) return "notification-config-sms";
-  if (path.includes("ai/documents")) return "ai-documents";
-  if (path.includes("ai/question-logs")) return "ai-question-logs";
-  if (path.includes("ai")) return "ai-list";
   if (path.includes("members/benefits")) return "member-benefits";
   if (path.includes("members/pricing-rules")) return "member-pricing";
   if (path.includes("mall/categories")) return "mall-categories";
@@ -358,7 +325,6 @@ async function load() {
     else if (section.value === "payment-records") await loadPayments();
     else if (section.value === "coupon-campaigns") await loadCampaigns();
     else if (section.value.startsWith("notification-config")) await loadChannelConfig();
-    else if (section.value.startsWith("ai")) await loadAi();
     else if (section.value.startsWith("member")) await loadMemberConfig();
     else if (section.value.startsWith("mall")) await loadMall();
     else if (section.value.startsWith("finance")) await loadFinance();
@@ -437,22 +403,6 @@ async function showCampaignQr(id: string) {
 
 async function loadChannelConfig() {
   channelConfig.value = await getNotificationChannelConfig(section.value === "notification-config-sms" ? "sms" : "wechat-subscribe");
-}
-
-async function loadAi() {
-  knowledgeBases.value = (await listKnowledgeBases({ page: 1, pageSize: 100 })).items;
-  if (conferenceId.value && section.value !== "ai-list") {
-    const kb = await getKnowledgeBase(conferenceId.value);
-    if (!knowledgeBases.value.some((item) => item.id === kb.id)) knowledgeBases.value.unshift(kb);
-  }
-  aiQuestionLogs.value = [];
-}
-
-async function createDocument() {
-  await createKnowledgeDocument(conferenceId.value, { title: knowledgeForm.title, contentText: knowledgeForm.contentText || knowledgeForm.title });
-  Object.assign(knowledgeForm, { title: "", contentText: "" });
-  await loadAi();
-  ElMessage.success("知识文档已创建并分块");
 }
 
 async function loadMemberConfig() {

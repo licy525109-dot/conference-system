@@ -16,16 +16,40 @@ export async function getMyCoupons() {
   return request<{ items: Array<Record<string, unknown>> }>("/my/coupons");
 }
 
+export interface AiAnswerSource {
+  id?: string;
+  documentId?: string;
+  documentTitle?: string;
+  chunkIndex?: number;
+  excerpt?: string;
+}
+
+export interface AiAskResponse {
+  answer: string;
+  sources: AiAnswerSource[];
+  provider: string;
+  model?: string;
+  status?: "ANSWERED" | "FALLBACK" | "DISABLED" | "PROVIDER_NOT_CONFIGURED" | "NO_KNOWLEDGE_BASE";
+  fallback?: boolean;
+  hit?: boolean;
+}
+
+export interface AiSuggestionResponse {
+  items: string[];
+  status?: "OK" | "DISABLED" | "NO_KNOWLEDGE_BASE";
+  message?: string;
+}
+
 export async function askConferenceAi(conferenceId: string, question: string) {
   await ensureLogin();
-  return request<{ answer: string; sources: Array<Record<string, unknown>>; provider: string }>(`/conferences/${encodeURIComponent(conferenceId)}/ai/ask`, {
+  return request<AiAskResponse>(`/conferences/${encodeURIComponent(conferenceId)}/ai/ask`, {
     method: "POST",
     data: { question }
   });
 }
 
 export function getConferenceAiSuggestions(conferenceId: string) {
-  return request<{ items: string[] }>(`/conferences/${encodeURIComponent(conferenceId)}/ai/suggestions`, { auth: false });
+  return request<AiSuggestionResponse>(`/conferences/${encodeURIComponent(conferenceId)}/ai/suggestions`, { auth: false });
 }
 
 export async function createInvoiceApplication(input: { orderNo: string; title: string; taxNo?: string; email?: string }) {

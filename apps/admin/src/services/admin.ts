@@ -911,12 +911,64 @@ export function getKnowledgeBase(conferenceId: string) {
   return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-base`);
 }
 
-export function listKnowledgeBases(params: { page?: number; pageSize?: number; keyword?: string } = {}) {
+export function updateConferenceKnowledgeBase(conferenceId: string, input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-base`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function listKnowledgeBases(params: { page?: number; pageSize?: number; keyword?: string; conferenceId?: string } = {}) {
   return apiRequest<ApiList<Record<string, unknown>>>(`/admin/knowledge-bases${toQuery(params)}`);
+}
+
+export function createKnowledgeBase(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/knowledge-bases", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateKnowledgeBase(id: string, input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/admin/knowledge-bases/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function listKnowledgeDocuments(conferenceId: string, params: { page?: number; pageSize?: number; keyword?: string; status?: string } = {}) {
+  return apiRequest<ApiList<Record<string, unknown>> & { knowledgeBase?: Record<string, unknown> }>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-documents${toQuery(params)}`);
 }
 
 export function createKnowledgeDocument(conferenceId: string, input: Record<string, unknown>) {
   return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-documents`, { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateKnowledgeDocument(id: string, input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/admin/knowledge-documents/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function rebuildKnowledgeDocument(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/knowledge-documents/${encodeURIComponent(id)}/rebuild`, { method: "POST" });
+}
+
+export function deleteKnowledgeDocument(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/knowledge-documents/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function listAiSuggestions(conferenceId: string) {
+  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/conferences/${encodeURIComponent(conferenceId)}/ai-suggestions`);
+}
+
+export function createAiSuggestions(conferenceId: string, input: Record<string, unknown>) {
+  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/conferences/${encodeURIComponent(conferenceId)}/ai-suggestions`, { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateAiSuggestion(id: string, input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/admin/ai-suggestions/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function listAiQuestionLogs(conferenceId: string, params: { page?: number; pageSize?: number; keyword?: string; fallback?: string } = {}) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/ai-question-logs${toQuery(params)}`);
+}
+
+export function getAiConfig() {
+  return apiRequest<Record<string, unknown>>("/admin/ai-config");
+}
+
+export function updateAiConfig(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/ai-config", { method: "PATCH", body: JSON.stringify(input) });
 }
 
 export function verifyCheckin(input: Record<string, unknown>) {
