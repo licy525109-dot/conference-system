@@ -45,6 +45,9 @@ export const ADMIN_PERMISSIONS = [
   { code: "finance:write", name: "创建对账批次", group: "财务中心" },
   { code: "mall:view", name: "查看商城", group: "商城管理" },
   { code: "mall:write", name: "编辑商城", group: "商城管理" },
+  { code: "mall:order", name: "处理商城订单", group: "商城管理" },
+  { code: "mall:shipment", name: "处理商城发货核销", group: "商城管理" },
+  { code: "mall:aftersale", name: "处理商城售后", group: "商城管理" },
   { code: "system:account", name: "管理账号", group: "系统设置" },
   { code: "system:role", name: "管理角色权限", group: "系统设置" },
   { code: "system:audit", name: "查看操作日志", group: "系统设置" }

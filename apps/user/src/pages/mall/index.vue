@@ -4,18 +4,18 @@
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <view class="topbar ui-card">
       <view>
-        <text class="eyebrow">扩展能力</text>
+        <text class="eyebrow">商城</text>
         <text class="title">商城商品</text>
-        <text class="subtitle">商城试运行中，商品支付和履约后续开放。</text>
+        <text class="subtitle">可创建商城待支付订单，真实支付暂未开放。</text>
       </view>
       <button class="ui-button-secondary ui-button-compact" @click="goHome">首页</button>
     </view>
 
     <ExtensionStatusNotice
-      status="商城试运行"
-      title="商品仅展示，可加入购物车"
-      description="当前不会提供立即购买和商品支付入口，会议报名缴费仍是第一版主线。"
-      tone="warning"
+      status="商城基础闭环"
+      title="商品可下待支付订单"
+      description="商品金额由后端按 SKU 当前价格重算并锁定库存，当前不会跳转支付，也不会伪造支付成功。"
+      tone="info"
     />
 
     <view class="toolbar ui-card">
@@ -30,12 +30,12 @@
       </button>
     </scroll-view>
 
-    <LoadingState v-if="loading" title="加载商品中" description="正在读取试运行商品列表。" />
+    <LoadingState v-if="loading" title="加载商品中" description="正在读取商品、分类和可售库存。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="loadProducts" @secondary="goHome" />
     <EmptyState
       v-else-if="products.length === 0"
       title="暂无展示商品"
-      description="商城能力仍在试运行，可以先返回首页查看会议报名。"
+      description="当前没有可售商品，可以先返回首页查看会议报名。"
       mark="商"
       action-text="查看会议"
       @action="goHome"
@@ -45,7 +45,7 @@
         <image v-if="item.coverImageUrl" class="cover" :src="item.coverImageUrl" mode="aspectFill" />
         <view v-else class="cover empty">暂无图片</view>
         <view class="product-body">
-          <StatusTag label="仅展示" tone="warning" />
+          <StatusTag label="可下单" tone="info" />
           <text class="product-title">{{ item.title }}</text>
           <text class="muted">{{ item.subtitle || item.category?.name || "会议相关商品" }}</text>
           <text class="price">{{ priceText(item) }}</text>

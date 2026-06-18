@@ -6,7 +6,7 @@
       <view>
         <text class="eyebrow">会议报名优先</text>
         <text class="title">购物车</text>
-        <text class="subtitle">会议报名项可继续支付；商城商品当前仅作收藏和预留单管理。</text>
+        <text class="subtitle">会议报名项可继续支付；商城商品可创建待支付订单，真实支付暂未开放。</text>
       </view>
       <button class="ui-button-secondary ui-button-compact" @click="loadCart">刷新</button>
     </view>
@@ -14,7 +14,7 @@
     <ExtensionStatusNotice
       status="主线提醒"
       title="第一版优先完成会议报名缴费"
-      description="购物车中的商品不会进入支付流程，商品支付和履约会在后续版本开放。"
+      description="购物车中的商品可创建商城待支付订单，金额由后端按 SKU 当前价格重算，不会跳转支付。"
       tone="info"
     />
 
@@ -60,16 +60,22 @@
         <view class="section-head">
           <view>
             <text class="section-title">商品</text>
-            <text class="muted">商品支付后续开放，暂不支持商品结算</text>
+            <text class="muted">商品可创建待支付订单，真实支付暂未开放</text>
           </view>
-          <StatusTag label="预留能力" tone="warning" />
+          <StatusTag label="待支付订单" tone="info" />
         </view>
         <ExtensionStatusNotice
-          status="商品支付后续开放"
-          title="商品项暂不进入支付"
-          description="可以保留商品或生成预留单，正式商品支付、发货和履约将在后续版本完善。"
-          tone="warning"
+          status="商城订单"
+          title="商品项可创建待支付订单"
+          description="后端会重新计算金额并锁定库存。当前不会跳转支付，也不会伪造支付成功。"
+          tone="info"
         />
+        <view class="receiver-card ui-card">
+          <text class="section-title">收货信息</text>
+          <input v-model="receiver.name" class="field" placeholder="收货人" />
+          <input v-model="receiver.phone" class="field" placeholder="手机号" />
+          <input v-model="receiver.address" class="field" placeholder="收货地址" />
+        </view>
         <view v-for="item in productItems" :key="item.id" class="card product-card ui-card">
           <image v-if="item.sku.product.coverImageUrl" class="product-cover" :src="item.sku.product.coverImageUrl" mode="aspectFill" />
           <view v-else class="product-cover empty-cover">商品</view>
@@ -78,14 +84,14 @@
               <view class="card-main">
                 <text class="card-title">{{ item.sku.product.title }}</text>
                 <text class="muted">{{ item.sku.name }} × {{ item.quantity }}</text>
-                <StatusTag label="仅展示 / 不可支付" tone="warning" />
+                <StatusTag :label="item.sku.availableStock > 0 ? '可下待支付订单' : '库存不足'" :tone="item.sku.availableStock > 0 ? 'info' : 'neutral'" />
               </view>
               <text class="price">¥{{ formatCent(item.subtotalCent) }}</text>
             </view>
             <view class="card-actions">
               <button class="ui-button-secondary action-button" :disabled="removingId === item.id" @click="removeProduct(item.id)">删除</button>
-              <button class="ui-button-ghost action-button reserve-button" :disabled="checkoutId === item.id" @click="checkoutProduct(item.id)">
-                {{ checkoutId === item.id ? "处理中..." : "生成预留单" }}
+              <button class="ui-button-ghost action-button reserve-button" :disabled="checkoutId === item.id || item.sku.availableStock <= 0" @click="checkoutProduct(item.id)">
+                {{ checkoutId === item.id ? "处理中..." : "创建订单" }}
               </button>
             </view>
           </view>
@@ -130,6 +136,7 @@ const loading = ref(false);
 const error = ref("");
 const removingId = ref("");
 const checkoutId = ref("");
+const receiver = ref({ name: "", phone: "", address: "" });
 const isEmpty = computed(() => registrationItems.value.length === 0 && productItems.value.length === 0);
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("cart");
 
@@ -201,18 +208,27 @@ async function payRegistration(id: string) {
 }
 
 async function checkoutProduct(id: string) {
+  if (!receiver.value.name || !receiver.value.phone || !receiver.value.address) {
+    uni.showToast({ title: "请先填写收货信息", icon: "none" });
+    return;
+  }
   checkoutId.value = id;
   try {
-    const order = await checkoutProductCart([id]);
+    const order = await checkoutProductCart({
+      itemIds: [id],
+      receiverName: receiver.value.name,
+      receiverPhone: receiver.value.phone,
+      receiverAddress: receiver.value.address
+    });
     productItems.value = productItems.value.filter((item) => item.id !== id);
     uni.showModal({
-      title: "商品预留单已生成",
-      content: `预留单号：${order.orderNo}\n商品支付和履约后续开放，当前不会跳转支付。`,
+      title: "商城订单已创建",
+      content: `订单号：${order.orderNo}\n${order.paymentNotice || "当前不会跳转支付，订单保持待支付状态。"}`,
       showCancel: false
     });
   } catch (err) {
     console.error("[CART_CHECKOUT_PRODUCT_ERROR]", err);
-    uni.showToast({ title: checkoutMessage(err, "商品预留单生成失败，请重试"), icon: "none" });
+    uni.showToast({ title: checkoutMessage(err, "商城订单创建失败，请重试"), icon: "none" });
   } finally {
     checkoutId.value = "";
   }
@@ -296,6 +312,22 @@ function checkoutMessage(err: unknown, fallback: string): string {
 
 .card {
   padding: 24rpx;
+}
+
+.receiver-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  padding: 24rpx;
+}
+
+.field {
+  min-height: 78rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid var(--ui-color-border);
+  border-radius: var(--ui-radius-md);
+  background: #fff;
+  font-size: 26rpx;
 }
 
 .card-main {

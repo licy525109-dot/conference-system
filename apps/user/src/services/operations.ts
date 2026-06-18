@@ -75,10 +75,81 @@ export async function createMallOrder(input: {
   remark?: string;
 }) {
   await ensureLogin();
-  return request<Record<string, unknown>>("/mall/orders", { method: "POST", data: input });
+  return request<MallOrder>("/mall/orders", { method: "POST", data: input });
 }
 
 export async function getMyMallOrders() {
   await ensureLogin();
-  return request<{ items: Array<Record<string, unknown>> }>("/my/mall-orders");
+  return request<{ items: MallOrder[] }>("/my/mall-orders");
+}
+
+export async function getMyMallOrder(id: string) {
+  await ensureLogin();
+  return request<MallOrder>(`/my/mall-orders/${encodeURIComponent(id)}`);
+}
+
+export async function createMallAfterSale(input: { orderId: string; type?: string; reason?: string; note?: string }) {
+  await ensureLogin();
+  return request<MallAfterSale>("/my/mall-aftersales", { method: "POST", data: input });
+}
+
+export interface MallOrderItem {
+  id: string;
+  orderId: string;
+  skuId: string;
+  productTitle: string;
+  skuName: string;
+  unitPriceCent: number;
+  quantity: number;
+  totalAmountCent: number;
+  createdAt: string;
+}
+
+export interface MallShipment {
+  id: string;
+  orderId: string;
+  company: string | null;
+  trackingNo: string | null;
+  pickupCode: string | null;
+  remark: string | null;
+  status: string;
+  shippedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MallAfterSale {
+  id: string;
+  orderId: string;
+  type: string;
+  status: string;
+  reason: string | null;
+  note: string | null;
+  handledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  refundNotice?: string | null;
+}
+
+export interface MallOrder {
+  id: string;
+  orderNo: string;
+  originAmountCent: number;
+  discountAmountCent: number;
+  payableAmountCent: number;
+  paidAmountCent: number | null;
+  status: string;
+  receiverName: string | null;
+  receiverPhone: string | null;
+  receiverAddress: string | null;
+  remark: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: MallOrderItem[];
+  shipments: MallShipment[];
+  afterSales: MallAfterSale[];
+  paymentEnabled?: boolean;
+  paymentNotice?: string;
 }

@@ -2,13 +2,34 @@
   <view class="page ui-page">
     <view class="topbar ui-card">
       <text class="title">我的商城订单</text>
-      <text class="subtitle">商城订单与会议报名订单分开管理。</text>
+      <text class="subtitle">商城订单与会议报名订单分开管理。当前真实支付暂未开放，新订单会保持待支付状态。</text>
     </view>
-    <LoadingState v-if="loading" title="加载商城订单" description="正在读取订单和履约状态。" />
+    <LoadingState v-if="loading" title="加载商城订单" description="正在读取订单、履约和售后状态。" />
     <EmptyState v-else-if="orders.length === 0" title="暂无商城订单" description="购买商品后会显示在这里。" mark="商" />
-    <view v-for="order in orders" v-else :key="String(order.id)" class="order ui-card">
-      <text class="name">{{ order.orderNo }}</text>
-      <text class="muted">状态：{{ order.status }} · 金额：¥{{ formatCent(Number(order.payableAmountCent || 0)) }}</text>
+    <view v-for="order in orders" v-else :key="order.id" class="order ui-card">
+      <view class="order-head">
+        <view>
+          <text class="name">{{ order.orderNo }}</text>
+          <text class="muted">{{ order.createdAt }}</text>
+        </view>
+        <StatusTag :label="orderStatusText(order.status)" :tone="order.status === 'PENDING_PAYMENT' ? 'warning' : 'info'" />
+      </view>
+      <view class="items">
+        <text v-for="item in order.items" :key="item.id" class="muted">{{ item.productTitle }} / {{ item.skuName }} × {{ item.quantity }}</text>
+      </view>
+      <text class="price">¥{{ formatCent(order.payableAmountCent) }}</text>
+      <text class="muted" v-if="order.paymentNotice">{{ order.paymentNotice }}</text>
+      <view class="meta-row" v-if="order.shipments.length">
+        <text class="muted">履约：{{ order.shipments.map((item) => shipmentStatusText(item.status)).join(" / ") }}</text>
+      </view>
+      <view class="meta-row" v-if="order.afterSales.length">
+        <text class="muted">售后：{{ order.afterSales.map((item) => afterSaleStatusText(item.status)).join(" / ") }}</text>
+      </view>
+      <view class="actions" v-if="canRequestAfterSale(order)">
+        <button class="ui-button-secondary ui-button-compact" :disabled="submittingId === order.id" @click="requestAfterSale(order)">
+          {{ submittingId === order.id ? "提交中..." : "申请售后" }}
+        </button>
+      </view>
     </view>
   </view>
 </template>
@@ -17,11 +38,13 @@
 import { onMounted, ref } from "vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
-import { getMyMallOrders } from "@/services/operations";
+import StatusTag from "@/components/ui/StatusTag.vue";
+import { createMallAfterSale, getMyMallOrders, type MallOrder } from "@/services/operations";
 import { formatCent } from "@/utils/money";
 
 const loading = ref(false);
-const orders = ref<Array<Record<string, unknown>>>([]);
+const submittingId = ref("");
+const orders = ref<MallOrder[]>([]);
 
 onMounted(() => void load());
 
@@ -32,6 +55,36 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+function canRequestAfterSale(order: MallOrder) {
+  return ["PAID", "SHIPPED", "COMPLETED"].includes(order.status) && !order.afterSales.some((item) => !["REJECTED", "CANCELLED", "COMPLETED"].includes(item.status));
+}
+
+async function requestAfterSale(order: MallOrder) {
+  submittingId.value = order.id;
+  try {
+    await createMallAfterSale({ orderId: order.id, type: "REFUND", reason: "用户在小程序端申请售后" });
+    uni.showToast({ title: "售后已提交", icon: "success" });
+    await load();
+  } catch (err) {
+    console.error("[MALL_AFTERSALE_CREATE_ERROR]", err);
+    uni.showToast({ title: "提交失败，请稍后重试", icon: "none" });
+  } finally {
+    submittingId.value = "";
+  }
+}
+
+function orderStatusText(value: string) {
+  return { PENDING_PAYMENT: "待支付", PAID: "已支付", SHIPPED: "已发货", COMPLETED: "已完成", CLOSED: "已关闭", REFUNDING: "售后中", REFUNDED: "已退款" }[value] ?? value;
+}
+
+function shipmentStatusText(value: string) {
+  return { PENDING: "待处理", SHIPPED: "已发货", COMPLETED: "已完成", CANCELLED: "已取消" }[value] ?? value;
+}
+
+function afterSaleStatusText(value: string) {
+  return { REQUESTED: "已申请", APPROVED: "已同意", REJECTED: "已拒绝", PROCESSING: "处理中", COMPLETED: "已完成", CANCELLED: "已取消" }[value] ?? value;
 }
 </script>
 
@@ -47,8 +100,23 @@ async function load() {
   padding: 28rpx;
 }
 
+.order {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.order-head,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
 .title,
-.name {
+.name,
+.price {
   display: block;
   color: var(--ui-color-text);
   font-weight: 900;
@@ -62,11 +130,27 @@ async function load() {
   font-size: 30rpx;
 }
 
+.price {
+  color: var(--ui-color-primary);
+  font-size: 32rpx;
+}
+
 .subtitle,
 .muted {
   display: block;
-  margin-top: 8rpx;
   color: var(--ui-color-muted);
   font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.subtitle {
+  margin-top: 8rpx;
+}
+
+.items,
+.meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
 }
 </style>

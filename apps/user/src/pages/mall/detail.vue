@@ -9,7 +9,7 @@
         <image v-if="heroImage" class="hero" :src="heroImage" mode="aspectFill" />
         <view v-else class="hero empty">暂无图片</view>
         <view class="headline">
-          <StatusTag label="商城试运行" tone="warning" />
+          <StatusTag label="可创建待支付订单" tone="info" />
           <text class="title">{{ product.title }}</text>
           <text class="subtitle">{{ product.subtitle || product.category?.name || "会议相关商品" }}</text>
           <text class="price-range">{{ priceRangeText }}</text>
@@ -19,14 +19,14 @@
       <ExtensionStatusNotice
         status="商城闭环"
         title="商城订单独立履约"
-        description="商城订单与会议报名订单分开管理，商品金额以后端库存和规格价格计算为准。"
+        description="商城订单与会议报名订单分开管理，商品金额以后端库存和 SKU 价格计算为准。当前不会跳转支付。"
         tone="info"
       />
 
       <view class="content">
         <view class="sku-list">
           <text class="section-title">规格</text>
-          <EmptyState v-if="product.skus.length === 0" title="暂无可选规格" description="商品规格完善后可加入购物车。" mark="规" />
+          <EmptyState v-if="product.skus.length === 0" title="暂无可选规格" description="商品规格完善后可创建待支付订单。" mark="规" />
           <view
             v-for="sku in product.skus"
             :key="sku.id"
@@ -35,8 +35,8 @@
           >
             <view>
               <text class="sku-name">{{ sku.name }}</text>
-              <text class="muted">库存 {{ sku.stock - sku.soldCount }}</text>
-              <StatusTag :label="skuAvailable(sku) ? '可加入购物车' : '库存不足'" :tone="skuAvailable(sku) ? 'info' : 'neutral'" />
+              <text class="muted">可售 {{ sku.availableStock }}</text>
+              <StatusTag :label="skuAvailable(sku) ? '可下待支付订单' : '库存不足'" :tone="skuAvailable(sku) ? 'info' : 'neutral'" />
             </view>
             <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
           </view>
@@ -66,14 +66,14 @@
     <view v-if="product" class="bottom-actions">
       <view class="bottom-copy">
         <text class="bottom-title">{{ selectedSku ? `¥${formatCent(selectedSku.priceCent * quantity)}` : "请选择规格" }}</text>
-        <text class="bottom-note">商城订单独立管理</text>
+        <text class="bottom-note">待支付，不跳转支付</text>
       </view>
       <button class="ui-button-secondary action-button" @click="goCart">购物车</button>
       <button class="ui-button-primary action-button" :disabled="adding || !canAddProduct" @click="addToCart">
         {{ adding ? "加入中..." : "加入购物车" }}
       </button>
       <button class="ui-button-primary action-button" :disabled="buying || !canAddProduct" @click="buyNow">
-        {{ buying ? "下单中..." : "立即下单" }}
+        {{ buying ? "下单中..." : "创建订单" }}
       </button>
     </view>
   </view>
@@ -113,7 +113,7 @@ const priceRangeText = computed(() => {
   const max = Math.max(...prices);
   return min === max ? `¥${formatCent(min)}` : `¥${formatCent(min)} 起`;
 });
-const descriptionText = computed(() => toDescriptionText(product.value?.descriptionJson) || "商品详情仍在完善中，可先加入购物车关注后续开放。");
+const descriptionText = computed(() => toDescriptionText(product.value?.descriptionJson) || "商品详情仍在完善中，可先加入购物车或创建待支付订单。");
 
 onLoad((query) => {
   productId.value = typeof query?.id === "string" ? query.id : "";
@@ -150,17 +150,21 @@ async function buyNow() {
   }
   buying.value = true;
   try {
-    await createMallOrder({
+    const order = await createMallOrder({
       items: [{ skuId: selectedSkuId.value, quantity: quantity.value }],
       receiverName: receiver.value.name,
       receiverPhone: receiver.value.phone,
       receiverAddress: receiver.value.address
     });
-    uni.showToast({ title: "订单已创建", icon: "success" });
-    uni.navigateTo({ url: "/pages/mall/orders" });
+    uni.showModal({
+      title: "商城订单已创建",
+      content: `订单号：${order.orderNo}\n${order.paymentNotice || "当前不会跳转支付，订单保持待支付状态。"}`,
+      showCancel: false,
+      success: () => uni.navigateTo({ url: "/pages/mall/orders" })
+    });
   } catch (err) {
     console.error("[MALL_CREATE_ORDER_ERROR]", err);
-    uni.showToast({ title: "下单失败，请检查商城开关", icon: "none" });
+    uni.showToast({ title: "下单失败，请检查库存和收货信息", icon: "none" });
   } finally {
     buying.value = false;
   }
@@ -194,11 +198,11 @@ async function addToCart() {
 
 function maxQuantity() {
   const sku = product.value?.skus.find((item) => item.id === selectedSkuId.value);
-  return Math.max(0, (sku?.stock ?? 0) - (sku?.soldCount ?? 0));
+  return Math.max(0, sku?.availableStock ?? 0);
 }
 
 function skuAvailable(sku: ProductSku) {
-  return sku.stock - sku.soldCount > 0;
+  return sku.availableStock > 0;
 }
 
 function goCart() {

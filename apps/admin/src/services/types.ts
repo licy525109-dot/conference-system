@@ -849,11 +849,23 @@ export interface ProductSku {
   name: string;
   priceCent: number;
   stock: number;
+  lockedStock: number;
   soldCount: number;
+  availableStock: number;
   status: string;
   specsJson: Record<string, unknown> | null;
+  productTitle?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProductImage {
+  id: string;
+  productId: string;
+  url: string;
+  alt: string | null;
+  sortOrder: number;
+  createdAt: string;
 }
 
 export interface Product {
@@ -867,13 +879,61 @@ export interface Product {
   sortOrder: number;
   category: ProductCategory | null;
   skus: ProductSku[];
+  images: ProductImage[];
+  detailImageUrls: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MallOrderItem {
+  id: string;
+  orderId: string;
+  skuId: string;
+  productTitle: string;
+  skuName: string;
+  unitPriceCent: number;
+  quantity: number;
+  totalAmountCent: number;
+  createdAt: string;
+}
+
+export interface MallShipment {
+  id: string;
+  orderId: string;
+  orderNo?: string;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  company: string | null;
+  trackingNo: string | null;
+  pickupCode: string | null;
+  remark: string | null;
+  status: string;
+  shippedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MallAfterSale {
+  id: string;
+  orderId: string;
+  orderNo?: string;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  type: string;
+  status: string;
+  reason: string | null;
+  note: string | null;
+  handledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  refundNotice?: string | null;
 }
 
 export interface MallOrder {
   id: string;
   orderNo: string;
+  userId: string | null;
   originAmountCent: number;
   discountAmountCent: number;
   payableAmountCent: number;
@@ -882,6 +942,31 @@ export interface MallOrder {
   receiverName: string | null;
   receiverPhone: string | null;
   receiverAddress: string | null;
+  remark: string | null;
+  paidAt: string | null;
+  user?: AdminWechatUser | null;
+  items: MallOrderItem[];
+  shipments: MallShipment[];
+  afterSales: MallAfterSale[];
+  paymentEnabled?: boolean;
+  paymentNotice?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MallInventoryLog {
+  id: string;
+  skuId: string;
+  orderId: string | null;
+  action: string;
+  quantity: number;
+  beforeLockedStock: number;
+  afterLockedStock: number;
+  beforeSoldCount: number;
+  afterSoldCount: number;
+  remark: string | null;
+  skuName: string;
+  productTitle: string;
+  orderNo: string | null;
+  createdAt: string;
 }

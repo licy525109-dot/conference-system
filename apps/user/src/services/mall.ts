@@ -21,7 +21,9 @@ export interface ProductSku {
   name: string;
   priceCent: number;
   stock: number;
+  lockedStock: number;
   soldCount: number;
+  availableStock: number;
   specsJson: Record<string, unknown> | null;
 }
 
@@ -41,6 +43,8 @@ export interface Product {
   category: { id: string; name: string; code: string } | null;
   skus: ProductSku[];
   images: ProductImage[];
+  detailImageUrls: string[];
+  availableStock: number;
 }
 
 export function getProductCategories(): Promise<{ items: ProductCategory[] }> {

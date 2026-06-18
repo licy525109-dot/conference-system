@@ -33,4 +33,10 @@ export class MallController {
   myOrders(@Req() request: RequestWithCurrentUser) {
     return this.mallService.myOrders(request.currentUser);
   }
+
+  @Get("my/orders/:id")
+  @UseGuards(JwtAuthGuard)
+  myOrder(@Param("id") id: string, @Req() request: RequestWithCurrentUser) {
+    return this.mallService.myOrder(id, request.currentUser);
+  }
 }
