@@ -73,7 +73,14 @@
       <view v-else-if="component.type === 'conference-tabs'" class="cms-section">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会议分类切换" }}</text>
         <view class="cms-tabs">
-          <text v-for="(tab, index) in conferenceTabs(component)" :key="tab" :class="['cms-tab', index === 0 ? 'active' : '']">{{ tab }}</text>
+          <text
+            v-for="(tab, index) in conferenceTabItems(component)"
+            :key="tab.label"
+            :class="['cms-tab', index === 0 ? 'active' : '']"
+            @click="submitTag(component, tab)"
+          >
+            {{ tab.label }}
+          </text>
         </view>
         <view v-if="conferences.length === 0" class="cms-empty">暂无可报名会议</view>
         <view v-for="(item, index) in limitedConferences(component).slice(0, 3)" :key="item.id" :class="conferenceCardClass(component, 'cms-mini-card')" :style="conferenceCardStyle(component)">
@@ -129,7 +136,7 @@
       </button>
 
       <view v-else-if="component.type === 'rich-text' || component.type === 'safe-html'" class="cms-section" :style="textStyle(component)">
-        <rich-text :nodes="stringConfig(component, 'html')" />
+        <rich-text :nodes="safeHtml(component)" />
       </view>
 
       <view v-else-if="component.type === 'image-grid'" class="cms-grid">
@@ -139,8 +146,17 @@
 
       <view v-else-if="component.type === 'video'" class="cms-section">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "视频" }}</text>
-        <video v-if="stringConfig(component, 'url')" class="cms-video" :src="stringConfig(component, 'url')" />
+        <video
+          v-if="stringConfig(component, 'url')"
+          class="cms-video"
+          :src="stringConfig(component, 'url')"
+          :poster="stringConfig(component, 'coverUrl')"
+          :autoplay="false"
+          controls
+          object-fit="contain"
+        />
         <view v-else class="cms-empty">视频地址未配置</view>
+        <text v-if="stringConfig(component, 'description')" class="cms-section__text">{{ stringConfig(component, "description") }}</text>
       </view>
 
       <view v-else-if="component.type === 'speaker-cards'" class="cms-section">
@@ -175,12 +191,13 @@
 
       <view v-else-if="component.type === 'countdown'" class="cms-section">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "距离开始" }}</text>
-        <view v-if="countdownParts(component)" class="cms-countdown">
+        <view v-if="countdownParts(component) && !countdownEnded(component)" class="cms-countdown">
           <view v-for="part in countdownParts(component)" :key="part.label" class="cms-countdown__item">
             <text class="cms-countdown__value">{{ part.value }}</text>
             <text class="cms-countdown__label">{{ part.label }}</text>
           </view>
         </view>
+        <view v-else-if="countdownEnded(component)" class="cms-empty">{{ stringConfig(component, "endedText") || "活动已开始" }}</view>
         <view v-else class="cms-empty">倒计时时间待配置</view>
       </view>
 
@@ -197,47 +214,106 @@
 
       <view v-else-if="component.type === 'search'" class="cms-section cms-search">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "搜索会议" }}</text>
-        <input class="cms-search__input" :placeholder="stringConfig(component, 'placeholder') || '输入会议关键词'" confirm-type="search" @confirm="goPath('/pages/index/index')" />
+        <view class="cms-search__row">
+          <input
+            class="cms-search__input"
+            :value="searchValue(component)"
+            :placeholder="stringConfig(component, 'placeholder') || '输入会议关键词'"
+            confirm-type="search"
+            @input="setSearchValue(component, $event)"
+            @confirm="submitSearch(component)"
+          />
+          <button class="cms-search__button" @click="submitSearch(component)">{{ stringConfig(component, "buttonText") || "搜索" }}</button>
+        </view>
       </view>
 
-      <view v-else-if="component.type === 'coupon-card'" class="cms-section cms-coupon" @click="goPath(couponPath(component))">
+      <view v-else-if="component.type === 'coupon-card'" class="cms-section cms-coupon" @click="handleCouponCard(component)">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "领取会议优惠券" }}</text>
         <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "description") || "登录后可领取可用优惠券，创建订单时由系统重新计价。" }}</text>
+        <text v-if="couponStatus(component)" class="cms-section__text">{{ couponStatus(component) }}</text>
         <view class="cms-card__button"><text>{{ stringConfig(component, "buttonText") || "去领取" }}</text></view>
       </view>
 
       <view v-else-if="component.type === 'membership-benefits'" class="cms-section cms-member">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会员权益" }}</text>
+        <text class="cms-section__text">会员价以创建订单时后端计价结果为准；会员购买自动开通仍以后台流程配置为准。</text>
         <view class="cms-list-lines">
           <text v-for="item in fallbackList(component, ['会员专属权益', '会员价规则以后台配置为准'])" :key="item" class="cms-list-line" :style="textStyle(component)">{{ item }}</text>
         </view>
-        <view class="cms-card__button" @click="goPath('/pages/member/center')"><text>查看会员中心</text></view>
+        <view class="cms-card__button" @click="goLoginPath('/pages/member/center')"><text>{{ stringConfig(component, "buttonText") || "查看会员中心" }}</text></view>
       </view>
 
-      <view v-else-if="component.type === 'user-profile-card'" class="cms-section cms-profile" @click="goPath('/pages/member/center')">
+      <view v-else-if="component.type === 'user-profile-card'" class="cms-section cms-profile" @click="goLoginPath(profileTargetPath(component))">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "我的资料" }}</text>
-        <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "description") || "登录后查看头像、昵称、手机号和会员状态。" }}</text>
+        <view class="cms-profile__body">
+          <image v-if="storedUser?.wechatAvatarUrl" class="cms-profile__avatar" :src="storedUser.wechatAvatarUrl" mode="aspectFill" />
+          <view v-else class="cms-profile__avatar cms-profile__avatar--text">{{ storedUser ? profileInitial : "登" }}</view>
+          <view class="cms-profile__meta">
+            <text class="cms-profile__name">{{ storedUser?.wechatNickname || storedUser?.nickname || "登录后查看资料" }}</text>
+            <text class="cms-section__text" :style="textStyle(component)">{{ storedUser ? "可查看会员状态、报名和订单信息。" : stringConfig(component, "description") || "登录后查看头像、昵称、手机号和会员状态。" }}</text>
+          </view>
+        </view>
       </view>
 
       <view v-else-if="component.type === 'my-order-list'" class="cms-section cms-orders">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "我的订单" }}</text>
         <view class="cms-action-grid">
-          <view class="cms-action-tile" @click="goPath('/pages/registrations/my')"><text>会议报名</text></view>
-          <view class="cms-action-tile" @click="goPath('/pages/mall/orders')"><text>商城订单</text></view>
+          <view v-if="showRegistrationOrders(component)" class="cms-action-tile" @click="goLoginPath('/pages/registrations/my')"><text>会议报名</text></view>
+          <view v-if="showMallOrders(component)" class="cms-action-tile" @click="goLoginPath('/pages/mall/orders')"><text>商城订单</text></view>
         </view>
+        <view v-if="!storedUser" class="cms-empty">登录后查看你的报名订单和商城订单。</view>
       </view>
 
       <view v-else-if="component.type === 'mall-product-grid'" class="cms-section cms-mall">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "商城商品" }}</text>
-        <view class="cms-product-grid">
-          <view v-for="item in fallbackList(component, ['会议资料包', '会务周边'])" :key="item" class="cms-product-card" @click="goPath('/pages/mall/index')">
-            <view class="cms-product-card__image"><text>{{ item.slice(0, 1) }}</text></view>
-            <text>{{ item }}</text>
+        <view v-if="mallProductLoading[component.id]" class="cms-empty">商品加载中</view>
+        <view v-else-if="mallProducts(component).length === 0" class="cms-empty">暂无可展示商品</view>
+        <view v-else class="cms-product-grid">
+          <view v-for="item in mallProducts(component)" :key="item.id" class="cms-product-card" @click="goPath(`/pages/mall/detail?id=${encodeURIComponent(item.id)}`)">
+            <image v-if="item.coverImageUrl" class="cms-product-card__image" :src="item.coverImageUrl" mode="aspectFill" />
+            <view v-else class="cms-product-card__image"><text>{{ item.title.slice(0, 1) }}</text></view>
+            <text class="cms-product-card__title">{{ item.title }}</text>
+            <text class="cms-product-card__meta">{{ item.availableStock > 0 ? mallProductPriceText(item) : "售罄" }}</text>
+          </view>
+        </view>
+        <view class="cms-card__button" @click="goPath(mallListPath(component))"><text>{{ stringConfig(component, "buttonText") || "查看商城" }}</text></view>
+      </view>
+
+      <view v-else-if="component.type === 'tag-filter'" class="cms-section cms-tags">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "热门主题" }}</text>
+        <view v-if="tagItems(component).length === 0" class="cms-empty">暂无标签</view>
+        <view v-else class="cms-tag-list">
+          <text v-for="item in tagItems(component)" :key="item.label" class="cms-tag" @click="submitTag(component, item)">{{ item.label }}</text>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'download-list'" class="cms-section">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "资料下载" }}</text>
+        <view v-if="downloadItems(component).length === 0" class="cms-empty">资料待补充</view>
+        <view v-else class="cms-list-lines">
+          <view v-for="item in downloadItems(component)" :key="item.name + item.url" class="cms-list-line" @click="openOrCopyLink(item.url, item.name)">
+            <text>{{ item.name }}</text>
+            <text v-if="item.description" class="cms-list-line__desc">{{ item.description }}</text>
           </view>
         </view>
       </view>
 
-      <view v-else-if="component.type === 'ticket-price-list' || component.type === 'process-steps' || component.type === 'download-list' || component.type === 'testimonial-list' || component.type === 'tag-filter'" class="cms-section">
+      <view v-else-if="component.type === 'testimonial-list'" class="cms-section">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "参会评价" }}</text>
+        <view v-if="testimonialItems(component).length === 0" class="cms-empty">评价待补充</view>
+        <view v-else class="cms-testimonials">
+          <view v-for="item in testimonialItems(component)" :key="item.name + item.content" class="cms-testimonial">
+            <image v-if="item.avatarUrl" class="cms-testimonial__avatar" :src="item.avatarUrl" mode="aspectFill" />
+            <view v-else class="cms-testimonial__avatar cms-testimonial__avatar--text">{{ item.name.slice(0, 1) || "评" }}</view>
+            <view class="cms-testimonial__body">
+              <text class="cms-testimonial__content">{{ item.content }}</text>
+              <text class="cms-testimonial__name">{{ item.name }}{{ item.company ? ` · ${item.company}` : "" }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'ticket-price-list' || component.type === 'process-steps'" class="cms-section">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || titleFor(component.type) }}</text>
         <view class="cms-list-lines">
           <text v-for="item in arrayConfig(component, 'items')" :key="String(item)" class="cms-list-line" :style="textStyle(component)">{{ item }}</text>
@@ -252,22 +328,33 @@
 
       <view v-else-if="component.type === 'live-card'" class="cms-section cms-live">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "线上直播" }}</text>
-        <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "text") || "无法到场也可预约线上观看" }}</text>
+        <image v-if="stringConfig(component, 'coverUrl')" class="cms-section__image" :src="stringConfig(component, 'coverUrl')" mode="aspectFill" />
+        <text class="cms-section__text" :style="textStyle(component)">{{ liveStatusText(component) }}</text>
+        <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "text") || stringConfig(component, "platform") || "无法到场也可预约线上观看" }}</text>
+        <view class="cms-card__button" @click="openOrCopyLink(stringConfig(component, 'url'), stringConfig(component, 'title') || '直播链接')"><text>{{ stringConfig(component, "buttonText") || "打开直播" }}</text></view>
       </view>
 
       <view v-else-if="component.type === 'traffic-guide'" class="cms-section">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "交通指南" }}</text>
         <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "address") }}</text>
         <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "text") }}</text>
+        <view class="cms-action-grid">
+          <view class="cms-action-tile" @click="copyText(stringConfig(component, 'address'), '地址已复制')"><text>复制地址</text></view>
+          <view v-if="stringConfig(component, 'mapUrl')" class="cms-action-tile" @click="openOrCopyLink(stringConfig(component, 'mapUrl'), '地图链接')"><text>打开地图</text></view>
+          <view v-if="stringConfig(component, 'phone')" class="cms-action-tile" @click="callPhone(stringConfig(component, 'phone'))"><text>拨打电话</text></view>
+        </view>
       </view>
 
       <view v-else-if="component.type === 'map-contact'" class="cms-section cms-map-contact">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会场与联系" }}</text>
         <view class="cms-map-contact__body">
+          <text v-if="stringConfig(component, 'contactName')" class="cms-section__text" :style="textStyle(component)">联系人：{{ stringConfig(component, "contactName") }}</text>
           <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "address") || conference?.location || "会议地址待公布" }}</text>
           <button v-if="stringConfig(component, 'phone')" class="cms-button cms-button--outline" @click="callPhone(stringConfig(component, 'phone'))">
             联系会务组：{{ stringConfig(component, "phone") }}
           </button>
+          <button class="cms-button cms-button--outline" @click="copyText(stringConfig(component, 'address') || conference?.location || '', '地址已复制')">复制地址</button>
+          <button v-if="stringConfig(component, 'mapUrl')" class="cms-button cms-button--outline" @click="openOrCopyLink(stringConfig(component, 'mapUrl'), '地图链接')">打开地图链接</button>
         </view>
       </view>
 
@@ -275,7 +362,7 @@
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "合作伙伴" }}</text>
         <view v-if="sponsorItems(component).length === 0" class="cms-empty">合作伙伴待公布</view>
         <view v-else class="cms-sponsors">
-          <view v-for="sponsor in sponsorItems(component)" :key="sponsor.name + sponsor.logoUrl" class="cms-sponsor">
+          <view v-for="sponsor in sponsorItems(component)" :key="sponsor.name + sponsor.logoUrl" class="cms-sponsor" @click="openOrCopyLink(sponsor.url, sponsor.name)">
             <image v-if="sponsor.logoUrl" class="cms-sponsor__logo" :src="sponsor.logoUrl" mode="aspectFit" />
             <text v-else class="cms-sponsor__name">{{ sponsor.name }}</text>
           </view>
@@ -286,9 +373,9 @@
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "常见问题" }}</text>
         <view v-if="faqItems(component).length === 0" class="cms-empty">常见问题待补充</view>
         <view v-else class="cms-faq">
-          <view v-for="item in faqItems(component)" :key="item.question" class="cms-faq__item">
+          <view v-for="(item, faqIndex) in faqItems(component)" :key="item.question" class="cms-faq__item" @click="toggleFaq(component, faqIndex)">
             <text class="cms-faq__question" :style="textStyle(component)">{{ item.question }}</text>
-            <text v-if="item.answer" class="cms-faq__answer">{{ item.answer }}</text>
+            <text v-if="item.answer && isFaqOpen(component, faqIndex)" class="cms-faq__answer">{{ item.answer }}</text>
           </view>
         </view>
       </view>
@@ -305,7 +392,10 @@
 
       <view v-else-if="component.type === 'spacer'" :style="{ height: `${numberConfig(component, 'height', 24)}rpx` }" />
 
-      <view v-else class="cms-hidden" />
+      <view v-else class="cms-section cms-unsupported">
+        <text class="cms-section__title">组件暂不可用</text>
+        <text class="cms-section__text">{{ unsupportedComponentText(component) }}</text>
+      </view>
     </view>
   </view>
 </template>
@@ -313,11 +403,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
+import { ensureLogin, getStoredUser } from "@/services/auth";
 import type { CmsComponent, ThemeConfig } from "@/services/cms";
 import type { ConferenceDetail, ConferenceListItem } from "@/services/conference";
+import { getProducts, type Product } from "@/services/mall";
+import { claimCoupon, getCouponCampaignPublic } from "@/services/operations";
 import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
-import { isCmsComponentUserRenderable, isCmsRegistrationCta } from "@/utils/cmsComponents";
+import { getCmsComponentSupport, isCmsRegistrationCta } from "@/utils/cmsComponents";
 import { formatDateTime } from "@/utils/date";
+import { formatCent } from "@/utils/money";
+import { stringifyQuery } from "@/utils/query";
 
 defineEmits<{
   openConference: [id: string];
@@ -334,16 +429,22 @@ const props = defineProps<{
 
 const nowTimestamp = ref(Date.now());
 const failedConferenceCoverIds = ref<Set<string>>(new Set());
+const searchValues = ref<Record<string, string>>({});
+const faqOpenMap = ref<Record<string, boolean>>({});
+const mallProductMap = ref<Record<string, Product[]>>({});
+const mallProductLoading = ref<Record<string, boolean>>({});
+const couponStatusMap = ref<Record<string, string>>({});
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
 const visibleComponents = computed(() =>
   props.components
     .filter((item) => item.enabled)
-    .filter((item) => isCmsComponentUserRenderable(item.type))
     .filter((item) => !(props.suppressRegistrationCta && isCmsRegistrationCta(item.type)))
     .sort((a, b) => a.sortOrder - b.sortOrder)
 );
 const conferences = computed(() => props.conferences ?? []);
+const storedUser = ref(getStoredUser());
+const profileInitial = computed(() => (storedUser.value?.wechatNickname || storedUser.value?.nickname || "用").slice(0, 1));
 const rootStyle = computed(() => ({
   ...createCmsThemeVars(props.theme),
   ...createCmsBackgroundStyle(props.theme, "body")
@@ -354,6 +455,8 @@ const showHeaderVideo = computed(() => props.theme.backgroundMode === "video" &&
 
 onMounted(() => {
   loadCustomFonts();
+  refreshStoredUser();
+  void loadMallProductComponents();
   countdownTimer = setInterval(() => {
     nowTimestamp.value = Date.now();
   }, 1000);
@@ -364,6 +467,7 @@ onUnmounted(() => {
   }
 });
 watch(() => props.components, loadCustomFonts, { deep: true });
+watch(() => props.components, () => void loadMallProductComponents(), { deep: true });
 watch(
   () => conferences.value.map((item) => `${item.id}:${item.coverImageUrl ?? ""}`).join("|"),
   () => {
@@ -439,11 +543,31 @@ interface FaqItem {
 interface SponsorItem {
   name: string;
   logoUrl: string;
+  url: string;
 }
 
 interface CountdownPart {
   label: string;
   value: string;
+}
+
+interface TagFilterItem {
+  label: string;
+  value: string;
+  target: string;
+}
+
+interface DownloadItem {
+  name: string;
+  url: string;
+  description: string;
+}
+
+interface TestimonialItem {
+  content: string;
+  name: string;
+  company: string;
+  avatarUrl: string;
 }
 
 function stringListConfig(component: CmsComponent, key: string): string[] {
@@ -516,12 +640,72 @@ function sponsorItems(component: CmsComponent): SponsorItem[] {
     if (isRecord(item)) {
       return {
         name: firstString(item, ["name", "title"]) || "合作伙伴",
-        logoUrl: firstString(item, ["logoUrl", "imageUrl", "logo"]) || ""
+        logoUrl: firstString(item, ["logoUrl", "imageUrl", "logo"]) || "",
+        url: firstString(item, ["url", "link", "linkUrl"]) || ""
       };
     }
 
-    const text = String(item).trim();
-    return looksLikeImageUrl(text) ? { name: "合作伙伴", logoUrl: text } : { name: text || "合作伙伴", logoUrl: "" };
+    const parts = splitConfigLine(String(item));
+    const image = firstImageUrl(parts);
+    const url = parts.find((part) => /^https?:\/\//i.test(part) && part !== image) || "";
+    return { name: parts[0] || "合作伙伴", logoUrl: image, url };
+  });
+}
+
+function tagItems(component: CmsComponent): TagFilterItem[] {
+  return arrayConfig(component, "items").map((item) => {
+    if (isRecord(item)) {
+      const label = firstString(item, ["label", "name", "title", "text"]) || "标签";
+      return {
+        label,
+        value: firstString(item, ["value", "tag", "location", "category"]) || label,
+        target: firstString(item, ["target", "type", "field"]) || stringConfig(component, "target") || "tag"
+      };
+    }
+    const parts = splitConfigLine(String(item));
+    return {
+      label: parts[0] || "标签",
+      value: parts[1] || parts[0] || "标签",
+      target: parts[2] || stringConfig(component, "target") || "tag"
+    };
+  });
+}
+
+function downloadItems(component: CmsComponent): DownloadItem[] {
+  return arrayConfig(component, "items").map((item) => {
+    if (isRecord(item)) {
+      return {
+        name: firstString(item, ["name", "title", "label"]) || "资料",
+        url: firstString(item, ["url", "fileUrl", "link"]) || "",
+        description: firstString(item, ["description", "desc", "text"]) || ""
+      };
+    }
+    const parts = splitConfigLine(String(item));
+    return {
+      name: parts[0] || "资料",
+      url: parts.find((part) => /^https?:\/\//i.test(part)) || parts[1] || "",
+      description: parts.slice(2).join(" ")
+    };
+  });
+}
+
+function testimonialItems(component: CmsComponent): TestimonialItem[] {
+  return arrayConfig(component, "items").map((item) => {
+    if (isRecord(item)) {
+      return {
+        content: firstString(item, ["content", "text", "comment", "quote"]) || "评价内容待补充",
+        name: firstString(item, ["name", "author", "user"]) || "参会者",
+        company: firstString(item, ["company", "organization", "org", "title"]) || "",
+        avatarUrl: firstString(item, ["avatarUrl", "avatar", "imageUrl"]) || ""
+      };
+    }
+    const parts = splitConfigLine(String(item));
+    return {
+      content: parts[0] || "评价内容待补充",
+      name: parts[1] || "参会者",
+      company: parts[2] || "",
+      avatarUrl: firstImageUrl(parts)
+    };
   });
 }
 
@@ -541,12 +725,50 @@ function countdownParts(component: CmsComponent): CountdownPart[] | null {
   ];
 }
 
+function countdownEnded(component: CmsComponent): boolean {
+  const target = parseTargetTime(stringConfig(component, "targetAt"));
+  return Boolean(target && target <= nowTimestamp.value);
+}
+
+function liveStatusText(component: CmsComponent): string {
+  const start = parseTargetTime(stringConfig(component, "startAt") || stringConfig(component, "liveAt"));
+  const end = parseTargetTime(stringConfig(component, "endAt"));
+  if (start && start > nowTimestamp.value) return `未开始：${formatDateTime(new Date(start).toISOString())}`;
+  if (end && end <= nowTimestamp.value) return stringConfig(component, "endedText") || "直播已结束，可查看回放或复制链接。";
+  return stringConfig(component, "statusText") || "直播进行中或可预约观看。";
+}
+
+function safeHtml(component: CmsComponent): string {
+  const html = stringConfig(component, "html");
+  return html
+    .replace(/<\s*script[\s\S]*?<\s*\/\s*script\s*>/gi, "")
+    .replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, "")
+    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "")
+    .replace(/javascript\s*:/gi, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<\/?([a-z][a-z0-9-]*)(\s[^>]*)?>/gi, sanitizeHtmlTag);
+}
+
+function toggleFaq(component: CmsComponent, index: number): void {
+  const key = `${component.id}:${index}`;
+  faqOpenMap.value = { ...faqOpenMap.value, [key]: !faqOpenMap.value[key] };
+}
+
+function isFaqOpen(component: CmsComponent, index: number): boolean {
+  const key = `${component.id}:${index}`;
+  return faqOpenMap.value[key] ?? index === 0;
+}
+
 function callPhone(phone: string) {
   if (!phone) return;
   uni.makePhoneCall({
     phoneNumber: phone,
     fail: () => undefined
   });
+}
+
+function refreshStoredUser(): void {
+  storedUser.value = getStoredUser();
 }
 
 function goPath(path: string) {
@@ -559,9 +781,156 @@ function goPath(path: string) {
   });
 }
 
-function couponPath(component: CmsComponent): string {
-  const claimCode = stringConfig(component, "claimCode");
-  return claimCode ? `/pages/coupon/claim?claimCode=${encodeURIComponent(claimCode)}` : "/pages/coupon/my";
+async function goLoginPath(path: string): Promise<void> {
+  try {
+    await ensureLogin();
+    refreshStoredUser();
+    goPath(path);
+  } catch (error) {
+    uni.showToast({ title: readErrorText(error, "请先登录"), icon: "none" });
+  }
+}
+
+function profileTargetPath(component: CmsComponent): string {
+  const target = stringConfig(component, "target");
+  if (target === "registrations") return "/pages/registrations/my";
+  if (target === "member") return "/pages/member/center";
+  return "/pages/member/center";
+}
+
+function searchValue(component: CmsComponent): string {
+  return searchValues.value[component.id] ?? "";
+}
+
+function setSearchValue(component: CmsComponent, event: unknown): void {
+  const value = readEventValue(event);
+  searchValues.value = { ...searchValues.value, [component.id]: value };
+}
+
+function submitSearch(component: CmsComponent): void {
+  const keyword = searchValue(component).trim();
+  const query = stringifyQuery({
+    keyword,
+    tag: stringConfig(component, "tag"),
+    location: stringConfig(component, "location"),
+    category: stringConfig(component, "category"),
+    scope: stringConfig(component, "searchScope") || undefined
+  });
+  goPath(`/pages/index/index${query ? `?${query}` : ""}`);
+}
+
+function submitTag(component: CmsComponent, item: TagFilterItem): void {
+  const target = item.target || stringConfig(component, "target") || "tag";
+  const query = stringifyQuery({
+    tag: target === "tag" ? item.value : undefined,
+    location: target === "location" ? item.value : undefined,
+    category: target === "category" ? item.value : undefined
+  });
+  goPath(`/pages/index/index${query ? `?${query}` : ""}`);
+}
+
+async function handleCouponCard(component: CmsComponent): Promise<void> {
+  const directClaimCode = stringConfig(component, "claimCode");
+  const campaignId = stringConfig(component, "couponCampaignId") || stringConfig(component, "campaignId");
+  try {
+    let claimCode = directClaimCode;
+    if (!claimCode && campaignId) {
+      const campaign = await getCouponCampaignPublic(campaignId);
+      claimCode = campaign.claimCode;
+      couponStatusMap.value = { ...couponStatusMap.value, [component.id]: campaign.statusText };
+    }
+    if (!claimCode) {
+      await goLoginPath("/pages/coupon/my");
+      return;
+    }
+    await claimCoupon(claimCode);
+    refreshStoredUser();
+    couponStatusMap.value = { ...couponStatusMap.value, [component.id]: "领取成功，可在我的优惠券中查看。" };
+    uni.showToast({ title: "领取成功", icon: "success" });
+  } catch (error) {
+    const message = readErrorText(error, "领取失败，请稍后再试");
+    couponStatusMap.value = { ...couponStatusMap.value, [component.id]: message };
+    uni.showToast({ title: message, icon: "none" });
+  }
+}
+
+function couponStatus(component: CmsComponent): string {
+  return couponStatusMap.value[component.id] ?? "";
+}
+
+function showRegistrationOrders(component: CmsComponent): boolean {
+  const type = stringConfig(component, "orderType") || "both";
+  return type === "both" || type === "registration";
+}
+
+function showMallOrders(component: CmsComponent): boolean {
+  const type = stringConfig(component, "orderType") || "both";
+  return type === "both" || type === "mall";
+}
+
+function mallProducts(component: CmsComponent): Product[] {
+  return mallProductMap.value[component.id] ?? [];
+}
+
+function mallListPath(component: CmsComponent): string {
+  const query = stringifyQuery({
+    keyword: stringConfig(component, "keyword"),
+    categoryId: stringConfig(component, "productCategoryId") || stringConfig(component, "categoryId")
+  });
+  return `/pages/mall/index${query ? `?${query}` : ""}`;
+}
+
+async function loadMallProductComponents(): Promise<void> {
+  const targets = visibleComponents.value.filter((item) => item.type === "mall-product-grid");
+  await Promise.all(
+    targets.map(async (component) => {
+      mallProductLoading.value = { ...mallProductLoading.value, [component.id]: true };
+      try {
+        const response = await getProducts({
+          page: 1,
+          pageSize: Math.min(Math.max(numberConfig(component, "limit", 4), 1), 20),
+          keyword: stringConfig(component, "keyword"),
+          categoryId: stringConfig(component, "productCategoryId") || stringConfig(component, "categoryId")
+        });
+        mallProductMap.value = { ...mallProductMap.value, [component.id]: response.items };
+      } catch {
+        mallProductMap.value = { ...mallProductMap.value, [component.id]: [] };
+      } finally {
+        mallProductLoading.value = { ...mallProductLoading.value, [component.id]: false };
+      }
+    })
+  );
+}
+
+function mallProductPriceText(item: Product): string {
+  const prices = item.skus.map((sku) => sku.priceCent);
+  if (prices.length === 0) return "暂无价格";
+  return `¥${formatCent(Math.min(...prices))} 起`;
+}
+
+function copyText(value: string, title = "已复制"): void {
+  if (!value) {
+    uni.showToast({ title: "内容未配置", icon: "none" });
+    return;
+  }
+  uni.setClipboardData({
+    data: value,
+    success: () => uni.showToast({ title, icon: "none" }),
+    fail: () => uni.showToast({ title: "复制失败", icon: "none" })
+  });
+}
+
+function openOrCopyLink(url: string, title = "链接"): void {
+  if (!url) {
+    uni.showToast({ title: `${title}未配置`, icon: "none" });
+    return;
+  }
+  // #ifdef H5
+  window.open(url, "_blank", "noopener,noreferrer");
+  // #endif
+  // #ifndef H5
+  copyText(url, "链接已复制");
+  // #endif
 }
 
 function fallbackList(component: CmsComponent, fallback: string[]): string[] {
@@ -592,14 +961,17 @@ function markConferenceCoverFailed(id: string): void {
   failedConferenceCoverIds.value = new Set([...failedConferenceCoverIds.value, id]);
 }
 
-function conferenceTabs(component: CmsComponent): string[] {
+function conferenceTabItems(component: CmsComponent): TagFilterItem[] {
   const configured = arrayConfig(component, "tabs").map(String).filter(Boolean);
-  if (configured.length > 0) {
-    return configured;
-  }
-  const locations = conferences.value.map((item) => item.location || "其他会议").filter(Boolean);
-  const unique = Array.from(new Set(locations));
-  return unique.length > 0 ? unique.slice(0, 5) : ["全部"];
+  const labels = configured.length > 0
+    ? configured
+    : ["全部", ...Array.from(new Set(conferences.value.map((item) => item.location || "其他会议").filter(Boolean))).slice(0, 4)];
+  const target = stringConfig(component, "target") || stringConfig(component, "tabTarget") || "tag";
+  return labels.map((label) => ({
+    label,
+    value: label === "全部" ? "" : label,
+    target
+  }));
 }
 
 function summaryFallback(component: CmsComponent): string {
@@ -861,11 +1233,69 @@ function looksLikeImageUrl(value: string): boolean {
   return /^https?:\/\//i.test(value) || /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(value);
 }
 
+function sanitizeHtmlTag(match: string, tagName: string): string {
+  const tag = tagName.toLowerCase();
+  const allowedTags = new Set(["p", "br", "strong", "b", "em", "i", "u", "span", "div", "ul", "ol", "li", "a", "img", "h1", "h2", "h3", "h4", "blockquote"]);
+  if (!allowedTags.has(tag)) return "";
+  if (match.startsWith("</")) return `</${tag}>`;
+  const safeAttrs = sanitizeHtmlAttributes(match, tag);
+  return `<${tag}${safeAttrs}>`;
+}
+
+function sanitizeHtmlAttributes(match: string, tag: string): string {
+  const attrSource = match.replace(/^<\s*\/?\s*[a-z][a-z0-9-]*/i, "").replace(/\/?\s*>$/i, "");
+  const attrs: string[] = [];
+  attrSource.replace(/([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(['"])(.*?)\2/g, (_raw, name: string, _quote: string, value: string) => {
+    const attr = name.toLowerCase();
+    const trimmed = value.trim();
+    if (!isAllowedHtmlAttribute(tag, attr, trimmed)) return "";
+    attrs.push(` ${attr}="${escapeHtmlAttribute(trimmed)}"`);
+    return "";
+  });
+  return attrs.join("");
+}
+
+function isAllowedHtmlAttribute(tag: string, attr: string, value: string): boolean {
+  if (attr.startsWith("on")) return false;
+  if (/javascript\s*:/i.test(value)) return false;
+  if (tag === "a") return ["href", "title"].includes(attr) && /^https?:\/\//i.test(value);
+  if (tag === "img") return ["src", "alt", "title", "mode"].includes(attr) && (attr !== "src" || /^https?:\/\//i.test(value));
+  return ["class", "style"].includes(attr) && !/url\s*\(/i.test(value);
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function unsupportedComponentText(component: CmsComponent): string {
+  const support = getCmsComponentSupport(component.type);
+  return `${support.label}未纳入当前 H5/小程序渲染支持矩阵，请联系主办方调整页面配置。`;
+}
+
 function parseTargetTime(value: string): number | null {
   if (!value.trim()) return null;
   const normalized = value.includes("T") ? value : value.replace(/-/g, "/");
   const timestamp = new Date(normalized).getTime();
   return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function readEventValue(event: unknown): string {
+  if (isRecord(event)) {
+    const detail = event.detail;
+    if (isRecord(detail) && typeof detail.value === "string") return detail.value;
+  }
+  return "";
+}
+
+function readErrorText(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message.slice(0, 48);
+  if (isRecord(error)) {
+    const responseMessage = error.responseMessage;
+    if (typeof responseMessage === "string" && responseMessage) return responseMessage.slice(0, 48);
+    const message = error.message;
+    if (typeof message === "string" && message) return message.slice(0, 48);
+  }
+  return fallback;
 }
 </script>
 
@@ -1252,8 +1682,105 @@ function parseTargetTime(value: string): number | null {
   padding: 18rpx;
 }
 
+.cms-list-line__desc,
+.cms-product-card__meta,
+.cms-testimonial__name {
+  display: block;
+  margin-top: 6rpx;
+  color: var(--ui-color-muted);
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
 .cms-live {
   border: 1px solid rgba(31, 95, 191, 0.22);
+}
+
+.cms-unsupported {
+  border-style: dashed;
+  background: var(--ui-color-surface-muted);
+}
+
+.cms-search__row,
+.cms-tag-list {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.cms-search__row {
+  align-items: center;
+}
+
+.cms-tag-list {
+  flex-wrap: wrap;
+}
+
+.cms-search__button,
+.cms-tag {
+  border-radius: 999rpx;
+  font-weight: 800;
+}
+
+.cms-search__button {
+  min-width: 132rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  padding: 0 22rpx;
+  background: var(--cms-primary);
+  color: #ffffff;
+  font-size: 24rpx;
+}
+
+.cms-tag {
+  padding: 14rpx 22rpx;
+  background: var(--ui-color-primary-soft);
+  color: var(--cms-primary);
+  font-size: 24rpx;
+}
+
+.cms-profile__body,
+.cms-testimonial {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  margin-top: 18rpx;
+}
+
+.cms-profile__avatar,
+.cms-testimonial__avatar {
+  width: 88rpx;
+  height: 88rpx;
+  flex: 0 0 88rpx;
+  border-radius: 50%;
+  background: var(--ui-color-primary-soft);
+}
+
+.cms-profile__avatar--text,
+.cms-testimonial__avatar--text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cms-primary);
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.cms-profile__meta,
+.cms-testimonial__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cms-profile__name,
+.cms-product-card__title,
+.cms-testimonial__content {
+  display: block;
+  color: var(--ui-color-text);
+  font-size: 26rpx;
+  font-weight: 800;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 .cms-speakers,
@@ -1681,6 +2208,8 @@ function parseTargetTime(value: string): number | null {
 }
 
 .cms-search__input {
+  flex: 1;
+  min-width: 0;
   min-height: 76rpx;
   padding: 0 24rpx;
   border: 1px solid var(--cms-border);
@@ -1736,8 +2265,8 @@ function parseTargetTime(value: string): number | null {
 .cms-product-card__image {
   display: grid;
   place-items: center;
-  width: 72rpx;
-  height: 72rpx;
+  width: 100%;
+  height: 148rpx;
   border-radius: var(--cms-radius-md);
   background: var(--cms-primary-soft);
   color: var(--cms-primary-strong);

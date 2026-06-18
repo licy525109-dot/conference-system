@@ -19,6 +19,11 @@ export class PublicOperationsController {
     return this.operations.myCoupons(request.currentUser);
   }
 
+  @Get("coupon-campaigns/:id/public")
+  couponCampaignPublic(@Param("id") id: string) {
+    return this.operations.couponCampaignPublic(id);
+  }
+
   @Post("conferences/:id/ai/ask")
   @UseGuards(JwtAuthGuard)
   askAi(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentUser) {

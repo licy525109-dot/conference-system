@@ -6,6 +6,8 @@ import { PrismaService } from "../prisma.service";
 import { AdminCmsService } from "../admin/admin-cms.service";
 import { CurrentAdmin } from "../admin/current-admin";
 import { CmsService } from "./cms.service";
+import { ENABLED_COMPONENT_TYPES } from "./cms-defaults";
+import { buildCmsPublishCheck, getCmsComponentSupport } from "./cms-component-support";
 
 const admin: CurrentAdmin = {
   id: "admin-1",
@@ -41,6 +43,15 @@ describe("CmsService public fallbacks", () => {
 });
 
 describe("AdminCmsService validation", () => {
+  it("does not expose unsupported or planned presets as addable components", () => {
+    const blocked = Array.from(ENABLED_COMPONENT_TYPES).filter((type) => {
+      const status = getCmsComponentSupport(type).status;
+      return status === "unsupported" || status === "planned";
+    });
+
+    assert.deepEqual(blocked, []);
+  });
+
   it("rejects dangerous HTML in draft component config", async () => {
     const service = new AdminCmsService(createAdminValidationPrismaMock("DRAFT"));
 
@@ -74,10 +85,35 @@ describe("AdminCmsService validation", () => {
       }
     ]));
 
-    const response = await service.publishPageVersion("version-1", admin);
+    const response = await service.publishPageVersion("version-1", {}, admin);
 
     assert.equal(response.code, "OK");
     assert.equal(response.data.status, "DRAFT");
+    assert.equal(response.data.publishCheck?.blockingCount, 0);
+  });
+
+  it("blocks publishing unknown or unsupported components with a report", async () => {
+    const service = new AdminCmsService(createAdminValidationPrismaMock("DRAFT", [
+      {
+        id: "legacy-1",
+        type: "legacy-unsupported",
+        enabled: true,
+        config: {}
+      }
+    ]));
+
+    await assert.rejects(() => service.publishPageVersion("version-1", {}, admin), BadRequestException);
+  });
+
+  it("reports blocking components when unknown widgets remain in historical page data", () => {
+    const report = buildCmsPublishCheck([
+      { id: "hero-1", type: "hero", enabled: true, config: {} },
+      { id: "unknown-1", type: "unknown-widget", enabled: true, config: {} }
+    ]);
+
+    assert.equal(report.supportedCount, 1);
+    assert.equal(report.blockingCount, 1);
+    assert.equal(report.blockingComponents[0]?.type, "unknown-widget");
   });
 });
 

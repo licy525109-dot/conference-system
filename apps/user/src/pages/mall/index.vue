@@ -59,6 +59,7 @@
 </template>
 
 <script setup lang="ts">
+import { onLoad } from "@dcloudio/uni-app";
 import { onMounted, ref } from "vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
@@ -82,6 +83,11 @@ const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme
 onMounted(async () => {
   await refreshTheme();
   await Promise.all([loadCategories(), loadProducts()]);
+});
+
+onLoad((query) => {
+  keyword.value = readQueryText(query?.keyword);
+  categoryId.value = readQueryText(query?.categoryId) || readQueryText(query?.productCategoryId);
 });
 
 async function loadCategories() {
@@ -114,6 +120,10 @@ function priceText(item: Product) {
   const prices = item.skus.map((sku) => sku.priceCent);
   if (prices.length === 0) return "暂无价格";
   return `¥${(Math.min(...prices) / 100).toFixed(2)} 起`;
+}
+
+function readQueryText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 </script>
 

@@ -6,8 +6,15 @@ export class ConferencesController {
   constructor(private readonly conferencesService: ConferencesService) {}
 
   @Get()
-  list(@Query("page") page?: string, @Query("pageSize") pageSize?: string) {
-    return this.conferencesService.list({ page, pageSize });
+  list(
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("keyword") keyword?: string,
+    @Query("tag") tag?: string,
+    @Query("location") location?: string,
+    @Query("category") category?: string
+  ) {
+    return this.conferencesService.list({ page, pageSize, keyword, tag, location, category });
   }
 
   @Get(":id")

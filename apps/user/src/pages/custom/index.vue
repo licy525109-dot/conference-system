@@ -20,7 +20,7 @@
           :description="extensionNotice.description"
           :tone="extensionNotice.tone"
         />
-        <PageRenderer :components="cmsPage.version.components" :theme="theme" @open-conference="goDetail" />
+        <PageRenderer :components="cmsPage.version.components" :theme="theme" :conferences="conferences" @open-conference="goDetail" />
       </template>
       <EmptyState v-else title="页面尚未发布" description="该页面内容暂未开放，请返回首页查看会议。" mark="页" action-text="返回首页" @action="goHome" />
     </view>
@@ -39,11 +39,13 @@ import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
+import { getConferences, type ConferenceListItem } from "@/services/conference";
 import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
 import { goHome } from "@/utils/navigation";
 
 const pageKey = ref("custom:");
 const cmsPage = ref<PublishedPage | null>(null);
+const conferences = ref<ConferenceListItem[]>([]);
 const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const loading = ref(false);
 const error = ref("");
@@ -69,8 +71,13 @@ async function loadPage() {
   loading.value = true;
   error.value = "";
   try {
-    const [page, themeConfig] = await Promise.all([getPublishedPage(pageKey.value), getAppTheme(pageKey.value)]);
+    const [page, themeConfig, conferenceItems] = await Promise.all([
+      getPublishedPage(pageKey.value),
+      getAppTheme(pageKey.value),
+      getConferences({ pageSize: 20 }).catch(() => [] as ConferenceListItem[])
+    ]);
     cmsPage.value = page;
+    conferences.value = conferenceItems;
     theme.value = themeConfig;
     applyPageTitle(page, page?.title || "会议报名");
   } catch (err) {

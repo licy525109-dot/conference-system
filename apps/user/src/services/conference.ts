@@ -1,3 +1,4 @@
+import { stringifyQuery } from "@/utils/query";
 import { request } from "./request";
 
 export interface ConferenceListItem {
@@ -54,8 +55,18 @@ export interface ConferenceForm {
   fields: FormField[];
 }
 
-export async function getConferences(): Promise<ConferenceListItem[]> {
-  const data = await request<{ items: ConferenceListItem[] }>("/conferences", {
+export interface ConferenceListParams {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  tag?: string;
+  location?: string;
+  category?: string;
+}
+
+export async function getConferences(params: ConferenceListParams = {}): Promise<ConferenceListItem[]> {
+  const query = stringifyQuery({ ...params });
+  const data = await request<{ items: ConferenceListItem[] }>(`/conferences${query ? `?${query}` : ""}`, {
     auth: false
   });
   return data.items;

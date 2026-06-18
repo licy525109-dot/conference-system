@@ -60,8 +60,8 @@ export class AdminCmsController {
 
   @Post("page-versions/:id/publish")
   @RequireAdminPermissions("page:write")
-  publishPageVersion(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
-    return this.cmsService.publishPageVersion(id, request.currentAdmin!);
+  publishPageVersion(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.cmsService.publishPageVersion(id, body, request.currentAdmin!);
   }
 
   @Get("component-presets")

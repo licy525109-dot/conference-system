@@ -10,6 +10,7 @@ import {
   SYSTEM_PAGE_LIBRARY_TEMPLATES,
   defaultPageComponents
 } from "../cms/cms-defaults";
+import { assertCmsPresetsArePublishable, assertCmsPublishable, buildCmsPublishCheck } from "../cms/cms-component-support";
 import { ok } from "../cms/cms.service";
 import { CurrentAdmin } from "./current-admin";
 
@@ -224,7 +225,8 @@ export class AdminCmsService {
     return ok(formatPageVersion(version));
   }
 
-  async publishPageVersion(id: string, admin: CurrentAdmin) {
+  async publishPageVersion(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input ?? {});
     const existing = await this.prisma.pageVersion.findUnique({
       where: { id },
       select: { id: true, templateId: true, title: true, components: true, themeJson: true }
@@ -232,6 +234,7 @@ export class AdminCmsService {
     if (!existing) {
       throw new NotFoundException("Page version not found");
     }
+    const publishReport = assertCmsPublishable(existing.components, { confirmBasic: readOptionalBoolean(body, "confirmBasic") ?? false });
     const components = parseComponents(existing.components);
     const themeJson = readPlainObject(existing.themeJson);
     const latestVersion = await this.prisma.pageVersion.findFirst({
@@ -295,7 +298,8 @@ export class AdminCmsService {
       return nextDraft;
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "PageVersion", id, "Publish page version", {
-      templateId: existing.templateId
+      templateId: existing.templateId,
+      publishReport: publishReport as unknown as Prisma.InputJsonValue
     });
     return ok(formatPageVersion(draft));
   }
@@ -479,6 +483,7 @@ export class AdminCmsService {
   }
 
   async ensureCmsDefaults(): Promise<void> {
+    assertCmsPresetsArePublishable(ENABLED_COMPONENT_TYPES);
     for (const [index, preset] of ALL_COMPONENT_PRESETS.entries()) {
       await this.prisma.componentPreset.upsert({
         where: { type: preset.type },
@@ -780,10 +785,12 @@ function formatPageTemplate(template: Prisma.PageTemplateGetPayload<{ select: ty
 }
 
 function formatPageVersion(version: Prisma.PageVersionGetPayload<{ select: typeof versionSelect }>) {
+  const components = Array.isArray(version.components) ? version.components : [];
   return {
     ...version,
-    components: Array.isArray(version.components) ? version.components : [],
+    components,
     themeJson: readPlainObject(version.themeJson),
+    publishCheck: buildCmsPublishCheck(components),
     publishedAt: version.publishedAt?.toISOString() ?? null,
     createdAt: version.createdAt.toISOString(),
     updatedAt: version.updatedAt.toISOString()
