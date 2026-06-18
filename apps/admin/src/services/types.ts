@@ -300,9 +300,34 @@ export interface PromotionRule {
   updatedAt: string;
 }
 
+export interface CouponCampaign {
+  id: string;
+  conferenceId: string | null;
+  conferenceTitle?: string | null;
+  name: string;
+  claimCode: string;
+  qrScene: string;
+  enabled: boolean;
+  totalLimit: number | null;
+  claimedCount: number;
+  startAt: string | null;
+  endAt: string | null;
+  coupons: Array<{ id: string; code: string; name: string }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CouponCampaignQr {
+  id: string;
+  claimCode: string;
+  qrScene: string;
+  path: string;
+  qrPayload: string;
+}
+
 export type NotificationChannelType = "MOCK" | "WECHAT_SUBSCRIBE" | "SMS";
 export type NotificationTemplateStatus = "DRAFT" | "ACTIVE" | "DISABLED";
-export type NotificationTaskStatus = "DRAFT" | "PENDING" | "SENDING" | "SENT" | "PARTIAL_FAILED" | "FAILED" | "CANCELLED";
+export type NotificationTaskStatus = "DRAFT" | "PENDING" | "SENDING" | "SENT" | "PARTIAL_FAILED" | "FAILED" | "CANCELLED" | "SKIPPED";
 export type NotificationLogStatus = "PENDING" | "SUCCESS" | "FAILED" | "SKIPPED";
 
 export interface NotificationTemplate {
@@ -372,6 +397,23 @@ export interface NotificationLog {
     wechatNickname: string | null;
     nickname: string | null;
   } | null;
+}
+
+export interface NotificationChannelConfig {
+  channel: NotificationChannelType;
+  enabled: boolean;
+  envKey: string;
+  statusText: string;
+  secretVisible: false;
+  templates: Array<{
+    id: string;
+    code: string;
+    name: string;
+    status: NotificationTemplateStatus;
+    templateKey: string | null;
+    hasTemplateKey: boolean;
+    updatedAt: string;
+  }>;
 }
 
 export interface DashboardOverview {

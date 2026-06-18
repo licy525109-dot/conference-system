@@ -21,9 +21,13 @@ const admin: CurrentAdmin = {
 
 describe("AdminNotificationsService", () => {
   const originalEnabled = process.env.NOTIFICATION_CENTER_ENABLED;
+  const originalWechatEnabled = process.env.WECHAT_SUBSCRIBE_MESSAGE_ENABLED;
+  const originalSmsEnabled = process.env.SMS_ENABLED;
 
   after(() => {
     process.env.NOTIFICATION_CENTER_ENABLED = originalEnabled;
+    process.env.WECHAT_SUBSCRIBE_MESSAGE_ENABLED = originalWechatEnabled;
+    process.env.SMS_ENABLED = originalSmsEnabled;
   });
 
   it("creates templates, tasks and mock send logs", async () => {
@@ -83,6 +87,58 @@ describe("AdminNotificationsService", () => {
     assert.equal(second.data.enabled, false);
     assert.equal(prisma.subscriptions.length, 1);
   });
+
+  it("marks wechat subscribe tasks skipped when template key is missing", async () => {
+    process.env.NOTIFICATION_CENTER_ENABLED = "true";
+    process.env.WECHAT_SUBSCRIBE_MESSAGE_ENABLED = "true";
+    const prisma = createNotificationPrismaMock();
+    const service = new AdminNotificationsService(prisma);
+    const template = await service.createTemplate(
+      { code: "pay_success", name: "支付成功", channel: "WECHAT_SUBSCRIBE", status: "ACTIVE", contentJson: { body: "支付成功" } },
+      admin
+    );
+    const task = await service.createTask({ name: "微信通知", templateId: template.data.id, payloadJson: { userIds: ["user-1"] }, status: "PENDING" }, admin);
+
+    const result = await service.sendNow(task.data.id, admin);
+
+    assert.equal(result.data.task.status, NotificationTaskStatus.SKIPPED);
+    assert.equal(prisma.logs[0]?.status, NotificationLogStatus.SKIPPED);
+    assert.equal(prisma.logs[0]?.errorCode, "WECHAT_TEMPLATE_KEY_MISSING");
+  });
+
+  it("marks sms tasks skipped when provider is disabled", async () => {
+    process.env.NOTIFICATION_CENTER_ENABLED = "true";
+    process.env.SMS_ENABLED = "false";
+    const prisma = createNotificationPrismaMock();
+    const service = new AdminNotificationsService(prisma);
+    const template = await service.createTemplate({ code: "refund_update", name: "退款处理", channel: "SMS", status: "ACTIVE", contentJson: { body: "退款处理" } }, admin);
+    const task = await service.createTask({ name: "短信通知", templateId: template.data.id, payloadJson: { userIds: ["user-1"] }, status: "PENDING" }, admin);
+
+    const result = await service.sendNow(task.data.id, admin);
+
+    assert.equal(result.data.task.status, NotificationTaskStatus.SKIPPED);
+    assert.equal(result.data.result.skippedCount, 1);
+    assert.equal(prisma.logs[0]?.errorCode, "SMS_DISABLED");
+  });
+
+  it("retries partial failed mock tasks and records failure reasons", async () => {
+    process.env.NOTIFICATION_CENTER_ENABLED = "true";
+    const prisma = createNotificationPrismaMock();
+    const service = new AdminNotificationsService(prisma);
+    const template = await service.createTemplate({ code: "before_event", name: "会前提醒", channel: "MOCK", status: "ACTIVE", contentJson: { body: "会前提醒" } }, admin);
+    const task = await service.createTask(
+      { name: "会前提醒", templateId: template.data.id, payloadJson: { userIds: ["user-1", "user-2"], mockFailUserIds: ["user-2"] }, status: "PENDING" },
+      admin
+    );
+
+    const first = await service.sendNow(task.data.id, admin);
+    const second = await service.retryTask(task.data.id, admin);
+    const logs = await service.listLogs({ page: 1, pageSize: 20, status: "FAILED" });
+
+    assert.equal(first.data.task.status, NotificationTaskStatus.PARTIAL_FAILED);
+    assert.equal(second.data.task.status, NotificationTaskStatus.PARTIAL_FAILED);
+    assert.equal(logs.data.items.some((item) => item.errorCode === "MOCK_FAILED"), true);
+  });
 });
 
 function createNotificationPrismaMock() {
@@ -92,7 +148,10 @@ function createNotificationPrismaMock() {
   const logs: NotificationLogRecord[] = [];
   const subscriptions: NotificationSubscriptionRecord[] = [];
   const auditLogs: AuditLogRecord[] = [];
-  const users = [{ id: "user-1", openid: "openid-1", phone: "13800000000" }];
+  const users = [
+    { id: "user-1", openid: "openid-1", phone: "13800000000" },
+    { id: "user-2", openid: "openid-2", phone: "13900000000" }
+  ];
   const mock = {
     templates,
     tasks,
@@ -100,9 +159,16 @@ function createNotificationPrismaMock() {
     subscriptions,
     auditLogs,
     user: {
-      findMany: async () => users
+      findMany: async (args?: { where?: { id?: { in?: string[] } } }) => {
+        const ids = args?.where?.id?.in;
+        return Array.isArray(ids) ? users.filter((user) => ids.includes(user.id)) : users;
+      }
     },
     notificationSubscription: {
+      findUnique: async (args: { where: { userId_channel_templateCode: { userId: string; channel: NotificationChannelType; templateCode: string } } }) => {
+        const key = args.where.userId_channel_templateCode;
+        return subscriptions.find((item) => item.userId === key.userId && item.channel === key.channel && item.templateCode === key.templateCode) ?? null;
+      },
       upsert: async (args: {
         where: { userId_channel_templateCode: { userId: string; channel: NotificationChannelType; templateCode: string } };
         update: Partial<NotificationSubscriptionRecord>;

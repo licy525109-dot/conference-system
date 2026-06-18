@@ -6,6 +6,7 @@ import OrdersPage from "../pages/orders/index.vue";
 import RegistrationsPage from "../pages/registrations/index.vue";
 import RegistrationDetailPage from "../pages/registrations/detail.vue";
 import CouponsPage from "../pages/coupons/index.vue";
+import CouponCampaignsPage from "../pages/coupon-campaigns/index.vue";
 import PromotionsPage from "../pages/promotions/index.vue";
 import NotificationsPage from "../pages/notifications/index.vue";
 import WecomPage from "../pages/wecom/index.vue";
@@ -57,15 +58,15 @@ export const routes: AdminRoute[] = [
   { path: "/orders", title: "订单支付", menuTitle: "订单支付", group: "订单交易", description: "订单金额、支付流水和异常识别", permission: "order:view", component: OrdersPage },
   { path: "/payment-exceptions", title: "支付异常", menuTitle: "支付异常", group: "订单交易", badge: "辅助", description: "支付异常审核、处理备注和异常闭环入口。", permission: "order:view", component: OperationalWorkflowsPage },
   { path: "/payment-records", title: "支付记录", menuTitle: "支付记录", group: "订单交易", description: "支付流水查询和支付渠道记录入口。", permission: "finance:view", component: OperationalWorkflowsPage },
-  { path: "/coupons", title: "优惠券", menuTitle: "优惠券", group: "营销活动", badge: "灰度", description: "优惠码、用券限制和后端计价规则。", permission: "coupon:view", component: CouponsPage },
-  { path: "/coupon-campaigns", title: "券活动", menuTitle: "券活动", group: "营销活动", badge: "灰度", description: "优惠券活动批次、领取二维码和领取记录入口。", permission: "coupon:view", component: OperationalWorkflowsPage },
-  { path: "/promotions", title: "满减规则", menuTitle: "满减规则", group: "营销活动", badge: "灰度", description: "满金额或满张数优惠，金额以后端计算为准。", permission: "promotion:view", component: PromotionsPage },
-  { path: "/notifications", title: "通知中心", menuTitle: "通知中心", group: "通知中心", badge: "灰度", description: "通知模板、发送任务和发送日志", permission: "notification:view", component: NotificationsPage },
-  { path: "/notifications/templates", title: "通知模板", menuTitle: "通知模板", group: "通知中心", badge: "灰度", description: "微信订阅消息、短信和 mock 通知模板。", permission: "notification:view", component: NotificationsPage },
-  { path: "/notifications/tasks", title: "通知任务", menuTitle: "通知任务", group: "通知中心", badge: "灰度", description: "按任务表发送并记录跳过、失败和成功结果。", permission: "notification:view", component: NotificationsPage },
-  { path: "/notifications/logs", title: "发送日志", menuTitle: "发送日志", group: "通知中心", badge: "灰度", description: "通知发送明细、失败原因和跳过原因。", permission: "notification:view", component: NotificationsPage },
-  { path: "/notifications/wechat-subscribe", title: "微信订阅消息", menuTitle: "微信订阅消息", group: "通知中心", badge: "辅助", description: "微信订阅消息模板映射和发送开关入口。", permission: "notification:view", component: OperationalWorkflowsPage },
-  { path: "/notifications/sms", title: "短信配置", menuTitle: "短信配置", group: "通知中心", badge: "辅助", description: "短信供应商、签名、模板和发送开关入口。", permission: "notification:view", component: OperationalWorkflowsPage },
+  { path: "/coupons", title: "优惠券", menuTitle: "优惠券", group: "营销活动", description: "优惠码、用券限制和后端计价规则。", permission: "coupon:view", component: CouponsPage },
+  { path: "/coupon-campaigns", title: "券活动", menuTitle: "券活动", group: "营销活动", description: "优惠券活动批次、领取二维码和领取记录入口。", permission: "coupon:view", component: CouponCampaignsPage },
+  { path: "/promotions", title: "满减规则", menuTitle: "满减规则", group: "营销活动", description: "满金额或满张数优惠，金额以后端计算为准。", permission: "promotion:view", component: PromotionsPage },
+  { path: "/notifications", title: "通知中心", menuTitle: "通知中心", group: "通知中心", description: "通知模板、发送任务和发送日志", permission: "notification:view", component: NotificationsPage },
+  { path: "/notifications/templates", title: "通知模板", menuTitle: "通知模板", group: "通知中心", description: "微信订阅消息、短信和 mock 通知模板。", permission: "notification:view", component: NotificationsPage },
+  { path: "/notifications/tasks", title: "通知任务", menuTitle: "通知任务", group: "通知中心", description: "按任务表发送并记录跳过、失败和成功结果。", permission: "notification:view", component: NotificationsPage },
+  { path: "/notifications/logs", title: "发送日志", menuTitle: "发送日志", group: "通知中心", description: "通知发送明细、失败原因和跳过原因。", permission: "notification:view", component: NotificationsPage },
+  { path: "/notifications/wechat-subscribe", title: "微信订阅消息", menuTitle: "微信订阅消息", group: "通知中心", badge: "辅助", description: "微信订阅消息模板映射和发送开关入口。", permission: "notification:view", component: NotificationsPage },
+  { path: "/notifications/sms", title: "短信配置", menuTitle: "短信配置", group: "通知中心", badge: "辅助", description: "短信供应商、签名、模板和发送开关入口。", permission: "sms:view", component: NotificationsPage },
   { path: "/wecom/config", title: "企微接入配置", menuTitle: "接入配置", group: "企微客户群", description: "企业微信接口配置、连接测试、回调地址和同步入口", permission: "wecom:view", component: WecomPage },
   { path: "/wecom/groups", title: "客户群列表", menuTitle: "客户群列表", group: "企微客户群", description: "同步和管理企业微信外部客户群", permission: "wecom:view", component: WecomPage },
   { path: "/wecom/bindings", title: "群绑定会议", menuTitle: "群绑定会议", group: "企微客户群", description: "将客户群绑定到会议和入群入口", permission: "wecom:write", component: WecomPage },

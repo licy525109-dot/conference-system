@@ -41,6 +41,18 @@ export class AdminNotificationsController {
     return this.notificationsService.updateTemplate(id, body, request.currentAdmin!);
   }
 
+  @Post("notification-templates/:id/preview")
+  @RequireAdminPermissions("notification:view")
+  previewTemplate(@Param("id") id: string, @Body() body: unknown) {
+    return this.notificationsService.previewTemplate(id, body);
+  }
+
+  @Post("notification-templates/:id/test-send")
+  @RequireAdminPermissions("notification:send")
+  testSendTemplate(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.notificationsService.testSendTemplate(id, body, request.currentAdmin!);
+  }
+
   @Get("notification-tasks")
   @RequireAdminPermissions("notification:view")
   listTasks(@Query() query: Record<string, unknown>) {
@@ -57,6 +69,12 @@ export class AdminNotificationsController {
   @RequireAdminPermissions("notification:send")
   sendNow(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
     return this.notificationsService.sendNow(id, request.currentAdmin!);
+  }
+
+  @Post("notification-tasks/:id/retry")
+  @RequireAdminPermissions("notification:send")
+  retry(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.notificationsService.retryTask(id, request.currentAdmin!);
   }
 
   @Get("notification-logs")
@@ -78,13 +96,13 @@ export class AdminNotificationsController {
   }
 
   @Get("sms-config")
-  @RequireAdminPermissions("notification:view")
+  @RequireAdminPermissions("sms:view")
   smsConfig() {
     return this.notificationsService.getChannelConfig("SMS");
   }
 
   @Patch("sms-config")
-  @RequireAdminPermissions("notification:write")
+  @RequireAdminPermissions("sms:write")
   updateSmsConfig(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.notificationsService.updateChannelConfig("SMS", body, request.currentAdmin!);
   }

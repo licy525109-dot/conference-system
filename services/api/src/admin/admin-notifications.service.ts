@@ -172,6 +172,66 @@ export class AdminNotificationsService {
     return ok(formatTask(item));
   }
 
+  async previewTemplate(id: string, input: unknown) {
+    const template = await this.ensureTemplate(id);
+    const body = isRecord(input) ? input : {};
+    const variables = isRecord(body.variables) ? body.variables : {};
+    return ok({
+      templateId: template.id,
+      code: template.code,
+      channel: template.channel,
+      title: renderText(template.title ?? template.name, variables),
+      content: renderJson(template.contentJson, variables),
+      variables
+    });
+  }
+
+  async testSendTemplate(id: string, input: unknown, admin: CurrentAdmin) {
+    const template = await this.ensureTemplate(id);
+    if (template.status !== NotificationTemplateStatus.ACTIVE) {
+      throw new BadRequestException("通知模板未启用，不能测试发送");
+    }
+    const body = isRecord(input) ? input : {};
+    const task = await this.prisma.notificationTask.create({
+      data: {
+        name: `测试发送 - ${template.name}`,
+        templateId: template.id,
+        channel: template.channel,
+        targetType: "TEST",
+        payloadJson: readJsonObject(
+          {
+            userIds: Array.isArray(body.userIds) ? body.userIds : undefined,
+            recipients: Array.isArray(body.recipients) ? body.recipients : undefined,
+            variables: isRecord(body.variables) ? body.variables : undefined,
+            mockFailUserIds: Array.isArray(body.mockFailUserIds) ? body.mockFailUserIds : undefined,
+            mockSkipUserIds: Array.isArray(body.mockSkipUserIds) ? body.mockSkipUserIds : undefined
+          },
+          "payloadJson"
+        ),
+        status: NotificationTaskStatus.PENDING,
+        createdById: admin.id
+      },
+      include: { template: true, _count: { select: { logs: true } } }
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "NotificationTask", task.id, "Create notification test task");
+    return this.sendNow(task.id, admin);
+  }
+
+  async retryTask(id: string, admin: CurrentAdmin) {
+    const task = await this.prisma.notificationTask.findUnique({ where: { id } });
+    if (!task) {
+      throw new NotFoundException("Notification task not found");
+    }
+    if (
+      task.status !== NotificationTaskStatus.FAILED &&
+      task.status !== NotificationTaskStatus.PARTIAL_FAILED &&
+      task.status !== NotificationTaskStatus.SKIPPED
+    ) {
+      throw new BadRequestException("只有失败、部分失败或已跳过任务可以重试");
+    }
+    return this.sendNow(id, admin);
+  }
+
   async sendNow(id: string, admin: CurrentAdmin) {
     if (!isEnabled("NOTIFICATION_CENTER_ENABLED")) {
       throw new BadRequestException("通知中心未启用，请先配置 NOTIFICATION_CENTER_ENABLED=true");
@@ -222,12 +282,7 @@ export class AdminNotificationsService {
     const successCount = results.filter((item) => item.status === NotificationLogStatus.SUCCESS).length;
     const failedCount = results.filter((item) => item.status === NotificationLogStatus.FAILED).length;
     const skippedCount = results.filter((item) => item.status === NotificationLogStatus.SKIPPED).length;
-    const status =
-      successCount === results.length
-        ? NotificationTaskStatus.SENT
-        : successCount > 0
-          ? NotificationTaskStatus.PARTIAL_FAILED
-          : NotificationTaskStatus.FAILED;
+    const status = taskStatusFromResultCounts(results.length, successCount, failedCount, skippedCount);
 
     const updated = await this.prisma.notificationTask.update({
       where: { id },
@@ -307,28 +362,46 @@ export class AdminNotificationsService {
     return template;
   }
 
-  private async resolveRecipients(payloadJson: Prisma.JsonValue | null, channel: NotificationChannelType): Promise<Array<{ userId: string; recipient: string | null }>> {
+  private async resolveRecipients(payloadJson: Prisma.JsonValue | null, channel: NotificationChannelType): Promise<Array<{ userId: string | null; recipient: string | null }>> {
     const payload = isRecord(payloadJson) ? payloadJson : {};
     const userIds = Array.isArray(payload.userIds) ? payload.userIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+    const recipients = Array.isArray(payload.recipients)
+      ? payload.recipients
+          .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          .map((recipient) => ({ userId: null, recipient }))
+      : [];
     if (userIds.length === 0) {
-      return [];
+      return recipients;
     }
 
     const users = await this.prisma.user.findMany({
       where: { id: { in: Array.from(new Set(userIds)) } },
       select: { id: true, openid: true, phone: true }
     });
-    return users.map((user) => ({
+    return [
+      ...users.map((user) => ({
       userId: user.id,
       recipient: channel === NotificationChannelType.SMS ? user.phone : user.openid
-    }));
+      })),
+      ...recipients
+    ];
   }
 
   private async sendOne(
-    task: { id: string; channel: NotificationChannelType },
+    task: { id: string; channel: NotificationChannelType; template: { code: string; templateKey: string | null }; payloadJson: Prisma.JsonValue | null },
     recipient: { userId: string | null; recipient: string | null }
   ): Promise<NotificationSendResult> {
+    const payload = isRecord(task.payloadJson) ? task.payloadJson : {};
     if (task.channel === NotificationChannelType.MOCK) {
+      if (recipient.userId && stringArray(payload.mockSkipUserIds).includes(recipient.userId)) {
+        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "MOCK_SKIPPED", errorMessage: "mock skip configured" };
+      }
+      if (recipient.userId && stringArray(payload.mockFailUserIds).includes(recipient.userId)) {
+        return { ...recipient, status: NotificationLogStatus.FAILED, errorCode: "MOCK_FAILED", errorMessage: "mock failure configured" };
+      }
+      if (!recipient.recipient && !recipient.userId) {
+        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "NO_RECIPIENT", errorMessage: "任务未配置目标人群" };
+      }
       return {
         ...recipient,
         status: NotificationLogStatus.SUCCESS,
@@ -336,13 +409,30 @@ export class AdminNotificationsService {
       };
     }
     if (task.channel === NotificationChannelType.WECHAT_SUBSCRIBE) {
-      return isEnabled("WECHAT_SUBSCRIBE_MESSAGE_ENABLED")
-        ? { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "ADAPTER_RESERVED", errorMessage: "微信订阅消息真实发送适配器待接入" }
-        : { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_SUBSCRIBE_DISABLED", errorMessage: "WECHAT_SUBSCRIBE_MESSAGE_ENABLED=false" };
+      if (!isEnabled("WECHAT_SUBSCRIBE_MESSAGE_ENABLED")) {
+        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_SUBSCRIBE_DISABLED", errorMessage: "WECHAT_SUBSCRIBE_MESSAGE_ENABLED=false" };
+      }
+      if (!task.template.templateKey) {
+        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_TEMPLATE_KEY_MISSING", errorMessage: "微信订阅消息模板 ID 未配置" };
+      }
+      if (!recipient.userId || !recipient.recipient) {
+        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_SUBSCRIBER_MISSING", errorMessage: "用户 openid 或订阅关系不存在" };
+      }
+      const subscription = await this.prisma.notificationSubscription.findUnique({
+        where: { userId_channel_templateCode: { userId: recipient.userId, channel: task.channel, templateCode: task.template.code } }
+      });
+      if (!subscription?.enabled) {
+        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_SUBSCRIPTION_NOT_ENABLED", errorMessage: "用户未订阅该模板消息" };
+      }
+      return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "ADAPTER_RESERVED", errorMessage: "微信订阅消息真实发送适配器待接入" };
     }
-    return isEnabled("SMS_ENABLED")
-      ? { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "ADAPTER_RESERVED", errorMessage: "短信真实发送适配器待接入" }
-      : { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "SMS_DISABLED", errorMessage: "SMS_ENABLED=false" };
+    if (!isEnabled("SMS_ENABLED")) {
+      return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "SMS_DISABLED", errorMessage: "SMS_ENABLED=false" };
+    }
+    if (!recipient.recipient) {
+      return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "SMS_RECIPIENT_MISSING", errorMessage: "用户手机号不存在" };
+    }
+    return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "ADAPTER_RESERVED", errorMessage: "短信真实发送适配器待接入" };
   }
 
   private writeAudit(admin: CurrentAdmin, action: AuditAction, entityType: string, entityId: string, summary: string, metadataJson?: Prisma.InputJsonValue) {
@@ -527,7 +617,7 @@ function readJsonObject(value: unknown, field: string): Prisma.InputJsonObject {
   if (!isRecord(value)) {
     throw new BadRequestException(`${field} must be a JSON object`);
   }
-  return value as Prisma.InputJsonObject;
+  return compactJsonObject(value) as Prisma.InputJsonObject;
 }
 
 function readChannel(value: unknown): NotificationChannelType {
@@ -560,4 +650,32 @@ function readLogStatus(value: unknown): NotificationLogStatus {
 
 function isEnabled(envName: string): boolean {
   return process.env[envName] === "true";
+}
+
+function taskStatusFromResultCounts(total: number, successCount: number, failedCount: number, skippedCount: number): NotificationTaskStatus {
+  if (total > 0 && successCount === total) return NotificationTaskStatus.SENT;
+  if (total > 0 && skippedCount === total) return NotificationTaskStatus.SKIPPED;
+  if (successCount > 0) return NotificationTaskStatus.PARTIAL_FAILED;
+  return failedCount > 0 ? NotificationTaskStatus.FAILED : NotificationTaskStatus.SKIPPED;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function compactJsonObject(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item !== "undefined"));
+}
+
+function renderJson(value: Prisma.JsonValue, variables: Record<string, unknown>): Prisma.JsonValue {
+  if (typeof value === "string") return renderText(value, variables);
+  if (Array.isArray(value)) return value.map((item) => renderJson(item, variables));
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, renderJson(item as Prisma.JsonValue, variables)]));
+  }
+  return value;
+}
+
+function renderText(value: string, variables: Record<string, unknown>): string {
+  return value.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_, key: string) => String(variables[key] ?? ""));
 }

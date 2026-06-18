@@ -67,12 +67,12 @@
       </el-tab-pane>
 
       <el-tab-pane label="优惠配置" name="discounts">
-        <AdminFeatureBadge label="灰度能力" description="优惠券和满减只影响展示配置，订单金额仍由后端重新计算。" tone="warning" />
+        <AdminFeatureBadge label="后端计价已接入" description="优惠券和满减会参与 quote/create order，最终金额仍由后端重新计算并固化快照。" tone="success" />
         <div class="discount-grid">
           <AdminSectionCard title="优惠券" subtitle="固定金额或折扣券，可限定当前会议。">
             <CouponsPage :conference-id="conferenceId" embedded />
           </AdminSectionCard>
-          <AdminSectionCard title="满减规则" subtitle="满金额或满张数优惠，作为营销活动灰度使用。">
+          <AdminSectionCard title="满减规则" subtitle="满金额或满张数优惠，可限定当前会议。">
             <PromotionsPage :conference-id="conferenceId" embedded />
           </AdminSectionCard>
         </div>

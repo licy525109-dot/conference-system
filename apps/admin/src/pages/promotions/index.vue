@@ -4,11 +4,9 @@
       v-if="!embedded"
       title="满减规则"
       eyebrow="营销活动"
-      badge="灰度能力"
-      badge-tone="warning"
       subtitle="配置满金额或满张数优惠；订单创建时由后端重新计算，不以后台展示值作为支付依据。"
     >
-      <AdminFeatureBadge label="营销活动 / 灰度能力" description="不改变 quote、下单和支付金额计算逻辑。" tone="warning" />
+      <AdminFeatureBadge label="计价顺序" description="SKU 原价 -> 会员价 -> 优惠券 -> 满减 -> 最终应付；create order 会重新计算。" tone="success" />
       <template #actions>
         <el-button type="primary" @click="openCreate">新增满减</el-button>
       </template>
@@ -31,7 +29,7 @@
         <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
         <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
         <template #empty>
-          <AdminEmptyState title="暂无满减规则" description="满减属于灰度营销能力，第一版会议报名主链路可先保持空配置。" action-text="新增满减" @action="openCreate" />
+          <AdminEmptyState title="暂无满减规则" description="可配置满金额或满张数优惠；没有规则时订单不应用满减。" action-text="新增满减" @action="openCreate" />
         </template>
       </el-table>
     </section>
@@ -41,6 +39,9 @@
         <el-form-item label="最低金额(元)"><el-input-number v-model="form.minAmountYuan" :min="0" :precision="2" /></el-form-item>
         <el-form-item label="最低张数"><el-input-number v-model="form.minQuantity" :min="0" /></el-form-item>
         <el-form-item label="优惠金额(元)"><el-input-number v-model="form.discountAmountYuan" :min="0" :precision="2" /></el-form-item>
+        <el-form-item label="适用票种 ID"><el-input v-model="form.allowedSkuIdsText" placeholder="多个 ID 用英文逗号分隔，留空表示不限" /></el-form-item>
+        <el-form-item label="开始时间"><el-date-picker v-model="form.startAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" style="width: 100%" /></el-form-item>
+        <el-form-item label="结束时间"><el-date-picker v-model="form.endAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" style="width: 100%" /></el-form-item>
         <el-form-item label="可与券叠加"><el-switch v-model="form.stackableWithCoupon" /></el-form-item>
         <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
       </el-form>
@@ -71,6 +72,9 @@ const form = reactive({
   minAmountYuan: 0,
   minQuantity: 0,
   discountAmountYuan: 0,
+  allowedSkuIdsText: "",
+  startAt: "",
+  endAt: "",
   enabled: true,
   stackableWithCoupon: false
 });
@@ -88,7 +92,7 @@ async function load() {
 }
 
 function openCreate() {
-  Object.assign(form, { id: "", name: "", minAmountYuan: 0, minQuantity: 0, discountAmountYuan: 0, enabled: true, stackableWithCoupon: false });
+  Object.assign(form, { id: "", name: "", minAmountYuan: 0, minQuantity: 0, discountAmountYuan: 0, allowedSkuIdsText: "", startAt: "", endAt: "", enabled: true, stackableWithCoupon: false });
   dialogVisible.value = true;
 }
 
@@ -99,6 +103,9 @@ function openEdit(row: PromotionRule) {
     minAmountYuan: (row.minAmountCent ?? 0) / 100,
     minQuantity: row.minQuantity ?? 0,
     discountAmountYuan: row.discountAmountCent / 100,
+    allowedSkuIdsText: row.allowedSkuIds.join(","),
+    startAt: row.startAt ?? "",
+    endAt: row.endAt ?? "",
     enabled: row.enabled,
     stackableWithCoupon: row.stackableWithCoupon
   });
@@ -112,6 +119,9 @@ async function save() {
     minAmountCent: form.minAmountYuan > 0 ? yuanToCent(form.minAmountYuan) : null,
     minQuantity: form.minQuantity > 0 ? form.minQuantity : null,
     discountAmountCent: yuanToCent(form.discountAmountYuan),
+    allowedSkuIds: form.allowedSkuIdsText.split(",").map((item) => item.trim()).filter(Boolean),
+    startAt: form.startAt || null,
+    endAt: form.endAt || null,
     enabled: form.enabled,
     stackableWithCoupon: form.stackableWithCoupon
   };
