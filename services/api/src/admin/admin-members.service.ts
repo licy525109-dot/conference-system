@@ -7,6 +7,7 @@ const MEMBERSHIP_STATUSES = new Set(["ACTIVE", "EXPIRED", "DISABLED", "CANCELLED
 const MEMBERSHIP_SOURCES = new Set(["ADMIN_GRANT", "IMPORT", "REGISTRATION_REWARD", "MANUAL_ADJUST", "PURCHASE_PENDING"]);
 const BENEFIT_TYPES = new Set(["TEXT", "DISCOUNT", "COUPON", "ACCESS", "SERVICE", "WE_COM_GROUP", "CUSTOM"]);
 const GRANT_STATUSES = new Set(["GRANTED", "USED", "EXPIRED", "REVOKED", "FAILED"]);
+const PRICE_RULE_DISCOUNT_TYPES = new Set(["FIXED_PRICE", "DISCOUNT", "REDUCE"]);
 
 @Injectable()
 export class AdminMembersService {
@@ -329,7 +330,7 @@ export class AdminMembersService {
     const levelId = readOptionalString(query, "levelId");
     const conferenceId = readOptionalString(query, "conferenceId");
     const items = await this.prisma.membershipPriceRule.findMany({
-      where: { ...(levelId ? { levelId } : {}), ...(conferenceId ? { OR: [{ conferenceId }, { conferenceId: null }] } : {}) },
+      where: { deletedAt: null, ...(levelId ? { levelId } : {}), ...(conferenceId ? { OR: [{ conferenceId }, { conferenceId: null }] } : {}) },
       orderBy: [{ createdAt: "desc" }],
       include: { level: true }
     });
@@ -350,7 +351,9 @@ export class AdminMembersService {
 
   async updatePriceRule(id: string, input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
-    const data = buildPriceRuleUpdateData(body);
+    const current = await this.prisma.membershipPriceRule.findUnique({ where: { id } });
+    if (!current || current.deletedAt) throw new NotFoundException("Membership price rule not found");
+    const data = buildPriceRuleUpdateData(body, current);
     if (data.levelId) await this.requireLevel(data.levelId as string);
     const item = await this.prisma.membershipPriceRule.update({
       where: { id },
@@ -358,6 +361,19 @@ export class AdminMembersService {
       include: { level: true }
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "MembershipPriceRule", id, "Update member pricing rule", { levelId: item.levelId, enabled: item.enabled });
+    return ok(formatPriceRule(item));
+  }
+
+  async deletePriceRule(id: string, admin: CurrentAdmin) {
+    const current = await this.prisma.membershipPriceRule.findUnique({ where: { id }, include: { level: true } });
+    if (!current || current.deletedAt) throw new NotFoundException("Membership price rule not found");
+    const now = new Date();
+    const item = await this.prisma.membershipPriceRule.update({
+      where: { id },
+      data: { enabled: false, disabledAt: current.disabledAt ?? now, deletedAt: now },
+      include: { level: true }
+    });
+    await this.writeAudit(admin, AuditAction.DELETE, "MembershipPriceRule", id, "Soft delete member pricing rule", { levelId: item.levelId });
     return ok(formatPriceRule(item));
   }
 
@@ -532,6 +548,8 @@ function formatPriceRule(item: Prisma.MembershipPriceRuleGetPayload<{ include: {
     ...item,
     startAt: item.startAt?.toISOString() ?? null,
     endAt: item.endAt?.toISOString() ?? null,
+    disabledAt: item.disabledAt?.toISOString() ?? null,
+    deletedAt: item.deletedAt?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
     level: formatLevelBase(item.level),
@@ -616,37 +634,82 @@ function buildBenefitUpdateData(body: Record<string, unknown>): Prisma.MemberBen
 }
 
 function buildPriceRuleData(body: Record<string, unknown>, levelId: string): Prisma.MembershipPriceRuleUncheckedCreateInput {
+  const amounts = buildPriceRuleAmounts(body);
+  const enabled = readOptionalBoolean(body, "enabled") ?? true;
   return validatePriceRuleAmounts({
     levelId,
     conferenceId: readNullableString(body.conferenceId),
     skuId: readNullableString(body.skuId),
-    fixedPriceCent: readOptionalNonNegativeInt(body, "fixedPriceCent"),
-    discountPercent: readOptionalPercent(body, "discountPercent"),
-    discountCent: readOptionalNonNegativeInt(body, "discountCent"),
-    enabled: readOptionalBoolean(body, "enabled") ?? true,
+    ...amounts,
+    enabled,
+    disabledAt: enabled ? null : new Date(),
+    deletedAt: null,
     startAt: readOptionalDate(body, "startAt"),
     endAt: readOptionalDate(body, "endAt")
   });
 }
 
-function buildPriceRuleUpdateData(body: Record<string, unknown>): Prisma.MembershipPriceRuleUncheckedUpdateInput {
+function buildPriceRuleUpdateData(body: Record<string, unknown>, current: { discountType: string; fixedPriceCent: number | null; discountPercent: number | null; discountCent: number | null; startAt: Date | null; endAt: Date | null }): Prisma.MembershipPriceRuleUncheckedUpdateInput {
+  const amounts = buildPriceRuleAmounts(body, current);
+  const enabled = typeof body.enabled !== "undefined" ? readRequiredBoolean(body.enabled, "enabled") : undefined;
+  const startAt = typeof body.startAt !== "undefined" ? readOptionalDate(body, "startAt") ?? null : current.startAt;
+  const endAt = typeof body.endAt !== "undefined" ? readOptionalDate(body, "endAt") ?? null : current.endAt;
   return validatePriceRuleAmounts({
     ...(typeof body.levelId !== "undefined" ? { levelId: readRequiredString(body, "levelId") } : {}),
     ...(typeof body.conferenceId !== "undefined" ? { conferenceId: readNullableString(body.conferenceId) } : {}),
     ...(typeof body.skuId !== "undefined" ? { skuId: readNullableString(body.skuId) } : {}),
-    ...(typeof body.fixedPriceCent !== "undefined" ? { fixedPriceCent: readOptionalNonNegativeInt(body, "fixedPriceCent") } : {}),
-    ...(typeof body.discountPercent !== "undefined" ? { discountPercent: readOptionalPercent(body, "discountPercent") } : {}),
-    ...(typeof body.discountCent !== "undefined" ? { discountCent: readOptionalNonNegativeInt(body, "discountCent") } : {}),
-    ...(typeof body.enabled !== "undefined" ? { enabled: readRequiredBoolean(body.enabled, "enabled") } : {}),
+    ...amounts,
+    ...(typeof enabled !== "undefined" ? { enabled, disabledAt: enabled ? null : new Date() } : {}),
     ...(typeof body.startAt !== "undefined" ? { startAt: readOptionalDate(body, "startAt") ?? null } : {}),
     ...(typeof body.endAt !== "undefined" ? { endAt: readOptionalDate(body, "endAt") ?? null } : {})
-  });
+  }, { startAt, endAt });
 }
 
-function validatePriceRuleAmounts<T extends { fixedPriceCent?: number | null; discountPercent?: number | null; discountCent?: number | null; startAt?: Date | null; endAt?: Date | null }>(input: T): T {
-  const hasAmount = typeof input.fixedPriceCent === "number" || typeof input.discountPercent === "number" || typeof input.discountCent === "number";
-  if (!hasAmount) throw new BadRequestException("会员价规则至少需要固定价、折扣或立减中的一项");
-  if (input.startAt && input.endAt && input.endAt <= input.startAt) throw new BadRequestException("失效时间必须晚于生效时间");
+function buildPriceRuleAmounts(body: Record<string, unknown>, current?: { discountType: string; fixedPriceCent: number | null; discountPercent: number | null; discountCent: number | null }) {
+  const raw = {
+    fixedPriceCent: readOptionalNonNegativeInt(body, "fixedPriceCent"),
+    discountPercent: readOptionalPercent(body, "discountPercent"),
+    discountCent: readOptionalNonNegativeInt(body, "discountCent")
+  };
+  const discountType = readEnum(body, "discountType", PRICE_RULE_DISCOUNT_TYPES) ?? current?.discountType ?? inferPriceRuleDiscountType(raw, current);
+  if (!discountType) throw new BadRequestException("请选择会员价优惠方式");
+  const effective = {
+    fixedPriceCent: typeof raw.fixedPriceCent !== "undefined" ? raw.fixedPriceCent : current?.fixedPriceCent ?? null,
+    discountPercent: typeof raw.discountPercent !== "undefined" ? raw.discountPercent : current?.discountPercent ?? null,
+    discountCent: typeof raw.discountCent !== "undefined" ? raw.discountCent : current?.discountCent ?? null
+  };
+  const positiveRawCount = [raw.fixedPriceCent, raw.discountPercent, raw.discountCent].filter((value) => typeof value === "number" && value > 0).length;
+  if (positiveRawCount > 1) throw new BadRequestException("固定价、折扣基点、立减金额只能选择一种");
+  if (discountType === "FIXED_PRICE" && !isPositiveNumber(effective.fixedPriceCent)) throw new BadRequestException("固定价必须大于 0");
+  if (discountType === "DISCOUNT" && !isPositiveNumber(effective.discountPercent)) throw new BadRequestException("折扣基点必须大于 0");
+  if (discountType === "REDUCE" && !isPositiveNumber(effective.discountCent)) throw new BadRequestException("立减金额必须大于 0");
+  return {
+    discountType,
+    fixedPriceCent: discountType === "FIXED_PRICE" ? effective.fixedPriceCent : null,
+    discountPercent: discountType === "DISCOUNT" ? effective.discountPercent : null,
+    discountCent: discountType === "REDUCE" ? effective.discountCent : null
+  };
+}
+
+function inferPriceRuleDiscountType(
+  raw: { fixedPriceCent?: number; discountPercent?: number | null; discountCent?: number },
+  current?: { discountType: string; fixedPriceCent: number | null; discountPercent: number | null; discountCent: number | null }
+) {
+  if (typeof raw.fixedPriceCent === "number" && raw.fixedPriceCent > 0) return "FIXED_PRICE";
+  if (typeof raw.discountPercent === "number" && raw.discountPercent > 0) return "DISCOUNT";
+  if (typeof raw.discountCent === "number" && raw.discountCent > 0) return "REDUCE";
+  if (current?.discountType) return current.discountType;
+  return undefined;
+}
+
+function isPositiveNumber(value: unknown): value is number {
+  return typeof value === "number" && value > 0;
+}
+
+function validatePriceRuleAmounts<T extends { startAt?: Date | null; endAt?: Date | null }>(input: T, dateWindow?: { startAt: Date | null; endAt: Date | null }): T {
+  const startAt = dateWindow?.startAt ?? input.startAt ?? null;
+  const endAt = dateWindow?.endAt ?? input.endAt ?? null;
+  if (startAt && endAt && endAt <= startAt) throw new BadRequestException("失效时间必须晚于生效时间");
   return input;
 }
 

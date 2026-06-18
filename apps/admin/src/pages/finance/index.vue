@@ -54,7 +54,12 @@
         <el-table-column prop="businessTitle" label="业务摘要" min-width="180" show-overflow-tooltip />
         <el-table-column prop="provider" label="渠道" width="100" />
         <el-table-column label="支付状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="statusText(row.status)" /></template></el-table-column>
-        <el-table-column label="金额" width="110"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
+        <el-table-column label="实付金额" width="110"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
+        <el-table-column label="计入实收" width="110">
+          <template #default="{ row }">
+            <AdminStatusBadge :status="Boolean(row.includedInRevenue)" :label="row.includedInRevenue ? '计入' : '不计入'" :tone="row.includedInRevenue ? 'success' : 'neutral'" />
+          </template>
+        </el-table-column>
         <el-table-column prop="outTradeNo" label="商户单号" min-width="190" show-overflow-tooltip />
         <el-table-column prop="transactionId" label="微信交易号 / mock 标识" min-width="190" show-overflow-tooltip />
         <el-table-column label="退款" width="110"><template #default="{ row }">{{ statusText(row.refundStatus) }}</template></el-table-column>
@@ -316,10 +321,11 @@ const cards = computed(() => {
   const data = overview.value?.cards;
   if (!data) return [];
   return [
-    { label: "累计收入", value: `¥${formatCent(data.totalRevenueCent)}`, tone: "primary" as const },
-    { label: "报名收入", value: `¥${formatCent(data.registrationPaidAmountCent || 0)}`, tone: "success" as const },
-    { label: "商城收入", value: `¥${formatCent(data.mallPaidAmountCent || 0)}`, tone: "success" as const },
-    { label: "退款金额", value: `¥${formatCent(data.refundAmountCent)}`, tone: "warning" as const },
+    { label: "实收收入", value: `¥${formatCent(data.totalRevenueCent)}`, tone: "primary" as const },
+    { label: "报名实收", value: `¥${formatCent(data.registrationPaidAmountCent || 0)}`, tone: "success" as const },
+    { label: "商城实收", value: `¥${formatCent(data.mallPaidAmountCent || 0)}`, tone: "success" as const },
+    { label: "Mock 测试收入", value: `¥${formatCent(data.mockPaymentAmountCent || 0)}`, tone: "default" as const },
+    { label: "成功退款金额", value: `¥${formatCent(data.refundAmountCent)}`, tone: "warning" as const },
     { label: "净收入", value: `¥${formatCent(data.netRevenueCent)}`, tone: "primary" as const },
     { label: "已支付订单", value: data.paidOrders, tone: "success" as const },
     { label: "待支付订单", value: data.pendingOrders, tone: "warning" as const },

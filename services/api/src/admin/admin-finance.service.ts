@@ -35,32 +35,44 @@ export class AdminFinanceService {
   constructor(private readonly prisma: PrismaService) {}
 
   async overview() {
-    const [registrationPaid, registrationDiscounts, registrationPaidOrders, registrationPendingOrders, registrationCount, registrationRefunds, mallPaid, mallPaidOrders, mallPendingOrders, mallRefunds, conferenceRows] =
+    const actualPaymentWhere = { status: PaymentStatus.SUCCESS, provider: PaymentProvider.WECHAT } as const;
+    const mockPaymentWhere = { status: PaymentStatus.SUCCESS, provider: PaymentProvider.MOCK } as const;
+    const actualRefundWhere = { status: RefundStatus.SUCCESS, provider: PaymentProvider.WECHAT } as const;
+    const [registrationPaid, registrationMockPaid, registrationDiscounts, registrationPaidOrders, registrationPendingOrders, registrationCount, registrationRefunds, mallPaid, mallMockPaid, mallPaidOrders, mallPendingOrders, mallRefunds, conferenceRows] =
       await this.prisma.$transaction([
-        this.prisma.order.aggregate({ where: { status: OrderStatus.PAID }, _sum: { paidAmountCent: true, payableAmountCent: true } }),
+        this.prisma.payment.aggregate({ where: actualPaymentWhere, _sum: { amountCent: true } }),
+        this.prisma.payment.aggregate({ where: mockPaymentWhere, _sum: { amountCent: true } }),
         this.prisma.order.aggregate({ _sum: { discountAmountCent: true } }),
         this.prisma.order.count({ where: { status: OrderStatus.PAID } }),
         this.prisma.order.count({ where: { status: OrderStatus.PENDING } }),
         this.prisma.registration.count(),
-        this.prisma.refund.aggregate({ where: { status: RefundStatus.SUCCESS }, _sum: { amountCent: true } }),
-        this.prisma.mallOrder.aggregate({ where: { status: { in: [...PAID_MALL_ORDER_STATUSES] } }, _sum: { paidAmountCent: true, payableAmountCent: true } }),
+        this.prisma.refund.aggregate({ where: actualRefundWhere, _sum: { amountCent: true } }),
+        this.prisma.mallPayment.aggregate({ where: actualPaymentWhere, _sum: { amountCent: true } }),
+        this.prisma.mallPayment.aggregate({ where: mockPaymentWhere, _sum: { amountCent: true } }),
         this.prisma.mallOrder.count({ where: { status: { in: [...PAID_MALL_ORDER_STATUSES] } } }),
         this.prisma.mallOrder.count({ where: { status: "PENDING_PAYMENT" } }),
-        this.prisma.mallRefund.aggregate({ where: { status: RefundStatus.SUCCESS }, _sum: { amountCent: true } }),
+        this.prisma.mallRefund.aggregate({ where: actualRefundWhere, _sum: { amountCent: true } }),
         this.prisma.conference.findMany({
           orderBy: [{ createdAt: "desc" }],
           take: 20,
           select: {
             id: true,
             title: true,
-            orders: { where: { status: OrderStatus.PAID }, select: { paidAmountCent: true, payableAmountCent: true, discountAmountCent: true } },
+            orders: {
+              where: { payments: { some: actualPaymentWhere } },
+              select: {
+                discountAmountCent: true,
+                payments: { where: actualPaymentWhere, select: { amountCent: true } }
+              }
+            },
             _count: { select: { registrations: true } }
           }
         })
       ]);
-    const registrationPaidAmountCent = registrationPaid._sum.paidAmountCent ?? registrationPaid._sum.payableAmountCent ?? 0;
-    const mallPaidAmountCent = mallPaid._sum.paidAmountCent ?? mallPaid._sum.payableAmountCent ?? 0;
+    const registrationPaidAmountCent = registrationPaid._sum.amountCent ?? 0;
+    const mallPaidAmountCent = mallPaid._sum.amountCent ?? 0;
     const paidAmountCent = registrationPaidAmountCent + mallPaidAmountCent;
+    const mockPaymentAmountCent = (registrationMockPaid._sum.amountCent ?? 0) + (mallMockPaid._sum.amountCent ?? 0);
     const refundAmountCent = (registrationRefunds._sum.amountCent ?? 0) + (mallRefunds._sum.amountCent ?? 0);
     return ok({
       cards: {
@@ -68,9 +80,10 @@ export class AdminFinanceService {
         paidAmountCent,
         registrationPaidAmountCent,
         mallPaidAmountCent,
+        mockPaymentAmountCent,
         discountAmountCent: registrationDiscounts._sum.discountAmountCent ?? 0,
         refundAmountCent,
-        netRevenueCent: Math.max(0, paidAmountCent - refundAmountCent),
+        netRevenueCent: paidAmountCent - refundAmountCent,
         paidOrders: registrationPaidOrders + mallPaidOrders,
         pendingOrders: registrationPendingOrders + mallPendingOrders,
         registrationCount,
@@ -79,7 +92,7 @@ export class AdminFinanceService {
       conferences: conferenceRows.map((conference) => ({
         id: conference.id,
         title: conference.title,
-        revenueCent: conference.orders.reduce((sum, order) => sum + (order.paidAmountCent ?? order.payableAmountCent), 0),
+        revenueCent: conference.orders.reduce((sum, order) => sum + order.payments.reduce((paymentSum, payment) => paymentSum + payment.amountCent, 0), 0),
         discountAmountCent: conference.orders.reduce((sum, order) => sum + order.discountAmountCent, 0),
         paidOrderCount: conference.orders.length,
         registrationCount: conference._count.registrations
@@ -703,14 +716,17 @@ function ok<T>(data: T) {
 
 function formatRegistrationPayment(payment: any) {
   const refund = payment.order.refunds?.[0] ?? null;
+  const includedInRevenue = isActualRevenuePayment(payment);
   return {
     id: payment.id,
     sourceType: "REGISTRATION",
+    sourceLabel: "报名",
     provider: payment.provider,
     status: payment.status,
     outTradeNo: payment.outTradeNo,
     transactionId: payment.transactionId,
     amountCent: payment.amountCent,
+    includedInRevenue,
     paidAt: payment.paidAt?.toISOString() ?? null,
     createdAt: payment.createdAt.toISOString(),
     orderNo: payment.order.orderNo,
@@ -727,14 +743,17 @@ function formatRegistrationPayment(payment: any) {
 
 function formatMallPayment(payment: any) {
   const refund = payment.order.refunds?.[0] ?? null;
+  const includedInRevenue = isActualRevenuePayment(payment);
   return {
     id: payment.id,
     sourceType: "MALL",
+    sourceLabel: "商城",
     provider: payment.provider,
     status: payment.status,
     outTradeNo: payment.outTradeNo,
     transactionId: payment.transactionId,
     amountCent: payment.amountCent,
+    includedInRevenue,
     paidAt: payment.paidAt?.toISOString() ?? null,
     createdAt: payment.createdAt.toISOString(),
     orderNo: payment.order.orderNo,
@@ -747,6 +766,10 @@ function formatMallPayment(payment: any) {
     reconciliationStatus: "UNRECONCILED",
     reconciliationType: null
   };
+}
+
+function isActualRevenuePayment(payment: { provider: PaymentProvider; status: PaymentStatus }) {
+  return payment.status === PaymentStatus.SUCCESS && payment.provider === PaymentProvider.WECHAT;
 }
 
 function formatRegistrationRefund(refund: any) {

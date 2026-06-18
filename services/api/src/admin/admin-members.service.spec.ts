@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { AuditAction } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { MemberService } from "../member/member.service";
@@ -58,11 +58,29 @@ describe("AdminMembersService production workflows", () => {
 
     const benefit = await service.createBenefit({ levelId: "level-gold", title: "专属客服", type: "SERVICE", autoGrant: true, visible: true }, admin);
     await service.updateBenefit(benefit.data.id, { title: "专属会务客服", enabled: false }, admin);
-    const rule = await service.createPriceRule({ levelId: "level-gold", fixedPriceCent: 9000, enabled: true }, admin);
-    await service.updatePriceRule(rule.data.id, { fixedPriceCent: 8000, enabled: false }, admin);
+    const rule = await service.createPriceRule({ levelId: "level-gold", discountType: "FIXED_PRICE", fixedPriceCent: 9000, enabled: true }, admin);
+    await service.updatePriceRule(rule.data.id, { discountType: "FIXED_PRICE", fixedPriceCent: 8000, enabled: false }, admin);
 
     assert.equal(prisma.benefits.some((item: any) => item.title === "专属会务客服" && item.enabled === false), true);
-    assert.equal(prisma.priceRules.some((item: any) => item.fixedPriceCent === 8000 && item.enabled === false), true);
+    assert.equal(prisma.priceRules.some((item: any) => item.fixedPriceCent === 8000 && item.discountPercent === null && item.discountCent === null && item.enabled === false && item.disabledAt), true);
+  });
+
+  it("enforces one member pricing discount type and soft deletes rules", async () => {
+    const prisma = createMemberPrismaMock();
+    const service = new AdminMembersService(prisma);
+
+    await assert.rejects(
+      () => service.createPriceRule({ levelId: "level-gold", discountType: "FIXED_PRICE", fixedPriceCent: 9000, discountPercent: 8000 }, admin),
+      BadRequestException
+    );
+
+    const rule = await service.createPriceRule({ levelId: "level-gold", discountType: "DISCOUNT", discountPercent: 8500, enabled: true }, admin);
+    await service.deletePriceRule(rule.data.id, admin);
+    const listed = await service.listPriceRules({});
+
+    assert.equal(prisma.priceRules.some((item: any) => item.id === rule.data.id && item.deletedAt && item.enabled === false), true);
+    assert.equal(listed.data.items.some((item: any) => item.id === rule.data.id), false);
+    assert.equal(prisma.auditLogs.some((item: any) => item.entityType === "MembershipPriceRule" && item.action === AuditAction.DELETE), true);
   });
 });
 
@@ -221,9 +239,17 @@ function createMemberPrismaMock(options: { disabledGold?: boolean } = {}) {
       }
     },
     membershipPriceRule: {
-      findMany: async () => priceRules.map(hydrateRule),
+      findMany: async ({ where }: any = {}) =>
+        priceRules
+          .filter((item) => (where?.deletedAt === null ? item.deletedAt === null : true))
+          .filter((item) => (where?.levelId ? item.levelId === where.levelId : true))
+          .map(hydrateRule),
+      findUnique: async ({ where }: any) => {
+        const item = priceRules.find((rule) => rule.id === where.id);
+        return item ? hydrateRule(item) : null;
+      },
       create: async ({ data }: any) => {
-        const item = { id: `rule-${priceRules.length + 1}`, createdAt: now, updatedAt: now, ...data };
+        const item = { id: `rule-${priceRules.length + 1}`, discountType: "FIXED_PRICE", discountPercent: null, discountCent: null, fixedPriceCent: null, disabledAt: null, deletedAt: null, createdAt: now, updatedAt: now, ...data };
         priceRules.push(item);
         return hydrateRule(item);
       },

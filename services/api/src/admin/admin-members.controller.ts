@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Param, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Patch, Post, Param, Query, Req, UseGuards } from "@nestjs/common";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminMembersService } from "./admin-members.service";
 import { AdminPermissionGuard } from "./admin-permission.guard";
@@ -128,5 +128,11 @@ export class AdminMembersController {
   @RequireAdminPermissions("member:pricing")
   updatePriceRule(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.membersService.updatePriceRule(id, body, request.currentAdmin!);
+  }
+
+  @Delete("member-pricing-rules/:id")
+  @RequireAdminPermissions("member:pricing")
+  deletePriceRule(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.membersService.deletePriceRule(id, request.currentAdmin!);
   }
 }

@@ -879,10 +879,13 @@ export interface MembershipPriceRule {
   levelId: string;
   conferenceId: string | null;
   skuId: string | null;
+  discountType: "FIXED_PRICE" | "DISCOUNT" | "REDUCE";
   discountPercent: number | null;
   discountCent: number | null;
   fixedPriceCent: number | null;
   enabled: boolean;
+  disabledAt?: string | null;
+  deletedAt?: string | null;
   startAt: string | null;
   endAt: string | null;
   level: MemberLevelBase;
@@ -897,6 +900,7 @@ export interface FinanceOverview {
     paidAmountCent: number;
     registrationPaidAmountCent?: number;
     mallPaidAmountCent?: number;
+    mockPaymentAmountCent?: number;
     discountAmountCent: number;
     refundAmountCent: number;
     netRevenueCent: number;
@@ -918,11 +922,13 @@ export interface FinanceOverview {
 export interface FinancePayment {
   id: string;
   sourceType: "REGISTRATION" | "MALL";
+  sourceLabel?: string;
   provider: string;
   status: string;
   outTradeNo: string;
   transactionId: string | null;
   amountCent: number;
+  includedInRevenue?: boolean;
   paidAt: string | null;
   createdAt: string;
   orderNo: string;

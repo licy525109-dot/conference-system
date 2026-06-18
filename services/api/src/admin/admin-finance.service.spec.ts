@@ -33,6 +33,20 @@ describe("AdminFinanceService production workflows", () => {
     );
     assert.equal(result.data.items.some((item) => item.orderNo === "ORDER001"), true);
     assert.equal(result.data.items.some((item) => item.orderNo === "SHOP001"), true);
+    assert.equal(result.data.items.every((item) => item.includedInRevenue === false), true);
+  });
+
+  it("counts only successful real payments as actual revenue and subtracts successful real refunds", async () => {
+    const service = new AdminFinanceService(createFinancePrismaMock({ revenueProbe: true }));
+
+    const result = await service.overview();
+
+    assert.equal(result.data.cards.registrationPaidAmountCent, 1);
+    assert.equal(result.data.cards.mallPaidAmountCent, 0);
+    assert.equal(result.data.cards.totalRevenueCent, 1);
+    assert.equal(result.data.cards.mockPaymentAmountCent, 22000);
+    assert.equal(result.data.cards.refundAmountCent, 1);
+    assert.equal(result.data.cards.netRevenueCent, 0);
   });
 
   it("rejects registration over-refund and does not fake success without provider config", async () => {
@@ -109,7 +123,7 @@ describe("PublicOperationsService finance user scope", () => {
   });
 });
 
-function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
+function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProbe?: boolean } = {}) {
   const now = new Date("2026-06-18T10:00:00.000Z");
   const orders = [
     {
@@ -143,7 +157,7 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
       afterSales: [{ id: "after-sale-1", status: "REQUESTED" }]
     }
   ];
-  const payments = [
+  const payments: any[] = [
     {
       id: "payment-1",
       provider: PaymentProvider.MOCK,
@@ -157,7 +171,35 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
       order: orders[0]
     }
   ];
-  const mallPayments = [
+  if (options.revenueProbe) {
+    payments.push(
+      {
+        id: "payment-real-1",
+        provider: PaymentProvider.WECHAT,
+        status: PaymentStatus.SUCCESS,
+        outTradeNo: "ORDER001_WECHAT",
+        transactionId: "wx-real-1",
+        amountCent: 1,
+        paidAt: now,
+        createdAt: new Date("2026-06-18T10:02:00.000Z"),
+        updatedAt: now,
+        order: orders[0]
+      },
+      {
+        id: "payment-pending-1",
+        provider: PaymentProvider.WECHAT,
+        status: PaymentStatus.PENDING,
+        outTradeNo: "ORDER001_PENDING",
+        transactionId: null,
+        amountCent: 100000,
+        paidAt: null,
+        createdAt: new Date("2026-06-18T10:03:00.000Z"),
+        updatedAt: now,
+        order: orders[0]
+      }
+    );
+  }
+  const mallPayments: any[] = [
     {
       id: "mall-payment-1",
       provider: PaymentProvider.MOCK,
@@ -171,7 +213,7 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
       order: mallOrders[0]
     }
   ];
-  const refunds: any[] = options.seededRefunds === false ? [] : [{ id: "old-refund-1", refundNo: "RFOLD", orderNo: "ORDER001", userId: "user-1", amountCent: 1000, status: RefundStatus.SUCCESS, createdAt: now, updatedAt: now, requestedAt: now }];
+  const refunds: any[] = options.seededRefunds === false ? [] : [{ id: "old-refund-1", refundNo: "RFOLD", orderNo: "ORDER001", userId: "user-1", amountCent: options.revenueProbe ? 1 : 1000, provider: options.revenueProbe ? PaymentProvider.WECHAT : PaymentProvider.MOCK, status: RefundStatus.SUCCESS, createdAt: now, updatedAt: now, requestedAt: now }];
   const mallRefunds: any[] = options.seededRefunds === false ? [] : [{ id: "old-mall-refund-1", refundNo: "MRFOLD", outRefundNo: "MALL_REFUND_SHOP001", mallOrderId: "mall-order-1", order: mallOrders[0], amountCent: 1000, status: RefundStatus.SUCCESS, createdAt: now, updatedAt: now, requestedAt: now }];
   const invoices: any[] = [];
   const auditLogs: any[] = [];
@@ -186,11 +228,13 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
     $transaction: async (input: any) => (Array.isArray(input) ? Promise.all(input) : input(prisma)),
     payment: {
       findMany: async () => payments,
-      count: async () => payments.length
+      count: async () => payments.length,
+      aggregate: async ({ where }: any = {}) => ({ _sum: { amountCent: sumAmounts(payments, where) } })
     },
     mallPayment: {
       findMany: async () => mallPayments,
-      count: async () => mallPayments.length
+      count: async () => mallPayments.length,
+      aggregate: async ({ where }: any = {}) => ({ _sum: { amountCent: sumAmounts(mallPayments, where) } })
     },
     reconciliationResult: {
       findMany: async () => [],
@@ -198,6 +242,8 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
       createMany: async () => ({ count: 0 })
     },
     order: {
+      aggregate: async () => ({ _sum: { discountAmountCent: 0 } }),
+      count: async ({ where }: any = {}) => orders.filter((item) => (where?.status ? item.status === where.status : true)).length,
       findUnique: async ({ where }: any) => orders.find((item) => item.orderNo === where.orderNo || item.id === where.id) ?? null,
       findFirst: async ({ where }: any) => orders.find((item) => item.orderNo === where.orderNo && item.userId === where.userId) ?? null,
       update: async ({ where, data }: any) => {
@@ -208,6 +254,7 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
       }
     },
     mallOrder: {
+      count: async ({ where }: any = {}) => mallOrders.filter((item) => (where?.status?.in ? where.status.in.includes(item.status) : where?.status ? item.status === where.status : true)).length,
       findUnique: async ({ where }: any) => mallOrders.find((item) => item.orderNo === where.orderNo || item.id === where.id) ?? null,
       findFirst: async ({ where }: any) => mallOrders.find((item) => item.orderNo === where.orderNo && item.userId === where.userId) ?? null,
       update: async ({ where, data }: any) => {
@@ -225,7 +272,7 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
       findFirst: async ({ where }: any) => refunds.find((item) => item.userId === where.userId || item.id === where.id) ?? null,
       findMany: async ({ where }: any = {}) => (where?.userId ? refunds.filter((item) => item.userId === where.userId) : refunds),
       count: async () => refunds.length,
-      aggregate: async () => ({ _sum: { amountCent: refunds.filter((item) => item.status === RefundStatus.SUCCESS).reduce((sum, item) => sum + item.amountCent, 0) } }),
+      aggregate: async ({ where }: any = {}) => ({ _sum: { amountCent: sumAmounts(refunds, where) } }),
       create: async ({ data }: any) => {
         const refund = { id: `refund-${refunds.length + 1}`, createdAt: now, updatedAt: now, requestedAt: now, providerRefundId: null, provider: null, rejectReason: null, failedReason: null, ...data };
         refunds.push(refund);
@@ -243,7 +290,7 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
       findUnique: async ({ where }: any) => mallRefunds.find((item) => item.id === where.id) ?? null,
       findMany: async ({ where }: any = {}) => (where?.order?.userId ? mallRefunds.filter((item) => item.order.userId === where.order.userId) : mallRefunds),
       count: async () => mallRefunds.length,
-      aggregate: async () => ({ _sum: { amountCent: mallRefunds.filter((item) => item.status === RefundStatus.SUCCESS).reduce((sum, item) => sum + item.amountCent, 0) } }),
+      aggregate: async ({ where }: any = {}) => ({ _sum: { amountCent: sumAmounts(mallRefunds, where) } }),
       create: async ({ data }: any) => {
         const refund = { id: `mall-refund-${mallRefunds.length + 1}`, createdAt: now, updatedAt: now, requestedAt: now, providerRefundId: null, provider: null, rejectReason: null, failedReason: null, order: mallOrders[0], ...data };
         mallRefunds.push(refund);
@@ -258,7 +305,7 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
       }
     },
     registration: { count: async () => 1, updateMany: async () => ({ count: 1 }) },
-    conference: { findMany: async () => [{ id: "conf-1", title: "会议一", orders: [orders[0]], _count: { registrations: 1 } }] },
+    conference: { findMany: async () => [{ id: "conf-1", title: "会议一", orders: [{ ...orders[0], payments: payments.filter((item) => item.provider === PaymentProvider.WECHAT && item.status === PaymentStatus.SUCCESS), discountAmountCent: 0 }], _count: { registrations: 1 } }] },
     invoiceApplication: {
       findMany: async ({ where }: any = {}) => invoices.filter((item) => !where?.userId || item.userId === where.userId),
       count: async () => invoices.length,
@@ -276,6 +323,13 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean } = {}) {
     }
   };
   return prisma as PrismaService & typeof prisma;
+}
+
+function sumAmounts(items: Array<{ amountCent: number; status: PaymentStatus | RefundStatus; provider?: PaymentProvider | null }>, where: any = {}) {
+  return items
+    .filter((item) => (where?.status ? item.status === where.status : true))
+    .filter((item) => (where?.provider ? item.provider === where.provider : true))
+    .reduce((sum, item) => sum + item.amountCent, 0);
 }
 
 function localPayment(sourceType: "REGISTRATION" | "MALL", orderNo: string, outTradeNo: string, amountCent: number): LocalPaymentRow {

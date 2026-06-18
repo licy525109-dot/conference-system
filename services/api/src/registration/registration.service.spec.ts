@@ -148,18 +148,26 @@ describe("RegistrationService quote", () => {
     }
   });
 
-  it("does not apply disabled member pricing rules", async () => {
-    const service = createService(
-      createPrismaMock({
-        userMemberships: [userMembership()],
-        membershipPriceRules: [membershipPriceRule({ fixedPriceCent: 60000, enabled: false })]
-      })
-    );
+  it("does not apply disabled or soft-deleted member pricing rules", async () => {
+    const cases = [
+      membershipPriceRule({ fixedPriceCent: 60000, enabled: false }),
+      membershipPriceRule({ fixedPriceCent: 60000, disabledAt: new Date("2026-06-01T00:00:00.000Z") }),
+      membershipPriceRule({ fixedPriceCent: 60000, deletedAt: new Date("2026-06-01T00:00:00.000Z") })
+    ];
 
-    const response = await service.quote({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity: 1 }] }, currentUser);
+    for (const rule of cases) {
+      const service = createService(
+        createPrismaMock({
+          userMemberships: [userMembership()],
+          membershipPriceRules: [rule]
+        })
+      );
 
-    assert.equal(response.data.memberPricing, undefined);
-    assert.equal(response.data.payableAmountCent, 100000);
+      const response = await service.quote({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity: 1 }] }, currentUser);
+
+      assert.equal(response.data.memberPricing, undefined);
+      assert.equal(response.data.payableAmountCent, 100000);
+    }
   });
 
   it("quotes multiple SKU items", async () => {
@@ -1169,10 +1177,13 @@ function membershipPriceRule(overrides: Partial<MembershipPriceRuleRecord> = {})
     levelId: "level-gold",
     conferenceId: null,
     skuId: null,
+    discountType: "FIXED_PRICE",
     discountPercent: null,
     discountCent: null,
     fixedPriceCent: null,
     enabled: true,
+    disabledAt: null,
+    deletedAt: null,
     startAt: null,
     endAt: null,
     ...overrides
@@ -1409,10 +1420,13 @@ interface MembershipPriceRuleRecord {
   levelId: string;
   conferenceId: string | null;
   skuId: string | null;
+  discountType: string;
   discountPercent: number | null;
   discountCent: number | null;
   fixedPriceCent: number | null;
   enabled: boolean;
+  disabledAt: Date | null;
+  deletedAt: Date | null;
   startAt: Date | null;
   endAt: Date | null;
 }

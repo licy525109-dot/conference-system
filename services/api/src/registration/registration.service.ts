@@ -427,6 +427,8 @@ export class RegistrationService {
         where: {
           levelId: membership.levelId,
           enabled: true,
+          deletedAt: null,
+          disabledAt: null,
           OR: [{ conferenceId }, { conferenceId: null }]
         }
       })
@@ -870,7 +872,7 @@ function serializePricingSnapshot(pricing: PriceCalculation): Prisma.InputJsonOb
 }
 
 function isMemberRuleApplicable(rule: MembershipPriceRuleRecord, now: Date, conferenceId: string): boolean {
-  if (!rule.enabled || !isWithinWindow(rule, now)) {
+  if (!rule.enabled || rule.deletedAt || rule.disabledAt || !isWithinWindow(rule, now)) {
     return false;
   }
   return !rule.conferenceId || rule.conferenceId === conferenceId;
@@ -904,15 +906,18 @@ function applyBestMemberRuleToItem(item: PricedRegistrationItem, rules: Membersh
 }
 
 function calculateMemberUnitPrice(originalUnitPriceCent: number, rule: MembershipPriceRuleRecord): number {
-  if (typeof rule.fixedPriceCent === "number") {
+  if (rule.discountType === "FIXED_PRICE" && typeof rule.fixedPriceCent === "number") {
     return clampCent(rule.fixedPriceCent, originalUnitPriceCent);
   }
-  if (typeof rule.discountPercent === "number") {
+  if (rule.discountType === "DISCOUNT" && typeof rule.discountPercent === "number") {
     return clampCent(Math.floor((originalUnitPriceCent * rule.discountPercent) / 10000), originalUnitPriceCent);
   }
-  if (typeof rule.discountCent === "number") {
+  if (rule.discountType === "REDUCE" && typeof rule.discountCent === "number") {
     return clampCent(originalUnitPriceCent - rule.discountCent, originalUnitPriceCent);
   }
+  if (typeof rule.fixedPriceCent === "number") return clampCent(rule.fixedPriceCent, originalUnitPriceCent);
+  if (typeof rule.discountPercent === "number") return clampCent(Math.floor((originalUnitPriceCent * rule.discountPercent) / 10000), originalUnitPriceCent);
+  if (typeof rule.discountCent === "number") return clampCent(originalUnitPriceCent - rule.discountCent, originalUnitPriceCent);
   return originalUnitPriceCent;
 }
 
@@ -1286,10 +1291,13 @@ interface MembershipPriceRuleRecord {
   levelId: string;
   conferenceId: string | null;
   skuId: string | null;
+  discountType: string;
   discountPercent: number | null;
   discountCent: number | null;
   fixedPriceCent: number | null;
   enabled: boolean;
+  disabledAt: Date | null;
+  deletedAt: Date | null;
   startAt: Date | null;
   endAt: Date | null;
 }
