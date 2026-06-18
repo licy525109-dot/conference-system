@@ -76,35 +76,73 @@ export class PublicOperationsService {
   }
 
   async askAi(conferenceId: string, input: unknown, currentUser: CurrentUser | undefined) {
-    if (!isEnabled("AI_KB_ENABLED")) {
-      return ok({ answer: "会议助手暂未启用，请联系会务人员。", sources: [], provider: "disabled" });
-    }
+    if (!currentUser) throw new UnauthorizedException("Bearer token is required");
     const question = readRequiredString(readObject(input), "question");
-    const kb = await this.prisma.knowledgeBase.findFirst({ where: { conferenceId, enabled: true }, include: { documents: { include: { chunks: true } }, autoRules: true } });
+    const config = await this.getAiRuntimeConfig();
+    const runtime = resolveAiRuntime(config);
+    if (!runtime.enabled) {
+      const answer = "会议助手未启用，请联系会务人员。";
+      await this.writeAiLog({ conferenceId, userId: currentUser.id, question, answer, provider: runtime.provider, model: runtime.model, fallback: true, errorReason: "AI_DISABLED", loggingEnabled: runtime.questionLogEnabled });
+      return ok({ answer, sources: [], provider: runtime.provider, model: runtime.model, status: "DISABLED", fallback: true, hit: false });
+    }
+    if (runtime.requiresExternalKey && !runtime.keyConfigured) {
+      const answer = "AI provider 未配置，会议助手当前无法回答，请联系会务人员。";
+      await this.writeAiLog({ conferenceId, userId: currentUser.id, question, answer, provider: runtime.provider, model: runtime.model, fallback: true, errorReason: "PROVIDER_KEY_MISSING", loggingEnabled: runtime.questionLogEnabled });
+      return ok({ answer, sources: [], provider: runtime.provider, model: runtime.model, status: "PROVIDER_NOT_CONFIGURED", fallback: true, hit: false });
+    }
+    const kb = await this.prisma.knowledgeBase.findUnique({
+      where: { conferenceId },
+      include: { documents: { where: { status: "ACTIVE" }, include: { chunks: true } }, autoRules: true }
+    });
     if (!kb) {
-      return ok({ answer: "当前会议暂未配置知识库，请以会议详情页信息为准。", sources: [], provider: "mock" });
+      const answer = "当前会议暂未配置知识库，请以会议详情页信息为准。";
+      await this.writeAiLog({ conferenceId, userId: currentUser.id, question, answer, provider: runtime.provider, model: runtime.model, fallback: true, errorReason: "KNOWLEDGE_BASE_MISSING", loggingEnabled: runtime.questionLogEnabled });
+      return ok({ answer, sources: [], provider: runtime.provider, model: runtime.model, status: "NO_KNOWLEDGE_BASE", fallback: true, hit: false });
+    }
+    if (!kb.enabled) {
+      const answer = "当前会议知识库未启用，请以会议详情页信息为准。";
+      await this.writeAiLog({ conferenceId, userId: currentUser.id, question, answer, knowledgeBaseId: kb.id, provider: runtime.provider, model: runtime.model, fallback: true, errorReason: "KNOWLEDGE_BASE_DISABLED", loggingEnabled: runtime.questionLogEnabled && kb.loggingEnabled });
+      return ok({ answer, sources: [], provider: runtime.provider, model: runtime.model, status: "NO_KNOWLEDGE_BASE", fallback: true, hit: false });
     }
     const autoRule = kb.autoRules.filter((rule) => rule.enabled).sort((a, b) => b.priority - a.priority).find((rule) => question.includes(rule.keyword));
-    const chunks = kb.documents.flatMap((document) => document.chunks.map((chunk) => ({ documentTitle: document.title, content: chunk.content })));
-    const matched = autoRule ? [] : chunks.filter((chunk) => scoreQuestion(question, chunk.content) > 0).slice(0, 3);
-    const answer = autoRule?.answer ?? (matched[0] ? `根据会议资料：${matched.map((item) => item.content).join(" ")}`.slice(0, 800) : "这个问题我暂时没有在当前会议资料中找到答案，请联系会务人员确认。");
-    await this.prisma.aiQuestionLog.create({
-      data: {
-        conferenceId,
-        userId: currentUser?.id,
-        question,
-        answer,
-        matchedJson: matched as Prisma.InputJsonArray,
-        provider: process.env.AI_PROVIDER || "mock"
-      }
+    const chunks = kb.documents.flatMap((document) =>
+      document.chunks.map((chunk) => ({ id: chunk.id, chunkIndex: chunk.chunkIndex, documentId: document.id, documentTitle: document.title, content: chunk.content, score: scoreQuestion(question, chunk.content) }))
+    );
+    const matched = autoRule ? [] : chunks.filter((chunk) => chunk.score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
+    const sources = runtime.citationsEnabled && kb.citationsEnabled ? matched.map(formatAiSource) : [];
+    const fallbackText = kb.fallbackText || "当前会议资料中未找到相关信息，请联系会务人员确认。";
+    const answer = autoRule?.answer ?? (matched[0] ? `根据当前会议资料：${matched.map((item) => item.content).join(" ")}`.slice(0, runtime.maxOutputTokens) : fallbackText);
+    const fallback = !autoRule && matched.length === 0;
+    const primary = matched[0];
+    await this.writeAiLog({
+      conferenceId,
+      userId: currentUser.id,
+      question,
+      answer,
+      knowledgeBaseId: kb.id,
+      matchedDocumentId: primary?.documentId,
+      matchedChunkId: primary?.id,
+      matchedJson: matched,
+      referencesJson: sources,
+      hit: Boolean(autoRule || primary),
+      fallback,
+      provider: runtime.provider,
+      model: runtime.model,
+      errorReason: fallback ? "NO_MATCHED_CHUNK" : undefined,
+      loggingEnabled: runtime.questionLogEnabled && kb.loggingEnabled
     });
-    return ok({ answer, sources: matched, provider: process.env.AI_PROVIDER || "mock" });
+    return ok({ answer, sources, provider: runtime.provider, model: runtime.model, status: fallback ? "FALLBACK" : "ANSWERED", fallback, hit: !fallback });
   }
 
   async aiSuggestions(conferenceId: string) {
-    const kb = await this.prisma.knowledgeBase.findFirst({ where: { conferenceId, enabled: true }, include: { documents: true } });
+    const config = await this.getAiRuntimeConfig();
+    if (!resolveAiRuntime(config).enabled) return ok({ items: [], status: "DISABLED", message: "会议助手未启用" });
+    const manual = await this.prisma.aiSuggestion.findMany({ where: { conferenceId, enabled: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], take: 8 });
+    if (manual.length > 0) return ok({ items: manual.map((item) => item.question), status: "OK" });
+    const kb = await this.prisma.knowledgeBase.findUnique({ where: { conferenceId }, include: { documents: { where: { status: "ACTIVE" }, take: 3 } } });
+    if (!kb?.enabled) return ok({ items: [], status: "NO_KNOWLEDGE_BASE", message: "当前会议暂未配置知识库" });
     const base = ["会议时间地点是什么？", "如何查看报名凭证？", "现场签到需要什么？"];
-    return ok({ items: kb?.documents.slice(0, 3).map((doc) => `${doc.title} 有哪些重点？`) ?? base });
+    return ok({ items: kb.documents.length ? kb.documents.map((doc) => `${doc.title} 有哪些重点？`) : base, status: "OK" });
   }
 
   async createInvoice(input: unknown, currentUser: CurrentUser | undefined) {
@@ -162,6 +200,52 @@ export class PublicOperationsService {
       }))
     });
   }
+
+  private getAiRuntimeConfig() {
+    return this.prisma.aiConfig.upsert({
+      where: { name: "default" },
+      update: {},
+      create: { name: "default", enabled: isEnabled("AI_KB_ENABLED"), provider: process.env.AI_PROVIDER || "LOCAL_FALLBACK", model: process.env.AI_MODEL || "local-keyword" }
+    });
+  }
+
+  private async writeAiLog(input: {
+    conferenceId: string;
+    userId?: string;
+    question: string;
+    answer: string;
+    knowledgeBaseId?: string;
+    matchedDocumentId?: string;
+    matchedChunkId?: string;
+    matchedJson?: unknown;
+    referencesJson?: unknown;
+    hit?: boolean;
+    fallback?: boolean;
+    provider: string;
+    model: string;
+    errorReason?: string;
+    loggingEnabled: boolean;
+  }) {
+    if (!input.loggingEnabled) return;
+    await this.prisma.aiQuestionLog.create({
+      data: {
+        conferenceId: input.conferenceId,
+        userId: input.userId,
+        question: input.question,
+        answer: input.answer,
+        knowledgeBaseId: input.knowledgeBaseId,
+        matchedDocumentId: input.matchedDocumentId,
+        matchedChunkId: input.matchedChunkId,
+        matchedJson: (input.matchedJson ?? []) as Prisma.InputJsonValue,
+        referencesJson: (input.referencesJson ?? []) as Prisma.InputJsonValue,
+        hit: input.hit ?? false,
+        fallback: input.fallback ?? false,
+        provider: input.provider,
+        model: input.model,
+        errorReason: input.errorReason
+      }
+    });
+  }
 }
 
 function ok<T>(data: T) {
@@ -188,7 +272,53 @@ function readNullableString(value: unknown): string | null {
 }
 
 function scoreQuestion(question: string, content: string): number {
-  return question.split(/\s+|，|。|\?|？/).filter((word) => word.length >= 2 && content.includes(word)).length;
+  const tokens = tokenize(question);
+  return tokens.reduce((score, token) => score + (content.includes(token) ? Math.min(token.length, 8) : 0), 0);
+}
+
+function tokenize(text: string): string[] {
+  const normalized = text.toLowerCase();
+  const words = normalized.split(/[\s,，。！？；;:：?？、/\\-]+/).filter((word) => word.length >= 2);
+  const chars = Array.from(normalized).filter((char) => /[\u4e00-\u9fa5]/.test(char));
+  const bigrams = chars.slice(0, -1).map((char, index) => `${char}${chars[index + 1]}`);
+  return Array.from(new Set([...words, ...bigrams]));
+}
+
+function resolveAiRuntime(config: {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  maxOutputTokens: number;
+  fallbackEnabled: boolean;
+  citationsEnabled: boolean;
+  questionLogEnabled: boolean;
+}) {
+  const provider = (process.env.AI_PROVIDER || config.provider || "LOCAL_FALLBACK").toUpperCase();
+  const model = process.env.AI_MODEL || config.model || "local-keyword";
+  const externalProvider = !["LOCAL_FALLBACK", "MOCK"].includes(provider);
+  return {
+    enabled: config.enabled || isEnabled("AI_KB_ENABLED"),
+    provider: externalProvider ? provider : "LOCAL_FALLBACK",
+    model: externalProvider ? model : "local-keyword",
+    requiresExternalKey: externalProvider,
+    keyConfigured: Boolean(process.env.AI_API_KEY),
+    maxOutputTokens: Math.max(120, config.maxOutputTokens || 800),
+    fallbackEnabled: config.fallbackEnabled,
+    citationsEnabled: config.citationsEnabled,
+    questionLogEnabled: config.questionLogEnabled
+  };
+}
+
+function formatAiSource(source: { id: string; documentId: string; documentTitle: string; chunkIndex: number; content: string; score: number }) {
+  return {
+    documentId: source.documentId,
+    chunkId: source.id,
+    documentTitle: source.documentTitle,
+    chunkIndex: source.chunkIndex,
+    summary: source.content.slice(0, 180),
+    excerpt: source.content.slice(0, 180),
+    score: source.score
+  };
 }
 
 function generateCode(prefix: string): string {

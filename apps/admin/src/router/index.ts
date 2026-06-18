@@ -10,6 +10,7 @@ import CouponCampaignsPage from "../pages/coupon-campaigns/index.vue";
 import PromotionsPage from "../pages/promotions/index.vue";
 import NotificationsPage from "../pages/notifications/index.vue";
 import WecomPage from "../pages/wecom/index.vue";
+import AiKnowledgePage from "../pages/ai/index.vue";
 import MaterialsPage from "../pages/materials/index.vue";
 import CmsPagesPage from "../pages/cms/pages.vue";
 import ThemesPage from "../pages/cms/themes.vue";
@@ -74,12 +75,12 @@ export const routes: AdminRoute[] = [
   { path: "/wecom/tasks", title: "群发任务", menuTitle: "群发任务", group: "企微客户群", description: "按企业微信规则创建待成员确认的群发任务", permission: "wecom:view", component: WecomPage },
   { path: "/wecom/logs", title: "群发日志", menuTitle: "群发日志", group: "企微客户群", description: "查看成员确认、发送结果和失败原因", permission: "wecom:view", component: WecomPage },
   { path: "/wecom/callback-events", title: "回调事件", menuTitle: "回调事件", group: "企微客户群", description: "查看客户联系和应用回调事件", permission: "wecom:view", component: WecomPage },
-  { path: "/ai/knowledge-bases", title: "知识库列表", menuTitle: "知识库列表", group: "AI 知识库", badge: "灰度", description: "会议知识库总览和启用状态入口。", permission: "ai-kb:view", component: OperationalWorkflowsPage },
-  { path: "/ai/conference-knowledge", title: "会议知识库", menuTitle: "会议知识库", group: "AI 知识库", badge: "灰度", description: "单会议资料、问答范围和兜底规则入口。", permission: "ai-kb:view", component: OperationalWorkflowsPage },
-  { path: "/ai/documents", title: "文档管理", menuTitle: "文档管理", group: "AI 知识库", badge: "灰度", description: "知识文档上传、分块、重建索引入口。", permission: "ai-kb:view", component: OperationalWorkflowsPage },
-  { path: "/ai/suggestions", title: "推荐问题", menuTitle: "推荐问题", group: "AI 知识库", badge: "辅助", description: "会议助手推荐问题配置入口。", permission: "ai-kb:view", component: OperationalWorkflowsPage },
-  { path: "/ai/question-logs", title: "问答日志", menuTitle: "问答日志", group: "AI 知识库", badge: "灰度", description: "用户提问、命中资料和兜底回复记录入口。", permission: "ai-kb:view", component: OperationalWorkflowsPage },
-  { path: "/ai/config", title: "AI 配置", menuTitle: "AI 配置", group: "AI 知识库", badge: "辅助", description: "AI provider、模型和功能开关入口。", permission: "ai-kb:view", component: OperationalWorkflowsPage },
+  { path: "/ai/knowledge-bases", title: "知识库列表", menuTitle: "知识库列表", group: "AI 知识库", description: "会议知识库总览、启停、文档数、分块数和问答数。", permission: "ai-kb:view", component: AiKnowledgePage },
+  { path: "/ai/conference-knowledge", title: "会议知识库", menuTitle: "会议知识库", group: "AI 知识库", description: "单会议资料、回答范围、引用来源和兜底规则。", permission: "ai-kb:view", component: AiKnowledgePage },
+  { path: "/ai/documents", title: "文档管理", menuTitle: "文档管理", group: "AI 知识库", description: "知识文档录入、启停、分块和重建索引。", permission: "ai-kb:view", component: AiKnowledgePage },
+  { path: "/ai/suggestions", title: "推荐问题", menuTitle: "推荐问题", group: "AI 知识库", description: "按会议维护用户端推荐问题。", permission: "ai-kb:view", component: AiKnowledgePage },
+  { path: "/ai/question-logs", title: "问答日志", menuTitle: "问答日志", group: "AI 知识库", description: "用户提问、命中资料、兜底回复和错误原因。", permission: "ai-kb:view", component: AiKnowledgePage },
+  { path: "/ai/config", title: "AI 配置", menuTitle: "AI 配置", group: "AI 知识库", badge: "辅助", description: "AI provider、模型和功能开关入口；密钥通过服务器环境变量配置。", permission: "ai-kb:view", component: AiKnowledgePage },
   { path: "/members/users", title: "会员管理", menuTitle: "会员管理", group: "会员", badge: "后续", description: "用户会员状态、等级授予和会员记录", permission: "member:view", component: MemberUsersPage },
   { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "会员", badge: "后续", description: "会员等级、价格和权益展示配置", permission: "member:view", component: MemberLevelsPage },
   { path: "/members/benefits", title: "会员权益", menuTitle: "会员权益", group: "会员", badge: "后续", description: "会员权益包、展示说明和领取规则入口。", permission: "member:view", component: OperationalWorkflowsPage },

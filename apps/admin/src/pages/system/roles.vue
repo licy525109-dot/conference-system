@@ -143,7 +143,7 @@ function permissionMenuGroup(permission: Permission): string {
   if (permission.code.startsWith("coupon:") || permission.code.startsWith("promotion:")) return "营销活动";
   if (permission.code.startsWith("notification:") || permission.code.startsWith("sms:")) return "通知中心";
   if (permission.code.startsWith("wecom:")) return "企微客户群";
-  if (permission.code.startsWith("ai:") || permission.code.startsWith("knowledge:")) return "AI 知识库";
+  if (permission.code.startsWith("ai-kb:") || permission.code.startsWith("ai:") || permission.code.startsWith("knowledge:")) return "AI 知识库";
   if (permission.code.startsWith("member:")) return "会员";
   if (permission.code.startsWith("mall:")) return "商城";
   if (permission.code.startsWith("finance:") || permission.code.startsWith("refund:") || permission.code.startsWith("invoice:")) return "财务管理";

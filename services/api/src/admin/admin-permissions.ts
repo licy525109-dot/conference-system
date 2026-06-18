@@ -25,6 +25,8 @@ export const ADMIN_PERMISSIONS = [
   { code: "wecom:send", name: "创建企微客户群群发任务", group: "企微客户群" },
   { code: "ai-kb:view", name: "查看 AI 知识库", group: "AI 知识库" },
   { code: "ai-kb:write", name: "编辑 AI 知识库", group: "AI 知识库" },
+  { code: "knowledge:view", name: "查看会议知识资料", group: "AI 知识库" },
+  { code: "knowledge:write", name: "编辑会议知识资料", group: "AI 知识库" },
   { code: "refund:view", name: "查看退款", group: "退款发票" },
   { code: "refund:write", name: "审批退款", group: "退款发票" },
   { code: "invoice:view", name: "查看发票", group: "退款发票" },

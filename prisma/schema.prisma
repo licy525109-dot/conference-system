@@ -324,6 +324,7 @@ model Conference {
   inventoryAlertLogs       InventoryAlertLog[]
   knowledgeBases           KnowledgeBase[]
   aiQuestionLogs           AiQuestionLog[]
+  aiSuggestions            AiSuggestion[]
   couponCampaigns          CouponCampaign[]
   customerGroupTasks       CustomerGroupMessageTask[]
   wecomCustomerGroups      WecomCustomerGroup[]
@@ -1539,18 +1540,23 @@ model CustomerGroupMessageLog {
 }
 
 model KnowledgeBase {
-  id           String              @id @default(cuid())
-  conferenceId String
-  title        String
-  enabled      Boolean             @default(false)
-  settingsJson Json?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  conference   Conference          @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
-  documents    KnowledgeDocument[]
-  autoRules    AutoReplyRule[]
+  id                String              @id @default(cuid())
+  conferenceId      String
+  title             String
+  enabled           Boolean             @default(false)
+  scopeDescription  String?
+  fallbackText      String?
+  citationsEnabled  Boolean             @default(true)
+  loggingEnabled    Boolean             @default(true)
+  settingsJson      Json?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  conference        Conference          @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  documents         KnowledgeDocument[]
+  questionLogs      AiQuestionLog[]
+  autoRules         AutoReplyRule[]
 
-  @@index([conferenceId])
+  @@unique([conferenceId])
   @@index([enabled])
   @@map("knowledge_bases")
 }
@@ -1563,10 +1569,13 @@ model KnowledgeDocument {
   contentText     String
   status          String           @default("INDEXED")
   chunkCount      Int              @default(0)
+  lastError       String?
+  indexedAt       DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   knowledgeBase   KnowledgeBase    @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
   chunks          KnowledgeChunk[]
+  questionLogs    AiQuestionLog[]
 
   @@index([knowledgeBaseId])
   @@index([status])
@@ -1582,6 +1591,7 @@ model KnowledgeChunk {
   keywords   Json?
   createdAt  DateTime          @default(now())
   document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  questionLogs AiQuestionLog[]
 
   @@unique([documentId, chunkIndex])
   @@index([documentId])
@@ -1589,20 +1599,72 @@ model KnowledgeChunk {
 }
 
 model AiQuestionLog {
+  id                String             @id @default(cuid())
+  conferenceId      String
+  knowledgeBaseId   String?
+  userId            String?
+  question          String
+  answer            String
+  matchedJson       Json?
+  matchedDocumentId String?
+  matchedChunkId    String?
+  referencesJson    Json?
+  hit               Boolean            @default(false)
+  fallback          Boolean            @default(false)
+  provider          String             @default("LOCAL_FALLBACK")
+  model             String?
+  errorReason       String?
+  createdAt         DateTime           @default(now())
+  conference        Conference         @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  knowledgeBase     KnowledgeBase?     @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
+  matchedDocument   KnowledgeDocument? @relation(fields: [matchedDocumentId], references: [id], onDelete: SetNull)
+  matchedChunk      KnowledgeChunk?    @relation(fields: [matchedChunkId], references: [id], onDelete: SetNull)
+
+  @@index([conferenceId])
+  @@index([knowledgeBaseId])
+  @@index([matchedDocumentId])
+  @@index([matchedChunkId])
+  @@index([userId])
+  @@index([hit])
+  @@index([fallback])
+  @@index([createdAt])
+  @@map("ai_question_logs")
+}
+
+model AiSuggestion {
   id           String     @id @default(cuid())
   conferenceId String
-  userId       String?
   question     String
-  answer       String
-  matchedJson  Json?
-  provider     String     @default("mock")
+  sortOrder    Int        @default(0)
+  enabled      Boolean    @default(true)
   createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
   conference   Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
 
   @@index([conferenceId])
-  @@index([userId])
-  @@index([createdAt])
-  @@map("ai_question_logs")
+  @@index([enabled])
+  @@index([sortOrder])
+  @@map("ai_suggestions")
+}
+
+model AiConfig {
+  id                  String   @id @default(cuid())
+  name                String   @default("default")
+  enabled             Boolean  @default(false)
+  provider            String   @default("LOCAL_FALLBACK")
+  model               String   @default("local-keyword")
+  temperature         Int      @default(0)
+  maxOutputTokens     Int      @default(800)
+  fallbackEnabled     Boolean  @default(true)
+  citationsEnabled    Boolean  @default(true)
+  questionLogEnabled  Boolean  @default(true)
+  settingsJson        Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([name])
+  @@index([enabled])
+  @@map("ai_configs")
 }
 
 model AutoReplyRule {

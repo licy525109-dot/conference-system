@@ -244,12 +244,12 @@ export class AdminOperationsService {
   }
 
   async getKnowledgeBase(conferenceId: string) {
-    const id = await this.findOrCreateKnowledgeBaseId(conferenceId);
+    await this.ensureConference(conferenceId);
     const kb = await this.prisma.knowledgeBase.upsert({
-      where: { id },
+      where: { conferenceId },
       update: {},
-      create: { conferenceId, title: "会议知识库", enabled: false },
-      include: { conference: { select: { title: true } }, documents: { orderBy: { createdAt: "desc" } } }
+      create: { conferenceId, title: "会议知识库", enabled: false, fallbackText: defaultAiFallbackText() },
+      include: knowledgeBaseInclude
     });
     return ok(formatKnowledgeBase(kb));
   }
@@ -257,18 +257,84 @@ export class AdminOperationsService {
   async listKnowledgeBases(query: Record<string, unknown>) {
     const { page, pageSize, skip } = readPage(query);
     const keyword = readOptionalString(query.keyword);
-    const where: Prisma.KnowledgeBaseWhereInput = keyword ? { OR: [{ title: { contains: keyword, mode: "insensitive" } }, { conference: { title: { contains: keyword, mode: "insensitive" } } }] } : {};
+    const conferenceId = readOptionalString(query.conferenceId);
+    const where: Prisma.KnowledgeBaseWhereInput = {
+      ...(conferenceId ? { conferenceId } : {}),
+      ...(keyword ? { OR: [{ title: { contains: keyword, mode: "insensitive" } }, { conference: { title: { contains: keyword, mode: "insensitive" } } }] } : {})
+    };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.knowledgeBase.findMany({
         where,
         orderBy: { updatedAt: "desc" },
         skip,
         take: pageSize,
-        include: { conference: { select: { title: true } }, documents: { orderBy: { createdAt: "desc" }, take: 20 } }
+        include: knowledgeBaseInclude
       }),
       this.prisma.knowledgeBase.count({ where })
     ]);
     return ok({ items: items.map(formatKnowledgeBase), total, page, pageSize });
+  }
+
+  async createKnowledgeBase(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const conferenceId = readRequiredString(body, "conferenceId");
+    await this.ensureConference(conferenceId);
+    const existing = await this.prisma.knowledgeBase.findUnique({ where: { conferenceId } });
+    if (existing) throw new ConflictException("该会议已存在知识库");
+    const kb = await this.prisma.knowledgeBase.create({
+      data: {
+        conferenceId,
+        title: readOptionalString(body.title) ?? "会议知识库",
+        enabled: readOptionalBoolean(body.enabled) ?? false,
+        scopeDescription: readNullableString(body.scopeDescription),
+        fallbackText: readOptionalString(body.fallbackText) ?? defaultAiFallbackText(),
+        citationsEnabled: readOptionalBoolean(body.citationsEnabled) ?? true,
+        loggingEnabled: readOptionalBoolean(body.loggingEnabled) ?? true
+      },
+      include: knowledgeBaseInclude
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "KnowledgeBase", kb.id, "Create AI knowledge base", { conferenceId });
+    return ok(formatKnowledgeBase(kb));
+  }
+
+  async updateKnowledgeBase(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const kb = await this.prisma.knowledgeBase.update({
+      where: { id },
+      data: {
+        ...(typeof body.title !== "undefined" ? { title: readRequiredString(body, "title") } : {}),
+        ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {}),
+        ...(typeof body.scopeDescription !== "undefined" ? { scopeDescription: readNullableString(body.scopeDescription) } : {}),
+        ...(typeof body.fallbackText !== "undefined" ? { fallbackText: readNullableString(body.fallbackText) } : {}),
+        ...(typeof body.citationsEnabled !== "undefined" ? { citationsEnabled: readBoolean(body.citationsEnabled, "citationsEnabled") } : {}),
+        ...(typeof body.loggingEnabled !== "undefined" ? { loggingEnabled: readBoolean(body.loggingEnabled, "loggingEnabled") } : {})
+      },
+      include: knowledgeBaseInclude
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "KnowledgeBase", id, "Update AI knowledge base", { conferenceId: kb.conferenceId });
+    return ok(formatKnowledgeBase(kb));
+  }
+
+  async updateConferenceKnowledgeBase(conferenceId: string, input: unknown, admin: CurrentAdmin) {
+    const current = await this.ensureKnowledgeBase(conferenceId);
+    return this.updateKnowledgeBase(current.id, input, admin);
+  }
+
+  async listKnowledgeDocuments(conferenceId: string, query: Record<string, unknown>) {
+    const { page, pageSize, skip } = readPage(query);
+    const kb = await this.ensureKnowledgeBase(conferenceId);
+    const keyword = readOptionalString(query.keyword);
+    const status = readOptionalString(query.status);
+    const where: Prisma.KnowledgeDocumentWhereInput = {
+      knowledgeBaseId: kb.id,
+      ...(status ? { status } : {}),
+      ...(keyword ? { OR: [{ title: { contains: keyword, mode: "insensitive" } }, { contentText: { contains: keyword, mode: "insensitive" } }] } : {})
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.knowledgeDocument.findMany({ where, orderBy: { updatedAt: "desc" }, skip, take: pageSize, include: { chunks: { select: { id: true } } } }),
+      this.prisma.knowledgeDocument.count({ where })
+    ]);
+    return ok({ items: items.map(formatKnowledgeDocument), total, page, pageSize, knowledgeBase: formatKnowledgeBaseSummary(kb) });
   }
 
   async createKnowledgeDocument(conferenceId: string, input: unknown, admin: CurrentAdmin) {
@@ -280,16 +346,16 @@ export class AdminOperationsService {
       data: {
         knowledgeBaseId: kb.id,
         title: readRequiredString(body, "title"),
-        sourceType: readOptionalString(body.sourceType) ?? "TEXT",
+        sourceType: normalizeDocumentSourceType(readOptionalString(body.sourceType)),
         contentText,
-        status: "INDEXED",
+        status: normalizeDocumentStatus(readOptionalString(body.status) ?? "ACTIVE"),
         chunkCount: chunks.length,
+        indexedAt: new Date(),
         chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) }
       }
     });
-    await this.prisma.knowledgeBase.update({ where: { id: kb.id }, data: { enabled: true } });
-    await this.writeAudit(admin, AuditAction.CREATE, "KnowledgeDocument", doc.id, "Create knowledge document");
-    return ok(formatDateFields(doc));
+    await this.writeAudit(admin, AuditAction.CREATE, "KnowledgeDocument", doc.id, "Create AI knowledge document", { conferenceId, chunkCount: chunks.length });
+    return ok(formatKnowledgeDocument({ ...doc, chunks: chunks.map((_, index) => ({ id: `${doc.id}-${index}` })) }));
   }
 
   async updateKnowledgeDocument(id: string, input: unknown, admin: CurrentAdmin) {
@@ -302,17 +368,19 @@ export class AdminOperationsService {
         where: { id },
         data: {
           ...(typeof body.title !== "undefined" ? { title: readRequiredString(body, "title") } : {}),
-          ...(contentText ? { contentText, chunkCount: chunks.length, chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) } } : {})
+          ...(typeof body.sourceType !== "undefined" ? { sourceType: normalizeDocumentSourceType(readOptionalString(body.sourceType)) } : {}),
+          ...(typeof body.status !== "undefined" ? { status: normalizeDocumentStatus(readRequiredString(body, "status")) } : {}),
+          ...(contentText ? { contentText, chunkCount: chunks.length, indexedAt: new Date(), lastError: null, chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) } } : {})
         }
       });
     });
-    await this.writeAudit(admin, AuditAction.UPDATE, "KnowledgeDocument", id, "Update knowledge document");
+    await this.writeAudit(admin, AuditAction.UPDATE, "KnowledgeDocument", id, "Update AI knowledge document");
     return ok(formatDateFields(doc));
   }
 
   async deleteKnowledgeDocument(id: string, admin: CurrentAdmin) {
     const doc = await this.prisma.knowledgeDocument.delete({ where: { id } });
-    await this.writeAudit(admin, AuditAction.DELETE, "KnowledgeDocument", id, "Delete knowledge document");
+    await this.writeAudit(admin, AuditAction.DELETE, "KnowledgeDocument", id, "Delete AI knowledge document");
     return ok(formatDateFields(doc));
   }
 
@@ -322,19 +390,103 @@ export class AdminOperationsService {
     const chunks = chunkText(doc.contentText);
     await this.prisma.$transaction([
       this.prisma.knowledgeChunk.deleteMany({ where: { documentId: id } }),
-      this.prisma.knowledgeDocument.update({ where: { id }, data: { status: "INDEXED", chunkCount: chunks.length, chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) } } })
+      this.prisma.knowledgeDocument.update({ where: { id }, data: { status: "ACTIVE", chunkCount: chunks.length, indexedAt: new Date(), lastError: null, chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) } } })
     ]);
-    await this.writeAudit(admin, AuditAction.SYSTEM, "KnowledgeDocument", id, "Reindex knowledge document");
+    await this.writeAudit(admin, AuditAction.SYSTEM, "KnowledgeDocument", id, "Rebuild AI knowledge document chunks", { chunkCount: chunks.length });
     return ok({ id, chunkCount: chunks.length });
   }
 
   async listAiQuestionLogs(conferenceId: string, query: Record<string, unknown>) {
     const { page, pageSize, skip } = readPage(query);
+    const keyword = readOptionalString(query.keyword);
+    const fallback = typeof query.fallback === "undefined" || query.fallback === "" ? undefined : String(query.fallback) === "true";
+    const where: Prisma.AiQuestionLogWhereInput = {
+      conferenceId,
+      ...(typeof fallback === "boolean" ? { fallback } : {}),
+      ...(keyword ? { OR: [{ question: { contains: keyword, mode: "insensitive" } }, { answer: { contains: keyword, mode: "insensitive" } }, { userId: { contains: keyword, mode: "insensitive" } }] } : {})
+    };
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.aiQuestionLog.findMany({ where: { conferenceId }, orderBy: { createdAt: "desc" }, skip, take: pageSize }),
-      this.prisma.aiQuestionLog.count({ where: { conferenceId } })
+      this.prisma.aiQuestionLog.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: pageSize, include: { matchedDocument: { select: { title: true } }, matchedChunk: { select: { chunkIndex: true } }, knowledgeBase: { select: { title: true } } } }),
+      this.prisma.aiQuestionLog.count({ where })
     ]);
-    return ok({ items: items.map(formatDateFields), total, page, pageSize });
+    return ok({ items: items.map(formatAiQuestionLog), total, page, pageSize });
+  }
+
+  async listAiSuggestions(conferenceId: string) {
+    await this.ensureConference(conferenceId);
+    const items = await this.prisma.aiSuggestion.findMany({ where: { conferenceId }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });
+    return ok({ items: items.map(formatDateFields) });
+  }
+
+  async createAiSuggestions(conferenceId: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    await this.ensureConference(conferenceId);
+    const questions = Array.isArray(body.questions) ? body.questions.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [readRequiredString(body, "question")];
+    const startSort = readOptionalNonNegativeInt(body.sortOrder) ?? 0;
+    const created = [];
+    for (const [index, question] of questions.entries()) {
+      created.push(
+        await this.prisma.aiSuggestion.create({
+          data: {
+            conferenceId,
+            question,
+            sortOrder: startSort + index,
+            enabled: readOptionalBoolean(body.enabled) ?? true
+          }
+        })
+      );
+    }
+    await this.writeAudit(admin, AuditAction.CREATE, "AiSuggestion", null, "Create AI suggestions", { conferenceId, count: created.length });
+    return ok({ items: created.map(formatDateFields) });
+  }
+
+  async updateAiSuggestion(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const item = await this.prisma.aiSuggestion.update({
+      where: { id },
+      data: {
+        ...(typeof body.question !== "undefined" ? { question: readRequiredString(body, "question") } : {}),
+        ...(typeof body.sortOrder !== "undefined" ? { sortOrder: readNonNegativeInt(body.sortOrder, "sortOrder") } : {}),
+        ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {})
+      }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "AiSuggestion", id, "Update AI suggestion", { conferenceId: item.conferenceId });
+    return ok(formatDateFields(item));
+  }
+
+  async getAiConfig() {
+    const config = await this.ensureAiConfig();
+    return ok(formatAiConfig(config));
+  }
+
+  async updateAiConfig(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const updated = await this.prisma.aiConfig.upsert({
+      where: { name: "default" },
+      create: {
+        name: "default",
+        enabled: readOptionalBoolean(body.enabled) ?? false,
+        provider: readOptionalString(body.provider) ?? "LOCAL_FALLBACK",
+        model: readOptionalString(body.model) ?? "local-keyword",
+        temperature: readOptionalNonNegativeInt(body.temperature) ?? 0,
+        maxOutputTokens: readOptionalNonNegativeInt(body.maxOutputTokens) ?? 800,
+        fallbackEnabled: readOptionalBoolean(body.fallbackEnabled) ?? true,
+        citationsEnabled: readOptionalBoolean(body.citationsEnabled) ?? true,
+        questionLogEnabled: readOptionalBoolean(body.questionLogEnabled) ?? true
+      },
+      update: {
+        ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {}),
+        ...(typeof body.provider !== "undefined" ? { provider: readRequiredString(body, "provider") } : {}),
+        ...(typeof body.model !== "undefined" ? { model: readRequiredString(body, "model") } : {}),
+        ...(typeof body.temperature !== "undefined" ? { temperature: readNonNegativeInt(body.temperature, "temperature") } : {}),
+        ...(typeof body.maxOutputTokens !== "undefined" ? { maxOutputTokens: readNonNegativeInt(body.maxOutputTokens, "maxOutputTokens") } : {}),
+        ...(typeof body.fallbackEnabled !== "undefined" ? { fallbackEnabled: readBoolean(body.fallbackEnabled, "fallbackEnabled") } : {}),
+        ...(typeof body.citationsEnabled !== "undefined" ? { citationsEnabled: readBoolean(body.citationsEnabled, "citationsEnabled") } : {}),
+        ...(typeof body.questionLogEnabled !== "undefined" ? { questionLogEnabled: readBoolean(body.questionLogEnabled, "questionLogEnabled") } : {})
+      }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "AiConfig", updated.id, "Update AI config", { provider: updated.provider, keyConfigured: Boolean(process.env.AI_API_KEY) });
+    return ok(formatAiConfig(updated));
   }
 
   async listAutoReplyRules() {
@@ -652,15 +804,24 @@ export class AdminOperationsService {
   }
 
   private async findOrCreateKnowledgeBaseId(conferenceId: string) {
-    const existing = await this.prisma.knowledgeBase.findFirst({ where: { conferenceId }, select: { id: true } });
+    const existing = await this.prisma.knowledgeBase.findUnique({ where: { conferenceId }, select: { id: true } });
     if (existing) return existing.id;
-    const created = await this.prisma.knowledgeBase.create({ data: { conferenceId, title: "会议知识库", enabled: false }, select: { id: true } });
+    await this.ensureConference(conferenceId);
+    const created = await this.prisma.knowledgeBase.create({ data: { conferenceId, title: "会议知识库", enabled: false, fallbackText: defaultAiFallbackText() }, select: { id: true } });
     return created.id;
   }
 
   private async ensureKnowledgeBase(conferenceId: string) {
     const id = await this.findOrCreateKnowledgeBaseId(conferenceId);
     return this.prisma.knowledgeBase.findUniqueOrThrow({ where: { id } });
+  }
+
+  private async ensureAiConfig() {
+    return this.prisma.aiConfig.upsert({
+      where: { name: "default" },
+      update: {},
+      create: { name: "default", enabled: isEnabled("AI_KB_ENABLED"), provider: process.env.AI_PROVIDER || "LOCAL_FALLBACK", model: process.env.AI_MODEL || "local-keyword" }
+    });
   }
 
   private writeAudit(admin: CurrentAdmin, action: AuditAction, entityType: string, entityId: string | null, summary: string, metadataJson?: Prisma.InputJsonValue) {
@@ -697,11 +858,70 @@ function formatCouponCampaignListItem(campaign: CouponCampaignWithCoupons & { co
   };
 }
 
-function formatKnowledgeBase(kb: Prisma.KnowledgeBaseGetPayload<{ include: { conference: { select: { title: true } }; documents: true } }>) {
+const knowledgeBaseInclude = {
+  conference: { select: { title: true } },
+  documents: { orderBy: { createdAt: "desc" }, take: 20, include: { chunks: { select: { id: true } } } },
+  _count: { select: { documents: true, questionLogs: true } }
+} satisfies Prisma.KnowledgeBaseInclude;
+
+type KnowledgeBaseWithInclude = Prisma.KnowledgeBaseGetPayload<{ include: typeof knowledgeBaseInclude }>;
+
+function formatKnowledgeBase(kb: KnowledgeBaseWithInclude) {
+  const chunkCount = kb.documents.reduce((sum, doc) => sum + doc.chunkCount, 0);
   return {
     ...formatDateFields(kb),
     conferenceTitle: kb.conference.title,
-    documents: kb.documents.map(formatDateFields)
+    documentCount: kb._count.documents,
+    chunkCount,
+    questionCount: kb._count.questionLogs,
+    documents: kb.documents.map(formatKnowledgeDocument)
+  };
+}
+
+function formatKnowledgeBaseSummary(kb: Prisma.KnowledgeBaseGetPayload<Record<string, never>>) {
+  return {
+    id: kb.id,
+    conferenceId: kb.conferenceId,
+    title: kb.title,
+    enabled: kb.enabled,
+    scopeDescription: kb.scopeDescription,
+    fallbackText: kb.fallbackText,
+    citationsEnabled: kb.citationsEnabled,
+    loggingEnabled: kb.loggingEnabled
+  };
+}
+
+function formatKnowledgeDocument(doc: Record<string, unknown> & { chunks?: Array<{ id: string }> }) {
+  const { chunks: _chunks, ...rest } = doc;
+  return {
+    ...formatDateFields(rest),
+    chunkCount: typeof doc.chunkCount === "number" ? doc.chunkCount : _chunks?.length ?? 0
+  };
+}
+
+function formatAiQuestionLog(log: Record<string, unknown> & { matchedDocument?: { title: string } | null; matchedChunk?: { chunkIndex: number } | null; knowledgeBase?: { title: string } | null }) {
+  const { matchedDocument, matchedChunk, knowledgeBase, ...rest } = log;
+  return {
+    ...formatDateFields(rest),
+    knowledgeBaseTitle: knowledgeBase?.title ?? null,
+    matchedDocumentTitle: matchedDocument?.title ?? null,
+    matchedChunkIndex: matchedChunk?.chunkIndex ?? null
+  };
+}
+
+function formatAiConfig(config: Record<string, unknown>) {
+  return {
+    ...formatDateFields(config),
+    env: {
+      aiKbEnabled: isEnabled("AI_KB_ENABLED"),
+      providerFromEnv: process.env.AI_PROVIDER || null,
+      modelFromEnv: process.env.AI_MODEL || null,
+      keyConfigured: Boolean(process.env.AI_API_KEY)
+    },
+    secret: {
+      apiKey: { configured: Boolean(process.env.AI_API_KEY), masked: maskEnvSecret(process.env.AI_API_KEY) }
+    },
+    keyPolicy: "AI provider key 通过服务器环境变量配置，后台不保存也不返回明文密钥。"
   };
 }
 
@@ -719,6 +939,30 @@ function chunkText(text: string): string[] {
 
 function extractKeywords(text: string): Prisma.InputJsonArray {
   return Array.from(new Set(text.split(/[\s,，。！？；;:：]+/).filter((word) => word.length >= 2).slice(0, 20)));
+}
+
+function normalizeDocumentStatus(value: string): string {
+  const upper = value.trim().toUpperCase();
+  if (["DRAFT", "ACTIVE", "DISABLED"].includes(upper)) return upper;
+  if (upper === "INDEXED") return "ACTIVE";
+  throw new BadRequestException("文档状态必须是 DRAFT / ACTIVE / DISABLED");
+}
+
+function normalizeDocumentSourceType(value: string | undefined): string {
+  const upper = (value || "TEXT").trim().toUpperCase();
+  if (["TEXT", "TXT"].includes(upper)) return "TEXT";
+  if (["MD", "MARKDOWN"].includes(upper)) return "MD";
+  throw new BadRequestException("文档来源暂只支持 TEXT / MD");
+}
+
+function defaultAiFallbackText() {
+  return "当前会议资料中未找到相关信息，请联系会务人员确认。";
+}
+
+function maskEnvSecret(value: string | undefined): string {
+  if (!value) return "";
+  if (value.length <= 8) return "****";
+  return `${value.slice(0, 4)}****${value.slice(-4)}`;
 }
 
 function generateCode(prefix: string): string {

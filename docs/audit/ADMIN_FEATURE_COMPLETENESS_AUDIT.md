@@ -1,6 +1,6 @@
 # 后台功能完成度审计
 
-审计日期：2026-06-17
+审计日期：2026-06-18
 
 ## 审计口径
 
@@ -47,11 +47,12 @@
 | 企微客户群 | `/wecom/tasks` | WecomPage | `/admin/wecom/group-message-tasks*` | CustomerGroupMessageTask, CustomerGroupMessageLog | 不需要 | 无 | 是 | 保持待成员确认，不做后台强发。 |
 | 企微客户群 | `/wecom/logs` | WecomPage | `/admin/wecom/group-message-logs` | CustomerGroupMessageLog | 不需要 | 无 | 是 | 展示确认/发送结果和失败原因。 |
 | 企微客户群 | `/wecom/callback-events` | WecomPage | `/admin/wecom/callback-events` | WecomCallbackEvent | 不需要 | 无 | 是 | 回调事件可查。 |
-| AI 知识库 | `/ai/knowledge-bases` | OperationalWorkflowsPage | `/admin/knowledge-bases`, `/conferences/:id/ai/*` | KnowledgeBase, KnowledgeDocument, KnowledgeChunk, AiQuestionLog | AI 助手入口 | 灰度 | 否 | mock/provider 降级已接入，真实模型配置默认关闭。 |
-| AI 知识库 | `/ai/documents` | OperationalWorkflowsPage | `/admin/conferences/:id/knowledge-documents` | KnowledgeDocument, KnowledgeChunk | AI 助手 | 灰度 | 否 | 文档创建和分块真实，上传/重建体验还需强化。 |
-| AI 知识库 | `/ai/suggestions` | OperationalWorkflowsPage | `/conferences/:id/ai/suggestions` | KnowledgeDocument | AI 助手 | 辅助 | 否 | 当前基于文档生成基础推荐。 |
-| AI 知识库 | `/ai/question-logs` | OperationalWorkflowsPage | `/admin/conferences/:id/ai-question-logs` | AiQuestionLog | AI 助手 | 灰度 | 否 | 页面已接入框架，按会议日志查询需继续细化筛选。 |
-| AI 知识库 | `/ai/config` | OperationalWorkflowsPage | 环境变量 + 审计日志 | AuditLog | 不需要 | 辅助 | 否 | AI provider/key 不进入前端。 |
+| AI 知识库 | `/ai/knowledge-bases` | AIKnowledgePage | `/admin/knowledge-bases` | KnowledgeBase, KnowledgeDocument, KnowledgeChunk, AiQuestionLog | AI 助手入口 | 无 | 是 | 支持按会议创建、唯一性保护、启停、会议筛选、搜索、文档数、分块数和问答数。 |
+| AI 知识库 | `/ai/conference-knowledge` | AIKnowledgePage | `/admin/conferences/:id/knowledge-base` | KnowledgeBase | AI 助手入口 | 无 | 是 | 会议选择器隔离配置，支持回答范围、兜底提示、引用来源和问答日志开关。 |
+| AI 知识库 | `/ai/documents` | AIKnowledgePage | `/admin/conferences/:id/knowledge-documents`, `/admin/knowledge-documents/:id/rebuild` | KnowledgeDocument, KnowledgeChunk | AI 助手 | 无 | 是 | 支持 txt/md 录入、DRAFT/ACTIVE/DISABLED、启停、删除、重建分块、处理状态和失败原因展示；当前为轻量关键词检索。 |
+| AI 知识库 | `/ai/suggestions` | AIKnowledgePage | `/admin/conferences/:id/ai-suggestions`, `/conferences/:id/ai/suggestions` | AiSuggestion, KnowledgeDocument | AI 助手 | 无 | 是 | 支持运营按会议批量维护、排序、启停，用户端只展示当前会议问题。 |
+| AI 知识库 | `/ai/question-logs` | AIKnowledgePage | `/admin/conferences/:id/ai-question-logs` | AiQuestionLog | AI 助手 | 无 | 是 | 记录用户、会议、知识库、命中文档/分块、引用摘要、命中/兜底、provider、model、错误原因，支持会议、关键词和兜底筛选。 |
+| AI 知识库 | `/ai/config` | AIKnowledgePage | `/admin/ai-config` | AiConfig, AdminAuditLog | AI 助手降级状态 | 辅助 | 否 | provider key 通过服务器 env 配置，后台只显示 configured/masked；真实 LLM provider 默认未启用，LOCAL_FALLBACK 明示为本地关键词检索。 |
 | 会员 | `/members/users` | 会员管理 | `/admin/memberships`, `/admin/users` | MemberLevel, MembershipOrder | 会员中心 | 后续 | 否 | 手动授予会员真实，会员购买自动开通仍未完成。 |
 | 会员 | `/members/levels` | 会员等级 | `/admin/member-levels*` | MemberLevel | 会员中心 | 后续 | 否 | 等级真实，会员购买自动开通仍未完成。 |
 | 会员 | `/members/benefits` | OperationalWorkflowsPage | `/admin/member-benefits` | MemberBenefit | CMS 会员权益/会员中心 | 后续 | 否 | 权益展示已接入，权益发放自动化未完成。 |
@@ -110,4 +111,4 @@
 - 签到扫码、重复核销、撤销核销需补 E2E。
 - 微信退款回调金额校验需补 mock/provider 双路径测试。
 - 商城 SKU 库存扣减、商城支付、发货核销、售后退款联动需补专项测试。
-- AI provider 真实接入、企微客户群真实权限检测需在有企业配置后做联调。
+- AI provider 真实接入、企微客户群真实权限检测需在有企业配置后做联调；AI 知识库本轮已补 provider 未配置降级、会议隔离、兜底、日志、推荐问题隔离、文档启停/重建和密钥脱敏测试。
