@@ -37,7 +37,10 @@ import type {
   MallInventoryLog,
   MallOrder,
   MallShipment,
+  MemberBenefit,
+  MemberBenefitGrant,
   MemberLevel,
+  MembershipPriceRule,
   NotificationLog,
   NotificationChannelConfig,
   NotificationTask,
@@ -678,6 +681,10 @@ export function listMemberLevels() {
   return apiRequest<{ items: MemberLevel[] }>("/admin/member-levels");
 }
 
+export function listMemberLevelOptions() {
+  return apiRequest<{ items: Array<Pick<MemberLevel, "id" | "code" | "name" | "enabled" | "defaultDays" | "pricingEnabled">> }>("/admin/member-levels/options");
+}
+
 export function createMemberLevel(input: Record<string, unknown>) {
   return apiRequest<MemberLevel>("/admin/member-levels", {
     method: "POST",
@@ -692,31 +699,74 @@ export function updateMemberLevel(id: string, input: Record<string, unknown>) {
   });
 }
 
-export function listMemberships(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
+export function listMemberships(params: { page?: number; pageSize?: number; keyword?: string; status?: string; levelId?: string; expiresBefore?: string; expiresAfter?: string }) {
   return apiRequest<ApiList<UserMembership>>(`/admin/memberships${toQuery(params)}`);
 }
 
-export function assignMembership(input: Record<string, unknown>) {
-  return apiRequest<UserMembership>("/admin/memberships", {
+export function grantMembership(input: Record<string, unknown>) {
+  return apiRequest<UserMembership>("/admin/memberships/grant", {
     method: "POST",
     body: JSON.stringify(input)
   });
 }
 
+export const assignMembership = grantMembership;
+
+export function renewMembership(id: string, input: Record<string, unknown>) {
+  return apiRequest<UserMembership>(`/admin/memberships/${encodeURIComponent(id)}/renew`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function disableMembership(id: string, input: Record<string, unknown>) {
+  return apiRequest<UserMembership>(`/admin/memberships/${encodeURIComponent(id)}/disable`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function changeMembershipLevel(id: string, input: Record<string, unknown>) {
+  return apiRequest<UserMembership>(`/admin/memberships/${encodeURIComponent(id)}/level`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
 export function listMemberBenefits(params: { levelId?: string } = {}) {
-  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/member-benefits${toQuery(params)}`);
+  return apiRequest<{ items: MemberBenefit[] }>(`/admin/member-benefits${toQuery(params)}`);
 }
 
 export function createMemberBenefit(input: Record<string, unknown>) {
-  return apiRequest<Record<string, unknown>>("/admin/member-benefits", { method: "POST", body: JSON.stringify(input) });
+  return apiRequest<MemberBenefit>("/admin/member-benefits", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function listMemberPricingRules(params: { levelId?: string } = {}) {
-  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/member-pricing-rules${toQuery(params)}`);
+export function updateMemberBenefit(id: string, input: Record<string, unknown>) {
+  return apiRequest<MemberBenefit>(`/admin/member-benefits/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function listMemberBenefitOptions(params: { levelId?: string } = {}) {
+  return apiRequest<{ items: MemberBenefit[] }>(`/admin/member-benefits/options${toQuery(params)}`);
+}
+
+export function listMemberBenefitGrants(params: { page?: number; pageSize?: number; userId?: string; membershipId?: string; benefitId?: string; status?: string } = {}) {
+  return apiRequest<ApiList<MemberBenefitGrant>>(`/admin/member-benefit-grants${toQuery(params)}`);
+}
+
+export function revokeMemberBenefitGrant(id: string, remark?: string) {
+  return apiRequest<MemberBenefitGrant>(`/admin/member-benefit-grants/${encodeURIComponent(id)}/revoke`, { method: "POST", body: JSON.stringify({ remark }) });
+}
+
+export function listMemberPricingRules(params: { levelId?: string; conferenceId?: string } = {}) {
+  return apiRequest<{ items: MembershipPriceRule[] }>(`/admin/member-pricing-rules${toQuery(params)}`);
 }
 
 export function createMemberPricingRule(input: Record<string, unknown>) {
-  return apiRequest<Record<string, unknown>>("/admin/member-pricing-rules", { method: "POST", body: JSON.stringify(input) });
+  return apiRequest<MembershipPriceRule>("/admin/member-pricing-rules", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateMemberPricingRule(id: string, input: Record<string, unknown>) {
+  return apiRequest<MembershipPriceRule>(`/admin/member-pricing-rules/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
 export function getFinanceOverview() {

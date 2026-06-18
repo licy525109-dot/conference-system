@@ -236,7 +236,7 @@
 
       <view v-else-if="component.type === 'membership-benefits'" class="cms-section cms-member">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会员权益" }}</text>
-        <text class="cms-section__text">会员价以创建订单时后端计价结果为准；会员购买自动开通仍以后台流程配置为准。</text>
+        <text class="cms-section__text">会员价以创建订单时后端计价结果为准；会员购买支付暂未开放，会员状态以后台授予和续期为准。</text>
         <view class="cms-list-lines">
           <text v-for="item in fallbackList(component, ['会员专属权益', '会员价规则以后台配置为准'])" :key="item" class="cms-list-line" :style="textStyle(component)">{{ item }}</text>
         </view>

@@ -187,6 +187,7 @@ model User {
   couponClaims              CouponClaim[]
   refunds                   Refund[]
   invoiceApplications       InvoiceApplication[]
+  memberBenefitGrants       MemberBenefitGrant[]
 
   @@index([createdAt])
   @@index([lastActiveAt])
@@ -641,6 +642,8 @@ model MemberLevel {
   rank            Int                   @default(0)
   priceCent       Int                   @default(0)
   discountPercent Int?
+  defaultDays     Int?
+  pricingEnabled  Boolean               @default(true)
   enabled         Boolean               @default(true)
   benefitsJson    Json?
   createdAt       DateTime              @default(now())
@@ -660,12 +663,17 @@ model MemberBenefit {
   title       String
   description String?
   type        String
+  iconUrl     String?
+  autoGrant   Boolean     @default(false)
+  visible     Boolean     @default(true)
+  grantRule   String?
   configJson  Json?
   enabled     Boolean     @default(true)
   sortOrder   Int         @default(0)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   level       MemberLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  grants      MemberBenefitGrant[]
 
   @@index([levelId])
   @@index([enabled])
@@ -682,16 +690,47 @@ model UserMembership {
   endsAt    DateTime?
   source    String?
   remark    String?
+  renewedAt DateTime?
+  disabledAt DateTime?
+  disabledReason String?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   level     MemberLevel @relation(fields: [levelId], references: [id], onDelete: Restrict)
+  benefitGrants MemberBenefitGrant[]
 
   @@index([userId])
   @@index([levelId])
   @@index([status])
   @@index([endsAt])
   @@map("user_memberships")
+}
+
+model MemberBenefitGrant {
+  id           String          @id @default(cuid())
+  userId       String
+  membershipId String?
+  benefitId    String
+  status       String          @default("GRANTED")
+  source       String          @default("AUTO_GRANT")
+  grantedAt    DateTime        @default(now())
+  usedAt       DateTime?
+  expiredAt    DateTime?
+  remark       String?
+  metadataJson Json?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership   UserMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  benefit      MemberBenefit   @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, benefitId, membershipId])
+  @@index([userId])
+  @@index([membershipId])
+  @@index([benefitId])
+  @@index([status])
+  @@index([expiredAt])
+  @@map("member_benefit_grants")
 }
 
 model MembershipOrder {

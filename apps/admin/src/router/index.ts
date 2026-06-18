@@ -22,6 +22,8 @@ import MallProductsPage from "../pages/mall/products.vue";
 import MallWorkflowsPage from "../pages/mall/workflows.vue";
 import MemberLevelsPage from "../pages/members/levels.vue";
 import MemberUsersPage from "../pages/members/users.vue";
+import MemberBenefitsPage from "../pages/members/benefits.vue";
+import MemberPricingRulesPage from "../pages/members/pricing-rules.vue";
 import AuditLogsPage from "../pages/system/audit-logs.vue";
 import AccountsPage from "../pages/system/accounts.vue";
 import RolesPage from "../pages/system/roles.vue";
@@ -82,10 +84,10 @@ export const routes: AdminRoute[] = [
   { path: "/ai/suggestions", title: "推荐问题", menuTitle: "推荐问题", group: "AI 知识库", description: "按会议维护用户端推荐问题。", permission: "ai-kb:view", component: AiKnowledgePage },
   { path: "/ai/question-logs", title: "问答日志", menuTitle: "问答日志", group: "AI 知识库", description: "用户提问、命中资料、兜底回复和错误原因。", permission: "ai-kb:view", component: AiKnowledgePage },
   { path: "/ai/config", title: "AI 配置", menuTitle: "AI 配置", group: "AI 知识库", badge: "辅助", description: "AI provider、模型和功能开关入口；密钥通过服务器环境变量配置。", permission: "ai-kb:view", component: AiKnowledgePage },
-  { path: "/members/users", title: "会员管理", menuTitle: "会员管理", group: "会员", badge: "后续", description: "用户会员状态、等级授予和会员记录", permission: "member:view", component: MemberUsersPage },
-  { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "会员", badge: "后续", description: "会员等级、价格和权益展示配置", permission: "member:view", component: MemberLevelsPage },
-  { path: "/members/benefits", title: "会员权益", menuTitle: "会员权益", group: "会员", badge: "后续", description: "会员权益包、展示说明和领取规则入口。", permission: "member:view", component: OperationalWorkflowsPage },
-  { path: "/members/pricing-rules", title: "会员价规则", menuTitle: "会员价规则", group: "会员", description: "会员价已参与报名 quote/create order，订单保存计价快照。", permission: "member:view", component: OperationalWorkflowsPage },
+  { path: "/members/users", title: "会员管理", menuTitle: "会员管理", group: "会员", description: "用户会员状态、等级授予、续期、停用、调级和权益发放记录", permission: "member:view", component: MemberUsersPage },
+  { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "会员", description: "会员等级、默认有效期、会员价参与状态和人数统计", permission: "member:view", component: MemberLevelsPage },
+  { path: "/members/benefits", title: "会员权益", menuTitle: "会员权益", group: "会员", description: "会员权益、自动发放、用户端展示和发放记录。", permission: "member:view", component: MemberBenefitsPage },
+  { path: "/members/pricing-rules", title: "会员价规则", menuTitle: "会员价规则", group: "会员", description: "会员价已参与报名 quote/create order，订单保存计价快照。", permission: "member:view", component: MemberPricingRulesPage },
   { path: "/mall/products", title: "商品管理", menuTitle: "商品管理", group: "商城", description: "商城商品、封面、状态和规格入口", permission: "mall:view", component: MallProductsPage },
   { path: "/mall/categories", title: "商品分类", menuTitle: "商品分类", group: "商城", description: "商城商品分类、排序和展示入口。", permission: "mall:view", component: MallWorkflowsPage },
   { path: "/mall/skus", title: "SKU 库存", menuTitle: "SKU 库存", group: "商城", description: "SKU 库存、锁定库存和库存流水入口。", permission: "mall:view", component: MallWorkflowsPage },

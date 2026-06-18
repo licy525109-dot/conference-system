@@ -125,6 +125,43 @@ describe("RegistrationService quote", () => {
     assert.equal(response.data.discounts?.[0]?.type, DiscountType.MEMBER_PRICE);
   });
 
+  it("does not apply member pricing for expired, disabled, or pricing-disabled memberships", async () => {
+    const cases = [
+      userMembership({ endsAt: new Date("2026-01-02T00:00:00.000Z") }),
+      userMembership({ status: "DISABLED" }),
+      userMembership({ level: memberLevel({ enabled: false }) }),
+      userMembership({ level: memberLevel({ pricingEnabled: false }) })
+    ];
+
+    for (const membership of cases) {
+      const service = createService(
+        createPrismaMock({
+          userMemberships: [membership],
+          membershipPriceRules: [membershipPriceRule({ fixedPriceCent: 60000 })]
+        })
+      );
+
+      const response = await service.quote({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity: 1 }] }, currentUser);
+
+      assert.equal(response.data.memberPricing, undefined);
+      assert.equal(response.data.payableAmountCent, 100000);
+    }
+  });
+
+  it("does not apply disabled member pricing rules", async () => {
+    const service = createService(
+      createPrismaMock({
+        userMemberships: [userMembership()],
+        membershipPriceRules: [membershipPriceRule({ fixedPriceCent: 60000, enabled: false })]
+      })
+    );
+
+    const response = await service.quote({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity: 1 }] }, currentUser);
+
+    assert.equal(response.data.memberPricing, undefined);
+    assert.equal(response.data.payableAmountCent, 100000);
+  });
+
   it("quotes multiple SKU items", async () => {
     const service = createService(createPrismaMock());
 
@@ -1106,6 +1143,7 @@ function memberLevel(overrides: Partial<MemberLevelRecord> = {}): MemberLevelRec
     name: "金牌会员",
     rank: 10,
     enabled: true,
+    pricingEnabled: true,
     ...overrides
   };
 }
@@ -1352,6 +1390,7 @@ interface MemberLevelRecord {
   name: string;
   rank: number;
   enabled: boolean;
+  pricingEnabled: boolean;
 }
 
 interface UserMembershipRecord {
