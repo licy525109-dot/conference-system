@@ -14,6 +14,9 @@ export interface PublishedPage {
   title: string;
   description: string | null;
   pageType: string;
+  bindingType?: string | null;
+  conferenceId?: string | null;
+  productId?: string | null;
   version: {
     id: string;
     versionNo: number;
@@ -110,14 +113,24 @@ export const DEFAULT_THEME: ThemeConfig = {
   themeApplyPageKeys: []
 };
 
-export async function getPublishedPage(pageKey: string): Promise<PublishedPage | null> {
+export async function getPublishedPage(pageKey: string, params: { conferenceId?: string; productId?: string } = {}): Promise<PublishedPage | null> {
   try {
-    const page = await request<PublishedPage>(`/pages/${encodeURIComponent(pageKey)}/published`, { auth: false });
-    uni.setStorageSync(`cms-page:${pageKey}`, page);
+    const query = Object.entries(params)
+      .filter(([, value]) => typeof value === "string" && value.trim())
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      .join("&");
+    const cacheKey = query ? `cms-page:${pageKey}:${query}` : `cms-page:${pageKey}`;
+    const page = await request<PublishedPage>(`/pages/${encodeURIComponent(pageKey)}/published${query ? `?${query}` : ""}`, { auth: false });
+    uni.setStorageSync(cacheKey, page);
     return page;
   } catch (error) {
-    const cached = uni.getStorageSync(`cms-page:${pageKey}`) as PublishedPage | "";
-    return cached || null;
+    const query = Object.entries(params)
+      .filter(([, value]) => typeof value === "string" && value.trim())
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      .join("&");
+    const scoped = query ? (uni.getStorageSync(`cms-page:${pageKey}:${query}`) as PublishedPage | "") : "";
+    const fallback = uni.getStorageSync(`cms-page:${pageKey}`) as PublishedPage | "";
+    return scoped || fallback || null;
   }
 }
 

@@ -1,6 +1,9 @@
 <template>
   <view class="page ui-page" :style="pageStyle">
-    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <!-- #ifdef MP-WEIXIN -->
+    <view v-if="showBodyVideo" class="mp-video-notice">小程序端背景视频可能受自动播放限制，请以页面内容为准。</view>
+    <!-- #endif -->
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <view class="topbar ui-card">
       <view>
@@ -70,11 +73,15 @@
           description="后端会重新计算金额并锁定库存。订单创建后前往我的商城订单完成支付。"
           tone="info"
         />
-        <view class="receiver-card ui-card">
+        <view v-if="hasPhysicalProduct" class="receiver-card ui-card">
           <text class="section-title">收货信息</text>
           <input v-model="receiver.name" class="field" placeholder="收货人" />
           <input v-model="receiver.phone" class="field" placeholder="手机号" />
           <input v-model="receiver.address" class="field" placeholder="收货地址" />
+        </view>
+        <view v-else class="receiver-card ui-card">
+          <text class="section-title">履约信息</text>
+          <text class="muted">当前商品均为虚拟/服务商品，无需填写收货地址。</text>
         </view>
         <view v-for="item in productItems" :key="item.id" class="card product-card ui-card">
           <image v-if="item.sku.product.coverImageUrl" class="product-cover" :src="item.sku.product.coverImageUrl" mode="aspectFill" />
@@ -138,6 +145,7 @@ const removingId = ref("");
 const checkoutId = ref("");
 const receiver = ref({ name: "", phone: "", address: "" });
 const isEmpty = computed(() => registrationItems.value.length === 0 && productItems.value.length === 0);
+const hasPhysicalProduct = computed(() => productItems.value.some((item) => !["VIRTUAL", "SERVICE"].includes(String(item.sku.product.productType || "PHYSICAL"))));
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("cart");
 
 onShow(() => {
@@ -208,7 +216,9 @@ async function payRegistration(id: string) {
 }
 
 async function checkoutProduct(id: string) {
-  if (!receiver.value.name || !receiver.value.phone || !receiver.value.address) {
+  const item = productItems.value.find((entry) => entry.id === id);
+  const requiresReceiver = !["VIRTUAL", "SERVICE"].includes(String(item?.sku.product.productType || "PHYSICAL"));
+  if (requiresReceiver && (!receiver.value.name || !receiver.value.phone || !receiver.value.address)) {
     uni.showToast({ title: "请先填写收货信息", icon: "none" });
     return;
   }
@@ -216,9 +226,9 @@ async function checkoutProduct(id: string) {
   try {
     const order = await checkoutProductCart({
       itemIds: [id],
-      receiverName: receiver.value.name,
-      receiverPhone: receiver.value.phone,
-      receiverAddress: receiver.value.address
+      receiverName: requiresReceiver ? receiver.value.name : undefined,
+      receiverPhone: requiresReceiver ? receiver.value.phone : undefined,
+      receiverAddress: requiresReceiver ? receiver.value.address : undefined
     });
     productItems.value = productItems.value.filter((item) => item.id !== id);
     uni.showModal({

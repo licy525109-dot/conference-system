@@ -30,7 +30,7 @@ export class CartService {
         include: {
           sku: {
             include: {
-              product: { select: { id: true, title: true, subtitle: true, coverImageUrl: true, status: true } }
+              product: { select: { id: true, title: true, subtitle: true, coverImageUrl: true, productType: true, status: true } }
             }
           }
         }
@@ -190,14 +190,16 @@ export class CartService {
     assertNoClientAmount(body);
     const itemIds = readStringArray(body.itemIds);
     if (itemIds.length === 0) throw new BadRequestException("请选择要结算的商品");
-    const receiverName = readRequiredString(body, "receiverName");
-    const receiverPhone = readRequiredString(body, "receiverPhone");
-    const receiverAddress = readRequiredString(body, "receiverAddress");
     const items = await this.prisma.cartItem.findMany({
       where: { id: { in: itemIds }, userId: currentUser.id },
       include: { sku: { include: { product: true } } }
     });
     if (items.length !== itemIds.length) throw new BadRequestException("购物车商品不存在");
+    const requiresReceiver = items.some((item) => item.sku.product.productType === "PHYSICAL");
+    const receiverName = requiresReceiver ? readRequiredString(body, "receiverName") : readOptionalString(body.receiverName);
+    const receiverPhone = requiresReceiver ? readRequiredString(body, "receiverPhone") : readOptionalString(body.receiverPhone);
+    const receiverAddress = requiresReceiver ? readRequiredString(body, "receiverAddress") : readOptionalString(body.receiverAddress);
+    const fulfillmentType = requiresReceiver ? "SHIPMENT" : "VIRTUAL";
     const order = await this.prisma.$transaction(async (tx) => {
       const orderItems: Prisma.MallOrderItemCreateWithoutOrderInput[] = [];
       const logs: Array<{ skuId: string; quantity: number; beforeLockedStock: number; afterLockedStock: number; beforeSoldCount: number; afterSoldCount: number }> = [];
@@ -220,6 +222,7 @@ export class CartService {
           sku: { connect: { id: item.skuId } },
           productTitle: sku.product.title,
           skuName: sku.name,
+          productType: sku.product.productType,
           unitPriceCent: sku.priceCent,
           quantity: item.quantity,
           totalAmountCent: item.quantity * sku.priceCent
@@ -245,6 +248,7 @@ export class CartService {
           receiverName,
           receiverPhone,
           receiverAddress,
+          fulfillmentType,
           items: { create: orderItems },
           inventoryLogs: {
             create: logs.map((item) => ({
@@ -281,7 +285,7 @@ function ok<T>(data: T) {
 function buildMallPaymentNotice(): string {
   if (isMallWechatPaymentEnabled()) return "订单已创建，请前往我的商城订单完成微信支付。";
   if (isMallMockPaymentEnabled()) return "订单已创建，可前往我的商城订单使用测试支付。";
-  return "商城支付未启用，订单保持待支付状态。";
+  return "当前商城支付暂未开放；订单已创建，状态为待支付；请联系会务组或等待商城支付开放";
 }
 
 function readObject(value: unknown): Record<string, unknown> {

@@ -15,9 +15,14 @@
         autoplay
         loop
         muted
+        playsinline
+        webkit-playsinline
         object-fit="cover"
         :controls="false"
       />
+      <!-- #ifdef MP-WEIXIN -->
+      <view v-if="showHeaderVideo && index === 0" class="cms-video-mini-notice">小程序端背景视频可能受自动播放限制</view>
+      <!-- #endif -->
       <view v-if="component.type === 'hero'" :class="heroClass(component)" :style="heroStyle(component)">
         <image
           v-if="stringConfig(component, 'imageUrl')"
@@ -34,7 +39,7 @@
           <view v-if="heroMetaLines(component).length > 0" class="cms-hero__meta">
             <text v-for="line in heroMetaLines(component)" :key="line">{{ line }}</text>
           </view>
-          <view v-if="booleanConfig(component, 'showButton', true)" class="cms-hero__button" @click="$emit('register')">
+          <view v-if="booleanConfig(component, 'showButton', true)" class="cms-hero__button" @click="handleComponentAction(component)">
             <text>{{ stringConfig(component, "buttonText") || "立即报名" }}</text>
           </view>
         </view>
@@ -128,10 +133,10 @@
       </view>
 
       <view v-else-if="component.type === 'registration-button'" class="cms-register">
-        <button class="cms-button" :style="textStyle(component)" @click="$emit('register')">{{ stringConfig(component, "text") || "立即报名" }}</button>
+        <button class="cms-button" :style="textStyle(component)" @click="handleComponentAction(component)">{{ stringConfig(component, "text") || "立即报名" }}</button>
       </view>
 
-      <button v-else-if="component.type === 'floating-registration-button'" class="cms-floating" :style="textStyle(component)" @click="$emit('register')">
+      <button v-else-if="component.type === 'floating-registration-button'" class="cms-floating" :style="textStyle(component)" @click="handleComponentAction(component)">
         {{ stringConfig(component, "text") || "立即报名" }}
       </button>
 
@@ -152,6 +157,8 @@
           :src="stringConfig(component, 'url')"
           :poster="stringConfig(component, 'coverUrl')"
           :autoplay="false"
+          playsinline
+          webkit-playsinline
           controls
           object-fit="contain"
         />
@@ -414,7 +421,7 @@ import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
 import { stringifyQuery } from "@/utils/query";
 
-defineEmits<{
+const emit = defineEmits<{
   openConference: [id: string];
   register: [];
 }>();
@@ -452,6 +459,58 @@ const rootStyle = computed(() => ({
 const rootClass = computed(() => ["cms-page"]);
 const showRootDynamicBackground = computed(() => props.theme.backgroundApplyTo !== "header" && props.theme.backgroundMode === "dynamic-gradient");
 const showHeaderVideo = computed(() => props.theme.backgroundMode === "video" && Boolean(props.theme.backgroundVideoUrl) && props.theme.backgroundApplyTo === "header");
+
+async function handleComponentAction(component: CmsComponent) {
+  const target = stringConfig(component, "actionTargetType") || "register";
+  if (target === "page") {
+    const pageKey = stringConfig(component, "targetPageKey");
+    if (!pageKey) return showTargetMissing("请选择目标页面");
+    uni.navigateTo({ url: pagePath(pageKey) });
+    return;
+  }
+  if (target === "conference") {
+    const id = stringConfig(component, "targetConferenceId");
+    if (!id) return showTargetMissing("请选择目标会议");
+    emit("openConference", id);
+    return;
+  }
+  if (target === "product") {
+    const id = stringConfig(component, "targetProductId");
+    if (!id) return showTargetMissing("请选择目标商品");
+    uni.navigateTo({ url: `/pages/mall/detail?id=${encodeURIComponent(id)}` });
+    return;
+  }
+  if (target === "coupon") {
+    const campaignId = stringConfig(component, "targetCouponCampaignId");
+    if (!campaignId) return showTargetMissing("请选择目标券活动");
+    try {
+      const campaign = await getCouponCampaignPublic(campaignId);
+      uni.navigateTo({ url: `/pages/coupon/claim?claimCode=${encodeURIComponent(campaign.claimCode)}` });
+    } catch {
+      showTargetMissing("券活动不可用或已下线");
+    }
+    return;
+  }
+  emit("register");
+}
+
+function pagePath(pageKey: string) {
+  const builtin: Record<string, string> = {
+    home: "/pages/index/index",
+    "conference-list": "/pages/index/index",
+    "conference-detail": "/pages/index/index",
+    "my-registrations": "/pages/registrations/my",
+    cart: "/pages/cart/index",
+    "member-center": "/pages/member/center",
+    mall: "/pages/mall/index",
+    "mall-detail": "/pages/mall/index"
+  };
+  return builtin[pageKey] ?? `/pages/custom/index?pageKey=${encodeURIComponent(pageKey)}`;
+}
+
+function showTargetMissing(title: string) {
+  uni.showToast({ title, icon: "none" });
+}
 
 onMounted(() => {
   loadCustomFonts();
@@ -1326,6 +1385,17 @@ function readErrorText(error: unknown, fallback: string): string {
   z-index: 0;
   width: 100%;
   height: 100%;
+}
+
+.cms-video-mini-notice {
+  position: relative;
+  z-index: 2;
+  margin: 16rpx var(--cms-space-page-x) 0;
+  padding: 12rpx 16rpx;
+  border-radius: var(--cms-radius-md);
+  background: rgba(17, 24, 39, 0.68);
+  color: #ffffff;
+  font-size: 22rpx;
 }
 
 .cms-hero,

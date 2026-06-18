@@ -1,6 +1,9 @@
 <template>
   <view class="page ui-page" :style="pageStyle">
-    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <!-- #ifdef MP-WEIXIN -->
+    <view v-if="showBodyVideo" class="mp-video-notice">小程序端背景视频可能受自动播放限制，请以页面内容为准。</view>
+    <!-- #endif -->
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <LoadingState v-if="loading" title="加载报名凭证中" description="正在同步报名、订单和支付信息。" />
     <ErrorState v-else-if="error" title="凭证加载失败" :message="error" primary-text="重新加载" secondary-text="我的报名" @retry="loadCredential" @secondary="goMyRegistrations" />

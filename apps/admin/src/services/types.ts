@@ -619,6 +619,9 @@ export interface PageTemplate {
   title: string;
   description: string | null;
   pageType: string;
+  bindingType: string | null;
+  conferenceId: string | null;
+  productId: string | null;
   enabled: boolean;
   sortOrder: number;
   publishedVersionId: string | null;
@@ -1065,6 +1068,7 @@ export interface ProductImage {
   id: string;
   productId: string;
   url: string;
+  materialId: string | null;
   alt: string | null;
   sortOrder: number;
   createdAt: string;
@@ -1075,14 +1079,17 @@ export interface Product {
   categoryId: string | null;
   title: string;
   subtitle: string | null;
+  productType: "PHYSICAL" | "VIRTUAL" | "SERVICE" | string;
   descriptionJson: Record<string, unknown> | null;
   coverImageUrl: string | null;
+  coverMaterialId: string | null;
   status: string;
   sortOrder: number;
   category: ProductCategory | null;
   skus: ProductSku[];
   images: ProductImage[];
   detailImageUrls: string[];
+  detailImages?: Array<{ id?: string; url: string; materialId: string | null; alt: string | null; sortOrder?: number }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -1093,6 +1100,7 @@ export interface MallOrderItem {
   skuId: string;
   productTitle: string;
   skuName: string;
+  productType: "PHYSICAL" | "VIRTUAL" | "SERVICE" | string;
   unitPriceCent: number;
   quantity: number;
   totalAmountCent: number;
@@ -1181,6 +1189,7 @@ export interface MallOrder {
   receiverName: string | null;
   receiverPhone: string | null;
   receiverAddress: string | null;
+  fulfillmentType: "SHIPMENT" | "VIRTUAL" | "MIXED" | string;
   remark: string | null;
   paidAt: string | null;
   user?: AdminWechatUser | null;
@@ -1191,7 +1200,10 @@ export interface MallOrder {
   refunds?: MallRefund[];
   latestPayment?: MallPayment | null;
   latestRefund?: MallRefund | null;
+  productTypes?: string[];
+  paymentMode?: string;
   paymentEnabled?: boolean;
+  paymentUnavailableReason?: string | null;
   paymentNotice?: string;
   createdAt: string;
   updatedAt: string;

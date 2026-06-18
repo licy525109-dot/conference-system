@@ -76,7 +76,9 @@ describe("Admin materials", () => {
 
     const disabled = await service.disableAsset(created.data.id, currentAdmin);
     assert.equal(disabled.data.enabled, false);
-    assert.equal(prisma.auditLogs.some((log) => log.entityType === "MaterialAsset" && log.action === AuditAction.DELETE), true);
+    const deleteLog = prisma.auditLogs.find((log) => log.entityType === "MaterialAsset" && log.action === AuditAction.DELETE);
+    assert.ok(deleteLog);
+    assert.deepEqual(deleteLog.metadataJson, { usage: "home_banner", references: { productCovers: 0, productImages: 0, total: 0 } });
   });
 });
 
@@ -175,6 +177,12 @@ function createMaterialsPrismaMock() {
       },
       findMany: async () => assets,
       count: async () => assets.length
+    },
+    product: {
+      count: async () => 0
+    },
+    productImage: {
+      count: async () => 0
     },
     auditLog: {
       create: async (args: { data: AuditLogRecord }) => {

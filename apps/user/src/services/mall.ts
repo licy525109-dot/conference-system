@@ -30,6 +30,7 @@ export interface ProductSku {
 export interface ProductImage {
   id: string;
   url: string;
+  materialId?: string | null;
   alt: string | null;
   sortOrder: number;
 }
@@ -38,8 +39,10 @@ export interface Product {
   id: string;
   title: string;
   subtitle: string | null;
+  productType: "PHYSICAL" | "VIRTUAL" | "SERVICE" | string;
   descriptionJson: Record<string, unknown> | null;
   coverImageUrl: string | null;
+  coverMaterialId?: string | null;
   category: { id: string; name: string; code: string } | null;
   skus: ProductSku[];
   images: ProductImage[];

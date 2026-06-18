@@ -7,18 +7,8 @@ import { DEFAULT_TABBAR_ITEMS, DEFAULT_THEME_CONFIG } from "./cms-defaults";
 export class CmsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getPublishedPage(pageKey: string) {
-    const template = await this.prisma.pageTemplate.findUnique({
-      where: { pageKey },
-      select: {
-        id: true,
-        pageKey: true,
-        title: true,
-        description: true,
-        pageType: true,
-        publishedVersionId: true
-      }
-    });
+  async getPublishedPage(pageKey: string, options: { conferenceId?: string; productId?: string } = {}) {
+    const template = await this.findPublishedTemplate(pageKey, options);
     if (!template?.publishedVersionId) {
       throw new NotFoundException("Published page not found");
     }
@@ -49,6 +39,9 @@ export class CmsService {
       title: template.title,
       description: template.description,
       pageType: template.pageType,
+      bindingType: template.bindingType,
+      conferenceId: template.conferenceId,
+      productId: template.productId,
       version: {
         id: version.id,
         versionNo: version.versionNo,
@@ -58,6 +51,58 @@ export class CmsService {
         publishedAt: version.publishedAt?.toISOString() ?? null,
         updatedAt: version.updatedAt.toISOString()
       }
+    });
+  }
+
+  private async findPublishedTemplate(pageKey: string, options: { conferenceId?: string; productId?: string }) {
+    const select = {
+      id: true,
+      pageKey: true,
+      title: true,
+      description: true,
+      pageType: true,
+      bindingType: true,
+      conferenceId: true,
+      productId: true,
+      publishedVersionId: true
+    } satisfies Prisma.PageTemplateSelect;
+
+    const conferenceId = options.conferenceId?.trim();
+    if (conferenceId) {
+      const specific = await this.prisma.pageTemplate.findFirst({
+        where: {
+          bindingType: "SPECIFIC_CONFERENCE",
+          conferenceId,
+          enabled: true,
+          publishedVersionId: { not: null }
+        },
+        orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+        select
+      });
+      if (specific) return specific;
+    }
+
+    const productId = options.productId?.trim();
+    if (productId) {
+      const specific = await this.prisma.pageTemplate.findFirst({
+        where: {
+          bindingType: "SPECIFIC_PRODUCT",
+          productId,
+          enabled: true,
+          publishedVersionId: { not: null }
+        },
+        orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+        select
+      });
+      if (specific) return specific;
+    }
+
+    return this.prisma.pageTemplate.findFirst({
+      where: {
+        pageKey,
+        enabled: true
+      },
+      select
     });
   }
 
