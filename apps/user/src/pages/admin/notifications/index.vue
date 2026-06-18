@@ -6,7 +6,10 @@
         <text class="title">通知中心</text>
         <text class="subtitle">{{ admin ? `当前账号：${admin.displayName || admin.username}` : "绑定后台账号后可在手机端查看和发送通知任务" }}</text>
       </view>
-      <button v-if="admin" class="ui-button-secondary ui-button-compact" @click="logout">退出</button>
+      <view v-if="admin" class="top-actions">
+        <button class="ui-button-primary ui-button-compact" @click="goScanCheckin">扫码签到</button>
+        <button class="ui-button-secondary ui-button-compact" @click="logout">退出</button>
+      </view>
     </view>
 
     <view v-if="!admin" class="bind-card ui-card">
@@ -179,6 +182,10 @@ function logout() {
   logs.value = [];
 }
 
+function goScanCheckin() {
+  uni.navigateTo({ url: "/pages/checkin/scan" });
+}
+
 function tabClass(tab: string) {
   return ["tab", activeTab.value === tab ? "active" : ""];
 }
@@ -233,11 +240,17 @@ function formatTime(value: string) {
 .topbar,
 .item-head,
 .actions,
-.tabs {
+.tabs,
+.top-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18rpx;
+}
+
+.top-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .topbar,

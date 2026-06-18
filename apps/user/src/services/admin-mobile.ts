@@ -152,17 +152,28 @@ export function sendNotificationTaskNow(id: string) {
   }>(`/admin/notification-tasks/${encodeURIComponent(id)}/send-now`, "POST");
 }
 
+export function scanCheckinCredential(qrPayload: string) {
+  return adminRequest<{
+    status: string;
+    message: string;
+    registrationNo: string;
+    attendeeName: string;
+    checkedInAt: string | null;
+  }>("/checkin/scan", "POST", { qrPayload });
+}
+
 function setMobileAdminSession(session: MobileAdminSession): void {
   uni.setStorageSync(ADMIN_TOKEN_STORAGE_KEY, session.token);
   uni.setStorageSync(ADMIN_PROFILE_STORAGE_KEY, session.admin);
 }
 
-function adminRequest<T>(path: string, method: "GET" | "POST" = "GET"): Promise<T> {
+function adminRequest<T>(path: string, method: "GET" | "POST" = "GET", data?: unknown): Promise<T> {
   const token = getMobileAdminToken();
   return new Promise((resolve, reject) => {
     uni.request({
       url: `${API_BASE_URL}${path}`,
       method,
+      data: data as UniApp.RequestOptions["data"],
       header: {
         "content-type": "application/json",
         authorization: `Bearer ${token}`

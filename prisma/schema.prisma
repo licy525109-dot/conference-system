@@ -136,6 +136,9 @@ enum WecomAuthMode {
 enum CheckinActionType {
   VERIFY
   MANUAL
+  SELF_INPUT
+  QR_SCAN
+  ADMIN_MANUAL
   REVOKE
 }
 
@@ -307,6 +310,10 @@ model Conference {
   registrationStartsAt     DateTime?
   registrationEndsAt       DateTime?
   checkInEnabled           Boolean                    @default(false)
+  checkInStartsAt          DateTime?
+  checkInEndsAt            DateTime?
+  checkInMethods           Json?
+  checkInFieldBindings     Json?
   groupRegistrationEnabled Boolean                    @default(true)
   maxTicketsPerOrder       Int?
   status                   ConferenceStatus           @default(DRAFT)
@@ -1870,9 +1877,14 @@ model CheckinLog {
   attendeeId     String
   registrationId String
   action         CheckinActionType
+  method         String?
+  result         String?
   beforeStatus   CheckInStatus?
   afterStatus    CheckInStatus
   operatorId     String?
+  operatorUserId String?
+  failureReason  String?
+  matchedFields  Json?
   remark         String?
   createdAt      DateTime             @default(now())
   attendee       RegistrationAttendee @relation(fields: [attendeeId], references: [id], onDelete: Cascade)
@@ -1882,7 +1894,10 @@ model CheckinLog {
   @@index([attendeeId])
   @@index([registrationId])
   @@index([action])
+  @@index([method])
+  @@index([result])
   @@index([operatorId])
+  @@index([operatorUserId])
   @@index([createdAt])
   @@map("checkin_logs")
 }

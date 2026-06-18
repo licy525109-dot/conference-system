@@ -61,6 +61,9 @@
       </AdminSectionCard>
 
       <AdminSectionCard title="表单快照" subtitle="按字段展示，原始 JSON 保留在下方用于排查">
+        <template #actions>
+          <el-button type="primary" @click="openFormEditor">修正报名字段</el-button>
+        </template>
         <el-descriptions :column="2" border>
           <el-descriptions-item v-for="item in formSummary" :key="item.label" :label="item.label">{{ item.value }}</el-descriptions-item>
         </el-descriptions>
@@ -80,21 +83,33 @@
         </el-timeline>
       </AdminSectionCard>
     </section>
+
+    <el-dialog v-model="formDialogVisible" title="修正报名字段" width="680px">
+      <el-alert title="仅用于修正客户填写错误。已支付报名允许修正表单字段，但不会修改支付金额、支付状态或订单快照。" type="warning" :closable="false" show-icon />
+      <el-input v-model="formJsonText" class="form-json-editor" type="textarea" :rows="14" />
+      <template #footer>
+        <el-button @click="formDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveFormValues">保存修正</el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { ElMessage } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo, routeQuery } from "../../router";
-import { getRegistrationDetail } from "../../services/admin";
+import { getRegistrationDetail, updateRegistrationFormValues } from "../../services/admin";
 import type { AdminRegistrationFullDetail } from "../../services/types";
 
 const detail = ref<AdminRegistrationFullDetail | null>(null);
 const loading = ref(false);
 const error = ref("");
+const formDialogVisible = ref(false);
+const formJsonText = ref("{}");
 const registrationId = computed(() => routeQuery.value.id || "");
 const paymentStatus = computed(() => detail.value?.order.payments[0]?.status ?? detail.value?.order.status ?? "-");
 const checkInProgressText = computed(() => {
@@ -144,6 +159,23 @@ function formatJson(value: unknown) {
   return JSON.stringify(value ?? {}, null, 2);
 }
 
+function openFormEditor() {
+  formJsonText.value = formatJson(detail.value?.formDataJson ?? {});
+  formDialogVisible.value = true;
+}
+
+async function saveFormValues() {
+  if (!detail.value) return;
+  const parsed = JSON.parse(formJsonText.value || "{}") as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("报名字段必须是 JSON 对象");
+  }
+  await updateRegistrationFormValues(detail.value.id, parsed as Record<string, unknown>);
+  await load();
+  formDialogVisible.value = false;
+  ElMessage.success("报名字段已修正，签到核验将使用最新字段");
+}
+
 function goBack() {
   navigateTo("/registrations");
 }
@@ -182,6 +214,11 @@ function goBack() {
 .section-table,
 .json-collapse {
   margin-top: 14px;
+}
+
+.form-json-editor {
+  margin-top: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 @media (max-width: 1100px) {

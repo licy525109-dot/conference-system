@@ -46,6 +46,12 @@ export class AdminManagementController {
     return this.adminManagementService.updateConferenceCheckInConfig(id, body, request.currentAdmin!);
   }
 
+  @Get("conferences/:id/check-in-config")
+  @RequireAdminPermissions("conference:view")
+  getConferenceCheckInConfig(@Param("id") id: string) {
+    return this.adminManagementService.getConferenceCheckInConfig(id);
+  }
+
   @Get("conferences/:conferenceId/skus")
   @RequireAdminPermissions("conference:view")
   listSkus(@Param("conferenceId") conferenceId: string) {
@@ -140,6 +146,12 @@ export class AdminManagementController {
   @RequireAdminPermissions("registration:write")
   updateRegistrationRemark(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.adminManagementService.updateRegistrationRemark(id, body, request.currentAdmin!);
+  }
+
+  @Patch("registrations/:id/form-values")
+  @RequireAdminPermissions("registration:write")
+  updateRegistrationFormValues(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.updateRegistrationFormValues(id, body, request.currentAdmin!);
   }
 
   @Post("registration-attendees/:id/check-in")

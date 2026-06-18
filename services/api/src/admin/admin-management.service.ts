@@ -15,6 +15,8 @@ import {
 import { PrismaService } from "../prisma.service";
 import { CurrentAdmin } from "./current-admin";
 import { detectPaymentExceptions } from "./admin-payment-exceptions.service";
+import { type CheckinMethod, formatCheckinConfig } from "../checkin/checkin.service";
+import { createCheckinCredentialPayload } from "../checkin/checkin-credential";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -195,21 +197,56 @@ export class AdminManagementService {
 
   async updateConferenceCheckInConfig(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const body = readObject(input);
-    if (typeof body.checkInEnabled !== "boolean") {
-      throw new BadRequestException("checkInEnabled must be a boolean");
-    }
+    const existing = await this.prisma.conference.findUnique({
+      where: { id },
+      include: {
+        formDefinition: {
+          include: {
+            fields: { where: { enabled: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }
+          }
+        }
+      }
+    });
+    if (!existing) throw new NotFoundException("Conference not found");
+
+    const request = parseCheckInConfigInput(body, existing);
 
     const conference = await this.prisma.conference.update({
       where: { id },
-      data: { checkInEnabled: body.checkInEnabled },
+      data: {
+        checkInEnabled: request.checkInEnabled,
+        checkInStartsAt: request.checkInStartsAt,
+        checkInEndsAt: request.checkInEndsAt,
+        checkInMethods: request.checkInMethods,
+        checkInFieldBindings: request.checkInFieldBindings
+      },
       select: conferenceDetailSelect
     });
 
     await this.writeAudit(admin, AuditAction.UPDATE, "Conference", conference.id, "Update check-in config", {
-      checkInEnabled: conference.checkInEnabled
+      checkInEnabled: conference.checkInEnabled,
+      checkInStartsAt: conference.checkInStartsAt,
+      checkInEndsAt: conference.checkInEndsAt,
+      checkInMethods: conference.checkInMethods,
+      checkInFieldBindings: conference.checkInFieldBindings
     });
 
     return ok(formatConferenceDetail(conference));
+  }
+
+  async getConferenceCheckInConfig(id: string): Promise<ApiResponse<unknown>> {
+    const conference = await this.prisma.conference.findUnique({
+      where: { id },
+      include: {
+        formDefinition: {
+          include: {
+            fields: { where: { enabled: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }
+          }
+        }
+      }
+    });
+    if (!conference) throw new NotFoundException("Conference not found");
+    return ok(formatCheckinConfig(conference));
   }
 
   async listSkus(conferenceId: string): Promise<ApiResponse<unknown>> {
@@ -533,7 +570,7 @@ export class AdminManagementService {
       credential: {
         registrationNo: registration.registrationNo,
         credentialCode: registration.registrationNo,
-        qrPayload: `CONF_REG:${registration.id}:${registration.registrationNo}`,
+        qrPayload: createCheckinCredentialPayload(registration.id, registration.registrationNo),
         checkInProgress: summarizeCheckIn(registration.attendees)
       },
       auditLogs: auditLogs.map(formatAuditTimelineItem),
@@ -569,6 +606,57 @@ export class AdminManagementService {
 
     await this.writeAudit(admin, AuditAction.UPDATE, "Registration", registration.id, "Update registration remark", {
       registrationNo: registration.registrationNo
+    });
+
+    return ok(formatRegistrationDetail(registration));
+  }
+
+  async updateRegistrationFormValues(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const body = readObject(input);
+    const nextFormData = readOptionalJsonObject(body, "formDataJson") ?? readOptionalJsonObject(body, "values");
+    if (!nextFormData) {
+      throw new BadRequestException("formDataJson is required");
+    }
+    const current = await this.prisma.registration.findUnique({
+      where: { id },
+      include: { attendees: { orderBy: { createdAt: "asc" }, take: 1 } }
+    });
+    if (!current) throw new NotFoundException("Registration not found");
+
+    const profilePatch = deriveRegistrationProfilePatch(nextFormData, current.attendeeName, current.phone);
+    const attendeePatch = deriveAttendeeProfilePatch(nextFormData, current.attendees[0]);
+    const registration = await this.prisma.$transaction(async (tx) => {
+      await tx.registration.update({
+        where: { id },
+        data: {
+          formDataJson: nextFormData,
+          ...profilePatch
+        }
+      });
+      if (current.attendees[0]) {
+        await tx.registrationAttendee.update({
+          where: { id: current.attendees[0].id },
+          data: {
+            formDataJson: nextFormData,
+            ...attendeePatch
+          }
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          adminUserId: admin.id,
+          action: AuditAction.UPDATE,
+          entityType: "Registration",
+          entityId: id,
+          summary: "Update registration form values",
+          metadataJson: {
+            registrationNo: current.registrationNo,
+            before: current.formDataJson,
+            after: nextFormData
+          }
+        }
+      });
+      return tx.registration.findUniqueOrThrow({ where: { id }, select: registrationDetailSelect });
     });
 
     return ok(formatRegistrationDetail(registration));
@@ -975,6 +1063,10 @@ const conferenceDetailSelect = {
   registrationStartsAt: true,
   registrationEndsAt: true,
   checkInEnabled: true,
+  checkInStartsAt: true,
+  checkInEndsAt: true,
+  checkInMethods: true,
+  checkInFieldBindings: true,
   groupRegistrationEnabled: true,
   maxTicketsPerOrder: true,
   page: {
@@ -1309,6 +1401,10 @@ interface ConferenceDetailShape extends ConferenceListShape {
   registrationStartsAt?: Date | null;
   registrationEndsAt?: Date | null;
   checkInEnabled?: boolean;
+  checkInStartsAt?: Date | null;
+  checkInEndsAt?: Date | null;
+  checkInMethods?: Prisma.JsonValue | null;
+  checkInFieldBindings?: Prisma.JsonValue | null;
   groupRegistrationEnabled?: boolean;
   maxTicketsPerOrder?: number | null;
   page?: {
@@ -1341,6 +1437,10 @@ function formatConferenceDetail(conference: ConferenceDetailShape) {
     registrationStartsAt: conference.registrationStartsAt?.toISOString() ?? null,
     registrationEndsAt: conference.registrationEndsAt?.toISOString() ?? null,
     checkInEnabled: conference.checkInEnabled ?? false,
+    checkInStartsAt: conference.checkInStartsAt?.toISOString() ?? null,
+    checkInEndsAt: conference.checkInEndsAt?.toISOString() ?? null,
+    checkInMethods: Array.isArray(conference.checkInMethods) ? conference.checkInMethods : [],
+    checkInFieldBindings: isRecord(conference.checkInFieldBindings) ? conference.checkInFieldBindings : {},
     groupRegistrationEnabled: conference.groupRegistrationEnabled ?? true,
     maxTicketsPerOrder: conference.maxTicketsPerOrder ?? null,
     contentJson: conference.page?.contentJson ?? {},
@@ -1614,6 +1714,115 @@ function parseConferenceInput(input: unknown, partial: boolean) {
   };
 }
 
+function parseCheckInConfigInput(
+  body: Record<string, unknown>,
+  conference: Prisma.ConferenceGetPayload<{
+    include: {
+      formDefinition: {
+        include: {
+          fields: true;
+        };
+      };
+    };
+  }>
+) {
+  const checkInEnabled = readOptionalBoolean(body, "checkInEnabled") ?? conference.checkInEnabled;
+  const checkInStartsAt = readOptionalNullableDate(body, "checkInStartsAt") ?? conference.checkInStartsAt;
+  const checkInEndsAt = readOptionalNullableDate(body, "checkInEndsAt") ?? conference.checkInEndsAt;
+  if (checkInStartsAt && checkInEndsAt && checkInStartsAt >= checkInEndsAt) {
+    throw new BadRequestException("签到开始时间必须早于结束时间");
+  }
+
+  const checkInMethods = Object.hasOwn(body, "checkInMethods")
+    ? readCheckInMethodsFromBody(body)
+    : readStoredCheckInMethods(conference.checkInMethods, checkInEnabled);
+  const checkInFieldBindings = Object.hasOwn(body, "checkInFieldBindings")
+    ? readCheckInFieldBindingsFromBody(body)
+    : readStoredFieldBindings(conference.checkInFieldBindings);
+  const fields = conference.formDefinition?.fields.filter((field) => field.enabled) ?? [];
+  validateCheckInBindings(checkInEnabled, checkInMethods, checkInFieldBindings, fields);
+
+  return {
+    checkInEnabled,
+    checkInStartsAt,
+    checkInEndsAt,
+    checkInMethods: checkInEnabled ? checkInMethods : [],
+    checkInFieldBindings
+  };
+}
+
+function readCheckInMethodsFromBody(body: Record<string, unknown>): CheckinMethod[] {
+  const value = body.checkInMethods;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new BadRequestException("checkInMethods must be an array of strings");
+  }
+  const allowed: CheckinMethod[] = ["QR_SCAN", "SELF_PHONE_NAME", "SELF_CUSTOM_FIELDS", "ADMIN_MANUAL"];
+  const methods = [...new Set(value as string[])];
+  for (const method of methods) {
+    if (!allowed.includes(method as CheckinMethod)) {
+      throw new BadRequestException("checkInMethods contains unsupported method");
+    }
+  }
+  return methods as CheckinMethod[];
+}
+
+function readStoredCheckInMethods(value: Prisma.JsonValue | null, enabled: boolean): CheckinMethod[] {
+  if (!enabled) return [];
+  const parsed = Array.isArray(value) ? value.filter((item): item is CheckinMethod => typeof item === "string" && ["QR_SCAN", "SELF_PHONE_NAME", "SELF_CUSTOM_FIELDS", "ADMIN_MANUAL"].includes(item)) : [];
+  return parsed.length > 0 ? parsed : ["QR_SCAN", "ADMIN_MANUAL"];
+}
+
+function readCheckInFieldBindingsFromBody(body: Record<string, unknown>) {
+  const value = body.checkInFieldBindings;
+  if (!isRecord(value)) {
+    throw new BadRequestException("checkInFieldBindings must be a JSON object");
+  }
+  return {
+    phoneFieldKey: readOptionalString(value, "phoneFieldKey") ?? null,
+    nameFieldKey: readOptionalString(value, "nameFieldKey") ?? null,
+    customFieldKeys: readOptionalStringArray(value, "customFieldKeys")
+  };
+}
+
+function readStoredFieldBindings(value: Prisma.JsonValue | null) {
+  const source = isRecord(value) ? value : {};
+  return {
+    phoneFieldKey: typeof source.phoneFieldKey === "string" ? source.phoneFieldKey : null,
+    nameFieldKey: typeof source.nameFieldKey === "string" ? source.nameFieldKey : null,
+    customFieldKeys: Array.isArray(source.customFieldKeys) ? source.customFieldKeys.filter((item): item is string => typeof item === "string") : []
+  };
+}
+
+function validateCheckInBindings(
+  enabled: boolean,
+  methods: CheckinMethod[],
+  bindings: { phoneFieldKey: string | null; nameFieldKey: string | null; customFieldKeys: string[] },
+  fields: Array<{ fieldKey: string; label: string; type: FormFieldType }>
+) {
+  if (!enabled) return;
+  if (methods.length === 0) {
+    throw new BadRequestException("启用签到时至少选择一种签到方式");
+  }
+  if (methods.includes("SELF_PHONE_NAME")) {
+    if (!bindings.phoneFieldKey || !fields.some((field) => field.fieldKey === bindings.phoneFieldKey)) {
+      throw new BadRequestException("当前报名表单未配置手机号字段，无法启用手机号核销");
+    }
+    if (!bindings.nameFieldKey || !fields.some((field) => field.fieldKey === bindings.nameFieldKey)) {
+      throw new BadRequestException("当前报名表单未配置姓名字段，无法启用姓名核销");
+    }
+  }
+  if (methods.includes("SELF_CUSTOM_FIELDS")) {
+    if (bindings.customFieldKeys.length === 0) {
+      throw new BadRequestException("启用自定义字段核销时至少选择一个报名字段");
+    }
+    const fieldKeys = new Set(fields.map((field) => field.fieldKey));
+    const missing = bindings.customFieldKeys.find((fieldKey) => !fieldKeys.has(fieldKey));
+    if (missing) {
+      throw new BadRequestException(`核验字段 ${missing} 不属于当前会议报名表单`);
+    }
+  }
+}
+
 function parseSkuInput(input: unknown, partial: boolean, soldCount = 0) {
   const body = readObject(input);
   const stock = partial ? readOptionalNonNegativeInt(body, "stock") : readRequiredNonNegativeInt(body, "stock");
@@ -1730,6 +1939,33 @@ function readRegistrationRemark(input: unknown): string | null {
   }
 
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function deriveRegistrationProfilePatch(formData: Prisma.InputJsonObject, currentName: string, currentPhone: string) {
+  const attendeeName = readFirstStringValue(formData, ["attendeeName", "name", "姓名"]) ?? currentName;
+  const phone = readFirstStringValue(formData, ["phone", "mobile", "手机号"]) ?? currentPhone;
+  return { attendeeName, phone };
+}
+
+function deriveAttendeeProfilePatch(
+  formData: Prisma.InputJsonObject,
+  attendee: { name: string; phone: string; company: string | null; title: string | null } | undefined
+) {
+  return {
+    name: readFirstStringValue(formData, ["attendeeName", "name", "姓名"]) ?? attendee?.name,
+    phone: readFirstStringValue(formData, ["phone", "mobile", "手机号"]) ?? attendee?.phone,
+    company: readFirstStringValue(formData, ["company", "公司", "单位"]) ?? attendee?.company,
+    title: readFirstStringValue(formData, ["title", "position", "职位"]) ?? attendee?.title
+  };
+}
+
+function readFirstStringValue(formData: Prisma.InputJsonObject, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = formData[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number") return String(value);
+  }
+  return undefined;
 }
 
 function parseCouponInput(input: unknown, partial: boolean) {
@@ -1946,6 +2182,17 @@ function readOptionalNullableStringArray(input: Record<string, unknown>, field: 
     throw new BadRequestException(`${field} must be an array of strings`);
   }
   return value;
+}
+
+function readOptionalStringArray(input: Record<string, unknown>, field: string): string[] {
+  if (!Object.hasOwn(input, field) || input[field] === null) {
+    return [];
+  }
+  const value = input[field];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new BadRequestException(`${field} must be an array of strings`);
+  }
+  return value.map((item) => item.trim()).filter(Boolean);
 }
 
 function readAllowedStringArray(value: Prisma.JsonValue | null): string[] {

@@ -3,7 +3,7 @@
     <AdminPageHeader
       title="报名名单"
       eyebrow="会议管理"
-      subtitle="查看报名记录、参会人信息、内部备注和核销进度。手动核销属于敏感操作，执行前会二次确认。"
+      subtitle="查看报名记录、参会人信息、内部备注和核销进度。后台补签仅用于现场异常处理，常规签到请使用客户自助或工作人员扫码。"
     >
       <template #actions>
         <el-button :loading="exporting" @click="exportExcel">导出 Excel</el-button>
@@ -84,7 +84,7 @@
           <el-table-column label="核销状态" width="130"><template #default="{ row }"><AdminStatusBadge :status="row.checkInStatus" /></template></el-table-column>
           <el-table-column label="操作" width="120">
             <template #default="{ row }">
-              <el-button size="small" type="primary" :disabled="row.checkInStatus !== 'PENDING'" @click="checkIn(row.id)">确认核销</el-button>
+              <el-button size="small" type="warning" :disabled="row.checkInStatus !== 'PENDING'" @click="checkIn(row.id)">应急补签</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -108,7 +108,7 @@ import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo } from "../../router";
-import { checkInRegistrationAttendee, exportRegistrationsExcel, getRegistration, listConferences, listRegistrations, updateRegistrationRemark } from "../../services/admin";
+import { exportRegistrationsExcel, getRegistration, listConferences, listRegistrations, manualCheckin, updateRegistrationRemark } from "../../services/admin";
 import type { AdminRegistration, AdminRegistrationDetail, Conference } from "../../services/types";
 
 const items = ref<AdminRegistration[]>([]);
@@ -184,18 +184,18 @@ async function saveRemark() {
 async function checkIn(id: string) {
   if (!detail.value) return;
   try {
-    await ElMessageBox.confirm("确认后该参会人将标记为已核销，请确认现场身份信息无误。", "确认手动核销", {
-      confirmButtonText: "确认核销",
+    await ElMessageBox.confirm("后台应急补签仅用于现场异常处理。确认后该参会人将标记为已签到，并写入审计日志。", "后台应急补签", {
+      confirmButtonText: "确认补签",
       cancelButtonText: "取消",
       type: "warning"
     });
   } catch {
     return;
   }
-  await checkInRegistrationAttendee(id);
+  await manualCheckin({ attendeeId: id, remark: "报名列表应急补签" });
   detail.value = await getRegistration(detail.value.id);
   await load();
-  ElMessage.success("核销成功");
+  ElMessage.success("应急补签成功");
 }
 
 function progressText(progress: AdminRegistration["checkInProgress"]) {

@@ -54,7 +54,10 @@
           <text>确认时间：{{ formatDateTime(item.confirmedAt) }}</text>
           <text>会议时间：{{ formatDateTime(item.conference.startsAt) }}</text>
         </view>
-        <button class="ui-button-primary credential-button" @click="goCredential(item)">查看报名凭证</button>
+        <view class="card-actions">
+          <button class="ui-button-primary credential-button" @click="goCredential(item)">查看报名凭证</button>
+          <button class="ui-button-secondary credential-button" @click="goCheckin(item)">签到</button>
+        </view>
       </view>
     </view>
     <WechatProfilePrompt />
@@ -128,6 +131,12 @@ function statusTone(status: string): "info" | "success" | "warning" | "danger" |
 function goCredential(item: MyRegistrationItem) {
   uni.navigateTo({
     url: `/pages/registration-success/index?registrationId=${encodeURIComponent(item.id)}&orderNo=${encodeURIComponent(item.order.orderNo)}`
+  });
+}
+
+function goCheckin(item: MyRegistrationItem) {
+  uni.navigateTo({
+    url: `/pages/checkin/self?conferenceId=${encodeURIComponent(item.conference.id)}&registrationId=${encodeURIComponent(item.id)}`
   });
 }
 </script>
@@ -258,8 +267,14 @@ function goCredential(item: MyRegistrationItem) {
   line-height: 1.45;
 }
 
+.card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+  margin-top: 22rpx;
+}
+
 .credential-button {
   width: 100%;
-  margin-top: 22rpx;
 }
 </style>

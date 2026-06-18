@@ -278,6 +278,10 @@ function createPrismaMock() {
       registrationStartsAt: null,
       registrationEndsAt: null,
       checkInEnabled: false,
+      checkInStartsAt: null,
+      checkInEndsAt: null,
+      checkInMethods: null,
+      checkInFieldBindings: null,
       groupRegistrationEnabled: true,
       maxTicketsPerOrder: null,
       status: ConferenceStatus.DRAFT,
@@ -292,7 +296,8 @@ function createPrismaMock() {
         skus: 1,
         orders: 0,
         registrations: 0
-      }
+      },
+      formDefinition: { fields: [] }
     }
   ];
   const skus = [
@@ -400,6 +405,10 @@ function createPrismaMock() {
           registrationStartsAt: null,
           registrationEndsAt: null,
           checkInEnabled: false,
+          checkInStartsAt: null,
+          checkInEndsAt: null,
+          checkInMethods: null,
+          checkInFieldBindings: null,
           groupRegistrationEnabled: Boolean(args.data.groupRegistrationEnabled ?? true),
           maxTicketsPerOrder: typeof args.data.maxTicketsPerOrder === "number" ? args.data.maxTicketsPerOrder : null,
           status: (args.data.status as ConferenceStatus) ?? ConferenceStatus.DRAFT,
@@ -414,13 +423,14 @@ function createPrismaMock() {
             skus: 0,
             orders: 0,
             registrations: 0
-          }
+          },
+          formDefinition: { fields: [] }
         };
         conferences.push(conference);
         return conference;
       },
       findUnique: async (args: { where: { id?: string } }) => conferences.find((conference) => conference.id === args.where.id) ?? null,
-      update: async (args: { where: { id: string }; data: { status?: ConferenceStatus; checkInEnabled?: boolean } }) => {
+      update: async (args: { where: { id: string }; data: { status?: ConferenceStatus; checkInEnabled?: boolean; checkInStartsAt?: Date | null; checkInEndsAt?: Date | null; checkInMethods?: unknown; checkInFieldBindings?: unknown } }) => {
         const conference = conferences.find((item) => item.id === args.where.id);
         if (!conference) {
           throw new Error("missing conference");
@@ -431,6 +441,10 @@ function createPrismaMock() {
         if (typeof args.data.checkInEnabled === "boolean") {
           conference.checkInEnabled = args.data.checkInEnabled;
         }
+        if ("checkInStartsAt" in args.data) conference.checkInStartsAt = args.data.checkInStartsAt ?? null;
+        if ("checkInEndsAt" in args.data) conference.checkInEndsAt = args.data.checkInEndsAt ?? null;
+        if ("checkInMethods" in args.data) conference.checkInMethods = args.data.checkInMethods ?? null;
+        if ("checkInFieldBindings" in args.data) conference.checkInFieldBindings = args.data.checkInFieldBindings ?? null;
         if (typeof (args.data as { groupRegistrationEnabled?: boolean }).groupRegistrationEnabled === "boolean") {
           conference.groupRegistrationEnabled = (args.data as { groupRegistrationEnabled: boolean }).groupRegistrationEnabled;
         }
@@ -627,6 +641,10 @@ interface ConferenceRecord {
   registrationStartsAt: Date | null;
   registrationEndsAt: Date | null;
   checkInEnabled: boolean;
+  checkInStartsAt: Date | null;
+  checkInEndsAt: Date | null;
+  checkInMethods: unknown;
+  checkInFieldBindings: unknown;
   groupRegistrationEnabled: boolean;
   maxTicketsPerOrder: number | null;
   status: ConferenceStatus;
@@ -641,5 +659,8 @@ interface ConferenceRecord {
     skus: number;
     orders: number;
     registrations: number;
+  };
+  formDefinition?: {
+    fields: unknown[];
   };
 }

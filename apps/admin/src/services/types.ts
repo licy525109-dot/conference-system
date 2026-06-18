@@ -24,6 +24,10 @@ export interface Conference {
   status: "DRAFT" | "PUBLISHED" | "CLOSED" | "ARCHIVED";
   sortOrder: number;
   checkInEnabled: boolean;
+  checkInStartsAt: string | null;
+  checkInEndsAt: string | null;
+  checkInMethods: string[];
+  checkInFieldBindings: Record<string, unknown>;
   groupRegistrationEnabled: boolean;
   maxTicketsPerOrder: number | null;
   contentJson?: Record<string, unknown>;
