@@ -122,7 +122,7 @@
           <section class="form-section">
             <div class="section-head">
               <strong>背景效果</strong>
-              <span>支持纯色、渐变、动态渐变、图片和视频背景，并可控制作用区域。</span>
+              <span>背景模式互斥，仅当前选择的模式会在用户端生效。</span>
             </div>
             <el-form-item label="背景模式">
               <el-select v-model="form.backgroundMode">
@@ -133,24 +133,25 @@
                 <el-option label="视频背景" value="video" />
               </el-select>
             </el-form-item>
-            <el-form-item label="渐变起点"><div class="color-row"><el-color-picker v-model="form.backgroundGradientFrom" /><el-input v-model="form.backgroundGradientFrom" /></div></el-form-item>
-            <el-form-item label="渐变终点"><div class="color-row"><el-color-picker v-model="form.backgroundGradientTo" /><el-input v-model="form.backgroundGradientTo" /></div></el-form-item>
-            <el-form-item>
+            <el-form-item v-if="usesGradient" label="渐变起点"><div class="color-row"><el-color-picker v-model="form.backgroundGradientFrom" /><el-input v-model="form.backgroundGradientFrom" /></div></el-form-item>
+            <el-form-item v-if="usesGradient" label="渐变终点"><div class="color-row"><el-color-picker v-model="form.backgroundGradientTo" /><el-input v-model="form.backgroundGradientTo" /></div></el-form-item>
+            <el-form-item v-if="form.backgroundMode === 'image'">
               <template #label>背景图片<MaterialSpecHelp spec-key="backgroundImage" /></template>
               <div class="field-row">
                 <el-input v-model="form.backgroundImageUrl" placeholder="建议 1920x1080 或 1440x900，JPG/WebP，单张不超过 3MB" />
                 <el-button @click="openMaterialPicker('backgroundImageUrl', 'image')">应用素材库</el-button>
               </div>
             </el-form-item>
-            <el-form-item>
+            <el-form-item v-if="form.backgroundMode === 'video'">
               <template #label>背景视频<MaterialSpecHelp spec-key="backgroundVideo" /></template>
               <div class="field-row">
                 <el-input v-model="form.backgroundVideoUrl" placeholder="建议 MP4/H.264，720p 或 1080p，5-15 秒，单个不超过 20MB" />
                 <el-button @click="openMaterialPicker('backgroundVideoUrl', 'video')">应用素材库</el-button>
               </div>
+              <p class="form-help">H5 使用 muted/loop/playsinline/autoplay；小程序端背景视频可能受自动播放限制，请准备背景封面兜底。</p>
             </el-form-item>
-            <el-form-item label="动态密度"><el-slider v-model="form.backgroundDynamicDensity" :min="10" :max="100" /></el-form-item>
-            <el-form-item label="变化速度"><el-slider v-model="form.backgroundDynamicSpeed" :min="6" :max="40" /></el-form-item>
+            <el-form-item v-if="form.backgroundMode === 'dynamic-gradient'" label="动态密度"><el-slider v-model="form.backgroundDynamicDensity" :min="10" :max="100" /></el-form-item>
+            <el-form-item v-if="form.backgroundMode === 'dynamic-gradient'" label="变化速度"><el-slider v-model="form.backgroundDynamicSpeed" :min="6" :max="40" /></el-form-item>
             <el-form-item label="底部过滤"><el-switch v-model="form.backgroundBottomFilter" active-text="开启" inactive-text="关闭" /></el-form-item>
             <el-form-item label="应用位置">
               <el-radio-group v-model="form.backgroundApplyTo">
@@ -181,6 +182,8 @@
             autoplay
             muted
             loop
+            playsinline
+            webkit-playsinline
           />
           <div class="preview-phone">
             <div class="preview-phone__status">
@@ -406,6 +409,7 @@ const appliedPageNames = computed(() => {
   return (form.themeApplyPageKeys ?? []).map((key) => lookup.get(key) ?? key);
 });
 const previewApplied = computed(() => form.themeApplyMode !== "selected" || (form.themeApplyPageKeys ?? []).includes(previewPageKey.value));
+const usesGradient = computed(() => form.backgroundMode === "gradient" || form.backgroundMode === "dynamic-gradient");
 const previewStageStyle = computed(() => ({
   "--theme-primary": form.primaryColor,
   "--theme-secondary": form.secondaryColor,
@@ -490,6 +494,11 @@ function applyToAllPages() {
 }
 
 async function save() {
+  const validationMessage = await validateBackgroundBeforeSave();
+  if (validationMessage) {
+    ElMessage.error(validationMessage);
+    return;
+  }
   saving.value = true;
   try {
     const active = await updateTheme({ config: { ...form, themeApplyPageKeys: [...(form.themeApplyPageKeys ?? [])] } });
@@ -514,7 +523,7 @@ async function loadMaterials() {
     materialAssets.value = response.items.filter((asset) => {
       if (!target) return false;
       return target.kind === "video"
-        ? asset.fileType.startsWith("video/") || /\.(mp4|mov|m4v)(\?|$)/i.test(asset.url)
+        ? asset.fileType === "video/mp4" || /\.mp4(\?|$)/i.test(asset.url)
         : asset.fileType.startsWith("image/") || /\.(png|jpe?g|webp|gif|svg|ico)(\?|$)/i.test(asset.url);
     });
   } finally {
@@ -540,9 +549,23 @@ function dynamicGradient(config: ThemeConfig): string {
   const from = config.backgroundGradientFrom || config.backgroundColor;
   const to = config.backgroundGradientTo || config.secondaryColor;
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  const scale = Math.max(22, Math.round(density / 1.7));
-  const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(245,247,246,0.68)), ";
-  return `${overlay}radial-gradient(circle at 12% 18%, ${hexAlpha(config.primaryColor, 0.42)} 0, transparent ${scale}%), radial-gradient(circle at 86% 18%, ${hexAlpha(config.secondaryColor, 0.38)} 0, transparent ${scale + 12}%), radial-gradient(circle at 48% 76%, ${hexAlpha(config.accentColor, 0.34)} 0, transparent ${scale + 18}%), radial-gradient(circle at 68% 42%, ${hexAlpha(config.primaryColor, 0.2)} 0, transparent ${scale + 8}%), linear-gradient(135deg, ${from} 0%, ${to} 62%, ${hexAlpha(config.accentColor, 0.2)} 140%)`;
+  const scale = Math.max(28, Math.round(density / 1.45));
+  const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(245,247,246,0.58)), ";
+  return `${overlay}radial-gradient(circle at 10% 14%, ${hexAlpha(config.primaryColor, 0.56)} 0, transparent ${scale}%), radial-gradient(circle at 88% 18%, ${hexAlpha(config.secondaryColor, 0.5)} 0, transparent ${scale + 14}%), radial-gradient(circle at 46% 80%, ${hexAlpha(config.accentColor, 0.42)} 0, transparent ${scale + 20}%), radial-gradient(circle at 68% 42%, ${hexAlpha(config.primaryColor, 0.28)} 0, transparent ${scale + 10}%), linear-gradient(135deg, ${from} 0%, ${to} 60%, ${hexAlpha(config.accentColor, 0.28)} 142%)`;
+}
+
+async function validateBackgroundBeforeSave(): Promise<string | null> {
+  if (form.backgroundMode !== "video") return null;
+  const url = String(form.backgroundVideoUrl || "").trim();
+  if (!url) return "背景视频模式必须填写 MP4 视频 URL";
+  if (!/\.mp4(\?|$)/i.test(url)) return "背景视频仅支持 MP4 地址";
+  try {
+    const response = await fetch(url, { method: "HEAD" });
+    if (!response.ok) return `背景视频无法访问 (${response.status})`;
+  } catch {
+    return "背景视频 URL 无法访问，请检查地址或上传到素材管理";
+  }
+  return null;
 }
 
 function hexAlpha(value: string | undefined, alpha: number): string {
@@ -904,6 +927,13 @@ function hexAlpha(value: string | undefined, alpha: number): string {
 .field-row {
   align-items: center;
   width: 100%;
+}
+
+.form-help {
+  margin: 6px 0 0;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .material-grid {

@@ -42,7 +42,8 @@
           <template #default="{ row }">
             <img v-if="row.fileType.startsWith('image/')" class="image-preview" :src="row.url" alt="" />
             <span v-else-if="row.fileType.startsWith('font/')" class="font-preview">字体</span>
-            <span v-else>视频</span>
+            <video v-else-if="row.fileType.startsWith('video/')" class="image-preview" :src="row.url" muted controls />
+            <span v-else class="font-preview">文件</span>
           </template>
         </el-table-column>
         <el-table-column label="素材" min-width="180">
@@ -58,7 +59,8 @@
         <el-table-column label="操作" width="190">
           <template #default="{ row }">
             <el-button size="small" @click="copyUrl(row.url)">复制 URL</el-button>
-            <el-button size="small" type="warning" :disabled="!row.enabled" @click="disable(row.id)">停用</el-button>
+            <el-button size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button size="small" type="warning" :disabled="!row.enabled" @click="disable(row.id)">软删除</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -101,6 +103,29 @@
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
 
+    <el-dialog v-model="editVisible" title="编辑素材" width="560px">
+      <el-form :model="editForm" label-width="100px">
+        <el-form-item label="名称"><el-input v-model="editForm.name" /></el-form-item>
+        <el-form-item label="分类"><el-select v-model="editForm.categoryId" clearable><el-option v-for="item in categories" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="使用位置">
+          <el-select v-model="editForm.usage" filterable allow-create default-first-option>
+            <el-option label="首页横幅 / Hero" value="home_banner" />
+            <el-option label="会议封面" value="conference_cover" />
+            <el-option label="详情头图" value="conference_header" />
+            <el-option label="底部导航图标" value="tabbar_icon" />
+            <el-option label="页面字体" value="page_font" />
+            <el-option label="商品封面" value="product_cover" />
+            <el-option label="商品详情图" value="product_detail" />
+            <el-option label="企微群二维码" value="wecom_qr" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="URL"><el-input v-model="editForm.url" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="editForm.remark" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="状态"><el-switch v-model="editForm.enabled" active-text="启用" inactive-text="停用" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="editVisible = false">取消</el-button><el-button type="primary" :loading="editSaving" @click="saveEdit">保存</el-button></template>
+    </el-dialog>
+
     <el-dialog v-model="categoryVisible" title="新增素材分类" width="520px">
       <el-form :model="categoryForm" label-width="100px">
         <el-form-item label="名称"><el-input v-model="categoryForm.name" /></el-form-item>
@@ -121,7 +146,7 @@ import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import { materialSpecs, materialSpecText, materialUsageSpecMap, validateMaterialFile } from "../../constants/materialSpecs";
-import { createMaterial, createMaterialCategory, disableMaterial, listMaterialCategories, listMaterials } from "../../services/admin";
+import { createMaterial, createMaterialCategory, disableMaterial, listMaterialCategories, listMaterials, updateMaterial } from "../../services/admin";
 import type { MaterialAsset, MaterialCategory } from "../../services/types";
 
 const categories = ref<MaterialCategory[]>([]);
@@ -129,14 +154,17 @@ const assets = ref<MaterialAsset[]>([]);
 const keyword = ref("");
 const categoryId = ref("");
 const usage = ref("");
-const enabledFilter = ref("");
+const enabledFilter = ref("true");
 const loading = ref(false);
 const dialogVisible = ref(false);
+const editVisible = ref(false);
 const categoryVisible = ref(false);
 const saving = ref(false);
+const editSaving = ref(false);
 const categorySaving = ref(false);
 const uploadProgress = ref(0);
 const form = reactive({ name: "", categoryId: "", usage: "home_banner", url: "", remark: "", file: undefined as File | undefined });
+const editForm = reactive({ id: "", name: "", categoryId: "", usage: "", url: "", remark: "", enabled: true });
 const categoryForm = reactive({ name: "", code: "", description: "" });
 const currentUploadSpec = computed(() => materialSpecs[materialUsageSpecMap[form.usage] ?? "materialUpload"]);
 const currentUploadSpecText = computed(() => materialSpecText(currentUploadSpec.value));
@@ -172,6 +200,19 @@ function openCreate() {
   Object.assign(form, { name: "", categoryId: "", usage: "home_banner", url: "", remark: "", file: undefined });
   uploadProgress.value = 0;
   dialogVisible.value = true;
+}
+
+function openEdit(row: MaterialAsset) {
+  Object.assign(editForm, {
+    id: row.id,
+    name: row.name,
+    categoryId: row.categoryId ?? "",
+    usage: row.usage,
+    url: row.url,
+    remark: row.remark ?? "",
+    enabled: row.enabled
+  });
+  editVisible.value = true;
 }
 
 function onFileChange(event: Event) {
@@ -249,10 +290,43 @@ async function saveCategory() {
   }
 }
 
+async function saveEdit() {
+  if (!editForm.name.trim()) {
+    await showError("无法保存素材", "请填写素材名称");
+    return;
+  }
+  if (!editForm.usage.trim()) {
+    await showError("无法保存素材", "请填写使用位置");
+    return;
+  }
+  if (!editForm.url.trim()) {
+    await showError("无法保存素材", "请填写 URL");
+    return;
+  }
+  editSaving.value = true;
+  try {
+    await updateMaterial(editForm.id, {
+      name: editForm.name.trim(),
+      categoryId: editForm.categoryId || null,
+      usage: editForm.usage.trim(),
+      url: editForm.url.trim(),
+      remark: editForm.remark.trim() || null,
+      enabled: editForm.enabled
+    });
+    editVisible.value = false;
+    await load();
+    ElMessage.success("素材已更新");
+  } catch (error) {
+    await showError("素材更新失败", errorMessage(error));
+  } finally {
+    editSaving.value = false;
+  }
+}
+
 async function disable(id: string) {
   try {
-    await ElMessageBox.confirm("停用后装修页面将无法继续选择该素材，已发布页面如仍引用 URL 需要人工确认展示效果。", "确认停用素材", {
-      confirmButtonText: "确认停用",
+    await ElMessageBox.confirm("素材将软删除并默认隐藏，不会删除 uploads 文件；已发布页面或商品如仍引用 URL，历史展示不被强制改写。", "确认软删除素材", {
+      confirmButtonText: "确认软删除",
       cancelButtonText: "取消",
       type: "warning"
     });

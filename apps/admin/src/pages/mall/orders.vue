@@ -38,10 +38,13 @@
           </template>
         </el-table-column>
         <el-table-column label="金额" width="120"><template #default="{ row }">¥{{ formatCent(row.payableAmountCent) }}</template></el-table-column>
+        <el-table-column label="履约" width="130">
+          <template #default="{ row }">{{ fulfillmentText(row.fulfillmentType) }}</template>
+        </el-table-column>
         <el-table-column label="支付" min-width="220">
           <template #default="{ row }">
             <div>{{ paymentStatusText(latestPayment(row)?.status) }} / {{ providerText(latestPayment(row)?.provider) }}</div>
-            <div class="muted-text">{{ latestPayment(row)?.outTradeNo || "-" }}</div>
+            <div class="muted-text">{{ paymentModeText(row.paymentMode) }}{{ row.paymentEnabled ? " · 可支付" : " · 未开放" }}</div>
           </template>
         </el-table-column>
         <el-table-column label="退款" min-width="160">
@@ -50,7 +53,7 @@
             <div class="muted-text">{{ latestRefund(row)?.refundNo || "-" }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="130"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="orderStatusText(row.status)" /></template></el-table-column>
+        <el-table-column label="状态" width="130"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="orderStatusText(row)" /></template></el-table-column>
         <el-table-column prop="receiverName" label="收件人" width="120" />
         <el-table-column prop="receiverPhone" label="手机号" width="140" />
         <el-table-column prop="createdAt" label="创建时间" width="180" />
@@ -58,7 +61,7 @@
           <template #default="{ row }">
             <el-button size="small" @click="openDetail(row.id)">详情</el-button>
             <el-button v-if="row.status === 'PENDING_PAYMENT'" size="small" @click="closeOrder(row.id)">关闭</el-button>
-            <el-button v-if="row.status === 'PAID'" size="small" type="primary" @click="openShip(row)">发货</el-button>
+            <el-button v-if="row.status === 'PAID' && row.fulfillmentType === 'SHIPMENT'" size="small" type="primary" @click="openShip(row)">发货</el-button>
             <el-button v-if="row.status === 'SHIPPED'" size="small" type="success" @click="verifyOrder(row.id)">完成核销</el-button>
           </template>
         </el-table-column>
@@ -81,7 +84,10 @@
         <el-alert type="info" :closable="false" show-icon :title="detail.paymentNotice || '商城支付、退款和会议报名支付已隔离。'" />
         <section class="detail-section">
           <h3>{{ detail.orderNo }}</h3>
-          <p><strong>状态：</strong>{{ orderStatusText(detail.status) }}</p>
+          <p><strong>状态：</strong>{{ orderStatusText(detail) }}</p>
+          <p><strong>履约：</strong>{{ fulfillmentText(detail.fulfillmentType) }} / 商品类型：{{ (detail.productTypes || []).map(productTypeText).join("、") || "-" }}</p>
+          <p><strong>支付配置：</strong>{{ paymentModeText(detail.paymentMode) }} / {{ detail.paymentEnabled ? "可支付" : "未开放" }}</p>
+          <p v-if="detail.paymentUnavailableReason"><strong>未开放原因：</strong>{{ detail.paymentUnavailableReason }}</p>
           <p><strong>金额：</strong>¥{{ formatCent(detail.payableAmountCent) }}</p>
           <p><strong>已付金额：</strong>{{ detail.paidAmountCent === null ? "-" : `¥${formatCent(detail.paidAmountCent)}` }}</p>
           <p><strong>支付时间：</strong>{{ detail.paidAt || "-" }}</p>
@@ -104,6 +110,7 @@
           <el-table :data="detail.items" size="small">
             <el-table-column prop="productTitle" label="商品" min-width="160" />
             <el-table-column prop="skuName" label="SKU" min-width="120" />
+            <el-table-column prop="productType" label="类型" width="100"><template #default="{ row }">{{ productTypeText(row.productType) }}</template></el-table-column>
             <el-table-column label="单价" width="100"><template #default="{ row }">¥{{ formatCent(row.unitPriceCent) }}</template></el-table-column>
             <el-table-column prop="quantity" label="数量" width="80" />
             <el-table-column label="小计" width="100"><template #default="{ row }">¥{{ formatCent(row.totalAmountCent) }}</template></el-table-column>
@@ -205,6 +212,10 @@ async function closeOrder(id: string) {
 }
 
 function openShip(row: MallOrder) {
+  if (row.fulfillmentType !== "SHIPMENT") {
+    ElMessage.warning("虚拟/服务商品不进入发货流程");
+    return;
+  }
   shipOrderId.value = row.id;
   Object.assign(shipForm, { company: "", trackingNo: "", pickupCode: "", remark: "" });
   shipVisible.value = true;
@@ -240,8 +251,23 @@ function formatCent(value: number) {
   return (value / 100).toFixed(2);
 }
 
-function orderStatusText(value: string) {
-  return { PENDING_PAYMENT: "待支付", PAID: "已支付", SHIPPED: "已发货", COMPLETED: "已完成", CLOSED: "已关闭", REFUNDING: "售后中", REFUNDED: "已退款" }[value] ?? value;
+function orderStatusText(row: MallOrder) {
+  if (row.fulfillmentType === "VIRTUAL") {
+    return { PENDING_PAYMENT: "待支付", PAID: "待使用/待核销", SHIPPED: "待使用/待核销", COMPLETED: "已完成", CLOSED: "已关闭", REFUNDING: "售后中", REFUNDED: "已退款" }[row.status] ?? row.status;
+  }
+  return { PENDING_PAYMENT: "待支付", PAID: "已支付", SHIPPED: "已发货", COMPLETED: "已完成", CLOSED: "已关闭", REFUNDING: "售后中", REFUNDED: "已退款" }[row.status] ?? row.status;
+}
+
+function fulfillmentText(value?: string | null) {
+  return { SHIPMENT: "发货履约", VIRTUAL: "虚拟/服务核销", MIXED: "混合履约" }[value || "SHIPMENT"] ?? value ?? "-";
+}
+
+function productTypeText(value?: string | null) {
+  return { PHYSICAL: "实体", VIRTUAL: "虚拟", SERVICE: "服务" }[value || "PHYSICAL"] ?? value ?? "-";
+}
+
+function paymentModeText(value?: string | null) {
+  return { disabled: "支付关闭", mock: "mock 支付", wechat: "微信支付" }[value || "disabled"] ?? value ?? "-";
 }
 
 function shipmentStatusText(value: string) {

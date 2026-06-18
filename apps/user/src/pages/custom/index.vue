@@ -1,6 +1,9 @@
 <template>
   <view :class="pageClass" :style="pageStyle">
-    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <!-- #ifdef MP-WEIXIN -->
+    <view v-if="showBodyVideo" class="mp-video-notice">小程序端背景视频可能受自动播放限制，请以页面内容为准。</view>
+    <!-- #endif -->
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <view class="page-content">
       <LoadingState v-if="loading" title="加载页面中" description="正在读取主办方发布内容。" />

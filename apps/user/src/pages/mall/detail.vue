@@ -1,6 +1,9 @@
 <template>
   <view class="page ui-page" :style="pageStyle">
-    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted object-fit="cover" :controls="false" />
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <!-- #ifdef MP-WEIXIN -->
+    <view v-if="showBodyVideo" class="mp-video-notice">小程序端背景视频可能受自动播放限制，请以页面内容为准。</view>
+    <!-- #endif -->
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <LoadingState v-if="loading" title="加载商品详情中" description="正在读取商品图片、规格和库存。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回商城" @retry="load" @secondary="goMall" />
@@ -9,7 +12,7 @@
         <image v-if="heroImage" class="hero" :src="heroImage" mode="aspectFill" />
         <view v-else class="hero empty">暂无图片</view>
         <view class="headline">
-          <StatusTag label="可创建待支付订单" tone="info" />
+          <StatusTag :label="productTypeText(product.productType)" tone="info" />
           <text class="title">{{ product.title }}</text>
           <text class="subtitle">{{ product.subtitle || product.category?.name || "会议相关商品" }}</text>
           <text class="price-range">{{ priceRangeText }}</text>
@@ -53,11 +56,20 @@
           <text class="section-title">商品说明</text>
           <text class="muted">{{ descriptionText }}</text>
         </view>
-        <view class="receiver-card ui-card">
+        <PageRenderer
+          v-if="cmsPage"
+          :components="cmsPage.version.components"
+          :theme="theme"
+        />
+        <view v-if="requiresReceiver" class="receiver-card ui-card">
           <text class="section-title">收货信息</text>
           <input v-model="receiver.name" class="field" placeholder="收货人" />
           <input v-model="receiver.phone" class="field" placeholder="手机号" />
           <input v-model="receiver.address" class="field" placeholder="收货地址" />
+        </view>
+        <view v-else class="receiver-card ui-card">
+          <text class="section-title">履约信息</text>
+          <text class="muted">虚拟/服务商品无需填写收货地址，订单创建后请在我的商城订单查看待使用或核销状态。</text>
         </view>
       </view>
     </template>
@@ -86,15 +98,18 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
+import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
+import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { addProductCartItem } from "@/services/cart";
 import { getProductDetail, type Product, type ProductSku } from "@/services/mall";
 import { createMallOrder } from "@/services/operations";
 
 const productId = ref("");
 const product = ref<Product | null>(null);
+const cmsPage = ref<PublishedPage | null>(null);
 const loading = ref(false);
 const error = ref("");
 const selectedSkuId = ref("");
@@ -106,6 +121,7 @@ const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme
 const heroImage = computed(() => product.value?.coverImageUrl || product.value?.images[0]?.url || "");
 const selectedSku = computed(() => product.value?.skus.find((item) => item.id === selectedSkuId.value) ?? null);
 const canAddProduct = computed(() => Boolean(selectedSku.value && skuAvailable(selectedSku.value)));
+const requiresReceiver = computed(() => product.value?.productType !== "VIRTUAL" && product.value?.productType !== "SERVICE");
 const priceRangeText = computed(() => {
   const prices = product.value?.skus.map((sku) => sku.priceCent) ?? [];
   if (prices.length === 0) return "暂无价格";
@@ -129,7 +145,12 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    product.value = await getProductDetail(productId.value);
+    const [detail, page] = await Promise.all([
+      getProductDetail(productId.value),
+      getPublishedPage("mall-detail", { productId: productId.value })
+    ]);
+    product.value = detail;
+    cmsPage.value = page;
     selectedSkuId.value = product.value.skus[0]?.id ?? "";
   } catch (err) {
     console.error("[MALL_DETAIL_LOAD_ERROR]", err);
@@ -144,7 +165,7 @@ async function buyNow() {
     uni.showToast({ title: "请选择可购买规格", icon: "none" });
     return;
   }
-  if (!receiver.value.name || !receiver.value.phone || !receiver.value.address) {
+  if (requiresReceiver.value && (!receiver.value.name || !receiver.value.phone || !receiver.value.address)) {
     uni.showToast({ title: "请填写收货信息", icon: "none" });
     return;
   }
@@ -152,9 +173,9 @@ async function buyNow() {
   try {
     const order = await createMallOrder({
       items: [{ skuId: selectedSkuId.value, quantity: quantity.value }],
-      receiverName: receiver.value.name,
-      receiverPhone: receiver.value.phone,
-      receiverAddress: receiver.value.address
+      receiverName: requiresReceiver.value ? receiver.value.name : undefined,
+      receiverPhone: requiresReceiver.value ? receiver.value.phone : undefined,
+      receiverAddress: requiresReceiver.value ? receiver.value.address : undefined
     });
     uni.showModal({
       title: "商城订单已创建",
@@ -203,6 +224,10 @@ function maxQuantity() {
 
 function skuAvailable(sku: ProductSku) {
   return sku.availableStock > 0;
+}
+
+function productTypeText(value: string | undefined) {
+  return { PHYSICAL: "实体商品", VIRTUAL: "虚拟商品", SERVICE: "服务商品" }[value || "PHYSICAL"] || "实体商品";
 }
 
 function goCart() {

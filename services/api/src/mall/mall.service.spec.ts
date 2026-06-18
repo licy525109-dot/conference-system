@@ -98,6 +98,27 @@ describe("MallService createOrder", () => {
       ConflictException
     );
   });
+
+  it("requires receiver information for physical products", async () => {
+    const service = new MallService(createMallPrismaMock());
+
+    await assert.rejects(
+      () => service.createOrder({ items: [{ skuId: "sku-1", quantity: 1 }] }, currentUser),
+      BadRequestException
+    );
+  });
+
+  it("allows virtual products without receiver information", async () => {
+    const prisma = createMallPrismaMock({ productType: "VIRTUAL" });
+    const service = new MallService(prisma);
+
+    const response = await service.createOrder({ items: [{ skuId: "sku-1", quantity: 1 }] }, currentUser);
+
+    assert.equal(response.data.status, "PENDING_PAYMENT");
+    assert.equal(response.data.fulfillmentType, "VIRTUAL");
+    assert.equal(response.data.receiverName, null);
+    assert.equal(response.data.items[0].productType, "VIRTUAL");
+  });
 });
 
 describe("AdminMallService order close", () => {
@@ -133,7 +154,7 @@ function resetMallPaymentEnv(): void {
   delete process.env.WECHAT_PAY_ENABLED;
 }
 
-function createMallPrismaMock(options: { stock?: number; lockedStock?: number; soldCount?: number } = {}) {
+function createMallPrismaMock(options: { stock?: number; lockedStock?: number; soldCount?: number; productType?: string } = {}) {
   const now = new Date("2026-06-18T10:00:00.000Z");
   const skus: SkuRecord[] = [
     {
@@ -151,6 +172,7 @@ function createMallPrismaMock(options: { stock?: number; lockedStock?: number; s
       product: {
         id: "product-1",
         title: "会议周边",
+        productType: options.productType ?? "PHYSICAL",
         status: "PUBLISHED"
       }
     }
@@ -192,6 +214,7 @@ function createMallPrismaMock(options: { stock?: number; lockedStock?: number; s
           receiverName: data.receiverName,
           receiverPhone: data.receiverPhone,
           receiverAddress: data.receiverAddress,
+          fulfillmentType: data.fulfillmentType,
           remark: data.remark ?? null,
           paidAt: null,
           createdAt: now,
@@ -203,6 +226,7 @@ function createMallPrismaMock(options: { stock?: number; lockedStock?: number; s
             skuId: item.sku.connect.id,
             productTitle: item.productTitle,
             skuName: item.skuName,
+            productType: item.productType,
             unitPriceCent: item.unitPriceCent,
             quantity: item.quantity,
             totalAmountCent: item.totalAmountCent,
@@ -266,6 +290,7 @@ interface SkuRecord {
   product: {
     id: string;
     title: string;
+    productType: string;
     status: string;
   };
 }
@@ -278,15 +303,17 @@ interface MallOrderCreateInput {
   payableAmountCent: number;
   paidAmountCent: null;
   status: string;
-  receiverName: string;
-  receiverPhone: string;
-  receiverAddress: string;
+  receiverName: string | null;
+  receiverPhone: string | null;
+  receiverAddress: string | null;
+  fulfillmentType: string;
   remark?: string | null;
   items: {
     create: Array<{
       sku: { connect: { id: string } };
       productTitle: string;
       skuName: string;
+      productType: string;
       unitPriceCent: number;
       quantity: number;
       totalAmountCent: number;
@@ -306,9 +333,10 @@ interface OrderRecord {
   payableAmountCent: number;
   paidAmountCent: number | null;
   status: string;
-  receiverName: string;
-  receiverPhone: string;
-  receiverAddress: string;
+  receiverName: string | null;
+  receiverPhone: string | null;
+  receiverAddress: string | null;
+  fulfillmentType: string;
   remark: string | null;
   paidAt: Date | null;
   createdAt: Date;
@@ -320,6 +348,7 @@ interface OrderRecord {
     skuId: string;
     productTitle: string;
     skuName: string;
+    productType: string;
     unitPriceCent: number;
     quantity: number;
     totalAmountCent: number;

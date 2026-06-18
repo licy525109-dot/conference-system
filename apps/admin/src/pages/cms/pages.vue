@@ -34,7 +34,7 @@
             >
               <span class="page-item__copy">
                 <strong>{{ page.title }}</strong>
-                <small>{{ page.pageType }}</small>
+                <small>{{ pageTypeLabel(page.pageType) }}{{ pageBindingLabel(page) ? ` · ${pageBindingLabel(page)}` : "" }}</small>
               </span>
               <span class="page-item__status">{{ page.publishedVersionId ? "已发布" : "草稿中" }}</span>
             </button>
@@ -355,9 +355,27 @@
 
     <el-dialog v-model="createVisible" title="新增页面" width="520px">
       <el-form :model="createForm" label-width="110px">
-        <el-form-item label="页面地址尾缀"><el-input v-model="createForm.slug" placeholder="例如 about-us" /></el-form-item>
+        <el-form-item label="页面类型">
+          <el-select v-model="createForm.pageType" @change="syncCreateSlug">
+            <el-option v-for="item in pageTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <p class="form-help">{{ pageTypeHelp(createForm.pageType) }}</p>
+        </el-form-item>
+        <el-form-item label="页面地址尾缀"><el-input v-model="createForm.slug" placeholder="例如 about-us；指定详情页可自动生成" /></el-form-item>
         <el-form-item label="页面标题"><el-input v-model="createForm.title" /></el-form-item>
         <el-form-item label="页面说明"><el-input v-model="createForm.description" /></el-form-item>
+        <el-form-item v-if="createForm.pageType === 'CONFERENCE_DETAIL_PAGE'" label="绑定会议">
+          <el-select v-model="createForm.conferenceId" filterable placeholder="选择具体会议">
+            <el-option v-for="item in previewConferences" :key="item.id" :label="item.title" :value="item.id" />
+          </el-select>
+          <p class="form-help">指定会议详情页只对所选会议生效；未命中时用户端会回退会议详情模板。</p>
+        </el-form-item>
+        <el-form-item v-if="createForm.pageType === 'PRODUCT_DETAIL_PAGE'" label="绑定商品">
+          <el-select v-model="createForm.productId" filterable placeholder="选择具体商品">
+            <el-option v-for="item in productOptions" :key="item.id" :label="item.title" :value="item.id" />
+          </el-select>
+          <p class="form-help">指定商品详情页只对所选商品生效；未命中时用户端会回退商品详情模板。</p>
+        </el-form-item>
         <el-form-item label="套用模板">
           <el-select v-model="createForm.templateId" clearable filterable placeholder="可直接从模板创建">
             <el-option v-for="template in libraryTemplates" :key="template.id" :label="`${template.title} · ${template.category}`" :value="template.id" />
@@ -493,6 +511,7 @@ import {
   createPage,
   createPageLibraryTemplate,
   getProductCategoryOptions,
+  getProductOptions,
   getPageVersion,
   getTabbar,
   listCouponCampaigns,
@@ -518,6 +537,7 @@ import type {
   PageTemplate,
   PageVersion,
   ProductCategory,
+  Product,
   TabBarConfig,
   ThemeConfig
 } from "../../services/types";
@@ -619,7 +639,7 @@ const templateVisible = ref(false);
 const saveTemplateVisible = ref(false);
 const templatePreviewVisible = ref(false);
 const templatePreview = ref<PageLibraryTemplate | null>(null);
-const createForm = reactive({ slug: "", title: "", description: "", templateId: "" });
+const createForm = reactive({ slug: "", title: "", description: "", templateId: "", pageType: "CUSTOM", conferenceId: "", productId: "" });
 const saveTemplateForm = reactive({ slug: "", title: "", category: "自定义模板", description: "" });
 const presetKeyword = ref("");
 const activePresetGroup = ref("");
@@ -638,6 +658,15 @@ const previewConferences = ref<Conference[]>([]);
 const previewTabbar = ref<TabBarConfig | null>(null);
 const couponCampaignOptions = ref<CouponCampaign[]>([]);
 const productCategoryOptions = ref<ProductCategory[]>([]);
+const productOptions = ref<Product[]>([]);
+const pageTypeOptions = [
+  { label: "普通页面", value: "CUSTOM" },
+  { label: "会议首页", value: "HOME" },
+  { label: "会议详情模板", value: "CONFERENCE_DETAIL_TEMPLATE" },
+  { label: "指定会议详情页", value: "CONFERENCE_DETAIL_PAGE" },
+  { label: "商品详情模板", value: "PRODUCT_DETAIL_TEMPLATE" },
+  { label: "指定商品详情页", value: "PRODUCT_DETAIL_PAGE" }
+];
 const loadedPreviewFonts = new Set<string>();
 const materialPickerSpecKey = computed<MaterialSpecKey>(() => {
   if (materialPageTarget.value) return "shareCover";
@@ -748,18 +777,20 @@ watch(
 watch(components, installPreviewFonts, { deep: true });
 
 onMounted(async () => {
-  const [presetResponse, conferenceResponse, tabbarResponse, campaignResponse, categoryResponse] = await Promise.all([
+  const [presetResponse, conferenceResponse, tabbarResponse, campaignResponse, categoryResponse, productResponse] = await Promise.all([
     listComponentPresets(),
-    listConferences({ page: 1, pageSize: 6, status: "PUBLISHED" }).catch(() => ({ items: [] as Conference[] })),
+    listConferences({ page: 1, pageSize: 100, status: "PUBLISHED" }).catch(() => ({ items: [] as Conference[] })),
     getTabbar().catch(() => null),
     listCouponCampaigns({ page: 1, pageSize: 100 }).catch(() => ({ items: [] as CouponCampaign[] })),
-    getProductCategoryOptions().catch(() => ({ items: [] as ProductCategory[] }))
+    getProductCategoryOptions().catch(() => ({ items: [] as ProductCategory[] })),
+    getProductOptions().catch(() => ({ items: [] as Product[] }))
   ]);
   presets.value = presetResponse.items;
   previewConferences.value = conferenceResponse.items;
   previewTabbar.value = tabbarResponse;
   couponCampaignOptions.value = campaignResponse.items;
   productCategoryOptions.value = categoryResponse.items;
+  productOptions.value = productResponse.items;
   activePresetGroup.value = presetGroups.value[0]?.name ?? "";
   await Promise.all([loadPages(), loadLibraryTemplates()]);
 });
@@ -1009,16 +1040,52 @@ async function rollback() {
 }
 
 async function createCustomPage() {
-  const slug = createForm.slug.trim().replace(/^custom:/, "");
+  const slug = createForm.slug.trim().replace(/^custom:/, "") || defaultCreateSlug();
   await createPage({
     pageKey: `custom:${slug}`,
     title: createForm.title,
     description: createForm.description,
+    pageType: createForm.pageType,
+    conferenceId: createForm.conferenceId || undefined,
+    productId: createForm.productId || undefined,
     templateId: createForm.templateId || undefined
   });
-  Object.assign(createForm, { slug: "", title: "", description: "", templateId: "" });
+  Object.assign(createForm, { slug: "", title: "", description: "", templateId: "", pageType: "CUSTOM", conferenceId: "", productId: "" });
   createVisible.value = false;
   await loadPages();
+}
+
+function syncCreateSlug() {
+  if (createForm.pageType === "CONFERENCE_DETAIL_TEMPLATE") createForm.slug = "conference-detail-template";
+  if (createForm.pageType === "PRODUCT_DETAIL_TEMPLATE") createForm.slug = "product-detail-template";
+  if (createForm.pageType === "CONFERENCE_DETAIL_PAGE" && createForm.conferenceId) createForm.slug = `conference-${createForm.conferenceId.slice(-8)}`;
+  if (createForm.pageType === "PRODUCT_DETAIL_PAGE" && createForm.productId) createForm.slug = `product-${createForm.productId.slice(-8)}`;
+}
+
+function defaultCreateSlug() {
+  if (createForm.pageType === "CONFERENCE_DETAIL_PAGE" && createForm.conferenceId) return `conference-${createForm.conferenceId.slice(-8)}`;
+  if (createForm.pageType === "PRODUCT_DETAIL_PAGE" && createForm.productId) return `product-${createForm.productId.slice(-8)}`;
+  return `page-${Date.now()}`;
+}
+
+function pageTypeLabel(value: string) {
+  return pageTypeOptions.find((item) => item.value === value)?.label ?? value;
+}
+
+function pageTypeHelp(value: string) {
+  if (value === "CONFERENCE_DETAIL_TEMPLATE") return "作为所有会议详情页的默认模板，不绑定具体会议。";
+  if (value === "CONFERENCE_DETAIL_PAGE") return "绑定某一个具体会议，用户打开该会议详情时优先生效。";
+  if (value === "PRODUCT_DETAIL_TEMPLATE") return "作为所有商品详情页的默认模板，不绑定具体商品。";
+  if (value === "PRODUCT_DETAIL_PAGE") return "绑定某一个具体商品，用户打开该商品详情时优先生效。";
+  return "普通页面可通过底部导航或自定义入口访问。";
+}
+
+function pageBindingLabel(page: PageTemplate) {
+  if (page.bindingType === "SPECIFIC_CONFERENCE") return previewConferences.value.find((item) => item.id === page.conferenceId)?.title || "已绑定会议";
+  if (page.bindingType === "SPECIFIC_PRODUCT") return productOptions.value.find((item) => item.id === page.productId)?.title || "已绑定商品";
+  if (page.bindingType === "CONFERENCE_TEMPLATE") return "所有会议详情";
+  if (page.bindingType === "PRODUCT_TEMPLATE") return "所有商品详情";
+  return "";
 }
 
 function openTemplateLibrary() {
@@ -1295,12 +1362,20 @@ function fieldsFor(type: string): ConfigField[] {
       ]
     }
   ];
+  const actionTargetFields: ConfigField[] = [
+    { key: "actionTargetType", label: "点击目标", kind: "select", fallback: "register", options: actionTargetOptions() },
+    { key: "targetPageKey", label: "目标页面", kind: "select", options: pageTargetOptions() },
+    { key: "targetConferenceId", label: "目标会议", kind: "select", options: conferenceSelectOptions() },
+    { key: "targetProductId", label: "目标商品", kind: "select", options: productSelectOptions() },
+    { key: "targetCouponCampaignId", label: "目标券活动", kind: "select", options: couponCampaignSelectOptions() }
+  ];
   const map: Record<string, ConfigField[]> = {
     hero: [
       { key: "kicker", label: "眉标文字", placeholder: "会议报名" },
       { key: "title", label: "主标题", placeholder: "选择会议，完成报名缴费" },
       { key: "description", label: "说明文字", kind: "textarea", rows: 2, placeholder: "填写横幅说明" },
       { key: "buttonText", label: "按钮文字", placeholder: "立即报名" },
+      ...actionTargetFields,
       { key: "showContent", label: "显示文案区域", kind: "switch", fallback: "true" },
       { key: "showOverlay", label: "显示遮罩", kind: "switch", fallback: "true" },
       { key: "showButton", label: "显示按钮", kind: "switch", fallback: "true" },
@@ -1346,8 +1421,8 @@ function fieldsFor(type: string): ConfigField[] {
     "conference-tabs": withTextStyle([...commonTitle, { key: "target", label: "筛选字段", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
     "speaker-cards": withTextStyle([...commonTitle, { key: "speakers", label: "嘉宾信息", kind: "list", placeholder: "每行一位嘉宾，例如：张三｜主讲嘉宾", rows: 5 }], 26),
     "schedule-timeline": withTextStyle([...commonTitle, { key: "items", label: "日程安排", kind: "list", placeholder: "每行一项日程", rows: 5 }], 26),
-    "registration-button": withTextStyle([{ key: "text", label: "按钮文字", placeholder: "立即报名" }], 28),
-    "floating-registration-button": withTextStyle([{ key: "text", label: "悬浮按钮文字", placeholder: "立即报名" }], 28),
+    "registration-button": withTextStyle([{ key: "text", label: "按钮文字", placeholder: "立即报名" }, ...actionTargetFields], 28),
+    "floating-registration-button": withTextStyle([{ key: "text", label: "悬浮按钮文字", placeholder: "立即报名" }, ...actionTargetFields], 28),
     "coupon-card": withTextStyle([
       ...commonTitle,
       { key: "description", label: "说明文字", kind: "textarea", rows: 2 },
@@ -1433,6 +1508,37 @@ function productCategorySelectOptions(): Array<{ label: string; value: string }>
   return [
     { label: "全部分类", value: "" },
     ...productCategoryOptions.value.map((item) => ({ label: item.name, value: item.id }))
+  ];
+}
+
+function actionTargetOptions(): Array<{ label: string; value: string }> {
+  return [
+    { label: "默认报名动作", value: "register" },
+    { label: "打开页面", value: "page" },
+    { label: "打开会议", value: "conference" },
+    { label: "打开商品", value: "product" },
+    { label: "打开券活动", value: "coupon" }
+  ];
+}
+
+function pageTargetOptions(): Array<{ label: string; value: string }> {
+  return [
+    { label: "请选择页面", value: "" },
+    ...pages.value.map((page) => ({ label: `${page.title}（${pageBindingLabel(page) || page.pageKey}）`, value: page.pageKey }))
+  ];
+}
+
+function conferenceSelectOptions(): Array<{ label: string; value: string }> {
+  return [
+    { label: "请选择会议", value: "" },
+    ...previewConferences.value.map((item) => ({ label: item.title, value: item.id }))
+  ];
+}
+
+function productSelectOptions(): Array<{ label: string; value: string }> {
+  return [
+    { label: "请选择商品", value: "" },
+    ...productOptions.value.map((item) => ({ label: item.title, value: item.id }))
   ];
 }
 
@@ -2187,6 +2293,13 @@ function splitPreviewLine(value: string): string[] {
 
 .cms-page {
   overflow-x: auto;
+}
+
+.form-help {
+  margin: 6px 0 0;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .cms-panel {

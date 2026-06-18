@@ -114,6 +114,18 @@ page {
   pointer-events: none;
 }
 
+.mp-video-notice {
+  position: relative;
+  z-index: 2;
+  margin: 20rpx 24rpx 0;
+  padding: 14rpx 18rpx;
+  border-radius: var(--ui-radius-md);
+  background: rgba(17, 24, 39, 0.68);
+  color: #ffffff;
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
 .ui-stack {
   display: flex;
   flex-direction: column;

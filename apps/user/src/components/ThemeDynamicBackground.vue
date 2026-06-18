@@ -40,18 +40,18 @@ const rootStyle = computed(() => ({
 
 const baseStyle = computed(() => ({
   background: [
-    `radial-gradient(circle at 16% 14%, ${withAlpha(primaryColor.value, 0.48)} 0, transparent 34%)`,
-    `radial-gradient(circle at 88% 18%, ${withAlpha(toColor.value, 0.42)} 0, transparent 38%)`,
-    `radial-gradient(circle at 22% 82%, ${withAlpha(accentColor.value, 0.26)} 0, transparent 42%)`,
-    `linear-gradient(132deg, ${fromColor.value} 0%, ${toColor.value} 58%, ${withAlpha(accentColor.value, 0.42)} 132%)`
+    `radial-gradient(circle at 14% 12%, ${withAlpha(primaryColor.value, 0.58)} 0, transparent 34%)`,
+    `radial-gradient(circle at 88% 18%, ${withAlpha(toColor.value, 0.52)} 0, transparent 38%)`,
+    `radial-gradient(circle at 22% 82%, ${withAlpha(accentColor.value, 0.36)} 0, transparent 42%)`,
+    `linear-gradient(132deg, ${fromColor.value} 0%, ${toColor.value} 56%, ${withAlpha(accentColor.value, 0.5)} 132%)`
   ].join(", "),
   backgroundSize: "190% 190%",
   animation: `themeDynamicBase ${motionSeconds.value}s ease-in-out infinite alternate`
 }));
 
-const glowAStyle = computed(() => glowStyle(primaryColor.value, toColor.value, 0.28, 0.12, 520 + density.value * 3.8, motionSeconds.value * 0.78, "themeDynamicGlowA"));
-const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.26, 0.12, 480 + density.value * 3.4, motionSeconds.value * 0.9, "themeDynamicGlowB"));
-const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.18, 0.08, 420 + density.value * 3.2, motionSeconds.value * 0.84, "themeDynamicGlowC"));
+const glowAStyle = computed(() => glowStyle(primaryColor.value, toColor.value, 0.34, 0.16, 560 + density.value * 4, motionSeconds.value * 0.78, "themeDynamicGlowA"));
+const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.32, 0.16, 520 + density.value * 3.6, motionSeconds.value * 0.9, "themeDynamicGlowB"));
+const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.24, 0.1, 460 + density.value * 3.4, motionSeconds.value * 0.84, "themeDynamicGlowC"));
 
 function glowStyle(colorA: string, colorB: string, alphaA: number, alphaB: number, size: number, duration: number, animationName: string): Record<string, string> {
   return {
@@ -126,8 +126,8 @@ function withAlpha(value: string, alpha: number): string {
 
 .theme-dynamic-bg__glow {
   border-radius: 9999rpx;
-  opacity: 0.72;
-  filter: blur(36rpx);
+  opacity: 0.82;
+  filter: blur(32rpx);
   mix-blend-mode: normal;
 }
 

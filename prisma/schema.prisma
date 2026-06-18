@@ -504,6 +504,9 @@ model PageTemplate {
   title              String
   description        String?
   pageType           String           @default("CUSTOM")
+  bindingType        String?
+  conferenceId       String?
+  productId          String?
   enabled            Boolean          @default(true)
   sortOrder          Int              @default(0)
   publishedVersionId String?
@@ -513,6 +516,9 @@ model PageTemplate {
   publishLogs        PagePublishLog[]
 
   @@index([pageType])
+  @@index([bindingType])
+  @@index([conferenceId])
+  @@index([productId])
   @@index([enabled])
   @@index([sortOrder])
   @@index([createdAt])
@@ -891,8 +897,10 @@ model Product {
   categoryId      String?
   title           String
   subtitle        String?
+  productType     String           @default("PHYSICAL")
   descriptionJson Json?
   coverImageUrl   String?
+  coverMaterialId String?
   status          String           @default("DRAFT")
   sortOrder       Int              @default(0)
   createdAt       DateTime         @default(now())
@@ -902,6 +910,8 @@ model Product {
   images          ProductImage[]
 
   @@index([categoryId])
+  @@index([productType])
+  @@index([coverMaterialId])
   @@index([status])
   @@index([sortOrder])
   @@map("products")
@@ -930,15 +940,17 @@ model ProductSku {
 }
 
 model ProductImage {
-  id        String   @id @default(cuid())
-  productId String
-  url       String
-  alt       String?
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  productId  String
+  url        String
+  materialId String?
+  alt        String?
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
+  @@index([materialId])
   @@index([sortOrder])
   @@map("product_images")
 }
@@ -991,6 +1003,7 @@ model MallOrder {
   receiverName       String?
   receiverPhone      String?
   receiverAddress    String?
+  fulfillmentType    String          @default("SHIPMENT")
   remark             String?
   paidAt             DateTime?
   createdAt          DateTime        @default(now())
@@ -1005,6 +1018,7 @@ model MallOrder {
 
   @@index([userId])
   @@index([status])
+  @@index([fulfillmentType])
   @@index([createdAt])
   @@map("mall_orders")
 }
@@ -1015,6 +1029,7 @@ model MallOrderItem {
   skuId           String
   productTitle    String
   skuName         String
+  productType     String     @default("PHYSICAL")
   unitPriceCent   Int
   quantity        Int
   totalAmountCent Int
@@ -1024,6 +1039,7 @@ model MallOrderItem {
 
   @@index([orderId])
   @@index([skuId])
+  @@index([productType])
   @@map("mall_order_items")
 }
 

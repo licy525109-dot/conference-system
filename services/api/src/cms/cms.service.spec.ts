@@ -121,12 +121,15 @@ function createPublicPrismaMock(input: { activeTheme: unknown; tabbar: unknown }
   const now = new Date("2026-06-13T08:00:00.000Z");
   const mock = {
     pageTemplate: {
-      findUnique: async () => ({
+      findFirst: async () => ({
         id: "page-1",
         pageKey: "home",
         title: "首页",
         description: null,
         pageType: "HOME",
+        bindingType: null,
+        conferenceId: null,
+        productId: null,
         publishedVersionId: "version-2"
       })
     },

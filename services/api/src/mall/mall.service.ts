@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
-import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled } from "./mall-payment.config";
+import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled, readMallPaymentMode } from "./mall-payment.config";
 
 const FORBIDDEN_AMOUNT_FIELDS = new Set(["originAmountCent", "discountAmountCent", "payableAmountCent", "paidAmountCent", "amountCent", "totalAmountCent", "priceCent"]);
 
@@ -64,9 +64,6 @@ export class MallService {
     const body = readObject(input);
     assertNoClientAmount(body);
     const items = readOrderItems(body.items);
-    const receiverName = readRequiredString(body, "receiverName");
-    const receiverPhone = readRequiredString(body, "receiverPhone");
-    const receiverAddress = readRequiredString(body, "receiverAddress");
     const remark = readNullableString(body.remark);
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -79,10 +76,12 @@ export class MallService {
         beforeSoldCount: number;
         afterSoldCount: number;
       }> = [];
+      let requiresReceiver = false;
 
       for (const item of items) {
         const sku = await tx.productSku.findUnique({ where: { id: item.skuId }, include: { product: true } });
         if (!sku || sku.status !== "ACTIVE" || sku.product.status !== "PUBLISHED") throw new ConflictException("部分商品不可购买");
+        requiresReceiver = requiresReceiver || sku.product.productType === "PHYSICAL";
         const availableStock = sku.stock - sku.lockedStock - sku.soldCount;
         if (availableStock < item.quantity) throw new ConflictException(`${sku.name} 库存不足`);
         const locked = await tx.productSku.updateMany({
@@ -100,6 +99,7 @@ export class MallService {
           sku: { connect: { id: sku.id } },
           productTitle: sku.product.title,
           skuName: sku.name,
+          productType: sku.product.productType,
           unitPriceCent: sku.priceCent,
           quantity: item.quantity,
           totalAmountCent: sku.priceCent * item.quantity
@@ -115,6 +115,9 @@ export class MallService {
       }
 
       const payableAmountCent = orderItems.reduce((sum, item) => sum + item.totalAmountCent, 0);
+      const receiverName = requiresReceiver ? readRequiredString(body, "receiverName") : readNullableString(body.receiverName);
+      const receiverPhone = requiresReceiver ? readRequiredString(body, "receiverPhone") : readNullableString(body.receiverPhone);
+      const receiverAddress = requiresReceiver ? readRequiredString(body, "receiverAddress") : readNullableString(body.receiverAddress);
       const created = await tx.mallOrder.create({
         data: {
           orderNo: generateOrderNo("SHOP"),
@@ -127,6 +130,7 @@ export class MallService {
           receiverName,
           receiverPhone,
           receiverAddress,
+          fulfillmentType: requiresReceiver ? "SHIPMENT" : "VIRTUAL",
           remark,
           items: { create: orderItems },
           inventoryLogs: {
@@ -185,11 +189,13 @@ function formatProduct(item: {
   id: string;
   title: string;
   subtitle: string | null;
+  productType: string;
   descriptionJson: unknown;
   coverImageUrl: string | null;
+  coverMaterialId?: string | null;
   category: { id: string; name: string; code: string } | null;
   skus: Array<{ id: string; name: string; priceCent: number; stock: number; lockedStock: number; soldCount: number; status: string; specsJson: unknown }>;
-  images: Array<{ id: string; url: string; alt: string | null; sortOrder: number }>;
+  images: Array<{ id: string; url: string; materialId?: string | null; alt: string | null; sortOrder: number }>;
 }) {
   const skus = item.skus
     .map((sku) => ({
@@ -229,6 +235,8 @@ function formatOrder(item: Prisma.MallOrderGetPayload<{ include: typeof mallOrde
     })),
     payments: item.payments.map(formatPayment),
     refunds: item.refunds.map(formatRefund),
+    paymentMode: readMallPaymentMode(),
+    paymentUnavailableReason: paymentUnavailableReason(),
     paymentEnabled: item.status === "PENDING_PAYMENT" && (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()),
     paymentNotice: buildPaymentNotice(item.status)
   };
@@ -238,7 +246,13 @@ function buildPaymentNotice(status: string): string | null {
   if (status !== "PENDING_PAYMENT") return null;
   if (isMallWechatPaymentEnabled()) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
   if (isMallMockPaymentEnabled()) return "当前为 mock 支付模式，可使用测试支付完成商城订单。";
-  return "商城支付未启用，订单保持待支付状态，不会伪造支付成功。";
+  return "当前商城支付暂未开放；订单已创建，状态为待支付；请联系会务组或等待商城支付开放";
+}
+
+function paymentUnavailableReason(): string | null {
+  if (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()) return null;
+  if (readMallPaymentMode() === "wechat") return "WECHAT_PAY_MALL_NOTIFY_URL 未配置，商城微信支付不可用。";
+  return "MALL_PAYMENT_MODE 未开启商城支付，生产默认保持 disabled。";
 }
 
 function formatPayment(item: Prisma.MallPaymentGetPayload<Record<string, never>>) {

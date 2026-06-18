@@ -72,11 +72,11 @@ export class AdminMaterialsService {
     const categoryId = readOptionalString(query, "categoryId");
     const usage = readOptionalString(query, "usage");
     const keyword = readOptionalString(query, "keyword");
-    const enabled = readOptionalBoolean(query, "enabled");
+    const enabled = readOptionalBoolean(query, "enabled") ?? true;
     const where: Prisma.MaterialAssetWhereInput = {
       ...(categoryId ? { categoryId } : {}),
       ...(usage ? { usage } : {}),
-      ...(typeof enabled === "boolean" ? { enabled } : {}),
+      enabled,
       ...(keyword
         ? {
             OR: [
@@ -162,6 +162,7 @@ export class AdminMaterialsService {
 
   async disableAsset(id: string, admin: CurrentAdmin) {
     await this.ensureAsset(id);
+    const references = await this.countAssetReferences(id);
     const asset = await this.prisma.materialAsset.update({
       where: { id },
       data: {
@@ -171,9 +172,18 @@ export class AdminMaterialsService {
       select: assetSelect
     });
     await this.writeAudit(admin, AuditAction.DELETE, "MaterialAsset", asset.id, "Disable material asset", {
-      usage: asset.usage
+      usage: asset.usage,
+      references
     });
     return ok(formatAsset(asset));
+  }
+
+  private async countAssetReferences(id: string) {
+    const [productCovers, productImages] = await this.prisma.$transaction([
+      this.prisma.product.count({ where: { coverMaterialId: id } }),
+      this.prisma.productImage.count({ where: { materialId: id } })
+    ]);
+    return { productCovers, productImages, total: productCovers + productImages };
   }
 
   private async ensureAsset(id: string): Promise<void> {

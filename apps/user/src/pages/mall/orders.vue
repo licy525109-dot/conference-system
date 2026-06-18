@@ -12,7 +12,7 @@
           <text class="name">{{ order.orderNo }}</text>
           <text class="muted">{{ order.createdAt }}</text>
         </view>
-        <StatusTag :label="orderStatusText(order.status)" :tone="order.status === 'PENDING_PAYMENT' ? 'warning' : 'info'" />
+        <StatusTag :label="orderStatusText(order)" :tone="order.status === 'PENDING_PAYMENT' ? 'warning' : 'info'" />
       </view>
       <view class="items">
         <text v-for="item in order.items" :key="item.id" class="muted">{{ item.productTitle }} / {{ item.skuName }} × {{ item.quantity }}</text>
@@ -33,8 +33,8 @@
         <text class="muted">退款：{{ refundStatusText(latestRefund(order)?.status) }}{{ latestRefund(order)?.failedReason ? `（${latestRefund(order)?.failedReason}）` : "" }}</text>
       </view>
       <view class="actions" v-if="order.status === 'PENDING_PAYMENT' || canRequestAfterSale(order)">
-        <button v-if="order.status === 'PENDING_PAYMENT'" class="ui-button-primary ui-button-compact" :disabled="payingId === order.id" @click="payOrder(order)">
-          {{ payingId === order.id ? "确认中..." : payButtonText }}
+        <button v-if="order.status === 'PENDING_PAYMENT'" class="ui-button-primary ui-button-compact" :disabled="payingId === order.id || order.paymentEnabled === false" @click="payOrder(order)">
+          {{ payingId === order.id ? "确认中..." : order.paymentEnabled === false ? "支付暂未开放" : payButtonText }}
         </button>
         <button v-if="canRequestAfterSale(order)" class="ui-button-secondary ui-button-compact" :disabled="submittingId === order.id" @click="requestAfterSale(order)">
           {{ submittingId === order.id ? "提交中..." : "申请售后" }}
@@ -75,6 +75,14 @@ function canRequestAfterSale(order: MallOrder) {
 }
 
 async function payOrder(order: MallOrder) {
+  if (order.paymentEnabled === false) {
+    uni.showModal({
+      title: "商城支付暂未开放",
+      content: order.paymentNotice || "当前商城支付暂未开放；订单已创建，状态为待支付；请联系会务组或等待商城支付开放",
+      showCancel: false
+    });
+    return;
+  }
   payingId.value = order.id;
   try {
     await startMallOrderPayment(order.id);
@@ -103,8 +111,11 @@ async function requestAfterSale(order: MallOrder) {
   }
 }
 
-function orderStatusText(value: string) {
-  return { PENDING_PAYMENT: "待支付", PAID: "已支付", SHIPPED: "已发货", COMPLETED: "已完成", CLOSED: "已关闭", REFUNDING: "售后中", REFUNDED: "已退款" }[value] ?? value;
+function orderStatusText(order: MallOrder) {
+  if (order.fulfillmentType === "VIRTUAL") {
+    return { PENDING_PAYMENT: "待支付", PAID: "待使用/待核销", SHIPPED: "待使用/待核销", COMPLETED: "已完成", CLOSED: "已关闭", REFUNDING: "售后中", REFUNDED: "已退款" }[order.status] ?? order.status;
+  }
+  return { PENDING_PAYMENT: "待支付", PAID: "已支付", SHIPPED: "已发货", COMPLETED: "已完成", CLOSED: "已关闭", REFUNDING: "售后中", REFUNDED: "已退款" }[order.status] ?? order.status;
 }
 
 function shipmentStatusText(value: string) {

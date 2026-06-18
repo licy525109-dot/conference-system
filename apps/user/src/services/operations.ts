@@ -107,9 +107,9 @@ export interface FinanceRefund {
 
 export async function createMallOrder(input: {
   items: Array<{ skuId: string; quantity: number }>;
-  receiverName: string;
-  receiverPhone: string;
-  receiverAddress: string;
+  receiverName?: string;
+  receiverPhone?: string;
+  receiverAddress?: string;
   remark?: string;
 }) {
   await ensureLogin();
@@ -173,6 +173,7 @@ export interface MallOrderItem {
   skuId: string;
   productTitle: string;
   skuName: string;
+  productType?: "PHYSICAL" | "VIRTUAL" | "SERVICE" | string;
   unitPriceCent: number;
   quantity: number;
   totalAmountCent: number;
@@ -254,6 +255,7 @@ export interface MallOrder {
   receiverName: string | null;
   receiverPhone: string | null;
   receiverAddress: string | null;
+  fulfillmentType?: "SHIPMENT" | "VIRTUAL" | "MIXED" | string;
   remark: string | null;
   paidAt: string | null;
   createdAt: string;

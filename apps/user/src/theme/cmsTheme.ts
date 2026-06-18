@@ -482,11 +482,11 @@ export function dynamicGradientBackground(config: ThemeConfig): string {
   const from = config.backgroundGradientFrom || theme.colors.pageBg;
   const to = config.backgroundGradientTo || theme.colors.secondarySoft;
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 44));
-  const scale = Math.max(30, Math.round(density / 1.45));
+  const scale = Math.max(32, Math.round(density / 1.35));
   const overlay = config.backgroundBottomFilter === false
     ? ""
-    : `linear-gradient(180deg, rgba(255,255,255,0.02), ${alpha(theme.colors.pageBg, 0.72)} 118%), `;
-  return `${overlay}radial-gradient(circle at 12% 10%, ${alpha(theme.colors.primary, 0.34)} 0, transparent ${scale}%), radial-gradient(circle at 88% 16%, ${alpha(theme.colors.secondary, 0.32)} 0, transparent ${scale + 12}%), radial-gradient(circle at 18% 82%, ${alpha(theme.colors.accent, 0.18)} 0, transparent ${scale + 20}%), linear-gradient(132deg, ${from} 0%, ${to} 62%, ${theme.colors.accentSoft} 142%)`;
+    : `linear-gradient(180deg, rgba(255,255,255,0.02), ${alpha(theme.colors.pageBg, 0.58)} 118%), `;
+  return `${overlay}radial-gradient(circle at 12% 10%, ${alpha(theme.colors.primary, 0.5)} 0, transparent ${scale}%), radial-gradient(circle at 88% 16%, ${alpha(theme.colors.secondary, 0.46)} 0, transparent ${scale + 12}%), radial-gradient(circle at 18% 82%, ${alpha(theme.colors.accent, 0.3)} 0, transparent ${scale + 20}%), linear-gradient(132deg, ${from} 0%, ${to} 60%, ${theme.colors.accentSoft} 142%)`;
 }
 
 function normalizePresetId(value: unknown): CmsThemePresetId {

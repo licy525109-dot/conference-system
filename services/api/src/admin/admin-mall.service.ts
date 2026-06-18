@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuditAction, PaymentProvider, Prisma, RefundStatus } from "@prisma/client";
-import { isMallMockRefundEnabled, isMallWechatRefundConfigured } from "../mall/mall-payment.config";
+import { isMallMockPaymentEnabled, isMallMockRefundEnabled, isMallWechatPaymentEnabled, isMallWechatRefundConfigured, readMallPaymentMode } from "../mall/mall-payment.config";
 import { PrismaService } from "../prisma.service";
 import { CurrentAdmin } from "./current-admin";
 
 const PRODUCT_STATUSES = ["DRAFT", "PUBLISHED", "OFFLINE"] as const;
+const PRODUCT_TYPES = ["PHYSICAL", "VIRTUAL", "SERVICE"] as const;
 const SKU_STATUSES = ["ACTIVE", "INACTIVE"] as const;
 const ORDER_STATUSES = ["PENDING_PAYMENT", "PAID", "SHIPPED", "COMPLETED", "CLOSED", "REFUNDING", "REFUNDED"] as const;
 const SHIPMENT_STATUSES = ["PENDING", "SHIPPED", "COMPLETED", "CANCELLED"] as const;
@@ -116,20 +117,22 @@ export class AdminMallService {
 
   async createProduct(input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
-    const detailImageUrls = readOptionalStringArray(body.detailImageUrls);
+    const detailImages = readProductImageInputs(body);
     const product = await this.prisma.$transaction(async (tx) => {
       const created = await tx.product.create({
         data: {
           categoryId: readNullableString(body.categoryId),
           title: readRequiredString(body, "title"),
           subtitle: readNullableString(body.subtitle),
+          productType: readStatus(readOptionalString(body, "productType") ?? "PHYSICAL", PRODUCT_TYPES, "商品类型") ?? "PHYSICAL",
           descriptionJson: readNullableObject(body.descriptionJson),
           coverImageUrl: readNullableString(body.coverImageUrl),
+          coverMaterialId: readNullableString(body.coverMaterialId),
           status: readStatus(readOptionalString(body, "status") ?? "DRAFT", PRODUCT_STATUSES, "商品状态") ?? "DRAFT",
           sortOrder: readOptionalInt(body, "sortOrder") ?? 0
         }
       });
-      await replaceProductImages(tx, created.id, detailImageUrls);
+      await replaceProductImages(tx, created.id, detailImages);
       return tx.product.findUniqueOrThrow({ where: { id: created.id }, include: { category: true, skus: true, images: { orderBy: { sortOrder: "asc" } } } });
     });
     await this.writeAudit(admin, AuditAction.CREATE, "Product", product.id, "Create product", { title: product.title });
@@ -138,7 +141,7 @@ export class AdminMallService {
 
   async updateProduct(id: string, input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
-    const detailImageUrls = typeof body.detailImageUrls === "undefined" ? undefined : readOptionalStringArray(body.detailImageUrls);
+    const detailImages = typeof body.detailImages === "undefined" && typeof body.detailImageUrls === "undefined" ? undefined : readProductImageInputs(body);
     const product = await this.prisma.$transaction(async (tx) => {
       await tx.product.update({
         where: { id },
@@ -146,13 +149,15 @@ export class AdminMallService {
           ...(typeof body.categoryId !== "undefined" ? { categoryId: readNullableString(body.categoryId) } : {}),
           ...(typeof body.title !== "undefined" ? { title: readRequiredString(body, "title") } : {}),
           ...(typeof body.subtitle !== "undefined" ? { subtitle: readNullableString(body.subtitle) } : {}),
+          ...(typeof body.productType !== "undefined" ? { productType: readStatus(readRequiredString(body, "productType"), PRODUCT_TYPES, "商品类型") } : {}),
           ...(typeof body.descriptionJson !== "undefined" ? { descriptionJson: readNullableObject(body.descriptionJson) } : {}),
           ...(typeof body.coverImageUrl !== "undefined" ? { coverImageUrl: readNullableString(body.coverImageUrl) } : {}),
+          ...(typeof body.coverMaterialId !== "undefined" ? { coverMaterialId: readNullableString(body.coverMaterialId) } : {}),
           ...(typeof body.status !== "undefined" ? { status: readStatus(readRequiredString(body, "status"), PRODUCT_STATUSES, "商品状态") } : {}),
           ...(typeof body.sortOrder !== "undefined" ? { sortOrder: readRequiredInt(body, "sortOrder") } : {})
         }
       });
-      if (detailImageUrls) await replaceProductImages(tx, id, detailImageUrls);
+      if (detailImages) await replaceProductImages(tx, id, detailImages);
       return tx.product.findUniqueOrThrow({ where: { id }, include: { category: true, skus: true, images: { orderBy: { sortOrder: "asc" } } } });
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "Product", id, "Update product", { title: product.title, status: product.status });
@@ -298,6 +303,7 @@ export class AdminMallService {
     const order = await this.prisma.mallOrder.findUnique({ where: { id: orderId }, include: { shipments: true } });
     if (!order) throw new NotFoundException("Mall order not found");
     if (order.status !== "PAID") throw new ConflictException("仅已支付商城订单可发货；待支付订单不能进入履约");
+    if (order.fulfillmentType !== "SHIPMENT") throw new ConflictException("虚拟/服务商品不进入发货流程，请在订单状态中完成使用或核销处理");
     if (order.shipments.some((item) => item.status === "SHIPPED")) throw new ConflictException("该订单已有进行中的发货记录");
     const shipment = await this.prisma.$transaction(async (tx) => {
       const created = await tx.mallShipment.create({
@@ -490,7 +496,8 @@ function formatProduct(item: Prisma.ProductGetPayload<{ include: { category: tru
     updatedAt: item.updatedAt.toISOString(),
     skus: item.skus.map(formatSku),
     images: item.images.map((image) => ({ ...image, createdAt: image.createdAt.toISOString() })),
-    detailImageUrls: item.images.map((image) => image.url)
+    detailImageUrls: item.images.map((image) => image.url),
+    detailImages: item.images.map((image) => ({ id: image.id, url: image.url, materialId: image.materialId, alt: image.alt, sortOrder: image.sortOrder }))
   };
 }
 
@@ -521,6 +528,10 @@ function formatOrder(item: MallOrderWithInclude) {
     refunds: item.refunds.map(formatRefund),
     latestPayment: item.payments[0] ? formatPayment(item.payments[0]) : null,
     latestRefund: item.refunds[0] ? formatRefund(item.refunds[0]) : null,
+    productTypes: Array.from(new Set(item.items.map((orderItem) => orderItem.productType))),
+    paymentMode: readMallPaymentMode(),
+    paymentEnabled: item.status === "PENDING_PAYMENT" && (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()),
+    paymentUnavailableReason: paymentUnavailableReason(),
     paymentNotice: buildPaymentNotice(item.status)
   };
 }
@@ -588,7 +599,16 @@ function formatRefund(item: Prisma.MallRefundGetPayload<Record<string, never>>) 
 }
 
 function buildPaymentNotice(status: string): string | null {
-  return status === "PENDING_PAYMENT" ? "待支付商城订单需由用户端完成微信支付或 mock 支付，后台不会伪造支付成功。" : null;
+  if (status !== "PENDING_PAYMENT") return null;
+  if (isMallWechatPaymentEnabled()) return "商城微信支付已开启；支付金额以商城订单应付金额为准。";
+  if (isMallMockPaymentEnabled()) return "商城 mock 支付已开启，仅用于测试环境。";
+  return "当前商城支付暂未开放；订单已创建，状态为待支付；请联系会务组或等待商城支付开放";
+}
+
+function paymentUnavailableReason(): string | null {
+  if (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()) return null;
+  if (readMallPaymentMode() === "wechat") return "WECHAT_PAY_MALL_NOTIFY_URL 未配置，商城微信支付不可用。";
+  return "MALL_PAYMENT_MODE 未开启商城支付，生产默认 disabled。";
 }
 
 function buildRefundNotice(item: Prisma.MallAfterSaleGetPayload<{ include: typeof mallAfterSaleInclude }>) {
@@ -694,12 +714,18 @@ function generateCode(prefix: string): string {
   return `${prefix}${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
-async function replaceProductImages(tx: Prisma.TransactionClient, productId: string, urls: string[] | undefined) {
-  if (!urls) return;
+interface ProductImageInput {
+  url: string;
+  materialId: string | null;
+  alt: string | null;
+}
+
+async function replaceProductImages(tx: Prisma.TransactionClient, productId: string, images: ProductImageInput[] | undefined) {
+  if (!images) return;
   await tx.productImage.deleteMany({ where: { productId } });
-  if (urls.length > 0) {
+  if (images.length > 0) {
     await tx.productImage.createMany({
-      data: urls.map((url, sortOrder) => ({ productId, url, sortOrder }))
+      data: images.map((image, sortOrder) => ({ productId, url: image.url, materialId: image.materialId, alt: image.alt, sortOrder }))
     });
   }
 }
@@ -796,6 +822,27 @@ function readOptionalStringArray(value: unknown): string[] | undefined {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
   if (typeof value === "string") return value.split(/\n|,/).map((item) => item.trim()).filter(Boolean);
   throw new BadRequestException("图片列表格式不正确");
+}
+
+function readProductImageInputs(body: Record<string, unknown>): ProductImageInput[] | undefined {
+  if (typeof body.detailImages !== "undefined") {
+    const value = body.detailImages;
+    if (value === null || value === "") return [];
+    if (!Array.isArray(value)) throw new BadRequestException("详情图列表格式不正确");
+    return value
+      .map((item) => {
+        if (typeof item === "string") return { url: item.trim(), materialId: null, alt: null };
+        const record = readObject(item);
+        return {
+          url: readRequiredString(record, "url"),
+          materialId: readNullableString(record.materialId),
+          alt: readNullableString(record.alt)
+        };
+      })
+      .filter((item) => item.url.length > 0);
+  }
+
+  return readOptionalStringArray(body.detailImageUrls)?.map((url) => ({ url, materialId: null, alt: null }));
 }
 
 function readStatus<T extends readonly string[]>(value: string | undefined, allowed: T, label: string): T[number] | undefined {

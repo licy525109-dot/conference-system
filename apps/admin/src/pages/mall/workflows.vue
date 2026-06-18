@@ -190,7 +190,7 @@
       <el-form :model="shipmentForm" label-width="120px" class="dialog-form">
         <el-form-item label="订单">
           <el-select v-model="shipmentForm.orderId" filterable placeholder="选择商城订单">
-            <el-option v-for="item in orderOptions" :key="item.id" :label="`${item.orderNo} ${item.receiverName || ''}`" :value="item.id" />
+            <el-option v-for="item in shippableOrderOptions" :key="item.id" :label="`${item.orderNo} ${item.receiverName || ''}`" :value="item.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="物流公司"><el-input v-model="shipmentForm.company" placeholder="到店核销可为空" /></el-form-item>
@@ -317,6 +317,7 @@ const afterSales = ref<MallAfterSale[]>([]);
 const inventoryLogs = ref<MallInventoryLog[]>([]);
 const productOptions = ref<Product[]>([]);
 const orderOptions = ref<MallOrder[]>([]);
+const shippableOrderOptions = computed(() => orderOptions.value.filter((item) => item.fulfillmentType === "SHIPMENT"));
 
 const categoryVisible = ref(false);
 const skuVisible = ref(false);
@@ -438,6 +439,11 @@ function openShipment(row?: MallShipment) {
 }
 
 async function saveShipment() {
+  const selectedOrder = orderOptions.value.find((item) => item.id === shipmentForm.orderId);
+  if (!shipmentForm.id && selectedOrder?.fulfillmentType !== "SHIPMENT") {
+    ElMessage.warning("虚拟/服务商品不进入发货流程");
+    return;
+  }
   const payload = {
     orderId: shipmentForm.orderId,
     company: shipmentForm.company || null,

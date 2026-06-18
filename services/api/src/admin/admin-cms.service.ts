@@ -14,7 +14,9 @@ import { assertCmsPresetsArePublishable, assertCmsPublishable, buildCmsPublishCh
 import { ok } from "../cms/cms.service";
 import { CurrentAdmin } from "./current-admin";
 
-const KNOWN_PAGE_KEYS = new Set(["home", "conference-list", "conference-detail", "my-registrations", "cart", "member-center", "mall"]);
+const KNOWN_PAGE_KEYS = new Set(["home", "conference-list", "conference-detail", "my-registrations", "cart", "member-center", "mall", "mall-detail"]);
+const PAGE_TYPES_REQUIRING_CONFERENCE = new Set(["CONFERENCE_DETAIL_PAGE"]);
+const PAGE_TYPES_REQUIRING_PRODUCT = new Set(["PRODUCT_DETAIL_PAGE"]);
 const DEFAULT_SCOPE = "global";
 const PAGE_LIBRARY_PREFIX = "template:";
 
@@ -41,6 +43,8 @@ export class AdminCmsService {
     const body = readObject(input);
     const pageKey = normalizePageKey(readRequiredString(body, "pageKey"));
     const title = readRequiredString(body, "title");
+    const pageType = readOptionalString(body, "pageType") ?? inferPageType(pageKey);
+    const binding = await this.normalizePageBinding(pageType, body);
     const templateVersion = await this.loadPageLibraryTemplateVersion(readOptionalString(body, "templateId"));
     const components = parseComponents(body.components ?? templateVersion?.components ?? defaultPageComponents(pageKey));
     const themeJson = cloneTemplateThemeForPage(templateVersion?.themeJson, title);
@@ -50,7 +54,8 @@ export class AdminCmsService {
           pageKey,
           title,
           description: readOptionalString(body, "description"),
-          pageType: readOptionalString(body, "pageType") ?? inferPageType(pageKey),
+          pageType,
+          ...binding,
           enabled: readOptionalBoolean(body, "enabled") ?? true,
           sortOrder: readOptionalInt(body, "sortOrder") ?? 0,
           versions: {
@@ -148,11 +153,19 @@ export class AdminCmsService {
   async updatePage(id: string, input: unknown, admin: CurrentAdmin) {
     await this.ensurePage(id);
     const body = readObject(input);
+    const current = await this.prisma.pageTemplate.findUniqueOrThrow({
+      where: { id },
+      select: { pageType: true }
+    });
+    const nextPageType = readOptionalString(body, "pageType") ?? current.pageType;
+    const binding = await this.normalizePageBinding(nextPageType, body, true);
     const template = await this.prisma.pageTemplate.update({
       where: { id },
       data: {
         ...(typeof body.title !== "undefined" ? { title: readRequiredString(body, "title") } : {}),
         ...(typeof body.description !== "undefined" ? { description: readNullableString(body.description) } : {}),
+        ...(typeof body.pageType !== "undefined" ? { pageType: nextPageType } : {}),
+        ...binding,
         ...(typeof body.enabled !== "undefined" ? { enabled: readRequiredBoolean(body.enabled, "enabled") } : {}),
         ...(typeof body.sortOrder !== "undefined" ? { sortOrder: readRequiredInt(body, "sortOrder") } : {})
       },
@@ -552,18 +565,21 @@ export class AdminCmsService {
       { pageKey: "my-registrations", title: "我的报名页", pageType: "USER", sortOrder: 30 },
       { pageKey: "cart", title: "购物车页", pageType: "USER", sortOrder: 40 },
       { pageKey: "member-center", title: "会员中心页", pageType: "USER", sortOrder: 50 },
-      { pageKey: "mall", title: "商城首页", pageType: "MALL", sortOrder: 60 }
+      { pageKey: "mall", title: "商城首页", pageType: "MALL", sortOrder: 60 },
+      { pageKey: "mall-detail", title: "商品详情模板", pageType: "PRODUCT_DETAIL_TEMPLATE", sortOrder: 70 }
     ]) {
       const template = await this.prisma.pageTemplate.upsert({
         where: { pageKey: page.pageKey },
         update: {
           title: page.title,
           pageType: page.pageType,
+          bindingType: page.pageKey === "mall-detail" ? "PRODUCT_TEMPLATE" : page.pageKey === "conference-detail" ? "CONFERENCE_TEMPLATE" : null,
           enabled: true,
           sortOrder: page.sortOrder
         },
         create: {
           ...page,
+          bindingType: page.pageKey === "mall-detail" ? "PRODUCT_TEMPLATE" : page.pageKey === "conference-detail" ? "CONFERENCE_TEMPLATE" : null,
           enabled: true
         }
       });
@@ -670,6 +686,31 @@ export class AdminCmsService {
     };
   }
 
+  private async normalizePageBinding(pageType: string, body: Record<string, unknown>, patch = false) {
+    if (PAGE_TYPES_REQUIRING_CONFERENCE.has(pageType)) {
+      const conferenceId = readRequiredString(body, "conferenceId");
+      const conference = await this.prisma.conference.findUnique({ where: { id: conferenceId }, select: { id: true } });
+      if (!conference) throw new BadRequestException("绑定会议不存在，请重新选择会议");
+      return { bindingType: "SPECIFIC_CONFERENCE", conferenceId, productId: null };
+    }
+    if (PAGE_TYPES_REQUIRING_PRODUCT.has(pageType)) {
+      const productId = readRequiredString(body, "productId");
+      const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+      if (!product) throw new BadRequestException("绑定商品不存在，请重新选择商品");
+      return { bindingType: "SPECIFIC_PRODUCT", conferenceId: null, productId };
+    }
+    if (pageType === "CONFERENCE_DETAIL_TEMPLATE") {
+      return { bindingType: "CONFERENCE_TEMPLATE", conferenceId: null, productId: null };
+    }
+    if (pageType === "PRODUCT_DETAIL_TEMPLATE") {
+      return { bindingType: "PRODUCT_TEMPLATE", conferenceId: null, productId: null };
+    }
+    if (!patch || typeof body.pageType !== "undefined" || typeof body.conferenceId !== "undefined" || typeof body.productId !== "undefined") {
+      return { bindingType: null, conferenceId: null, productId: null };
+    }
+    return {};
+  }
+
   private async writeAudit(
     admin: CurrentAdmin,
     action: AuditAction,
@@ -697,6 +738,9 @@ const pageSelect = {
   title: true,
   description: true,
   pageType: true,
+  bindingType: true,
+  conferenceId: true,
+  productId: true,
   enabled: true,
   sortOrder: true,
   publishedVersionId: true,
@@ -745,6 +789,9 @@ const pageLibrarySelect = {
   title: true,
   description: true,
   pageType: true,
+  bindingType: true,
+  conferenceId: true,
+  productId: true,
   enabled: true,
   publishedVersionId: true,
   createdAt: true,
