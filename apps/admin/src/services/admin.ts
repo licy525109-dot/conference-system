@@ -878,6 +878,12 @@ export function updateMallAfterSale(id: string, input: Record<string, unknown>) 
   });
 }
 
+export function processMallAfterSaleRefund(id: string) {
+  return apiRequest<MallAfterSale>(`/admin/mall/aftersales/${encodeURIComponent(id)}/process-refund`, {
+    method: "POST"
+  });
+}
+
 export function getInventoryAlertRule(conferenceId: string) {
   return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/inventory-alert-rule`);
 }

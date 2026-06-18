@@ -166,6 +166,12 @@ export class AdminMallController {
     return this.mallService.updateAfterSale(id, body, request.currentAdmin!);
   }
 
+  @Post("aftersales/:id/process-refund")
+  @RequireAdminPermissions("mall:aftersale")
+  processAfterSaleRefund(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.mallService.processAfterSaleRefund(id, request.currentAdmin!);
+  }
+
   @Get("orders-export")
   @RequireAdminPermissions("mall:order")
   exportOrders() {

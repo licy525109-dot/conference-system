@@ -70,6 +70,7 @@ export interface AddRegistrationCartInput {
 }
 
 export interface ProductCheckoutResult {
+  id: string;
   orderNo: string;
   status: string;
   payableAmountCent: number;

@@ -57,12 +57,12 @@
 | 会员 | `/members/levels` | 会员等级 | `/admin/member-levels*` | MemberLevel | 会员中心 | 后续 | 否 | 等级真实，会员购买自动开通仍未完成。 |
 | 会员 | `/members/benefits` | OperationalWorkflowsPage | `/admin/member-benefits` | MemberBenefit | CMS 会员权益/会员中心 | 后续 | 否 | 权益展示已接入，权益发放自动化未完成。 |
 | 会员 | `/members/pricing-rules` | OperationalWorkflowsPage | `/admin/member-pricing-rules` | MembershipPriceRule | quote/create order | 无 | 是 | 会员价已进入 quote/create order，支持固定价、折扣基点、立减，并保存订单计价快照。 |
-| 商城 | `/mall/products` | 商品管理 | `/admin/mall/products*` | Product, ProductSku, ProductImage | 商城首页/详情 | 无 | 是 | 商品、封面、详情图和上架状态真实；真实支付仍未接入，用户端明确创建待支付订单。 |
+| 商城 | `/mall/products` | 商品管理 | `/admin/mall/products*` | Product, ProductSku, ProductImage | 商城首页/详情 | 无 | 是 | 商品、封面、详情图和上架状态真实；支付成功后才进入发货与售后流程。 |
 | 商城 | `/mall/categories` | MallWorkflowsPage | `/admin/mall/categories*` | ProductCategory | 商城首页 | 无 | 是 | 分类列表、新增、编辑、启停和排序真实。 |
 | 商城 | `/mall/skus` | MallWorkflowsPage | `/admin/mall/skus`, `/admin/mall/inventory-logs` | ProductSku, MallInventoryLog | 商品详情 | 无 | 是 | SKU 价格、总库存、锁定库存、可售库存和库存流水真实。 |
-| 商城 | `/mall/orders` | 商城订单 | `/admin/mall/orders*`, `/my/mall-orders*`, `/mall/orders` | MallOrder, MallOrderItem, MallInventoryLog | 我的商城订单 | 无 | 是 | 创建订单由后端重算金额并锁库存，订单保持 PENDING_PAYMENT；关闭待支付订单释放库存，与报名订单隔离。 |
-| 商城 | `/mall/fulfillment` | MallWorkflowsPage | `/admin/mall/shipments`, `/admin/mall/orders/:id/ship`, `/admin/mall/orders/:id/verify` | MallShipment | 我的商城订单 | 无 | 是 | 仅 PAID 订单可发货，SHIPPED 可完成核销；不会因真实支付未开放而伪造支付成功。 |
-| 商城 | `/mall/aftersales` | MallWorkflowsPage | `/admin/mall/aftersales`, `/my/mall-aftersales` | MallAfterSale | 我的商城订单 | 无 | 是 | 售后申请和后台状态机真实；真实微信退款仍在财务退款灰度流程内，不由商城售后伪造到账。 |
+| 商城 | `/mall/orders` | 商城订单 | `/admin/mall/orders*`, `/my/mall-orders*`, `/mall/orders`, `/mall/orders/:id/payments/wechat/prepay`, `/mall/orders/:id/payments/mock-pay`, `/mall/orders/:id/payment-status`, `/mall/payments/wechat/notify` | MallOrder, MallOrderItem, MallPayment, MallInventoryLog | 我的商城订单 | 无 | 是 | 创建订单由后端重算金额并锁库存；商城支付使用 `MALL_` 前缀 out_trade_no、独立 notify、独立 `MallPaymentCompletionService` 和商城专用开关，成功后转 PAID 并将锁定库存转为已售。 |
+| 商城 | `/mall/fulfillment` | MallWorkflowsPage | `/admin/mall/shipments`, `/admin/mall/orders/:id/ship`, `/admin/mall/orders/:id/verify` | MallShipment | 我的商城订单 | 无 | 是 | 仅 PAID 订单可发货，SHIPPED 可完成核销；不会由后台伪造支付成功。 |
+| 商城 | `/mall/aftersales` | MallWorkflowsPage | `/admin/mall/aftersales`, `/admin/mall/aftersales/:id/process-refund`, `/my/mall-aftersales` | MallAfterSale, MallRefund | 我的商城订单 | 无 | 是 | 售后申请、后台审批、MallRefund 创建和处理真实；mock 退款可成功，微信退款未配置时只进入 PROCESSING 并记录原因，不伪造到账。 |
 | 财务管理 | `/finance/payments` | FinancePage | `/admin/finance/payments`, `/admin/payments` | Payment | 不需要 | 辅助 | 否 | 只读流水核对。 |
 | 财务管理 | `/finance/refunds` | OperationalWorkflowsPage | `/admin/refunds*`, `/my/refunds` | Refund | 我的退款 | 灰度 | 否 | 后台审批状态机和幂等已有单测，微信退款默认关闭。 |
 | 财务管理 | `/finance/invoices` | OperationalWorkflowsPage | `/admin/invoices*`, `/invoices`, `/my/invoices` | InvoiceApplication | 我的发票 | 灰度 | 否 | 自有发票流程真实，未接微信电子发票。 |
@@ -100,6 +100,8 @@
 ## 安全与主链路结论
 
 - 未改支付回调验签、解密、金额校验和报名生成主事务。
+- 商城支付新增独立 `MallPayment` / `MallRefund` 表、独立 `/mall/payments/wechat/notify` 和独立 `MallPaymentCompletionService`，未写入报名 `Order` / `Payment`，不会生成 Registration。
+- 商城支付不复用报名支付成功服务，也不通过报名微信支付全局开关自动开放；生产未准备商城真实支付时建议配置 `MALL_PAYMENT_MODE=disabled`、`MALL_MOCK_PAYMENT_ENABLED=false`、`MALL_REFUND_MODE=disabled`、`MALL_MOCK_REFUND_ENABLED=false`、`MALL_WECHAT_REFUND_ENABLED=false`。
 - 新增退款、财务、商城、通知、AI、企微相关入口默认走现有鉴权和权限码。
 - 企微 Secret、Token、EncodingAESKey 仍只在后台配置，前端不展示原文。
 - 微信订阅、短信、AI provider、微信退款、微信账单真实下载在无配置时保持跳过或灰度，不伪造外部成功。通知中心核心任务会区分 SENT、PARTIAL_FAILED、FAILED、SKIPPED。
@@ -109,6 +111,6 @@
 
 - 营销活动已补优惠券适用范围、领取库存、重复领取、会员价/优惠券/满减组合和金额篡改回归测试；后续主要关注真实运营数据下的人工验收。
 - 签到扫码、重复核销、撤销核销需补 E2E。
-- 微信退款回调金额校验需补 mock/provider 双路径测试。
-- 商城已补金额篡改拒绝、待支付订单锁库存、关闭释放库存、可售库存口径单测；真实商城支付、微信退款到账和端到端发货核销仍需在后续接入真实支付后补专项 E2E。
+- 微信退款回调金额校验需补真实 provider 回调路径测试。
+- 商城已补金额篡改拒绝、待支付订单锁库存、关闭释放库存、商城微信 prepay 后端金额、mock 支付成功、库存转已售、重复支付幂等、金额不一致拒绝、非本人支付拒绝、mock 退款、未配置微信退款不伪造成功、超额退款和重复退款单测；真实微信支付/退款联调和端到端发货核销仍需在有商户配置后补专项 E2E。
 - AI provider 真实接入、企微客户群真实权限检测需在有企业配置后做联调；AI 知识库本轮已补 provider 未配置降级、会议隔离、兜底、日志、推荐问题隔离、文档启停/重建和密钥脱敏测试。

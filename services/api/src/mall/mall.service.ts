@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
+import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled } from "./mall-payment.config";
 
 const FORBIDDEN_AMOUNT_FIELDS = new Set(["originAmountCent", "discountAmountCent", "payableAmountCent", "paidAmountCent", "amountCent", "totalAmountCent", "priceCent"]);
 
@@ -9,7 +10,9 @@ const mallOrderInclude = {
   user: true,
   items: true,
   shipments: { orderBy: { createdAt: "desc" } },
-  afterSales: { orderBy: { createdAt: "desc" } }
+  afterSales: { orderBy: { createdAt: "desc" }, include: { refunds: { orderBy: { createdAt: "desc" } } } },
+  payments: { orderBy: { createdAt: "desc" } },
+  refunds: { orderBy: { createdAt: "desc" } }
 } satisfies Prisma.MallOrderInclude;
 
 @Injectable()
@@ -221,10 +224,40 @@ function formatOrder(item: Prisma.MallOrderGetPayload<{ include: typeof mallOrde
       ...afterSale,
       handledAt: afterSale.handledAt?.toISOString() ?? null,
       createdAt: afterSale.createdAt.toISOString(),
-      updatedAt: afterSale.updatedAt.toISOString()
+      updatedAt: afterSale.updatedAt.toISOString(),
+      refunds: afterSale.refunds.map(formatRefund)
     })),
-    paymentEnabled: false,
-    paymentNotice: "商城真实支付暂未开放，订单已按后端价格创建为待支付，不会伪造支付成功。"
+    payments: item.payments.map(formatPayment),
+    refunds: item.refunds.map(formatRefund),
+    paymentEnabled: item.status === "PENDING_PAYMENT" && (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()),
+    paymentNotice: buildPaymentNotice(item.status)
+  };
+}
+
+function buildPaymentNotice(status: string): string | null {
+  if (status !== "PENDING_PAYMENT") return null;
+  if (isMallWechatPaymentEnabled()) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
+  if (isMallMockPaymentEnabled()) return "当前为 mock 支付模式，可使用测试支付完成商城订单。";
+  return "商城支付未启用，订单保持待支付状态，不会伪造支付成功。";
+}
+
+function formatPayment(item: Prisma.MallPaymentGetPayload<Record<string, never>>) {
+  return {
+    ...item,
+    paidAt: item.paidAt?.toISOString() ?? null,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString()
+  };
+}
+
+function formatRefund(item: Prisma.MallRefundGetPayload<Record<string, never>>) {
+  return {
+    ...item,
+    requestedAt: item.requestedAt.toISOString(),
+    approvedAt: item.approvedAt?.toISOString() ?? null,
+    processedAt: item.processedAt?.toISOString() ?? null,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString()
   };
 }
 

@@ -6,7 +6,7 @@
       <view>
         <text class="eyebrow">会议报名优先</text>
         <text class="title">购物车</text>
-        <text class="subtitle">会议报名项可继续支付；商城商品可创建待支付订单，真实支付暂未开放。</text>
+        <text class="subtitle">会议报名项可继续支付；商城商品可创建订单后前往订单页支付。</text>
       </view>
       <button class="ui-button-secondary ui-button-compact" @click="loadCart">刷新</button>
     </view>
@@ -14,7 +14,7 @@
     <ExtensionStatusNotice
       status="主线提醒"
       title="第一版优先完成会议报名缴费"
-      description="购物车中的商品可创建商城待支付订单，金额由后端按 SKU 当前价格重算，不会跳转支付。"
+      description="购物车中的商品可创建商城待支付订单，金额由后端按 SKU 当前价格重算，支付以订单页后端状态为准。"
       tone="info"
     />
 
@@ -60,14 +60,14 @@
         <view class="section-head">
           <view>
             <text class="section-title">商品</text>
-            <text class="muted">商品可创建待支付订单，真实支付暂未开放</text>
+            <text class="muted">商品可创建待支付订单，订单页完成支付</text>
           </view>
           <StatusTag label="待支付订单" tone="info" />
         </view>
         <ExtensionStatusNotice
           status="商城订单"
           title="商品项可创建待支付订单"
-          description="后端会重新计算金额并锁定库存。当前不会跳转支付，也不会伪造支付成功。"
+          description="后端会重新计算金额并锁定库存。订单创建后前往我的商城订单完成支付。"
           tone="info"
         />
         <view class="receiver-card ui-card">
@@ -223,8 +223,9 @@ async function checkoutProduct(id: string) {
     productItems.value = productItems.value.filter((item) => item.id !== id);
     uni.showModal({
       title: "商城订单已创建",
-      content: `订单号：${order.orderNo}\n${order.paymentNotice || "当前不会跳转支付，订单保持待支付状态。"}`,
-      showCancel: false
+      content: `订单号：${order.orderNo}\n${order.paymentNotice || "请前往我的商城订单完成支付。"}`,
+      showCancel: false,
+      success: () => uni.navigateTo({ url: "/pages/mall/orders" })
     });
   } catch (err) {
     console.error("[CART_CHECKOUT_PRODUCT_ERROR]", err);

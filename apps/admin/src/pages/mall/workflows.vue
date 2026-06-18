@@ -133,15 +133,21 @@
         <el-table-column prop="orderNo" label="订单号" min-width="180" />
         <el-table-column label="类型" width="120"><template #default="{ row }">{{ afterSaleTypeText(row.type) }}</template></el-table-column>
         <el-table-column label="状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="afterSaleStatusText(row.status)" /></template></el-table-column>
+        <el-table-column label="退款" min-width="220">
+          <template #default="{ row }">
+            <div>{{ refundStatusText(latestRefund(row)?.status) }} / {{ providerText(latestRefund(row)?.provider) }}</div>
+            <div class="muted-text">{{ latestRefund(row)?.refundNo || row.refundNotice || "-" }}</div>
+          </template>
+        </el-table-column>
         <el-table-column prop="reason" label="原因" min-width="220" show-overflow-tooltip />
         <el-table-column prop="note" label="处理备注" min-width="220" show-overflow-tooltip />
         <el-table-column prop="createdAt" label="申请时间" width="180" />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="330" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === 'REQUESTED'" size="small" type="primary" @click="moveAfterSale(row.id, 'APPROVED')">同意</el-button>
             <el-button v-if="row.status === 'REQUESTED'" size="small" @click="moveAfterSale(row.id, 'REJECTED')">拒绝</el-button>
-            <el-button v-if="row.status === 'APPROVED'" size="small" @click="moveAfterSale(row.id, 'PROCESSING')">处理中</el-button>
-            <el-button v-if="['APPROVED', 'PROCESSING'].includes(row.status)" size="small" type="success" @click="moveAfterSale(row.id, 'COMPLETED')">完成</el-button>
+            <el-button v-if="['APPROVED', 'PROCESSING'].includes(row.status)" size="small" type="warning" @click="processRefund(row)">处理退款</el-button>
+            <el-button v-if="row.status === 'PROCESSING' && latestRefund(row)?.status !== 'PROCESSING'" size="small" type="success" @click="moveAfterSale(row.id, 'COMPLETED')">完成</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -203,7 +209,7 @@
     </el-dialog>
 
     <el-dialog v-model="afterSaleVisible" title="创建售后记录" width="560px">
-      <el-alert type="warning" :closable="false" show-icon title="真实退款暂未开放；售后完成不代表微信退款到账。" />
+      <el-alert type="warning" :closable="false" show-icon title="退款由 MallRefund 独立记录；微信退款未配置时只进入处理中，不会伪造成功。" />
       <el-form :model="afterSaleForm" label-width="110px" class="dialog-form">
         <el-form-item label="订单">
           <el-select v-model="afterSaleForm.orderId" filterable placeholder="选择商城订单">
@@ -244,6 +250,7 @@ import {
   listMallShipments,
   listProductCategories,
   listProductSkus,
+  processMallAfterSaleRefund,
   updateMallAfterSale,
   updateMallShipment,
   updateProductCategory,
@@ -285,8 +292,8 @@ const pageMeta = computed(() => {
   const map = {
     categories: { title: "商品分类", subtitle: "维护商城商品分类、启停和排序，用户端只展示已启用分类。" },
     skus: { title: "SKU 库存", subtitle: "维护 SKU 价格、总库存、锁定库存和可售库存；待支付订单会锁定库存。" },
-    fulfillment: { title: "发货核销", subtitle: "处理已支付商城订单的发货和到店核销；真实支付未开放时不会伪造已支付订单。" },
-    aftersales: { title: "商城售后", subtitle: "处理商城售后申请；真实退款暂未开放，状态流转只记录业务处理进度。" }
+    fulfillment: { title: "发货核销", subtitle: "处理已支付商城订单的发货和到店核销；支付成功后才能发货。" },
+    aftersales: { title: "商城售后", subtitle: "处理商城售后申请、退款请求和退款结果；未配置微信退款时不会伪造成功。" }
   } satisfies Record<MallMode, { title: string; subtitle: string }>;
   return map[mode.value];
 });
@@ -470,6 +477,12 @@ async function moveAfterSale(id: string, status: string) {
   ElMessage.success("售后状态已更新");
 }
 
+async function processRefund(row: MallAfterSale) {
+  await processMallAfterSaleRefund(row.id);
+  await load();
+  ElMessage.success("退款处理状态已更新");
+}
+
 function formatCent(value: number) {
   return (value / 100).toFixed(2);
 }
@@ -488,6 +501,18 @@ function afterSaleTypeText(value: string) {
 
 function afterSaleStatusText(value: string) {
   return { REQUESTED: "已申请", APPROVED: "已同意", REJECTED: "已拒绝", PROCESSING: "处理中", COMPLETED: "已完成", CANCELLED: "已取消" }[value] ?? value;
+}
+
+function latestRefund(row: MallAfterSale) {
+  return row.latestRefund || row.refunds?.[0] || null;
+}
+
+function refundStatusText(value?: string | null) {
+  return value ? ({ REQUESTED: "已申请", APPROVED: "已同意", PROCESSING: "处理中", SUCCESS: "已退款", FAILED: "失败", REJECTED: "已拒绝" }[value] ?? value) : "无退款";
+}
+
+function providerText(value?: string | null) {
+  return value ? ({ MOCK: "mock", WECHAT: "微信" }[value] ?? value) : "-";
 }
 </script>
 

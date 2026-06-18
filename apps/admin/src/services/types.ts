@@ -927,7 +927,44 @@ export interface MallAfterSale {
   handledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  refunds?: MallRefund[];
+  latestRefund?: MallRefund | null;
   refundNotice?: string | null;
+}
+
+export interface MallPayment {
+  id: string;
+  mallOrderId: string;
+  provider: "MOCK" | "WECHAT";
+  status: "PENDING" | "SUCCESS" | "FAILED" | "CLOSED";
+  outTradeNo: string;
+  transactionId: string | null;
+  amountCent: number;
+  notifyRawId: string | null;
+  paidAt: string | null;
+  failedReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MallRefund {
+  id: string;
+  refundNo: string;
+  outRefundNo: string;
+  mallOrderId: string;
+  afterSaleId: string | null;
+  provider: "MOCK" | "WECHAT" | null;
+  providerRefundId: string | null;
+  amountCent: number;
+  status: "REQUESTED" | "APPROVED" | "PROCESSING" | "SUCCESS" | "FAILED" | "REJECTED";
+  reason: string | null;
+  rejectReason: string | null;
+  failedReason: string | null;
+  requestedAt: string;
+  approvedAt: string | null;
+  processedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MallOrder {
@@ -948,6 +985,10 @@ export interface MallOrder {
   items: MallOrderItem[];
   shipments: MallShipment[];
   afterSales: MallAfterSale[];
+  payments?: MallPayment[];
+  refunds?: MallRefund[];
+  latestPayment?: MallPayment | null;
+  latestRefund?: MallRefund | null;
   paymentEnabled?: boolean;
   paymentNotice?: string;
   createdAt: string;

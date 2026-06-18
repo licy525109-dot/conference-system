@@ -2,7 +2,7 @@
   <view class="page ui-page">
     <view class="topbar ui-card">
       <text class="title">我的商城订单</text>
-      <text class="subtitle">商城订单与会议报名订单分开管理。当前真实支付暂未开放，新订单会保持待支付状态。</text>
+      <text class="subtitle">商城订单与会议报名订单分开管理。待支付订单完成支付后才会进入发货和售后流程。</text>
     </view>
     <LoadingState v-if="loading" title="加载商城订单" description="正在读取订单、履约和售后状态。" />
     <EmptyState v-else-if="orders.length === 0" title="暂无商城订单" description="购买商品后会显示在这里。" mark="商" />
@@ -19,14 +19,24 @@
       </view>
       <text class="price">¥{{ formatCent(order.payableAmountCent) }}</text>
       <text class="muted" v-if="order.paymentNotice">{{ order.paymentNotice }}</text>
+      <view class="meta-row" v-if="latestPayment(order)">
+        <text class="muted">支付：{{ paymentStatusText(latestPayment(order)?.status) }} / {{ providerText(latestPayment(order)?.provider) }}</text>
+        <text class="muted" v-if="latestPayment(order)?.paidAt">支付时间：{{ latestPayment(order)?.paidAt }}</text>
+      </view>
       <view class="meta-row" v-if="order.shipments.length">
         <text class="muted">履约：{{ order.shipments.map((item) => shipmentStatusText(item.status)).join(" / ") }}</text>
       </view>
       <view class="meta-row" v-if="order.afterSales.length">
         <text class="muted">售后：{{ order.afterSales.map((item) => afterSaleStatusText(item.status)).join(" / ") }}</text>
       </view>
-      <view class="actions" v-if="canRequestAfterSale(order)">
-        <button class="ui-button-secondary ui-button-compact" :disabled="submittingId === order.id" @click="requestAfterSale(order)">
+      <view class="meta-row" v-if="latestRefund(order)">
+        <text class="muted">退款：{{ refundStatusText(latestRefund(order)?.status) }}{{ latestRefund(order)?.failedReason ? `（${latestRefund(order)?.failedReason}）` : "" }}</text>
+      </view>
+      <view class="actions" v-if="order.status === 'PENDING_PAYMENT' || canRequestAfterSale(order)">
+        <button v-if="order.status === 'PENDING_PAYMENT'" class="ui-button-primary ui-button-compact" :disabled="payingId === order.id" @click="payOrder(order)">
+          {{ payingId === order.id ? "确认中..." : payButtonText }}
+        </button>
+        <button v-if="canRequestAfterSale(order)" class="ui-button-secondary ui-button-compact" :disabled="submittingId === order.id" @click="requestAfterSale(order)">
           {{ submittingId === order.id ? "提交中..." : "申请售后" }}
         </button>
       </view>
@@ -39,12 +49,15 @@ import { onMounted, ref } from "vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
-import { createMallAfterSale, getMyMallOrders, type MallOrder } from "@/services/operations";
+import { PAYMENT_MODE } from "@/config/app";
+import { createMallAfterSale, getMyMallOrders, startMallOrderPayment, type MallOrder } from "@/services/operations";
 import { formatCent } from "@/utils/money";
 
 const loading = ref(false);
 const submittingId = ref("");
+const payingId = ref("");
 const orders = ref<MallOrder[]>([]);
+const payButtonText = PAYMENT_MODE === "mock" ? "测试支付" : "去支付";
 
 onMounted(() => void load());
 
@@ -59,6 +72,21 @@ async function load() {
 
 function canRequestAfterSale(order: MallOrder) {
   return ["PAID", "SHIPPED", "COMPLETED"].includes(order.status) && !order.afterSales.some((item) => !["REJECTED", "CANCELLED", "COMPLETED"].includes(item.status));
+}
+
+async function payOrder(order: MallOrder) {
+  payingId.value = order.id;
+  try {
+    await startMallOrderPayment(order.id);
+    uni.showToast({ title: "支付成功", icon: "success" });
+    await load();
+  } catch (err) {
+    console.error("[MALL_PAYMENT_ERROR]", err);
+    uni.showToast({ title: "支付未完成，请稍后重试", icon: "none" });
+    await load();
+  } finally {
+    payingId.value = "";
+  }
 }
 
 async function requestAfterSale(order: MallOrder) {
@@ -85,6 +113,26 @@ function shipmentStatusText(value: string) {
 
 function afterSaleStatusText(value: string) {
   return { REQUESTED: "已申请", APPROVED: "已同意", REJECTED: "已拒绝", PROCESSING: "处理中", COMPLETED: "已完成", CANCELLED: "已取消" }[value] ?? value;
+}
+
+function latestPayment(order: MallOrder) {
+  return order.latestPayment || order.payments?.[0] || null;
+}
+
+function latestRefund(order: MallOrder) {
+  return order.latestRefund || order.refunds?.[0] || null;
+}
+
+function paymentStatusText(value?: string | null) {
+  return value ? ({ PENDING: "待支付", SUCCESS: "已支付", FAILED: "失败", CLOSED: "已关闭" }[value] ?? value) : "未创建";
+}
+
+function refundStatusText(value?: string | null) {
+  return value ? ({ REQUESTED: "已申请", APPROVED: "已同意", PROCESSING: "处理中", SUCCESS: "已退款", FAILED: "失败", REJECTED: "已拒绝" }[value] ?? value) : "无退款";
+}
+
+function providerText(value?: string | null) {
+  return value ? ({ MOCK: "mock", WECHAT: "微信" }[value] ?? value) : "-";
 }
 </script>
 

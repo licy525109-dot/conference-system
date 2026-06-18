@@ -3,7 +3,7 @@
     <AdminPageHeader
       title="商城订单"
       eyebrow="商城"
-      subtitle="商城订单与会议报名订单隔离。当前商城真实支付暂未开放，用户下单后保持待支付状态，不会伪造支付成功。"
+      subtitle="商城订单与会议报名订单隔离。支付记录、退款记录和库存转换独立追踪。"
     >
       <template #actions>
         <el-button :loading="loading" @click="load">刷新</el-button>
@@ -38,6 +38,18 @@
           </template>
         </el-table-column>
         <el-table-column label="金额" width="120"><template #default="{ row }">¥{{ formatCent(row.payableAmountCent) }}</template></el-table-column>
+        <el-table-column label="支付" min-width="220">
+          <template #default="{ row }">
+            <div>{{ paymentStatusText(latestPayment(row)?.status) }} / {{ providerText(latestPayment(row)?.provider) }}</div>
+            <div class="muted-text">{{ latestPayment(row)?.outTradeNo || "-" }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="退款" min-width="160">
+          <template #default="{ row }">
+            <div>{{ refundStatusText(latestRefund(row)?.status) }}</div>
+            <div class="muted-text">{{ latestRefund(row)?.refundNo || "-" }}</div>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="130"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="orderStatusText(row.status)" /></template></el-table-column>
         <el-table-column prop="receiverName" label="收件人" width="120" />
         <el-table-column prop="receiverPhone" label="手机号" width="140" />
@@ -66,13 +78,26 @@
 
     <el-drawer v-model="detailVisible" size="620px" title="商城订单详情">
       <template v-if="detail">
-        <el-alert type="info" :closable="false" show-icon :title="detail.paymentNotice || '商城真实支付暂未开放，待支付订单不会伪造支付成功。'" />
+        <el-alert type="info" :closable="false" show-icon :title="detail.paymentNotice || '商城支付、退款和会议报名支付已隔离。'" />
         <section class="detail-section">
           <h3>{{ detail.orderNo }}</h3>
           <p><strong>状态：</strong>{{ orderStatusText(detail.status) }}</p>
           <p><strong>金额：</strong>¥{{ formatCent(detail.payableAmountCent) }}</p>
+          <p><strong>已付金额：</strong>{{ detail.paidAmountCent === null ? "-" : `¥${formatCent(detail.paidAmountCent)}` }}</p>
+          <p><strong>支付时间：</strong>{{ detail.paidAt || "-" }}</p>
           <p><strong>收件人：</strong>{{ detail.receiverName || "-" }} {{ detail.receiverPhone || "" }}</p>
           <p><strong>地址：</strong>{{ detail.receiverAddress || "-" }}</p>
+        </section>
+        <section class="detail-section">
+          <h3>支付记录</h3>
+          <el-table :data="detail.payments || []" size="small" empty-text="暂无支付记录">
+            <el-table-column prop="status" label="状态" width="100"><template #default="{ row }">{{ paymentStatusText(row.status) }}</template></el-table-column>
+            <el-table-column prop="provider" label="Provider" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
+            <el-table-column prop="outTradeNo" label="支付单号" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="transactionId" label="交易号" min-width="160" show-overflow-tooltip />
+            <el-table-column label="金额" width="100"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
+            <el-table-column prop="paidAt" label="支付时间" width="180" />
+          </el-table>
         </section>
         <section class="detail-section">
           <h3>商品明细</h3>
@@ -101,11 +126,22 @@
             <el-table-column prop="reason" label="原因" min-width="180" show-overflow-tooltip />
           </el-table>
         </section>
+        <section class="detail-section">
+          <h3>退款记录</h3>
+          <el-table :data="detail.refunds || []" size="small" empty-text="暂无退款">
+            <el-table-column prop="status" label="状态" width="110"><template #default="{ row }">{{ refundStatusText(row.status) }}</template></el-table-column>
+            <el-table-column prop="provider" label="Provider" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
+            <el-table-column prop="refundNo" label="退款单号" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="outRefundNo" label="商户退款单号" min-width="180" show-overflow-tooltip />
+            <el-table-column label="金额" width="100"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
+            <el-table-column prop="failedReason" label="说明" min-width="180" show-overflow-tooltip />
+          </el-table>
+        </section>
       </template>
     </el-drawer>
 
     <el-dialog v-model="shipVisible" title="商城发货" width="560px">
-      <el-alert type="info" :closable="false" show-icon title="仅已支付商城订单可发货；待支付订单需先完成真实支付接入后才能进入履约。" />
+      <el-alert type="info" :closable="false" show-icon title="仅已支付商城订单可发货；支付成功会将锁定库存转换为已售库存。" />
       <el-form :model="shipForm" label-width="110px" class="dialog-form">
         <el-form-item label="物流公司"><el-input v-model="shipForm.company" placeholder="到店核销可为空" /></el-form-item>
         <el-form-item label="物流单号"><el-input v-model="shipForm.trackingNo" /></el-form-item>
@@ -192,6 +228,14 @@ async function verifyOrder(id: string) {
   ElMessage.success("商城订单已完成核销");
 }
 
+function latestPayment(row: MallOrder) {
+  return row.latestPayment || row.payments?.[0] || null;
+}
+
+function latestRefund(row: MallOrder) {
+  return row.latestRefund || row.refunds?.[0] || null;
+}
+
 function formatCent(value: number) {
   return (value / 100).toFixed(2);
 }
@@ -210,6 +254,18 @@ function afterSaleTypeText(value: string) {
 
 function afterSaleStatusText(value: string) {
   return { REQUESTED: "已申请", APPROVED: "已同意", REJECTED: "已拒绝", PROCESSING: "处理中", COMPLETED: "已完成", CANCELLED: "已取消" }[value] ?? value;
+}
+
+function paymentStatusText(value?: string | null) {
+  return value ? ({ PENDING: "待支付", SUCCESS: "已支付", FAILED: "失败", CLOSED: "已关闭" }[value] ?? value) : "未创建";
+}
+
+function refundStatusText(value?: string | null) {
+  return value ? ({ REQUESTED: "已申请", APPROVED: "已同意", PROCESSING: "处理中", SUCCESS: "已退款", FAILED: "失败", REJECTED: "已拒绝" }[value] ?? value) : "无退款";
+}
+
+function providerText(value?: string | null) {
+  return value ? ({ MOCK: "mock", WECHAT: "微信" }[value] ?? value) : "-";
 }
 </script>
 
