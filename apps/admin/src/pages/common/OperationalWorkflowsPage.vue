@@ -38,28 +38,61 @@
 
     <template v-else-if="section.startsWith('checkin')">
       <AdminFilterBar>
-        <el-input v-if="section === 'checkin-verify'" v-model="checkinCredential" placeholder="凭证码 / 报名号 / 二维码内容" style="width: 320px" @keyup.enter="verifyCredential" />
+        <el-input v-if="section === 'checkin-verify'" v-model="checkinCredential" placeholder="报名号 / 二维码内容 / 参会人 ID" style="width: 340px" @keyup.enter="verifyCredential" />
         <el-select v-model="conferenceId" clearable filterable placeholder="统计会议" style="width: 280px" @change="loadCheckin">
           <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
         </el-select>
         <template #actions>
-          <el-button v-if="section === 'checkin-verify'" type="primary" :disabled="!checkinCredential" @click="verifyCredential">核销</el-button>
+          <el-button v-if="section === 'checkin-verify'" type="primary" :disabled="!checkinCredential" @click="verifyCredential">应急补签</el-button>
         </template>
       </AdminFilterBar>
+      <AdminSectionCard v-if="section === 'checkin-verify'" title="后台应急补签" subtitle="仅用于现场异常处理。常规签到请使用客户自助签到或工作人员小程序扫码。">
+        <el-alert title="后台补签会写入审计日志；重复签到不会重复计数，会返回首次签到时间。" type="warning" :closable="false" show-icon />
+        <div v-if="checkinResult" class="result-card">
+          <strong>{{ checkinResult.message || "处理完成" }}</strong>
+          <span>报名号：{{ checkinResult.registrationNo || "-" }}</span>
+          <span>参会人：{{ checkinResult.attendeeName || "-" }}</span>
+          <span>签到时间：{{ checkinResult.checkedInAt || "-" }}</span>
+        </div>
+      </AdminSectionCard>
       <div class="admin-stat-grid">
-        <AdminStatCard label="参会人" :value="checkinTotal" />
-        <AdminStatCard label="已核销" :value="checkinCheckedIn" tone="success" />
-        <AdminStatCard label="待核销" :value="checkinPending" tone="warning" />
+        <AdminStatCard label="已报名" :value="checkinRegistered" />
+        <AdminStatCard label="已支付" :value="checkinPaid" />
+        <AdminStatCard label="已签到" :value="checkinCheckedIn" tone="success" />
+        <AdminStatCard label="未签到" :value="checkinUnchecked" tone="warning" />
         <AdminStatCard label="无需核销" :value="checkinNotRequired" />
       </div>
-      <AdminSectionCard title="签到记录" subtitle="记录扫码核销、手动核销和撤销操作。">
+      <AdminSectionCard v-if="section !== 'checkin-stats'" title="签到记录" subtitle="展示每一条客户自助、工作人员扫码、后台应急补签和撤销明细。">
         <el-table :data="checkinLogs" empty-text="暂无签到记录">
-          <el-table-column prop="action" label="动作" width="110" />
+          <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
+          <el-table-column prop="registrationNo" label="报名号" min-width="150" />
+          <el-table-column prop="attendeeName" label="参会人" width="120" />
+          <el-table-column prop="phone" label="手机号" width="140" />
+          <el-table-column prop="method" label="核销方式" width="140" />
+          <el-table-column prop="result" label="结果" width="110" />
           <el-table-column prop="beforeStatus" label="核销前" width="110" />
           <el-table-column prop="afterStatus" label="核销后" width="110" />
-          <el-table-column prop="remark" label="备注" min-width="160" />
+          <el-table-column prop="operatorName" label="操作人" width="140" />
+          <el-table-column prop="failureReason" label="失败原因" min-width="150" />
           <el-table-column prop="createdAt" label="时间" width="190" />
         </el-table>
+      </AdminSectionCard>
+      <AdminSectionCard v-else title="签到统计" subtitle="按票种、核销方式和时间段聚合，避免与签到记录页重复。">
+        <div class="stat-tables">
+          <el-table :data="asRows(checkinStats.bySku)" empty-text="暂无票种统计">
+            <el-table-column prop="key" label="票种" min-width="160" />
+            <el-table-column prop="total" label="人数" width="100" />
+            <el-table-column prop="checkedIn" label="已签到" width="100" />
+          </el-table>
+          <el-table :data="asRows(checkinStats.byMethod)" empty-text="暂无方式统计">
+            <el-table-column prop="key" label="方式" min-width="160" />
+            <el-table-column prop="count" label="次数" width="100" />
+          </el-table>
+          <el-table :data="asRows(checkinStats.byHour)" empty-text="暂无时间段统计">
+            <el-table-column prop="key" label="时间段" min-width="180" />
+            <el-table-column prop="count" label="次数" width="100" />
+          </el-table>
+        </div>
       </AdminSectionCard>
     </template>
 
@@ -195,10 +228,10 @@ import {
   listReconciliationResults,
   listRefunds,
   listWechatBills,
+  manualCheckin,
   reconcileWechatBill,
   scanInventoryAlerts,
   updateInventoryAlertRule,
-  verifyCheckin
 } from "../../services/admin";
 import type { Conference, Coupon, FinancePayment } from "../../services/types";
 
@@ -214,6 +247,7 @@ const inventoryLogs = ref<Record<string, unknown>[]>([]);
 const checkinCredential = ref("");
 const checkinLogs = ref<Record<string, unknown>[]>([]);
 const checkinStats = ref<Record<string, unknown>>({});
+const checkinResult = ref<Record<string, unknown> | null>(null);
 const paymentExceptions = ref<Record<string, unknown>[]>([]);
 const payments = ref<FinancePayment[]>([]);
 const couponCampaigns = ref<Record<string, unknown>[]>([]);
@@ -242,9 +276,10 @@ const section = computed(() => {
 });
 const statusLabel = computed(() => (currentRoute.value.badge ? `${currentRoute.value.badge}能力` : "已接入真实数据"));
 const statusDescription = computed(() => (currentRoute.value.badge ? "该页面已接入真实接口；是否移除标签以审计表为准。" : "页面、接口和数据链路已接入。"));
-const checkinTotal = computed(() => toNumber(checkinStats.value.total));
+const checkinRegistered = computed(() => toNumber(checkinStats.value.registeredCount));
+const checkinPaid = computed(() => toNumber(checkinStats.value.paidCount));
 const checkinCheckedIn = computed(() => toNumber(checkinStats.value.checkedIn));
-const checkinPending = computed(() => toNumber(checkinStats.value.pending));
+const checkinUnchecked = computed(() => toNumber(checkinStats.value.uncheckedIn ?? checkinStats.value.pending));
 const checkinNotRequired = computed(() => toNumber(checkinStats.value.notRequired));
 
 onMounted(() => void load());
@@ -299,14 +334,14 @@ async function scanInventory() {
 
 async function loadCheckin() {
   checkinStats.value = await getCheckinStats({ conferenceId: conferenceId.value || undefined });
-  checkinLogs.value = (await listCheckinLogs({ page: 1, pageSize: 100 })).items;
+  checkinLogs.value = (await listCheckinLogs({ page: 1, pageSize: 100, conferenceId: conferenceId.value || undefined })).items;
 }
 
 async function verifyCredential() {
-  await verifyCheckin({ credentialCode: checkinCredential.value });
+  checkinResult.value = await manualCheckin({ credentialCode: checkinCredential.value });
   checkinCredential.value = "";
   await loadCheckin();
-  ElMessage.success("核销成功");
+  ElMessage.success(String(checkinResult.value.message || "处理完成"));
 }
 
 async function loadPaymentExceptions() {
@@ -408,5 +443,21 @@ function couponNames(value: unknown) {
   border-radius: var(--admin-radius);
   background: #0f172a;
   color: #e2e8f0;
+}
+
+.result-card {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: var(--admin-radius);
+  background: var(--admin-color-surface-muted);
+}
+
+.stat-tables {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 </style>

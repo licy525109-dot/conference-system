@@ -77,6 +77,6 @@ import { PublicOperationsService } from "./public-operations.service";
     AdminPaymentExceptionsService,
     PrismaService
   ],
-  exports: [AdminAuthService]
+  exports: [AdminAuthService, AdminJwtAuthGuard, AdminPermissionGuard]
 })
 export class AdminModule {}

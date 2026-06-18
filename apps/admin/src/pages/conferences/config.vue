@@ -29,7 +29,43 @@
           <el-form-item label="地点"><el-input v-model="conferenceForm.location" /></el-form-item>
           <el-form-item label="开始时间"><el-date-picker v-model="conferenceForm.startAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" /></el-form-item>
           <el-form-item label="结束时间"><el-date-picker v-model="conferenceForm.endAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" /></el-form-item>
-          <el-form-item label="需要核销"><el-switch v-model="conferenceForm.checkInEnabled" /></el-form-item>
+          <el-form-item label="启用签到"><el-switch v-model="conferenceForm.checkInEnabled" /></el-form-item>
+          <template v-if="conferenceForm.checkInEnabled">
+            <el-form-item label="签到时间">
+              <div class="date-range">
+                <el-date-picker v-model="conferenceForm.checkInStartsAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="开始时间" />
+                <el-date-picker v-model="conferenceForm.checkInEndsAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="结束时间" />
+              </div>
+            </el-form-item>
+            <el-form-item label="签到方式">
+              <el-checkbox-group v-model="conferenceForm.checkInMethods">
+                <el-checkbox label="QR_SCAN">二维码扫码核销</el-checkbox>
+                <el-checkbox label="SELF_PHONE_NAME">客户自助手机号 + 姓名核销</el-checkbox>
+                <el-checkbox label="SELF_CUSTOM_FIELDS">客户自助自定义报名字段核销</el-checkbox>
+                <el-checkbox label="ADMIN_MANUAL">后台应急补签</el-checkbox>
+              </el-checkbox-group>
+              <p class="form-help">常规签到建议使用客户自助签到或工作人员扫码；后台应急补签仅用于现场异常处理。</p>
+            </el-form-item>
+            <template v-if="conferenceForm.checkInMethods.includes('SELF_PHONE_NAME')">
+              <el-form-item label="手机号字段">
+                <el-select v-model="conferenceForm.checkInFieldBindings.phoneFieldKey" filterable placeholder="选择报名表单字段">
+                  <el-option v-for="field in enabledFields" :key="field.id" :label="`${field.label} (${field.fieldKey})`" :value="field.fieldKey" />
+                </el-select>
+                <p v-if="!hasPhoneLikeField" class="form-warning">当前报名表单未配置手机号字段，无法启用手机号核销</p>
+              </el-form-item>
+              <el-form-item label="姓名字段">
+                <el-select v-model="conferenceForm.checkInFieldBindings.nameFieldKey" filterable placeholder="选择报名表单字段">
+                  <el-option v-for="field in enabledFields" :key="field.id" :label="`${field.label} (${field.fieldKey})`" :value="field.fieldKey" />
+                </el-select>
+                <p v-if="!hasNameLikeField" class="form-warning">当前报名表单未配置姓名字段，无法启用姓名核销</p>
+              </el-form-item>
+            </template>
+            <el-form-item v-if="conferenceForm.checkInMethods.includes('SELF_CUSTOM_FIELDS')" label="自定义字段">
+              <el-select v-model="conferenceForm.checkInFieldBindings.customFieldKeys" multiple filterable placeholder="选择报名表单字段">
+                <el-option v-for="field in enabledFields" :key="field.id" :label="`${field.label} (${field.fieldKey})`" :value="field.fieldKey" />
+              </el-select>
+            </el-form-item>
+          </template>
           <el-form-item label="团体报名"><el-switch v-model="conferenceForm.groupRegistrationEnabled" /></el-form-item>
           <el-form-item label="单单最大票数"><el-input-number v-model="conferenceForm.maxTicketsPerOrder" :min="0" /></el-form-item>
           <el-form-item><el-button type="primary" @click="saveConference">保存基础配置</el-button></el-form-item>
@@ -123,7 +159,8 @@
         <el-form-item label="类型"><el-select v-model="fieldForm.type"><el-option v-for="type in fieldTypes" :key="type" :label="fieldTypeText(type)" :value="type" /></el-select></el-form-item>
         <el-form-item label="必填"><el-switch v-model="fieldForm.required" /></el-form-item>
         <el-form-item label="占位文案"><el-input v-model="fieldForm.placeholder" /></el-form-item>
-        <el-form-item label="选项内容"><el-input v-model="fieldForm.optionsText" type="textarea" :rows="3" placeholder="每行一个选项，适用于下拉、单选、多选" /></el-form-item>
+        <el-form-item v-if="isOptionField" label="选项内容"><el-input v-model="fieldForm.optionsText" type="textarea" :rows="3" placeholder="每行一个选项，适用于下拉、单选、多选" /></el-form-item>
+        <el-form-item v-else label="选项内容"><span class="form-help">仅下拉、单选、多选字段需要配置选项。</span></el-form-item>
         <el-form-item label="排序"><el-input-number v-model="fieldForm.sortOrder" :min="0" /></el-form-item>
         <el-form-item label="启用"><el-switch v-model="fieldForm.enabled" /></el-form-item>
       </el-form>
@@ -175,6 +212,14 @@ const conferenceForm = reactive({
   startAt: "",
   endAt: "",
   checkInEnabled: false,
+  checkInStartsAt: "",
+  checkInEndsAt: "",
+  checkInMethods: ["QR_SCAN", "ADMIN_MANUAL"] as string[],
+  checkInFieldBindings: {
+    phoneFieldKey: "",
+    nameFieldKey: "",
+    customFieldKeys: [] as string[]
+  },
   groupRegistrationEnabled: true,
   maxTicketsPerOrder: 0,
   contentJsonText: "{}",
@@ -198,6 +243,11 @@ onMounted(async () => {
   await loadAll();
 });
 
+const enabledFields = computed(() => fields.value.filter((field) => field.enabled));
+const hasPhoneLikeField = computed(() => enabledFields.value.some((field) => field.type === "PHONE" || /手机|电话|phone|mobile/i.test(`${field.label}${field.fieldKey}`)));
+const hasNameLikeField = computed(() => enabledFields.value.some((field) => /姓名|名称|name/i.test(`${field.label}${field.fieldKey}`)));
+const isOptionField = computed(() => ["SELECT", "RADIO", "CHECKBOX"].includes(fieldForm.type));
+
 async function loadAll() {
   conferences.value = (await listConferences({ page: 1, pageSize: 100 })).items;
   if (!conferenceId.value && conferences.value[0]) {
@@ -220,6 +270,14 @@ function syncConferenceForm() {
     startAt: conference.value.startAt,
     endAt: conference.value.endAt,
     checkInEnabled: conference.value.checkInEnabled,
+    checkInStartsAt: conference.value.checkInStartsAt ?? "",
+    checkInEndsAt: conference.value.checkInEndsAt ?? "",
+    checkInMethods: conference.value.checkInMethods?.length ? [...conference.value.checkInMethods] : ["QR_SCAN", "ADMIN_MANUAL"],
+    checkInFieldBindings: {
+      phoneFieldKey: typeof conference.value.checkInFieldBindings?.phoneFieldKey === "string" ? conference.value.checkInFieldBindings.phoneFieldKey : "",
+      nameFieldKey: typeof conference.value.checkInFieldBindings?.nameFieldKey === "string" ? conference.value.checkInFieldBindings.nameFieldKey : "",
+      customFieldKeys: readStringArray(conference.value.checkInFieldBindings?.customFieldKeys)
+    },
     groupRegistrationEnabled: conference.value.groupRegistrationEnabled,
     maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0,
     contentJsonText: JSON.stringify(conference.value.contentJson ?? {}, null, 2),
@@ -241,7 +299,13 @@ async function saveConference() {
     contentJson: parseJsonObject(conferenceForm.contentJsonText),
     styleJson: parseJsonObject(conferenceForm.styleJsonText)
   });
-  await updateConferenceCheckInConfig(conferenceId.value, conferenceForm.checkInEnabled);
+  await updateConferenceCheckInConfig(conferenceId.value, {
+    checkInEnabled: conferenceForm.checkInEnabled,
+    checkInStartsAt: conferenceForm.checkInStartsAt || null,
+    checkInEndsAt: conferenceForm.checkInEndsAt || null,
+    checkInMethods: conferenceForm.checkInMethods,
+    checkInFieldBindings: conferenceForm.checkInFieldBindings
+  });
   await loadAll();
   ElMessage.success("会议配置已保存");
 }
@@ -300,13 +364,17 @@ function openField(row?: FormField) {
 
 async function saveField() {
   if (!conferenceId.value) return;
+  if (isOptionField.value && !fieldForm.optionsText.trim()) {
+    ElMessage.warning("下拉、单选、多选字段至少需要一个选项");
+    return;
+  }
   const payload = {
     label: fieldForm.label,
     fieldKey: fieldForm.fieldKey,
     type: fieldForm.type,
     required: fieldForm.required,
     placeholder: fieldForm.placeholder,
-    optionsJson: textToOptions(fieldForm.optionsText),
+    optionsJson: isOptionField.value ? textToOptions(fieldForm.optionsText) : [],
     validationJson: {},
     sortOrder: fieldForm.sortOrder,
     enabled: fieldForm.enabled
@@ -375,6 +443,10 @@ function optionsToText(value: unknown[] | null) {
 function textToOptions(value: string) {
   return value.split("\n").map((item) => item.trim()).filter(Boolean);
 }
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
 </script>
 
 <style scoped>
@@ -394,5 +466,22 @@ function textToOptions(value: string) {
 
 .publish-panel h3 {
   margin: 0;
+}
+
+.date-range {
+  display: flex;
+  gap: 10px;
+}
+
+.form-help,
+.form-warning {
+  margin: 6px 0 0;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.form-warning {
+  color: #b45309;
 }
 </style>

@@ -12,13 +12,11 @@
       </view>
 
       <view class="qr-panel">
-        <view class="qr-box">
-          <text class="qr-mark">QR</text>
-          <text class="qr-code">{{ credential.credentialCode }}</text>
-        </view>
+        <QrCodeMatrix :value="credential.qrPayload" label="电子报名凭证二维码" />
         <view class="qr-copy">
           <text class="qr-title">电子报名凭证</text>
-          <text class="qr-desc">请妥善保存报名凭证，现场签到可能需要出示报名号或二维码。</text>
+          <text class="qr-desc">请妥善保存报名凭证，工作人员可扫码完成签到核销。二维码不包含手机号、姓名等个人信息。</text>
+          <text class="qr-code">报名号：{{ credential.credentialCode }}</text>
         </view>
       </view>
 
@@ -52,7 +50,8 @@
       </view>
 
       <view class="actions">
-        <button class="ui-button-primary action" @click="openLink(credential.links.groupJoinUrl, '会议客户群暂未配置')">加入会议客户群</button>
+        <button class="ui-button-primary action" @click="goCheckin">去签到</button>
+        <button v-if="credential.links.groupJoinUrl" class="ui-button-secondary action" @click="openLink(credential.links.groupJoinUrl, '会议客户群暂未配置')">加入会议客户群</button>
         <button class="ui-button-secondary action" @click="openLink(credential.links.agendaUrl, '会议议程暂未配置')">查看议程</button>
         <button class="ui-button-secondary action" @click="openLink(credential.links.guideUrl, '参会指南暂未配置')">参会指南</button>
         <button class="ui-button-secondary action" @click="openLink(credential.links.contactUrl, '客服入口暂未配置')">联系客服</button>
@@ -68,6 +67,7 @@ import { onLoad } from "@dcloudio/uni-app";
 import AiAssistantEntry from "@/components/AiAssistantEntry.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
+import QrCodeMatrix from "@/components/QrCodeMatrix.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
@@ -137,6 +137,11 @@ function calendarTodo() {
   uni.showToast({ title: "日历提醒能力后续开放", icon: "none" });
 }
 
+function goCheckin() {
+  if (!credential.value) return;
+  uni.navigateTo({ url: `/pages/checkin/self?conferenceId=${encodeURIComponent(credential.value.conference.id)}&registrationId=${encodeURIComponent(credential.value.registrationId)}` });
+}
+
 function goMyRegistrations() {
   uni.navigateTo({ url: "/pages/registrations/my" });
 }
@@ -187,24 +192,6 @@ function goMyRegistrations() {
   display: flex;
   gap: 24rpx;
   padding: 28rpx;
-}
-
-.qr-box {
-  display: flex;
-  flex: 0 0 190rpx;
-  height: 190rpx;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border: 2px dashed var(--ui-color-primary);
-  border-radius: 8px;
-  background: var(--ui-color-surface-muted);
-}
-
-.qr-mark {
-  color: var(--ui-color-primary);
-  font-size: 46rpx;
-  font-weight: 900;
 }
 
 .qr-code {

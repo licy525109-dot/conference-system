@@ -117,10 +117,14 @@ export function updateConferenceStatus(id: string, status: string) {
   });
 }
 
-export function updateConferenceCheckInConfig(id: string, checkInEnabled: boolean) {
+export function getConferenceCheckInConfig(id: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(id)}/checkin-config`);
+}
+
+export function updateConferenceCheckInConfig(id: string, input: boolean | Record<string, unknown>) {
   return apiRequest<Conference>(`/admin/conferences/${encodeURIComponent(id)}/check-in-config`, {
     method: "PATCH",
-    body: JSON.stringify({ checkInEnabled })
+    body: JSON.stringify(typeof input === "boolean" ? { checkInEnabled: input } : input)
   });
 }
 
@@ -234,6 +238,13 @@ export function updateRegistrationRemark(id: string, adminRemark: string | null)
   return apiRequest<AdminRegistrationDetail>(`/admin/registrations/${encodeURIComponent(id)}/remark`, {
     method: "PATCH",
     body: JSON.stringify({ adminRemark })
+  });
+}
+
+export function updateRegistrationFormValues(id: string, formDataJson: Record<string, unknown>) {
+  return apiRequest<AdminRegistrationDetail>(`/admin/registrations/${encodeURIComponent(id)}/form-values`, {
+    method: "PATCH",
+    body: JSON.stringify({ formDataJson })
   });
 }
 
@@ -1116,19 +1127,19 @@ export function updateAiConfig(input: Record<string, unknown>) {
 }
 
 export function verifyCheckin(input: Record<string, unknown>) {
-  return apiRequest<Record<string, unknown>>("/admin/checkin/verify", { method: "POST", body: JSON.stringify(input) });
+  return apiRequest<Record<string, unknown>>("/checkin/scan", { method: "POST", body: JSON.stringify({ qrPayload: input.credentialCode ?? input.qrPayload, remark: input.remark }) });
 }
 
 export function manualCheckin(input: Record<string, unknown>) {
-  return apiRequest<Record<string, unknown>>("/admin/checkin/manual", { method: "POST", body: JSON.stringify(input) });
+  return apiRequest<Record<string, unknown>>("/admin/checkins/manual", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function listCheckinLogs(params: { page?: number; pageSize?: number }) {
-  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/checkin/logs${toQuery(params)}`);
+export function listCheckinLogs(params: { page?: number; pageSize?: number; conferenceId?: string }) {
+  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/checkins/records${toQuery(params)}`);
 }
 
 export function getCheckinStats(params: { conferenceId?: string } = {}) {
-  return apiRequest<Record<string, unknown>>(`/admin/checkin/stats${toQuery(params)}`);
+  return apiRequest<Record<string, unknown>>(`/admin/checkins/statistics${toQuery(params)}`);
 }
 
 export function listRefunds(params: { page?: number; pageSize?: number; keyword?: string; status?: string; sourceType?: string }) {

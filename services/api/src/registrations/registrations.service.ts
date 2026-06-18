@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { OrderStatus, PaymentStatus, Prisma, RegistrationStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
+import { createCheckinCredentialPayload } from "../checkin/checkin-credential";
 import { PrismaService } from "../prisma.service";
 
 export interface ApiResponse<TData> {
@@ -230,7 +231,7 @@ function formatCredential(registration: Prisma.RegistrationGetPayload<{ select: 
     registrationId: registration.id,
     registrationNo: registration.registrationNo,
     credentialCode: registration.registrationNo,
-    qrPayload: `CONF_REG:${registration.id}:${registration.registrationNo}`,
+    qrPayload: createCheckinCredentialPayload(registration.id, registration.registrationNo),
     status: registration.status,
     checkIn: {
       status: attendee?.checkInStatus ?? "NOT_REQUIRED",
