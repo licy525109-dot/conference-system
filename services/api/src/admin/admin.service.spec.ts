@@ -167,6 +167,40 @@ describe("Admin management", () => {
     );
   });
 
+  it("validates option values by form field type", async () => {
+    const service = new AdminManagementService(createPrismaMock());
+
+    await assert.rejects(
+      () =>
+        service.createFormField(
+          "conference-1",
+          {
+            label: "手机号",
+            fieldKey: "phone",
+            type: "PHONE",
+            optionsJson: ["A"]
+          },
+          currentAdmin
+        ),
+      BadRequestException
+    );
+
+    await assert.rejects(
+      () =>
+        service.createFormField(
+          "conference-1",
+          {
+            label: "身份",
+            fieldKey: "role",
+            type: "SELECT",
+            optionsJson: []
+          },
+          currentAdmin
+        ),
+      BadRequestException
+    );
+  });
+
   it("does not expose an order paid mutation on admin controller", () => {
     const controller = new AdminManagementController(new AdminManagementService(createPrismaMock()));
     const controllerShape = controller as unknown as Record<string, unknown>;
@@ -177,24 +211,40 @@ describe("Admin management", () => {
     assert.equal(controllerShape.markOrderPaid, undefined);
   });
 
-  it("deletes only unpaid orders without registrations or success payments", async () => {
+  it("closes only pending orders without registrations or success payments", async () => {
     const prisma = createPrismaMock();
     const service = new AdminManagementService(prisma);
 
-    const response = await service.deleteOrder("REG_PENDING", currentAdmin);
+    const response = await service.closeOrder("REG_PENDING", currentAdmin);
 
-    assert.equal((response.data as { deleted: number }).deleted, 1);
-    assert.equal(prisma.orders.some((order) => order.orderNo === "REG_PENDING"), false);
-    assert.equal(prisma.auditLogs.some((log) => log.entityType === "Order" && log.action === AuditAction.DELETE), true);
+    assert.equal((response.data as { closed: number }).closed, 1);
+    assert.equal(prisma.orders.find((order) => order.orderNo === "REG_PENDING")?.status, OrderStatus.CLOSED);
+    assert.equal(prisma.auditLogs.some((log) => log.entityType === "Order" && log.action === AuditAction.UPDATE), true);
   });
 
-  it("rejects deleting paid orders", async () => {
+  it("rejects closing paid orders", async () => {
     const service = new AdminManagementService(createPrismaMock());
 
     await assert.rejects(
-      () => service.deleteOrder("REG_PAID", currentAdmin),
+      () => service.closeOrder("REG_PAID", currentAdmin),
       ConflictException
     );
+  });
+
+  it("bulk closes only pending orders and writes audit logs", async () => {
+    const prisma = createPrismaMock();
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.closeOrdersByFilter({}, currentAdmin);
+    const data = response.data as { matched: number; closed: number; skipped: number; failed: number };
+
+    assert.equal(data.matched, 2);
+    assert.equal(data.closed, 1);
+    assert.equal(data.skipped, 1);
+    assert.equal(data.failed, 0);
+    assert.equal(prisma.orders.find((order) => order.orderNo === "REG_PENDING")?.status, OrderStatus.CLOSED);
+    assert.equal(prisma.orders.find((order) => order.orderNo === "REG_PAID")?.status, OrderStatus.PAID);
+    assert.equal(prisma.auditLogs.some((log) => log.summary === "Bulk close pending orders by filter"), true);
   });
 
   it("updates registration remark without changing payment state", async () => {
@@ -370,6 +420,7 @@ function createPrismaMock() {
     auditLogs,
     conferences,
     orders,
+    $transaction: async (input: any) => (Array.isArray(input) ? Promise.all(input) : input(mock)),
     adminUser: {
       findUnique: async (args: { where: { username?: string; id?: string } }) => {
         if (args.where.username && args.where.username !== "admin") {
@@ -510,21 +561,24 @@ function createPrismaMock() {
     order: {
       findUnique: async (args: { where: { orderNo?: string } }) => orders.find((order) => order.orderNo === args.where.orderNo) ?? null,
       findMany: async () => orders,
-      delete: async (args: { where: { id: string } }) => {
-        const index = orders.findIndex((order) => order.id === args.where.id);
-        if (index >= 0) {
-          const [deleted] = orders.splice(index, 1);
-          return deleted;
-        }
-        throw new Error("missing order");
+      update: async (args: { where: { id: string }; data: { status?: OrderStatus } }) => {
+        const order = orders.find((item) => item.id === args.where.id);
+        if (!order) throw new Error("missing order");
+        Object.assign(order, args.data);
+        return order;
       },
-      deleteMany: async (args: { where: { id: { in: string[] } } }) => {
-        const before = orders.length;
-        for (const id of args.where.id.in) {
-          const index = orders.findIndex((order) => order.id === id);
-          if (index >= 0) orders.splice(index, 1);
-        }
-        return { count: before - orders.length };
+      updateMany: async (args: { where: { id: { in: string[] }; status?: OrderStatus }; data: { status?: OrderStatus } }) => {
+        const matched = orders.filter((order) => args.where.id.in.includes(order.id) && (!args.where.status || order.status === args.where.status));
+        matched.forEach((order) => Object.assign(order, args.data));
+        return { count: matched.length };
+      }
+    },
+    payment: {
+      updateMany: async (args: { where: { orderId?: string | { in: string[] }; status?: PaymentStatus }; data: { status?: PaymentStatus; failedReason?: string } }) => {
+        const orderIds = typeof args.where.orderId === "string" ? [args.where.orderId] : args.where.orderId?.in ?? [];
+        const matched = orders.flatMap((order) => order.payments.map((payment) => ({ order, payment }))).filter(({ order, payment }) => orderIds.includes(order.id) && (!args.where.status || payment.status === args.where.status));
+        matched.forEach(({ payment }) => Object.assign(payment, args.data));
+        return { count: matched.length };
       }
     },
     registrationAttendee: {

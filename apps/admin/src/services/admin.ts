@@ -188,14 +188,14 @@ export function getOrder(orderNo: string) {
   return apiRequest<AdminOrderDetail>(`/admin/orders/${encodeURIComponent(orderNo)}`);
 }
 
-export function deleteOrder(orderNo: string) {
-  return apiRequest<{ orderNo: string; deleted: number; skipped: number }>(`/admin/orders/${encodeURIComponent(orderNo)}`, {
-    method: "DELETE"
+export function closeOrder(orderNo: string) {
+  return apiRequest<{ orderNo: string; closed: number; skipped: number; failed: number }>(`/admin/orders/${encodeURIComponent(orderNo)}/close`, {
+    method: "PATCH"
   });
 }
 
-export function deleteOrdersByFilter(params: { keyword?: string; conferenceId?: string; status?: string; paymentStatus?: string; onlyExceptions?: boolean }) {
-  return apiRequest<{ matched: number; deleted: number; skipped: number }>("/admin/orders/delete-by-filter", {
+export function closeOrdersByFilter(params: { keyword?: string; conferenceId?: string; status?: string; paymentStatus?: string; onlyExceptions?: boolean }) {
+  return apiRequest<{ matched: number; closed: number; skipped: number; failed: number }>("/admin/orders/close-by-filter", {
     method: "POST",
     body: JSON.stringify(params)
   });
@@ -778,6 +778,10 @@ export function createMemberPricingRule(input: Record<string, unknown>) {
 
 export function updateMemberPricingRule(id: string, input: Record<string, unknown>) {
   return apiRequest<MembershipPriceRule>(`/admin/member-pricing-rules/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function deleteMemberPricingRule(id: string) {
+  return apiRequest<MembershipPriceRule>(`/admin/member-pricing-rules/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export function getFinanceOverview() {

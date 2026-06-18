@@ -7,7 +7,7 @@
     >
       <template #actions>
         <el-button :loading="exporting" @click="exportExcel">导出 Excel</el-button>
-        <el-button v-if="hasPermission('order:delete')" :loading="deleting" type="danger" plain @click="deleteFiltered">筛选后一键删除</el-button>
+        <el-button v-if="hasPermission('order:delete')" :disabled="closeableFilteredCount === 0" :loading="deleting" type="warning" plain @click="closeFiltered">关闭筛选出的待支付订单</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </template>
     </AdminPageHeader>
@@ -66,7 +66,7 @@
         <el-table-column label="操作" width="170">
           <template #default="{ row }">
             <el-button size="small" @click="openDetail(row.orderNo)">详情</el-button>
-            <el-button v-if="hasPermission('order:delete')" size="small" type="danger" plain @click="deleteSingle(row)">删除</el-button>
+            <el-button v-if="hasPermission('order:delete')" size="small" type="warning" plain :disabled="!canCloseOrder(row)" @click="closeSingle(row)">关闭</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -145,7 +145,7 @@ import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo } from "../../router";
-import { deleteOrder, deleteOrdersByFilter, exportOrdersExcel, getOrder, listConferences, listOrders, reviewPaymentException } from "../../services/admin";
+import { closeOrder, closeOrdersByFilter, exportOrdersExcel, getOrder, listConferences, listOrders, reviewPaymentException } from "../../services/admin";
 import { useAdminSession } from "../../stores/admin-session";
 import type { AdminOrder, AdminOrderDetail, Conference } from "../../services/types";
 
@@ -168,6 +168,7 @@ const reviewNote = ref("");
 const displayedItems = computed(() => {
   return items.value.filter((item) => !onlyExceptions.value || isOrderAbnormal(item));
 });
+const closeableFilteredCount = computed(() => displayedItems.value.filter(canCloseOrder).length);
 
 onMounted(async () => {
   await Promise.all([loadConferences(), load()]);
@@ -221,10 +222,10 @@ async function saveExceptionReview() {
   }
 }
 
-async function deleteSingle(row: AdminOrder) {
+async function closeSingle(row: AdminOrder) {
   try {
-    await ElMessageBox.confirm("仅未支付、未生成报名且没有成功支付流水的订单可删除。确认删除该订单？", "删除订单", {
-      confirmButtonText: "确认删除",
+    await ElMessageBox.confirm("仅待支付、未生成报名且没有成功支付流水的订单可关闭；不会影响已支付订单。确认关闭该订单？", "关闭待支付订单", {
+      confirmButtonText: "确认关闭",
       cancelButtonText: "取消",
       type: "warning"
     });
@@ -233,18 +234,29 @@ async function deleteSingle(row: AdminOrder) {
   }
   deleting.value = true;
   try {
-    const result = await deleteOrder(row.orderNo);
+    const result = await closeOrder(row.orderNo);
     await load();
-    ElMessage.success(`已删除 ${result.deleted} 单${result.skipped ? `，跳过 ${result.skipped} 单` : ""}`);
+    ElMessage.success(`已关闭 ${result.closed} 单${result.skipped ? `，跳过 ${result.skipped} 单` : ""}`);
   } finally {
     deleting.value = false;
   }
 }
 
-async function deleteFiltered() {
+async function closeFiltered() {
+  if (closeableFilteredCount.value === 0) {
+    ElMessage.warning("当前没有可关闭的待支付订单");
+    return;
+  }
+  const filters = [
+    `关键字：${keyword.value || "全部"}`,
+    `会议：${conferenceId.value ? conferences.value.find((item) => item.id === conferenceId.value)?.title || conferenceId.value : "全部"}`,
+    `订单状态：${status.value || "全部"}`,
+    `支付状态：${paymentStatus.value || "全部"}`,
+    `只看异常：${onlyExceptions.value ? "是" : "否"}`
+  ].join("\n");
   try {
-    await ElMessageBox.confirm("将按当前筛选条件删除可安全删除的订单；已支付、有成功支付流水或已生成报名记录的订单会跳过。确认继续？", "筛选后一键删除", {
-      confirmButtonText: "确认删除",
+    await ElMessageBox.confirm(`当前筛选条件：\n${filters}\n\n预计关闭待支付订单 ${closeableFilteredCount.value} 单；不会影响已支付订单。确认继续？`, "关闭筛选出的待支付订单", {
+      confirmButtonText: "确认关闭",
       cancelButtonText: "取消",
       type: "warning"
     });
@@ -253,7 +265,7 @@ async function deleteFiltered() {
   }
   deleting.value = true;
   try {
-    const result = await deleteOrdersByFilter({
+    const result = await closeOrdersByFilter({
       keyword: keyword.value,
       conferenceId: conferenceId.value,
       status: status.value,
@@ -261,11 +273,11 @@ async function deleteFiltered() {
       onlyExceptions: onlyExceptions.value
     });
     await load();
-    const message = `已匹配 ${result.matched} 单，删除 ${result.deleted} 单，跳过 ${result.skipped} 单`;
-    if (result.deleted > 0) {
+    const message = `已匹配 ${result.matched} 单，关闭 ${result.closed} 单，跳过 ${result.skipped} 单，失败 ${result.failed} 单`;
+    if (result.closed > 0) {
       ElMessage.success(message);
     } else {
-      ElMessage.warning(`${message}；仅未支付、无报名、无成功支付流水的订单可删除`);
+      ElMessage.warning(`${message}；仅待支付、无报名、无成功支付流水的订单可关闭`);
     }
   } finally {
     deleting.value = false;
@@ -292,6 +304,10 @@ function isOrderAbnormal(row: AdminOrder) {
   const statusText = String(row.status || "").toUpperCase();
   const paymentText = String(row.paymentStatus || "").toUpperCase();
   return ["FAILED", "CANCELLED", "CANCELED", "CLOSED"].includes(statusText) || ["FAILED", "CANCELLED", "CANCELED"].includes(paymentText);
+}
+
+function canCloseOrder(row: AdminOrder) {
+  return row.status === "PENDING" && row.paymentStatus !== "SUCCESS";
 }
 
 function exceptionText(row: AdminOrder) {

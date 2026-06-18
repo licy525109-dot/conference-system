@@ -106,10 +106,22 @@ export class AdminManagementController {
     return this.adminManagementService.getOrder(orderNo);
   }
 
+  @Patch("orders/:orderNo/close")
+  @RequireAdminPermissions("order:delete")
+  closeOrder(@Param("orderNo") orderNo: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.closeOrder(orderNo, request.currentAdmin!);
+  }
+
   @Delete("orders/:orderNo")
   @RequireAdminPermissions("order:delete")
   deleteOrder(@Param("orderNo") orderNo: string, @Req() request: RequestWithCurrentAdmin) {
     return this.adminManagementService.deleteOrder(orderNo, request.currentAdmin!);
+  }
+
+  @Post("orders/close-by-filter")
+  @RequireAdminPermissions("order:delete")
+  closeOrdersByFilter(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.closeOrdersByFilter(body, request.currentAdmin!);
   }
 
   @Post("orders/delete-by-filter")

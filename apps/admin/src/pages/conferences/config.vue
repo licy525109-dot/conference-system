@@ -154,13 +154,21 @@
 
     <el-dialog v-model="fieldDialogVisible" :title="fieldForm.id ? '编辑字段' : '新增字段'" width="620px">
       <el-form :model="fieldForm" label-width="110px">
-        <el-form-item label="标签"><el-input v-model="fieldForm.label" /></el-form-item>
-        <el-form-item label="字段标识"><el-input v-model="fieldForm.fieldKey" placeholder="用于保存数据，建议使用拼音或数字" /></el-form-item>
+        <el-form-item>
+          <template #label>标签<FieldHelp content="这是用户端表单展示名称，例如“姓名”“公司”“手机号”。" /></template>
+          <el-input v-model="fieldForm.label" placeholder="例如：姓名" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>字段标识<FieldHelp content="用于数据存储、导出和签到字段绑定，建议使用拼音或英文数字，例如 name、phone、company。" /></template>
+          <el-input v-model="fieldForm.fieldKey" placeholder="例如：name / phone / company" />
+        </el-form-item>
         <el-form-item label="类型"><el-select v-model="fieldForm.type"><el-option v-for="type in fieldTypes" :key="type" :label="fieldTypeText(type)" :value="type" /></el-select></el-form-item>
         <el-form-item label="必填"><el-switch v-model="fieldForm.required" /></el-form-item>
-        <el-form-item label="占位文案"><el-input v-model="fieldForm.placeholder" /></el-form-item>
-        <el-form-item v-if="isOptionField" label="选项内容"><el-input v-model="fieldForm.optionsText" type="textarea" :rows="3" placeholder="每行一个选项，适用于下拉、单选、多选" /></el-form-item>
-        <el-form-item v-else label="选项内容"><span class="form-help">仅下拉、单选、多选字段需要配置选项。</span></el-form-item>
+        <el-form-item>
+          <template #label>占位文案<FieldHelp content="这是输入框内的提示语，例如“请输入姓名”。" /></template>
+          <el-input v-model="fieldForm.placeholder" placeholder="例如：请输入姓名" />
+        </el-form-item>
+        <el-form-item v-if="isOptionField" label="选项内容"><el-input v-model="fieldForm.optionsText" type="textarea" :rows="3" placeholder="每行一个选项，仅下拉、单选、多选需要配置" /></el-form-item>
         <el-form-item label="排序"><el-input-number v-model="fieldForm.sortOrder" :min="0" /></el-form-item>
         <el-form-item label="启用"><el-switch v-model="fieldForm.enabled" /></el-form-item>
       </el-form>
@@ -170,12 +178,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import FieldHelp from "../../components/FieldHelp.vue";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import CouponsPage from "../coupons/index.vue";
 import PromotionsPage from "../promotions/index.vue";
@@ -247,6 +256,23 @@ const enabledFields = computed(() => fields.value.filter((field) => field.enable
 const hasPhoneLikeField = computed(() => enabledFields.value.some((field) => field.type === "PHONE" || /手机|电话|phone|mobile/i.test(`${field.label}${field.fieldKey}`)));
 const hasNameLikeField = computed(() => enabledFields.value.some((field) => /姓名|名称|name/i.test(`${field.label}${field.fieldKey}`)));
 const isOptionField = computed(() => ["SELECT", "RADIO", "CHECKBOX"].includes(fieldForm.type));
+
+watch(
+  () => fieldForm.type,
+  async (value, oldValue) => {
+    if (!["SELECT", "RADIO", "CHECKBOX"].includes(oldValue) || ["SELECT", "RADIO", "CHECKBOX"].includes(value) || !fieldForm.optionsText.trim()) return;
+    try {
+      await ElMessageBox.confirm("切换为非选项型字段将清空选项内容，确认继续？", "清空选项内容", {
+        confirmButtonText: "确认清空",
+        cancelButtonText: "取消",
+        type: "warning"
+      });
+      fieldForm.optionsText = "";
+    } catch {
+      fieldForm.type = oldValue;
+    }
+  }
+);
 
 async function loadAll() {
   conferences.value = (await listConferences({ page: 1, pageSize: 100 })).items;
@@ -364,13 +390,21 @@ function openField(row?: FormField) {
 
 async function saveField() {
   if (!conferenceId.value) return;
+  if (!fieldForm.label.trim()) {
+    ElMessage.warning("标签必填");
+    return;
+  }
+  if (!fieldForm.fieldKey.trim()) {
+    ElMessage.warning("字段标识必填");
+    return;
+  }
   if (isOptionField.value && !fieldForm.optionsText.trim()) {
     ElMessage.warning("下拉、单选、多选字段至少需要一个选项");
     return;
   }
   const payload = {
-    label: fieldForm.label,
-    fieldKey: fieldForm.fieldKey,
+    label: fieldForm.label.trim(),
+    fieldKey: fieldForm.fieldKey.trim(),
     type: fieldForm.type,
     required: fieldForm.required,
     placeholder: fieldForm.placeholder,

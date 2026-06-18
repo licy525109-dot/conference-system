@@ -30,17 +30,21 @@
             <div class="muted-text">{{ skuName(row.skuId) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="固定价" width="110"><template #default="{ row }">{{ moneyMaybe(row.fixedPriceCent) }}</template></el-table-column>
-        <el-table-column label="折扣" width="100"><template #default="{ row }">{{ discountText(row.discountPercent) }}</template></el-table-column>
-        <el-table-column label="立减" width="110"><template #default="{ row }">{{ moneyMaybe(row.discountCent) }}</template></el-table-column>
+        <el-table-column label="优惠方式" width="120"><template #default="{ row }">{{ discountTypeText(row.discountType) }}</template></el-table-column>
+        <el-table-column label="优惠值" width="120"><template #default="{ row }">{{ ruleValueText(row) }}</template></el-table-column>
         <el-table-column label="时间窗" min-width="190">
           <template #default="{ row }">
             <div>{{ row.startAt ? row.startAt.slice(0, 10) : "立即生效" }}</div>
             <div class="muted-text">至 {{ row.endAt ? row.endAt.slice(0, 10) : "长期有效" }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
-        <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled && !row.disabledAt" :label="row.enabled && !row.disabledAt ? '启用' : '停用'" /></template></el-table-column>
+        <el-table-column label="操作" width="180">
+          <template #default="{ row }">
+            <el-button size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button size="small" type="danger" plain @click="removeRule(row)">删除</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </section>
 
@@ -69,14 +73,22 @@
           </el-select>
         </el-form-item>
         <el-form-item>
+          <template #label>优惠方式<FieldHelp content="固定价、折扣基点、立减金额三选一；服务端会拒绝同时配置多种方式。" /></template>
+          <el-radio-group v-model="form.discountType">
+            <el-radio-button label="FIXED_PRICE">固定价</el-radio-button>
+            <el-radio-button label="DISCOUNT">折扣基点</el-radio-button>
+            <el-radio-button label="REDUCE">立减</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="form.discountType === 'FIXED_PRICE'">
           <template #label>固定价(元)<FieldHelp content="设置后按固定单价计入会员价，必须低于原票种价才会产生优惠。" /></template>
           <el-input-number v-model="form.fixedPriceYuan" :min="0" :precision="2" />
         </el-form-item>
-        <el-form-item>
-          <template #label>折扣基点<FieldHelp content="9000 表示 9 折；固定价、折扣、立减可同时配置，后端会选择优惠金额最大的规则。" /></template>
+        <el-form-item v-if="form.discountType === 'DISCOUNT'">
+          <template #label>折扣基点<FieldHelp content="9000 表示 9 折；只能与固定价、立减三选一。" /></template>
           <el-input-number v-model="form.discountPercent" :min="0" :max="10000" />
         </el-form-item>
-        <el-form-item>
+        <el-form-item v-if="form.discountType === 'REDUCE'">
           <template #label>立减(元)<FieldHelp content="按单张票价立减，最终不会低于 0 元。" /></template>
           <el-input-number v-model="form.discountYuan" :min="0" :precision="2" />
         </el-form-item>
@@ -97,14 +109,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
-import { createMemberPricingRule, listConferences, listMemberLevels, listMemberPricingRules, listSkus, updateMemberPricingRule } from "../../services/admin";
+import { createMemberPricingRule, deleteMemberPricingRule, listConferences, listMemberLevels, listMemberPricingRules, listSkus, updateMemberPricingRule } from "../../services/admin";
 import type { Conference, MemberLevel, MembershipPriceRule, Sku } from "../../services/types";
 
 const levels = ref<MemberLevel[]>([]);
@@ -121,6 +133,7 @@ const form = reactive({
   levelId: "",
   conferenceId: "",
   skuId: "",
+  discountType: "FIXED_PRICE" as "FIXED_PRICE" | "DISCOUNT" | "REDUCE",
   fixedPriceYuan: undefined as number | undefined,
   discountPercent: undefined as number | undefined,
   discountYuan: undefined as number | undefined,
@@ -128,7 +141,12 @@ const form = reactive({
   endAt: "",
   enabled: true
 });
-const canSave = computed(() => Boolean(form.levelId) && [form.fixedPriceYuan, form.discountPercent, form.discountYuan].some((value) => typeof value === "number" && value > 0));
+const canSave = computed(() => {
+  if (!form.levelId) return false;
+  if (form.discountType === "FIXED_PRICE") return typeof form.fixedPriceYuan === "number" && form.fixedPriceYuan > 0;
+  if (form.discountType === "DISCOUNT") return typeof form.discountPercent === "number" && form.discountPercent > 0;
+  return typeof form.discountYuan === "number" && form.discountYuan > 0;
+});
 
 onMounted(async () => {
   [levels.value, conferences.value] = await Promise.all([
@@ -149,7 +167,7 @@ async function load() {
 }
 
 function openCreate() {
-  Object.assign(form, { id: "", levelId: levelId.value || levels.value[0]?.id || "", conferenceId: conferenceId.value || "", skuId: "", fixedPriceYuan: undefined, discountPercent: undefined, discountYuan: undefined, startAt: "", endAt: "", enabled: true });
+  Object.assign(form, { id: "", levelId: levelId.value || levels.value[0]?.id || "", conferenceId: conferenceId.value || "", skuId: "", discountType: "FIXED_PRICE", fixedPriceYuan: undefined, discountPercent: undefined, discountYuan: undefined, startAt: "", endAt: "", enabled: true });
   void loadFormSkus();
   dialogVisible.value = true;
 }
@@ -160,6 +178,7 @@ async function openEdit(row: MembershipPriceRule) {
     levelId: row.levelId,
     conferenceId: row.conferenceId || "",
     skuId: row.skuId || "",
+    discountType: row.discountType || inferDiscountType(row),
     fixedPriceYuan: typeof row.fixedPriceCent === "number" ? row.fixedPriceCent / 100 : undefined,
     discountPercent: row.discountPercent || undefined,
     discountYuan: typeof row.discountCent === "number" ? row.discountCent / 100 : undefined,
@@ -185,13 +204,17 @@ async function ensureSkus(id: string) {
 }
 
 async function save() {
+  const fixedPriceCent = form.discountType === "FIXED_PRICE" && typeof form.fixedPriceYuan === "number" && form.fixedPriceYuan > 0 ? Math.round(form.fixedPriceYuan * 100) : null;
+  const discountPercent = form.discountType === "DISCOUNT" && typeof form.discountPercent === "number" && form.discountPercent > 0 ? form.discountPercent : null;
+  const discountCent = form.discountType === "REDUCE" && typeof form.discountYuan === "number" && form.discountYuan > 0 ? Math.round(form.discountYuan * 100) : null;
   const payload = {
     levelId: form.levelId,
     conferenceId: form.conferenceId || null,
     skuId: form.skuId || null,
-    fixedPriceCent: typeof form.fixedPriceYuan === "number" && form.fixedPriceYuan > 0 ? Math.round(form.fixedPriceYuan * 100) : null,
-    discountPercent: typeof form.discountPercent === "number" && form.discountPercent > 0 ? form.discountPercent : null,
-    discountCent: typeof form.discountYuan === "number" && form.discountYuan > 0 ? Math.round(form.discountYuan * 100) : null,
+    discountType: form.discountType,
+    fixedPriceCent,
+    discountPercent,
+    discountCent,
     startAt: form.startAt || null,
     endAt: form.endAt || null,
     enabled: form.enabled
@@ -201,6 +224,17 @@ async function save() {
   dialogVisible.value = false;
   await load();
   ElMessage.success("会员价规则已保存");
+}
+
+async function removeRule(row: MembershipPriceRule) {
+  await ElMessageBox.confirm("删除后该会员价规则不会再命中新订单，历史订单计价快照不受影响。确认删除？", "删除会员价规则", {
+    confirmButtonText: "确认删除",
+    cancelButtonText: "取消",
+    type: "warning"
+  });
+  await deleteMemberPricingRule(row.id);
+  await load();
+  ElMessage.success("会员价规则已删除");
 }
 
 function conferenceName(id: string | null) {
@@ -222,5 +256,22 @@ function moneyMaybe(value: number | null) {
 
 function discountText(value: number | null) {
   return value ? `${(value / 100).toFixed(2)}%` : "-";
+}
+
+function discountTypeText(value: string) {
+  return { FIXED_PRICE: "固定价", DISCOUNT: "折扣", REDUCE: "立减" }[value] ?? value;
+}
+
+function ruleValueText(row: MembershipPriceRule) {
+  if (row.discountType === "FIXED_PRICE") return moneyMaybe(row.fixedPriceCent);
+  if (row.discountType === "DISCOUNT") return discountText(row.discountPercent);
+  if (row.discountType === "REDUCE") return moneyMaybe(row.discountCent);
+  return "-";
+}
+
+function inferDiscountType(row: MembershipPriceRule): "FIXED_PRICE" | "DISCOUNT" | "REDUCE" {
+  if (typeof row.fixedPriceCent === "number") return "FIXED_PRICE";
+  if (typeof row.discountPercent === "number") return "DISCOUNT";
+  return "REDUCE";
 }
 </script>

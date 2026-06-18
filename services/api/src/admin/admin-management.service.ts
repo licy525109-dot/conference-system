@@ -368,13 +368,13 @@ export class AdminManagementService {
   async updateFormField(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const existing = await this.prisma.formField.findUnique({
       where: { id },
-      select: { id: true }
+      select: { id: true, type: true, optionsJson: true }
     });
     if (!existing) {
       throw new NotFoundException("Form field not found");
     }
 
-    const request = parseFormFieldInput(input, true);
+    const request = parseFormFieldInput(input, true, existing);
     const field = await catchUniqueConstraint(
       this.prisma.formField.update({
         where: { id },
@@ -471,7 +471,7 @@ export class AdminManagementService {
     return ok(formatOrderDetail(order, exceptionReviewLogs));
   }
 
-  async deleteOrder(orderNo: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+  async closeOrder(orderNo: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const order = await this.prisma.order.findUnique({
       where: { orderNo },
       select: orderDeleteSelect
@@ -484,14 +484,21 @@ export class AdminManagementService {
       throw new ConflictException(blockReason);
     }
 
-    await this.prisma.order.delete({ where: { id: order.id } });
-    await this.writeAudit(admin, AuditAction.DELETE, "Order", order.id, "Delete unpaid order", {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.CLOSED } });
+      await tx.payment.updateMany({ where: { orderId: order.id, status: PaymentStatus.PENDING }, data: { status: PaymentStatus.CLOSED, failedReason: "后台关闭待支付订单" } });
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "Order", order.id, "Close pending order", {
       orderNo: order.orderNo
     });
-    return ok({ orderNo: order.orderNo, deleted: 1, skipped: 0 });
+    return ok({ orderNo: order.orderNo, closed: 1, skipped: 0, failed: 0 });
   }
 
-  async deleteOrdersByFilter(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+  async deleteOrder(orderNo: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    return this.closeOrder(orderNo, admin);
+  }
+
+  async closeOrdersByFilter(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const body = readObject(input);
     const where = parseOrderWhere(body);
     const onlyExceptions = readOptionalBoolean(body, "onlyExceptions");
@@ -502,21 +509,30 @@ export class AdminManagementService {
       select: orderDeleteSelect
     });
     const candidates = onlyExceptions ? orders.filter((order) => detectPaymentExceptions(order).length > 0) : orders;
-    const deletable = candidates.filter((order) => !orderDeleteBlockReason(order));
-    if (deletable.length > 0) {
-      await this.prisma.order.deleteMany({ where: { id: { in: deletable.map((order) => order.id) } } });
+    const closeable = candidates.filter((order) => !orderDeleteBlockReason(order));
+    if (closeable.length > 0) {
+      const ids = closeable.map((order) => order.id);
+      await this.prisma.$transaction([
+        this.prisma.order.updateMany({ where: { id: { in: ids }, status: OrderStatus.PENDING }, data: { status: OrderStatus.CLOSED } }),
+        this.prisma.payment.updateMany({ where: { orderId: { in: ids }, status: PaymentStatus.PENDING }, data: { status: PaymentStatus.CLOSED, failedReason: "后台批量关闭待支付订单" } })
+      ]);
     }
-    await this.writeAudit(admin, AuditAction.DELETE, "Order", null, "Bulk delete unpaid orders by filter", {
+    await this.writeAudit(admin, AuditAction.UPDATE, "Order", null, "Bulk close pending orders by filter", {
       filters: sanitizeDeleteFilters(body),
       matchedCount: candidates.length,
-      deletedCount: deletable.length,
-      skippedCount: candidates.length - deletable.length
+      closedCount: closeable.length,
+      skippedCount: candidates.length - closeable.length
     });
     return ok({
-      deleted: deletable.length,
-      skipped: candidates.length - deletable.length,
+      closed: closeable.length,
+      skipped: candidates.length - closeable.length,
+      failed: 0,
       matched: candidates.length
     });
+  }
+
+  async deleteOrdersByFilter(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    return this.closeOrdersByFilter(input, admin);
   }
 
   async listRegistrations(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
@@ -1842,13 +1858,29 @@ function parseSkuInput(input: unknown, partial: boolean, soldCount = 0) {
   };
 }
 
-function parseFormFieldInput(input: unknown, partial: boolean) {
+function parseFormFieldInput(input: unknown, partial: boolean, existing?: { type: FormFieldType; optionsJson: Prisma.JsonValue | null }) {
   const body = readObject(input);
-  const optionsJson = readOptionalJsonArray(body, "optionsJson");
   const type = partial ? readOptionalEnum(body, "type", FormFieldType) : readRequiredEnum(body, "type", FormFieldType);
   const optionTypes: FormFieldType[] = [FormFieldType.SELECT, FormFieldType.RADIO, FormFieldType.CHECKBOX];
-  if (type && optionTypes.includes(type) && optionsJson && !Array.isArray(optionsJson)) {
-    throw new BadRequestException("optionsJson must be an array");
+  const effectiveType = type ?? existing?.type;
+  const optionsProvided = Object.hasOwn(body, "optionsJson");
+  let optionsJson = readOptionalJsonArray(body, "optionsJson");
+
+  if (effectiveType && optionTypes.includes(effectiveType)) {
+    const existingOptions = Array.isArray(existing?.optionsJson) ? existing.optionsJson : [];
+    const shouldValidateOptions = !partial || optionsProvided || type !== undefined;
+    const candidateOptions = optionsJson ?? existingOptions;
+    if (shouldValidateOptions && candidateOptions.length === 0) {
+      throw new BadRequestException("下拉、单选、多选字段至少需要一个选项");
+    }
+    if (optionsProvided) optionsJson = candidateOptions as Prisma.InputJsonArray;
+  } else if (effectiveType) {
+    if (optionsProvided && (optionsJson?.length ?? 0) > 0) {
+      throw new BadRequestException("非选项型字段不能保存选项内容");
+    }
+    if (!partial || optionsProvided || type !== undefined) {
+      optionsJson = [];
+    }
   }
 
   return {
@@ -1888,11 +1920,14 @@ function parseOrderWhere(query: Record<string, unknown>): Prisma.OrderWhereInput
 }
 
 function orderDeleteBlockReason(order: Prisma.OrderGetPayload<{ select: typeof orderDeleteSelect }>): string | null {
-  if (order.status === OrderStatus.PAID || order.registration) {
-    return "已支付或已生成报名记录的订单不能删除";
+  if (order.status !== OrderStatus.PENDING) {
+    return "仅待支付订单可关闭";
+  }
+  if (order.registration) {
+    return "已生成报名记录的订单不能关闭";
   }
   if (order.payments.some((payment) => payment.status === PaymentStatus.SUCCESS)) {
-    return "存在成功支付流水的订单不能删除";
+    return "存在成功支付流水的订单不能关闭";
   }
   return null;
 }

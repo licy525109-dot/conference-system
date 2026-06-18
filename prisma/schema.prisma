@@ -764,10 +764,13 @@ model MembershipPriceRule {
   levelId         String
   conferenceId    String?
   skuId           String?
+  discountType    String      @default("FIXED_PRICE")
   discountPercent Int?
   discountCent    Int?
   fixedPriceCent  Int?
   enabled         Boolean     @default(true)
+  disabledAt      DateTime?
+  deletedAt       DateTime?
   startAt         DateTime?
   endAt           DateTime?
   createdAt       DateTime    @default(now())
@@ -778,6 +781,8 @@ model MembershipPriceRule {
   @@index([conferenceId])
   @@index([skuId])
   @@index([enabled])
+  @@index([deletedAt])
+  @@index([disabledAt])
   @@map("membership_price_rules")
 }
 
