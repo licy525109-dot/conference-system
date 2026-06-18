@@ -9,6 +9,25 @@ export interface CouponClaimResult {
   claims: Array<Record<string, unknown>>;
 }
 
+export interface CouponCampaignPublic {
+  id: string;
+  name: string;
+  claimCode: string;
+  qrScene: string | null;
+  enabled: boolean;
+  startAt: string | null;
+  endAt: string | null;
+  totalLimit: number | null;
+  claimedCount: number;
+  claimable: boolean;
+  statusText: string;
+  coupons: Array<Record<string, unknown>>;
+}
+
+export function getCouponCampaignPublic(id: string) {
+  return request<CouponCampaignPublic>(`/coupon-campaigns/${encodeURIComponent(id)}/public`, { auth: false });
+}
+
 export async function claimCoupon(claimCode: string) {
   await ensureLogin();
   return request<CouponClaimResult>("/coupons/claim", { method: "POST", data: { claimCode } });

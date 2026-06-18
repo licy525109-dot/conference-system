@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { NotFoundException } from "@nestjs/common";
-import { ConferenceStatus, FormFieldType, RegistrationSkuStatus } from "@prisma/client";
+import { ConferenceStatus, FormFieldType, Prisma, RegistrationSkuStatus } from "@prisma/client";
 import { ConferencesService } from "./conferences.service";
 import { PrismaService } from "../prisma.service";
 
@@ -195,6 +195,16 @@ describe("ConferencesService", () => {
     assert.equal(prisma.lastConferenceCountArgs?.where.status, ConferenceStatus.PUBLISHED);
   });
 
+  it("filters published conferences by keyword", async () => {
+    const service = new ConferencesService(createPrismaMock());
+
+    const matched = await service.list({ keyword: "Shanghai" });
+    const missing = await service.list({ keyword: "not-found" });
+
+    assert.deepEqual(matched.data.items.map((item) => item.id), ["published-conf"]);
+    assert.equal(missing.data.total, 0);
+  });
+
   it("allows detail access only for published conferences", async () => {
     const service = new ConferencesService(createPrismaMock());
 
@@ -259,7 +269,7 @@ function createPrismaMock() {
       findMany: async (args: FindManyArgs) => {
         mock.lastConferenceFindManyArgs = args;
         return conferences
-          .filter((conference) => conference.status === args.where.status)
+          .filter((conference) => matchesConferenceWhere(conference, args.where))
           .sort((left, right) => left.sortOrder - right.sortOrder)
           .map(({ page, skus, status, sortOrder, createdAt, registrationStartsAt, registrationEndsAt, ...conference }) => ({
             ...conference
@@ -267,7 +277,7 @@ function createPrismaMock() {
       },
       count: async (args: CountArgs) => {
         mock.lastConferenceCountArgs = args;
-        return conferences.filter((conference) => conference.status === args.where.status).length;
+        return conferences.filter((conference) => matchesConferenceWhere(conference, args.where)).length;
       },
       findFirst: async (args: DetailArgs) => {
         const conference = conferences.find(
@@ -328,12 +338,19 @@ function createPrismaMock() {
   return mock as typeof mock & PrismaService;
 }
 
+interface MockConference {
+  title: string;
+  summary: string | null;
+  location: string | null;
+  status: ConferenceStatus;
+}
+
 interface FindManyArgs {
-  where: { status: ConferenceStatus };
+  where: Prisma.ConferenceWhereInput;
 }
 
 interface CountArgs {
-  where: { status: ConferenceStatus };
+  where: Prisma.ConferenceWhereInput;
 }
 
 interface DetailArgs {
@@ -346,6 +363,44 @@ interface DetailArgs {
       where: { status: RegistrationSkuStatus };
     };
   };
+}
+
+function matchesConferenceWhere(conference: MockConference, where: Prisma.ConferenceWhereInput): boolean {
+  const record = where as Record<string, unknown>;
+  if (record.status && conference.status !== record.status) {
+    return false;
+  }
+
+  const and = Array.isArray(record.AND) ? record.AND : [];
+  if (and.length > 0 && !and.every((item) => matchesConferenceWhere(conference, item as Prisma.ConferenceWhereInput))) {
+    return false;
+  }
+
+  const or = Array.isArray(record.OR) ? record.OR : [];
+  if (or.length > 0 && !or.some((item) => matchesConferenceWhere(conference, item as Prisma.ConferenceWhereInput))) {
+    return false;
+  }
+
+  return (
+    matchesTextFilter(conference.title, record.title) &&
+    matchesTextFilter(conference.summary, record.summary) &&
+    matchesTextFilter(conference.location, record.location)
+  );
+}
+
+function matchesTextFilter(value: string | null, filter: unknown): boolean {
+  if (!filter) {
+    return true;
+  }
+  const text = value ?? "";
+  if (typeof filter === "string") {
+    return text === filter;
+  }
+  if (typeof filter === "object" && filter !== null && "contains" in filter) {
+    const contains = String((filter as { contains?: unknown }).contains ?? "");
+    return text.toLowerCase().includes(contains.toLowerCase());
+  }
+  return true;
 }
 
 interface FormArgs {

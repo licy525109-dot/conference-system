@@ -97,11 +97,20 @@
           <el-alert
             v-if="unsupportedEnabledComponents.length > 0"
             class="publish-guard-alert"
+            type="error"
+            :closable="false"
+            show-icon
+            title="当前页面包含不可发布组件"
+            :description="`已启用 ${unsupportedEnabledComponents.length} 个不支持或后续开放组件，发布会被阻止，请先隐藏或替换：${unsupportedEnabledComponents.map((item) => presetName(item.type)).join('、')}`"
+          />
+          <el-alert
+            v-else-if="basicEnabledComponents.length > 0"
+            class="publish-guard-alert"
             type="warning"
             :closable="false"
             show-icon
-            title="当前页面包含暂不支持小程序/H5 的组件"
-            :description="`已启用 ${unsupportedEnabledComponents.length} 个不支持或后续开放组件，用户端正式页面会静默隐藏，建议发布前处理：${unsupportedEnabledComponents.map((item) => presetName(item.type)).join('、')}`"
+            title="当前页面包含基础支持组件"
+            :description="`发布前请在 H5 和小程序预览核对：${basicEnabledComponents.map((item) => presetName(item.type)).join('、')}`"
           />
         </section>
 
@@ -326,12 +335,12 @@
                         :placeholder="field.placeholder"
                         @update:model-value="setConfig(selectedComponent, field.key, $event)"
                       />
-                      <el-button v-if="isImageField(field) || isFontField(field)" @click="openMaterialPicker(selectedComponent, field)">
-                        {{ isFontField(field) ? "选择字体文件" : "应用素材库" }}
+                      <el-button v-if="isMaterialSelectableField(selectedComponent.type, field)" @click="openMaterialPicker(selectedComponent, field)">
+                        {{ materialPickerButtonText(selectedComponent.type, field) }}
                       </el-button>
                     </div>
-                    <el-button v-if="field.kind === 'list' && isImageField(field)" class="material-button" @click="openMaterialPicker(selectedComponent, field)">
-                      从素材库添加图片
+                    <el-button v-if="field.kind === 'list' && isMaterialSelectableField(selectedComponent.type, field)" class="material-button" @click="openMaterialPicker(selectedComponent, field)">
+                      {{ materialPickerButtonText(selectedComponent.type, field) }}
                       <MaterialSpecHelp :spec-key="materialSpecKeyForField(selectedComponent.type, field) || 'imageGrid'" />
                     </el-button>
                   </el-form-item>
@@ -450,17 +459,23 @@
       </div>
     </el-dialog>
 
-    <el-dialog v-model="materialVisible" title="选择素材图片" width="820px">
+    <el-dialog v-model="materialVisible" :title="materialDialogTitle" width="820px">
       <div class="material-picker">
         <div class="material-picker__head">
           <el-input v-model="materialKeyword" clearable placeholder="搜索素材名称" @keyup.enter="loadMaterials" />
           <el-button :loading="materialLoading" @click="loadMaterials">搜索</el-button>
         </div>
+        <div class="material-picker__spec">
+          <MaterialSpecHelp :spec-key="materialPickerSpecKey" />
+          <span>{{ materialPickerSpecText }}</span>
+        </div>
         <el-empty v-if="!materialLoading && materialAssets.length === 0" :description="materialEmptyText" />
         <div v-else class="material-grid">
           <button v-for="asset in materialAssets" :key="asset.id" class="material-card" @click="chooseMaterial(asset)">
             <img v-if="isImageAsset(asset)" :src="asset.url" :alt="asset.name" />
-            <div v-else class="font-asset">字体</div>
+            <div v-else-if="isVideoAsset(asset)" class="font-asset">视频</div>
+            <div v-else-if="isFontAsset(asset)" class="font-asset">字体</div>
+            <div v-else class="font-asset">资料</div>
             <strong>{{ asset.name }}</strong>
             <small>{{ asset.usage || "通用素材" }}</small>
           </button>
@@ -477,8 +492,10 @@ import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import {
   createPage,
   createPageLibraryTemplate,
+  getProductCategoryOptions,
   getPageVersion,
   getTabbar,
+  listCouponCampaigns,
   listMaterials,
   listComponentPresets,
   listConferences,
@@ -489,16 +506,18 @@ import {
   updatePageVersion
 } from "../../services/admin";
 import { routeQuery } from "../../router";
-import type { MaterialSpecKey } from "../../constants/materialSpecs";
+import { materialSpecs, materialSpecText, type MaterialSpecKey } from "../../constants/materialSpecs";
 import type {
   CmsComponent,
   CmsComponentSupportStatus,
   ComponentPreset,
   Conference,
+  CouponCampaign,
   MaterialAsset,
   PageLibraryTemplate,
   PageTemplate,
   PageVersion,
+  ProductCategory,
   TabBarConfig,
   ThemeConfig
 } from "../../services/types";
@@ -546,41 +565,41 @@ interface CmsComponentSupportMeta {
 const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
   hero: { label: "已支持", status: "supported", description: "小程序/H5 已完整支持图片横幅展示" },
   "conference-list": { label: "已支持", status: "supported", description: "小程序/H5 已完整支持会议列表展示和详情跳转" },
-  "conference-tabs": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持分类标签和会议卡片展示，暂不做真实筛选" },
+  "conference-tabs": { label: "已支持", status: "supported", description: "小程序/H5 支持分类标签筛选和会议卡片展示" },
   "registration-button": { label: "已支持", status: "supported", description: "小程序/H5 支持普通报名入口；会议详情页会隐藏以避免重复按钮" },
   "floating-registration-button": { label: "已支持", status: "supported", description: "小程序/H5 支持悬浮报名入口；会议详情页会隐藏以避免重复按钮" },
-  "promotion-bar": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持提示条展示" },
+  "promotion-bar": { label: "已支持", status: "supported", description: "小程序/H5 支持提示条展示" },
   "rich-text": { label: "已支持", status: "supported", description: "小程序/H5 已支持富文本片段展示" },
   "safe-html": { label: "已支持", status: "supported", description: "小程序/H5 已支持安全图文片段展示" },
   "image-grid": { label: "已支持", status: "supported", description: "小程序/H5 已支持图片宫格展示" },
-  video: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持视频播放入口" },
+  video: { label: "已支持", status: "supported", description: "小程序/H5 支持视频播放、封面和禁用自动播放" },
   notice: { label: "已支持", status: "supported", description: "小程序/H5 已支持公告提示展示" },
   "stats-grid": { label: "已支持", status: "supported", description: "小程序/H5 已支持数字亮点展示" },
   "ticket-price-list": { label: "已支持", status: "supported", description: "小程序/H5 已支持票种价格文案展示" },
   "process-steps": { label: "已支持", status: "supported", description: "小程序/H5 已支持流程步骤展示" },
   "text-image": { label: "已支持", status: "supported", description: "小程序/H5 已支持图文介绍展示" },
-  "download-list": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持资料名称列表展示" },
-  "live-card": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持直播信息展示" },
-  "testimonial-list": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持评价列表展示" },
-  "traffic-guide": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持交通文本展示" },
+  "download-list": { label: "已支持", status: "supported", description: "小程序/H5 支持资料链接打开或复制" },
+  "live-card": { label: "已支持", status: "supported", description: "小程序/H5 支持直播信息、状态和链接打开或复制" },
+  "testimonial-list": { label: "已支持", status: "supported", description: "小程序/H5 支持评价、姓名、单位和头像展示" },
+  "traffic-guide": { label: "已支持", status: "supported", description: "小程序/H5 支持交通说明、地址复制和电话拨打" },
   "contact-card": { label: "已支持", status: "supported", description: "小程序/H5 已支持联系卡片展示" },
-  "tag-filter": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持标签展示，暂不做真实筛选" },
+  "tag-filter": { label: "已支持", status: "supported", description: "小程序/H5 支持标签点击筛选会议" },
   title: { label: "已支持", status: "supported", description: "小程序/H5 已支持标题展示" },
   divider: { label: "已支持", status: "supported", description: "小程序/H5 已支持分割线展示" },
   spacer: { label: "已支持", status: "supported", description: "小程序/H5 已支持留白展示" },
-  carousel: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持图片轮播展示" },
-  "speaker-cards": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持嘉宾卡片展示" },
-  "schedule-timeline": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持会议日程展示" },
-  "coupon-card": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持优惠券领取入口展示" },
-  countdown: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持目标时间倒计时展示" },
-  search: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持搜索入口展示" },
-  "map-contact": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持地址和电话展示" },
-  "sponsor-wall": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持赞助商名称或 Logo 展示" },
-  faq: { label: "基础支持", status: "basic", description: "小程序/H5 基础支持问答列表展示" },
-  "membership-benefits": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持会员权益展示和会员中心入口" },
-  "user-profile-card": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持用户资料入口展示" },
-  "my-order-list": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持报名和商城订单入口展示" },
-  "mall-product-grid": { label: "基础支持", status: "basic", description: "小程序/H5 基础支持商城商品宫格入口展示" }
+  carousel: { label: "已支持", status: "supported", description: "小程序/H5 支持图片轮播展示" },
+  "speaker-cards": { label: "已支持", status: "supported", description: "小程序/H5 支持嘉宾卡片展示" },
+  "schedule-timeline": { label: "已支持", status: "supported", description: "小程序/H5 支持会议日程展示" },
+  "coupon-card": { label: "已支持", status: "supported", description: "小程序/H5 支持优惠券领取和错误反馈" },
+  countdown: { label: "已支持", status: "supported", description: "小程序/H5 支持目标时间倒计时和结束文案" },
+  search: { label: "已支持", status: "supported", description: "小程序/H5 支持搜索输入和会议筛选跳转" },
+  "map-contact": { label: "已支持", status: "supported", description: "小程序/H5 支持地址复制和电话拨打" },
+  "sponsor-wall": { label: "已支持", status: "supported", description: "小程序/H5 支持赞助商 Logo 展示和链接复制" },
+  faq: { label: "已支持", status: "supported", description: "小程序/H5 支持问答展开折叠" },
+  "membership-benefits": { label: "已支持", status: "supported", description: "小程序/H5 支持会员权益展示和会员中心入口" },
+  "user-profile-card": { label: "已支持", status: "supported", description: "小程序/H5 支持登录资料和未登录引导" },
+  "my-order-list": { label: "已支持", status: "supported", description: "小程序/H5 支持报名和商城订单入口" },
+  "mall-product-grid": { label: "已支持", status: "supported", description: "小程序/H5 支持真实商品展示和详情跳转" }
 };
 
 const ADDABLE_SUPPORT_STATUSES: CmsComponentSupportStatus[] = ["supported", "basic"];
@@ -617,8 +636,42 @@ const materialTarget = ref<{ component: EditableComponent; field: ConfigField } 
 const materialPageTarget = ref<keyof PageMetaForm | null>(null);
 const previewConferences = ref<Conference[]>([]);
 const previewTabbar = ref<TabBarConfig | null>(null);
+const couponCampaignOptions = ref<CouponCampaign[]>([]);
+const productCategoryOptions = ref<ProductCategory[]>([]);
 const loadedPreviewFonts = new Set<string>();
-const materialEmptyText = computed(() => (materialTarget.value && isFontField(materialTarget.value.field) ? "暂无字体素材，请先到素材管理上传字体文件" : "暂无可用图片素材"));
+const materialPickerSpecKey = computed<MaterialSpecKey>(() => {
+  if (materialPageTarget.value) return "shareCover";
+  const target = materialTarget.value;
+  return target ? materialSpecKeyForField(target.component.type, target.field) ?? "materialUpload" : "materialUpload";
+});
+const materialPickerSpecText = computed(() => materialSpecText(materialSpecs[materialPickerSpecKey.value]));
+const materialPickerKind = computed<"image" | "video" | "file" | "font">(() => {
+  if (materialPageTarget.value) return "image";
+  const target = materialTarget.value;
+  if (!target) return "image";
+  if (isFontField(target.field)) return "font";
+  if (isVideoField(target.component.type, target.field)) return "video";
+  if (isDownloadListField(target.component.type, target.field)) return "file";
+  return "image";
+});
+const materialDialogTitle = computed(() => {
+  const map = {
+    image: "选择图片素材",
+    video: "选择视频素材",
+    file: "选择资料文件",
+    font: "选择字体文件"
+  } as const;
+  return map[materialPickerKind.value];
+});
+const materialEmptyText = computed(() => {
+  const map = {
+    image: "暂无可用图片素材，请先到素材管理上传图片",
+    video: "暂无可用视频素材，请先到素材管理上传 MP4",
+    file: "暂无可用资料文件，请先到素材管理上传 PDF 或图片",
+    font: "暂无字体素材，请先到素材管理上传字体文件"
+  } as const;
+  return map[materialPickerKind.value];
+});
 const expandedComponentIds = ref<string[]>([]);
 const expandedConfigGroupIds = reactive<Record<string, string[]>>({});
 const pageMeta = reactive<PageMetaForm>({ pageTitle: "", shareTitle: "", shareDescription: "", shareImageUrl: "" });
@@ -645,6 +698,7 @@ const previewComponents = computed(() => components.value.filter((item) => item.
 const unsupportedEnabledComponents = computed(() =>
   components.value.filter((item) => item.enabled && ["unsupported", "planned"].includes(componentSupport(item.type).status))
 );
+const basicEnabledComponents = computed(() => components.value.filter((item) => item.enabled && componentSupport(item.type).status === "basic"));
 const componentOptions = computed(() =>
   components.value.map((component, index) => ({
     label: `${index + 1}. ${presetName(component.type)} · ${componentSupport(component.type).label}${component.enabled ? "" : "（已隐藏）"}`,
@@ -694,14 +748,18 @@ watch(
 watch(components, installPreviewFonts, { deep: true });
 
 onMounted(async () => {
-  const [presetResponse, conferenceResponse, tabbarResponse] = await Promise.all([
+  const [presetResponse, conferenceResponse, tabbarResponse, campaignResponse, categoryResponse] = await Promise.all([
     listComponentPresets(),
     listConferences({ page: 1, pageSize: 6, status: "PUBLISHED" }).catch(() => ({ items: [] as Conference[] })),
-    getTabbar().catch(() => null)
+    getTabbar().catch(() => null),
+    listCouponCampaigns({ page: 1, pageSize: 100 }).catch(() => ({ items: [] as CouponCampaign[] })),
+    getProductCategoryOptions().catch(() => ({ items: [] as ProductCategory[] }))
   ]);
   presets.value = presetResponse.items;
   previewConferences.value = conferenceResponse.items;
   previewTabbar.value = tabbarResponse;
+  couponCampaignOptions.value = campaignResponse.items;
+  productCategoryOptions.value = categoryResponse.items;
   activePresetGroup.value = presetGroups.value[0]?.name ?? "";
   await Promise.all([loadPages(), loadLibraryTemplates()]);
 });
@@ -899,13 +957,19 @@ async function saveDraft() {
 
 async function publish() {
   if (!version.value) return;
+  await saveDraft();
   if (unsupportedEnabledComponents.value.length > 0) {
+    ElMessage.error(`页面包含不可发布组件：${unsupportedEnabledComponents.value.map((item) => presetName(item.type)).join("、")}`);
+    return;
+  }
+  const confirmBasic = basicEnabledComponents.value.length > 0;
+  if (confirmBasic) {
     try {
       await ElMessageBox.confirm(
-        "发布后这些组件不会展示给普通用户端，请确认是否继续发布。建议先隐藏或替换为已支持/基础支持组件。",
-        "存在暂不支持组件",
+        `当前页面包含 ${basicEnabledComponents.value.length} 个基础支持组件。请确认已经核对 H5 和小程序预览，再继续发布。`,
+        "确认发布基础支持组件",
         {
-          confirmButtonText: "继续发布",
+          confirmButtonText: "确认发布",
           cancelButtonText: "返回处理",
           type: "warning"
         }
@@ -914,10 +978,9 @@ async function publish() {
       return;
     }
   }
-  await saveDraft();
   publishing.value = true;
   try {
-    const draft = await publishPageVersion(version.value.id);
+    const draft = await publishPageVersion(version.value.id, { confirmBasic });
     version.value = draft;
     versionTitle.value = draft.title;
     components.value = draft.components.map(toEditableComponent);
@@ -1280,25 +1343,41 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "indicatorDots", label: "显示指示点", kind: "switch", fallback: "true" }
     ],
     "conference-list": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 10 }, ...conferenceDisplayFields], 26),
-    "conference-tabs": withTextStyle([...commonTitle, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
+    "conference-tabs": withTextStyle([...commonTitle, { key: "target", label: "筛选字段", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
     "speaker-cards": withTextStyle([...commonTitle, { key: "speakers", label: "嘉宾信息", kind: "list", placeholder: "每行一位嘉宾，例如：张三｜主讲嘉宾", rows: 5 }], 26),
     "schedule-timeline": withTextStyle([...commonTitle, { key: "items", label: "日程安排", kind: "list", placeholder: "每行一项日程", rows: 5 }], 26),
     "registration-button": withTextStyle([{ key: "text", label: "按钮文字", placeholder: "立即报名" }], 28),
     "floating-registration-button": withTextStyle([{ key: "text", label: "悬浮按钮文字", placeholder: "立即报名" }], 28),
-    "coupon-card": withTextStyle([...commonTitle, { key: "description", label: "说明文字", kind: "textarea", rows: 2 }], 26),
+    "coupon-card": withTextStyle([
+      ...commonTitle,
+      { key: "description", label: "说明文字", kind: "textarea", rows: 2 },
+      { key: "buttonText", label: "按钮文案", placeholder: "立即领取" },
+      { key: "couponCampaignId", label: "关联券活动", kind: "select", options: couponCampaignSelectOptions() },
+      { key: "claimCode", label: "领取码兜底", placeholder: "优先使用券活动选择器；仅兼容历史页面" }
+    ], 26),
     "promotion-bar": withTextStyle([{ key: "text", label: "提示文字", placeholder: "满减活动进行中" }], 28),
     "rich-text": withTextStyle([{ key: "html", label: "图文内容", kind: "textarea", rows: 6, placeholder: "填写图文内容，可使用简单段落和换行" }], 28),
     "safe-html": withTextStyle([{ key: "html", label: "图文内容", kind: "textarea", rows: 6, placeholder: "填写安全图文内容" }], 28),
     "image-grid": [{ key: "images", label: "图片宫格", kind: "list", placeholder: "每行一个图片地址", rows: 5 }, ...layoutFields],
-    video: withTextStyle([...commonTitle, { key: "url", label: "视频地址", placeholder: "请输入视频地址" }], 26),
-    countdown: withTextStyle([...commonTitle, { key: "targetAt", label: "目标时间", placeholder: "例如 2026-08-01 09:00" }], 26),
+    video: withTextStyle([...commonTitle, { key: "url", label: "视频地址", placeholder: "请输入视频地址" }, { key: "coverUrl", label: "视频封面", placeholder: "从素材库选择视频封面" }], 26),
+    countdown: withTextStyle([...commonTitle, { key: "targetAt", label: "目标时间", placeholder: "例如 2026-08-01 09:00" }, { key: "endedText", label: "结束文案", placeholder: "活动已开始" }], 26),
     notice: withTextStyle([{ key: "text", label: "公告内容", placeholder: "请输入公告" }], 28),
-    "map-contact": withTextStyle([
-      { key: "address", label: "会议地址", placeholder: "请输入地址" },
-      { key: "phone", label: "联系电话", placeholder: "请输入电话" }
+    search: withTextStyle([
+      ...commonTitle,
+      { key: "placeholder", label: "输入框占位", placeholder: "输入会议关键词" },
+      { key: "buttonText", label: "按钮文案", placeholder: "搜索" },
+      { key: "target", label: "跳转目标", kind: "select", fallback: "conference-list", options: [{ label: "会议列表", value: "conference-list" }] },
+      { key: "searchScope", label: "搜索范围", kind: "select", fallback: "conference", options: [{ label: "会议标题/摘要/地点", value: "conference" }] }
     ], 26),
-    "sponsor-wall": withTextStyle([...commonTitle, { key: "sponsors", label: "赞助商名称", kind: "list", placeholder: "每行一个赞助商", rows: 4 }], 26),
-    faq: withTextStyle([...commonTitle, { key: "items", label: "常见问题", kind: "list", placeholder: "每行一个问题和答案", rows: 5 }], 26),
+    "map-contact": withTextStyle([
+      ...commonTitle,
+      { key: "contactName", label: "联系人", placeholder: "会务组" },
+      { key: "address", label: "会议地址", placeholder: "请输入地址" },
+      { key: "phone", label: "联系电话", placeholder: "请输入电话" },
+      { key: "mapUrl", label: "地图链接", placeholder: "可填写地图或导航链接；小程序端会复制链接" }
+    ], 26),
+    "sponsor-wall": withTextStyle([...commonTitle, { key: "sponsors", label: "赞助商", kind: "list", placeholder: "每行一个赞助商：名称｜Logo URL｜链接", rows: 4 }], 26),
+    faq: withTextStyle([...commonTitle, { key: "items", label: "常见问题", kind: "list", placeholder: "每行一个问题和答案：问题｜答案", rows: 5 }], 26),
     "stats-grid": withTextStyle([...commonTitle, { key: "items", label: "数字亮点", kind: "list", placeholder: "例如：500+ 参会席位", rows: 4 }], 26),
     "ticket-price-list": withTextStyle([...commonTitle, { key: "items", label: "票种价格", kind: "list", placeholder: "例如：早鸟票 ¥299", rows: 4 }], 26),
     "process-steps": withTextStyle([...commonTitle, { key: "items", label: "流程步骤", kind: "list", placeholder: "每行一个步骤", rows: 4 }], 26),
@@ -1307,16 +1386,23 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "text", label: "介绍内容", kind: "textarea", rows: 3 },
       { key: "imageUrl", label: "配图地址", placeholder: "从素材库复制图片地址" }
     ], 26),
-    "download-list": withTextStyle([...commonTitle, { key: "items", label: "资料名称", kind: "list", placeholder: "每行一份资料", rows: 4 }], 26),
+    "download-list": withTextStyle([...commonTitle, { key: "items", label: "资料文件", kind: "list", placeholder: "每行一份资料：名称｜文件 URL｜说明", rows: 4 }], 26),
     "live-card": withTextStyle([
       ...commonTitle,
+      { key: "platform", label: "直播平台", placeholder: "视频号 / 腾讯会议 / 其他" },
+      { key: "startAt", label: "开始时间", placeholder: "例如 2026-08-01 09:00" },
+      { key: "endAt", label: "结束时间", placeholder: "例如 2026-08-01 12:00" },
       { key: "text", label: "直播说明", kind: "textarea", rows: 2 },
-      { key: "url", label: "直播地址", placeholder: "请输入直播地址" }
+      { key: "url", label: "直播地址", placeholder: "请输入直播地址" },
+      { key: "coverUrl", label: "直播封面", placeholder: "从素材库选择直播封面" },
+      { key: "buttonText", label: "按钮文案", placeholder: "打开直播" }
     ], 26),
-    "testimonial-list": withTextStyle([...commonTitle, { key: "items", label: "参会评价", kind: "list", placeholder: "每行一条评价", rows: 4 }], 26),
+    "testimonial-list": withTextStyle([...commonTitle, { key: "items", label: "参会评价", kind: "list", placeholder: "每行一条评价：评价｜姓名｜单位｜头像 URL", rows: 4 }], 26),
     "traffic-guide": withTextStyle([
       ...commonTitle,
       { key: "address", label: "地址", placeholder: "请输入地址" },
+      { key: "mapUrl", label: "地图链接", placeholder: "可填写地图或导航链接；小程序端会复制链接" },
+      { key: "phone", label: "联系电话", placeholder: "请输入电话" },
       { key: "text", label: "交通说明", kind: "textarea", rows: 3 }
     ], 26),
     "contact-card": withTextStyle([
@@ -1324,12 +1410,53 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "phone", label: "联系电话", placeholder: "请输入电话" },
       { key: "text", label: "咨询说明", kind: "textarea", rows: 2 }
     ], 26),
-    "tag-filter": withTextStyle([...commonTitle, { key: "items", label: "标签名称", kind: "list", placeholder: "每行一个标签", rows: 4 }], 26),
+    "tag-filter": withTextStyle([...commonTitle, { key: "target", label: "筛选字段", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "items", label: "标签名称", kind: "list", placeholder: "每行一个标签；可写：显示名｜筛选值｜tag/location/category", rows: 4 }], 26),
+    "membership-benefits": withTextStyle([...commonTitle, { key: "items", label: "权益项", kind: "list", placeholder: "每行一个会员权益", rows: 5 }, { key: "buttonText", label: "按钮文案", placeholder: "查看会员中心" }], 26),
+    "user-profile-card": withTextStyle([...commonTitle, { key: "description", label: "未登录提示", kind: "textarea", rows: 2 }, { key: "target", label: "点击目标", kind: "select", fallback: "member", options: profileTargetOptions() }], 26),
+    "my-order-list": withTextStyle([...commonTitle, { key: "orderType", label: "展示类型", kind: "select", fallback: "both", options: orderTypeOptions() }], 26),
+    "mall-product-grid": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 4 }, { key: "keyword", label: "商品关键词", placeholder: "按商品标题过滤" }, { key: "productCategoryId", label: "商品分类", kind: "select", options: productCategorySelectOptions() }, { key: "buttonText", label: "按钮文案", placeholder: "查看商城" }], 26),
     title: withTextStyle([{ key: "text", label: "标题文字", placeholder: "请输入标题" }], 34),
     divider: [],
     spacer: [{ key: "height", label: "留白高度", kind: "number", fallback: 24 }]
   };
   return map[type] ?? commonTitle;
+}
+
+function couponCampaignSelectOptions(): Array<{ label: string; value: string }> {
+  return [
+    { label: "不关联券活动", value: "" },
+    ...couponCampaignOptions.value.map((item) => ({ label: `${item.name}（${item.claimCode}）`, value: item.id }))
+  ];
+}
+
+function productCategorySelectOptions(): Array<{ label: string; value: string }> {
+  return [
+    { label: "全部分类", value: "" },
+    ...productCategoryOptions.value.map((item) => ({ label: item.name, value: item.id }))
+  ];
+}
+
+function filterTargetOptions(): Array<{ label: string; value: string }> {
+  return [
+    { label: "按标签关键词", value: "tag" },
+    { label: "按地点", value: "location" },
+    { label: "按分类关键词", value: "category" }
+  ];
+}
+
+function profileTargetOptions(): Array<{ label: string; value: string }> {
+  return [
+    { label: "会员中心", value: "member" },
+    { label: "我的报名", value: "registrations" }
+  ];
+}
+
+function orderTypeOptions(): Array<{ label: string; value: string }> {
+  return [
+    { label: "报名订单和商城订单", value: "both" },
+    { label: "仅报名订单", value: "registration" },
+    { label: "仅商城订单", value: "mall" }
+  ];
 }
 
 function groupedFieldsFor(type: string): ConfigFieldGroup[] {
@@ -1441,20 +1568,44 @@ function setConfig(component: EditableComponent, key: string, value: unknown) {
 }
 
 function isImageField(field: ConfigField): boolean {
-  return ["imageUrl", "images"].includes(field.key);
+  return ["imageUrl", "images", "coverUrl"].includes(field.key);
 }
 
 function isFontField(field: ConfigField): boolean {
   return ["fontAssetUrl", "titleFontAssetUrl"].includes(field.key);
 }
 
+function isVideoField(componentType: string, field: ConfigField): boolean {
+  return componentType === "video" && field.key === "url";
+}
+
+function isDownloadListField(componentType: string, field: ConfigField): boolean {
+  return componentType === "download-list" && field.key === "items";
+}
+
+function isMaterialSelectableField(componentType: string, field: ConfigField): boolean {
+  return isImageField(field) || isFontField(field) || isVideoField(componentType, field) || isDownloadListField(componentType, field);
+}
+
+function materialPickerButtonText(componentType: string, field: ConfigField): string {
+  if (isFontField(field)) return "选择字体文件";
+  if (isVideoField(componentType, field)) return "选择视频素材";
+  if (isDownloadListField(componentType, field)) return "添加资料文件";
+  return field.kind === "list" ? "从素材库添加图片" : "应用素材库";
+}
+
 function materialSpecKeyForField(componentType: string, field: ConfigField): MaterialSpecKey | undefined {
   if (isFontField(field)) return "fontFile";
+  if (componentType === "video" && field.key === "url") return "videoFile";
+  if (componentType === "download-list" && field.key === "items") return "downloadFile";
+  if (componentType === "testimonial-list" && field.key === "items") return "testimonialAvatar";
+  if (componentType === "sponsor-wall" && field.key === "sponsors") return "sponsorLogo";
   if (!isImageField(field)) return undefined;
   if (componentType === "hero") return "heroImage";
   if (componentType === "carousel") return "carouselImage";
   if (componentType === "image-grid") return "imageGrid";
   if (componentType === "text-image") return "contentImage";
+  if (componentType === "video" || componentType === "live-card") return field.key === "coverUrl" ? "conferenceHeader" : "videoFile";
   if (componentType === "sponsor-wall") return "sponsorLogo";
   return field.key === "images" ? "imageGrid" : "contentImage";
 }
@@ -1477,11 +1628,12 @@ async function loadMaterials() {
   materialLoading.value = true;
   try {
     const response = await listMaterials({ page: 1, pageSize: 80, keyword: materialKeyword.value, enabled: true });
-    const target = materialTarget.value;
     materialAssets.value = response.items.filter((asset) => {
       if (!asset.enabled) return false;
-      if (materialPageTarget.value) return isImageAsset(asset);
-      return target && isFontField(target.field) ? isFontAsset(asset) : isImageAsset(asset);
+      if (materialPickerKind.value === "font") return isFontAsset(asset);
+      if (materialPickerKind.value === "video") return isVideoAsset(asset);
+      if (materialPickerKind.value === "file") return isDocumentAsset(asset) || isImageAsset(asset);
+      return isImageAsset(asset);
     });
   } finally {
     materialLoading.value = false;
@@ -1501,7 +1653,8 @@ function chooseMaterial(asset: MaterialAsset) {
   if (target.field.kind === "list") {
     const current = target.component.config[target.field.key];
     const list = Array.isArray(current) ? current.map(String) : [];
-    setConfig(target.component, target.field.key, [...list, asset.url]);
+    const value = isDownloadListField(target.component.type, target.field) ? `${asset.name}｜${asset.url}` : asset.url;
+    setConfig(target.component, target.field.key, [...list, value]);
   } else {
     setConfig(target.component, target.field.key, asset.url);
   }
@@ -1509,7 +1662,7 @@ function chooseMaterial(asset: MaterialAsset) {
   if (isFontField(target.field)) {
     installPreviewFonts();
   }
-  ElMessage.success(isFontField(target.field) ? "已应用字体文件" : "已应用素材图片");
+  ElMessage.success(materialAppliedMessage(target.component.type, target.field));
 }
 
 function isImageAsset(asset: MaterialAsset) {
@@ -1518,6 +1671,21 @@ function isImageAsset(asset: MaterialAsset) {
 
 function isFontAsset(asset: MaterialAsset) {
   return asset.fileType.startsWith("font/") || /\.(ttf|otf|woff2?)(\?|$)/i.test(asset.url);
+}
+
+function isVideoAsset(asset: MaterialAsset) {
+  return asset.fileType.startsWith("video/") || /\.(mp4|mov|m4v)(\?|$)/i.test(asset.url);
+}
+
+function isDocumentAsset(asset: MaterialAsset) {
+  return asset.fileType === "application/pdf" || /\.(pdf)(\?|$)/i.test(asset.url);
+}
+
+function materialAppliedMessage(componentType: string, field: ConfigField): string {
+  if (isFontField(field)) return "已应用字体文件";
+  if (isVideoField(componentType, field)) return "已应用视频素材";
+  if (isDownloadListField(componentType, field)) return "已添加资料文件";
+  return "已应用素材图片";
 }
 
 function installPreviewFonts() {
@@ -1570,13 +1738,13 @@ function componentStateText(component: EditableComponent): string {
 function componentNotice(component: EditableComponent): string {
   const support = componentSupport(component.type);
   if (support.status === "unsupported" || support.status === "planned") {
-    return "该组件暂不支持小程序/H5展示，用户端正式页面会静默隐藏，建议暂勿发布。";
+    return "该组件暂不支持小程序/H5展示，发布会被阻止，请先隐藏或替换为已支持组件。";
   }
   if (isConferenceDetailPage() && isRegistrationCtaType(component.type)) {
     return "会议详情页已有固定底部报名按钮，该 CMS 报名按钮在用户端详情页会隐藏，避免重复 CTA。";
   }
   if (support.status === "basic") {
-    return "该组件为基础展示支持，请发布前在 H5 和小程序预览中核对内容字段。";
+    return "该组件为基础支持，请发布前在 H5 和小程序预览中核对内容字段。";
   }
   return "";
 }
@@ -3386,6 +3554,19 @@ function splitPreviewLine(value: string): string[] {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
+}
+
+.material-picker__spec {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #dbe5ef;
+  border-radius: 8px;
+  background: #f7fafd;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .material-grid {

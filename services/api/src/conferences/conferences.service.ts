@@ -11,6 +11,10 @@ export interface ApiResponse<TData> {
 interface ConferenceListQuery {
   page?: string;
   pageSize?: string;
+  keyword?: string;
+  tag?: string;
+  location?: string;
+  category?: string;
 }
 
 const DEFAULT_PAGE = 1;
@@ -24,10 +28,11 @@ export class ConferencesService {
   async list(query: ConferenceListQuery): Promise<ApiResponse<ConferenceListResponse>> {
     const page = parsePositiveInt(query.page, DEFAULT_PAGE);
     const pageSize = Math.min(parsePositiveInt(query.pageSize, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
+    const where = buildConferenceListWhere(query);
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.conference.findMany({
-        where: { status: ConferenceStatus.PUBLISHED },
+        where,
         orderBy: [{ sortOrder: "asc" }, { startsAt: "asc" }, { createdAt: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -48,7 +53,7 @@ export class ConferencesService {
         }
       }),
       this.prisma.conference.count({
-        where: { status: ConferenceStatus.PUBLISHED }
+        where
       })
     ]);
 
@@ -179,6 +184,50 @@ export class ConferencesService {
       }))
     });
   }
+}
+
+function buildConferenceListWhere(query: ConferenceListQuery): Prisma.ConferenceWhereInput {
+  const keyword = readQueryText(query.keyword);
+  const tag = readQueryText(query.tag);
+  const location = readQueryText(query.location);
+  const category = readQueryText(query.category);
+  const and: Prisma.ConferenceWhereInput[] = [];
+
+  if (keyword) {
+    and.push({
+      OR: [
+        { title: { contains: keyword, mode: "insensitive" } },
+        { summary: { contains: keyword, mode: "insensitive" } },
+        { location: { contains: keyword, mode: "insensitive" } }
+      ]
+    });
+  }
+  if (tag) {
+    and.push({
+      OR: [
+        { title: { contains: tag, mode: "insensitive" } },
+        { summary: { contains: tag, mode: "insensitive" } },
+        { location: { contains: tag, mode: "insensitive" } }
+      ]
+    });
+  }
+  if (location) {
+    and.push({ location: { contains: location, mode: "insensitive" } });
+  }
+  if (category) {
+    and.push({
+      OR: [
+        { title: { contains: category, mode: "insensitive" } },
+        { summary: { contains: category, mode: "insensitive" } }
+      ]
+    });
+  }
+
+  return and.length > 0 ? { status: ConferenceStatus.PUBLISHED, AND: and } : { status: ConferenceStatus.PUBLISHED };
+}
+
+function readQueryText(value: string | undefined): string {
+  return typeof value === "string" ? value.trim().slice(0, 60) : "";
 }
 
 function ok<TData>(data: TData): ApiResponse<TData> {

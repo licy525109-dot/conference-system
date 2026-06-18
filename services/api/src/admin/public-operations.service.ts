@@ -76,6 +76,40 @@ export class PublicOperationsService {
     });
   }
 
+  async couponCampaignPublic(id: string) {
+    const campaign = await this.prisma.couponCampaign.findUnique({
+      where: { id },
+      include: { coupons: { include: { coupon: true } } }
+    });
+    if (!campaign || !campaign.enabled) throw new NotFoundException("优惠活动不存在或已停用");
+    const now = new Date();
+    const started = !campaign.startAt || campaign.startAt <= now;
+    const ended = Boolean(campaign.endAt && campaign.endAt < now);
+    const stockExhausted = campaign.totalLimit !== null && campaign.claimedCount >= campaign.totalLimit;
+    return ok({
+      id: campaign.id,
+      name: campaign.name,
+      claimCode: campaign.claimCode,
+      qrScene: campaign.qrScene,
+      enabled: campaign.enabled,
+      startAt: campaign.startAt?.toISOString() ?? null,
+      endAt: campaign.endAt?.toISOString() ?? null,
+      totalLimit: campaign.totalLimit,
+      claimedCount: campaign.claimedCount,
+      claimable: started && !ended && !stockExhausted,
+      statusText: !started ? "优惠活动尚未开始" : ended ? "优惠活动已结束" : stockExhausted ? "优惠活动已领完" : "可领取",
+      coupons: campaign.coupons.map((item) => ({
+        id: item.coupon.id,
+        name: item.coupon.name,
+        type: item.coupon.type,
+        discountAmountCent: item.coupon.discountAmountCent,
+        discountPercent: item.coupon.discountPercent,
+        minAmountCent: item.coupon.minAmountCent,
+        endAt: item.coupon.endAt?.toISOString() ?? null
+      }))
+    });
+  }
+
   async askAi(conferenceId: string, input: unknown, currentUser: CurrentUser | undefined) {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
     const question = readRequiredString(readObject(input), "question");

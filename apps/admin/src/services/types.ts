@@ -639,6 +639,27 @@ export interface PageVersion {
     pageKey: string;
     title: string;
   };
+  publishCheck?: CmsPublishCheckReport;
+}
+
+export interface CmsPublishCheckItem {
+  id: string;
+  type: string;
+  index: number;
+  enabled: boolean;
+  label: string;
+  status: CmsComponentSupportStatus;
+  description: string;
+  replacement?: string;
+}
+
+export interface CmsPublishCheckReport {
+  supportedCount: number;
+  basicCount: number;
+  blockingCount: number;
+  basicComponents: CmsPublishCheckItem[];
+  blockingComponents: CmsPublishCheckItem[];
+  suggestions: string[];
 }
 
 export interface PageLibraryTemplate {

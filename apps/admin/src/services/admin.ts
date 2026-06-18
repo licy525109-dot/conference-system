@@ -615,9 +615,10 @@ export function updatePageVersion(id: string, input: Record<string, unknown>) {
   });
 }
 
-export function publishPageVersion(id: string) {
+export function publishPageVersion(id: string, input: { confirmBasic?: boolean } = {}) {
   return apiRequest<PageVersion>(`/admin/page-versions/${encodeURIComponent(id)}/publish`, {
-    method: "POST"
+    method: "POST",
+    body: JSON.stringify(input)
   });
 }
 

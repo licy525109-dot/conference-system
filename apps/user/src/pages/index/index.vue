@@ -8,10 +8,10 @@
       <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="retryLoadConferences" />
       <EmptyState
         v-else-if="conferences.length === 0"
-        title="暂无可报名会议"
-        description="会议发布后会显示在这里，请稍后再来查看。"
+        :title="hasConferenceFilter ? '没有匹配会议' : '暂无可报名会议'"
+        :description="hasConferenceFilter ? '请调整搜索关键词或筛选标签后再试。' : '会议发布后会显示在这里，请稍后再来查看。'"
         mark="会"
-        action-text="刷新"
+        :action-text="hasConferenceFilter ? '清除筛选' : '刷新'"
         @action="retryLoadConferences"
       />
 
@@ -73,6 +73,7 @@ const conferences = ref<ConferenceListItem[]>([]);
 const cmsPage = ref<PublishedPage | null>(null);
 const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const homeDetails = ref<Record<string, HomeConferenceDetailText>>({});
+const conferenceFilter = ref<{ keyword?: string; tag?: string; location?: string; category?: string }>({});
 let hasLoadedOnce = false;
 let lastLoadAt = 0;
 
@@ -83,8 +84,15 @@ const pageStyle = computed(() => ({
 const pageClass = computed(() => ["page", "ui-page"]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
 const showBodyDynamicBackground = computed(() => theme.value.backgroundMode === "dynamic-gradient" && theme.value.backgroundApplyTo !== "header");
+const hasConferenceFilter = computed(() => Object.values(conferenceFilter.value).some(Boolean));
 
-onLoad(() => {
+onLoad((query) => {
+  conferenceFilter.value = {
+    keyword: readQueryText(query?.keyword),
+    tag: readQueryText(query?.tag),
+    location: readQueryText(query?.location),
+    category: readQueryText(query?.category)
+  };
   void loadConferences();
 });
 
@@ -106,7 +114,7 @@ async function loadConferences() {
   error.value = "";
 
   try {
-    const [items, page, themeConfig] = await Promise.all([getConferences(), getPublishedPage("home"), getAppTheme("home")]);
+    const [items, page, themeConfig] = await Promise.all([getConferences(conferenceFilter.value), getPublishedPage("home"), getAppTheme("home")]);
     conferences.value = items;
     cmsPage.value = page;
     theme.value = themeConfig;
@@ -144,7 +152,14 @@ function logConferenceLoadError(err: unknown): void {
 }
 
 function retryLoadConferences() {
+  if (hasConferenceFilter.value && conferences.value.length === 0) {
+    conferenceFilter.value = {};
+  }
   void loadConferences();
+}
+
+function readQueryText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 async function loadHomeDetails(items: ConferenceListItem[]): Promise<Record<string, HomeConferenceDetailText>> {
