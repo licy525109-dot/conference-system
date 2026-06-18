@@ -42,14 +42,24 @@
         </div>
         <el-form label-position="top" :model="configForm" class="config-form">
           <el-row :gutter="16">
-            <el-col :span="12"><el-form-item label="企业 ID CorpID"><el-input v-model="configForm.corpId" placeholder="ww..." /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="自建应用 AgentID"><el-input v-model="configForm.agentId" placeholder="数字 AgentID" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="客户联系 Secret"><el-input v-model="configForm.customerContactSecret" :placeholder="secretPlaceholder('customerContactSecret')" show-password /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="自建应用 Secret"><el-input v-model="configForm.appSecret" :placeholder="secretPlaceholder('appSecret')" show-password /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="回调 Token"><el-input v-model="configForm.callbackToken" :placeholder="secretPlaceholder('callbackToken')" show-password /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="回调 EncodingAESKey"><el-input v-model="configForm.callbackEncodingAesKey" :placeholder="secretPlaceholder('callbackEncodingAesKey')" show-password /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="客户联系回调 URL"><el-input v-model="configForm.customerContactCallbackUrl" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="应用回调 URL"><el-input v-model="configForm.appCallbackUrl" /></el-form-item></el-col>
+            <el-col :span="24">
+              <el-form-item>
+                <template #label>接入模式<FieldHelp content="推荐使用自建应用模式。新版企业微信可能不再展示客户联系 Secret，旧模式仅用于历史兼容。" /></template>
+                <el-radio-group v-model="configForm.authMode" class="auth-mode-group">
+                  <el-radio-button label="SELF_BUILT_APP">自建应用模式（推荐）</el-radio-button>
+                  <el-radio-button label="LEGACY_CUSTOMER_CONTACT">旧客户联系 Secret 模式</el-radio-button>
+                </el-radio-group>
+                <p class="form-tip">{{ authModeTip }}</p>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12"><el-form-item><template #label>企业 ID CorpID<FieldHelp content="企业微信管理后台「我的企业」中的企业 ID，形如 ww 开头。" /></template><el-input v-model="configForm.corpId" placeholder="ww..." /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>自建应用 AgentID<FieldHelp content="自建应用详情页中的 AgentID。用于应用回调和自建应用 Secret 模式。" /></template><el-input v-model="configForm.agentId" placeholder="数字 AgentID" /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>客户联系 Secret<FieldHelp content="旧版企业微信客户联系 Secret。自建应用模式不需要填写；新版企业微信未展示时请留空。" /></template><el-input v-model="configForm.customerContactSecret" :placeholder="secretPlaceholder('customerContactSecret')" show-password /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>自建应用 Secret<FieldHelp content="推荐模式使用的 Secret。请在企业微信自建应用详情页复制，保存后仅加密存储。" /></template><el-input v-model="configForm.appSecret" :placeholder="secretPlaceholder('appSecret')" show-password /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>回调 Token<FieldHelp content="填写到企业微信回调配置中的 Token，保存后加密存储，不返回明文。" /></template><el-input v-model="configForm.callbackToken" :placeholder="secretPlaceholder('callbackToken')" show-password /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>回调 EncodingAESKey<FieldHelp content="填写到企业微信回调配置中的 EncodingAESKey，保存后加密存储，不返回明文。" /></template><el-input v-model="configForm.callbackEncodingAesKey" :placeholder="secretPlaceholder('callbackEncodingAesKey')" show-password /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>客户联系回调 URL<FieldHelp content="复制到企业微信「客户联系」接收事件服务器配置中。" /></template><el-input v-model="configForm.customerContactCallbackUrl" /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>应用回调 URL<FieldHelp content="复制到企业微信自建应用的接收消息/事件服务器配置中。" /></template><el-input v-model="configForm.appCallbackUrl" /></el-form-item></el-col>
             <el-col :span="24"><el-form-item label="备注"><el-input v-model="configForm.remark" type="textarea" :rows="3" /></el-form-item></el-col>
           </el-row>
         </el-form>
@@ -83,9 +93,16 @@
         <el-table-column prop="status" label="状态" width="110" />
         <el-table-column prop="conferenceTitle" label="绑定会议" min-width="180" />
         <el-table-column prop="lastSyncedAt" label="最近同步" min-width="170" />
-        <el-table-column v-if="section === 'bindings'" label="操作" width="260">
+        <el-table-column v-if="section === 'bindings'" label="操作" min-width="520">
           <template #default="{ row }">
-            <el-input v-model="bindForms[row.id]" size="small" placeholder="会议 ID" />
+            <div class="binding-form">
+              <ConferenceSelect v-model="bindForms[row.id]" placeholder="选择绑定会议" />
+              <div class="field-row">
+                <el-input v-model="bindQrForms[row.id]" size="small" placeholder="群二维码 URL（可选）" />
+                <MaterialSpecHelp spec-key="wecomQr" />
+              </div>
+              <el-input v-model="bindJoinForms[row.id]" size="small" placeholder="入群链接（可选）" />
+            </div>
             <el-button size="small" type="primary" @click="bindGroup(row.id)">绑定</el-button>
           </template>
         </el-table-column>
@@ -112,7 +129,7 @@
       <div class="risk-note">企业微信群发任务创建后，通常需要群主或成员在企业微信中确认后才会真正发送。请确认内容准确，避免频繁打扰参会人。</div>
       <div class="task-form">
         <el-input v-model="taskForm.name" placeholder="群发任务名称" />
-        <el-input v-model="taskForm.conferenceId" placeholder="会议 ID（可选）" />
+        <ConferenceSelect v-model="taskForm.conferenceId" placeholder="会议（可选）" />
         <el-input v-model="taskForm.contentText" type="textarea" :rows="4" placeholder='{"msgtype":"text","text":{"content":"会议提醒..."}}' />
         <el-button type="primary" @click="saveTask">创建任务</el-button>
       </div>
@@ -160,6 +177,9 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import FieldHelp from "../../components/FieldHelp.vue";
+import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
+import ConferenceSelect from "../../components/selectors/ConferenceSelect.vue";
 import { currentRoute, navigateTo } from "../../router";
 import {
   bindWecomCustomerGroupConference,
@@ -195,8 +215,11 @@ const testing = ref(false);
 const checking = ref(false);
 const syncing = ref(false);
 const bindForms = reactive<Record<string, string>>({});
+const bindQrForms = reactive<Record<string, string>>({});
+const bindJoinForms = reactive<Record<string, string>>({});
 const configForm = reactive({
   enabled: false,
+  authMode: "SELF_BUILT_APP",
   corpId: "",
   agentId: "",
   customerContactSecret: "",
@@ -210,24 +233,41 @@ const configForm = reactive({
 const welcomeForm = reactive({ name: "", contentText: "{\"text\":\"欢迎加入会议客户群\",\"agendaUrl\":\"\",\"aiAssistantUrl\":\"\",\"advisorPhone\":\"\"}" });
 const taskForm = reactive({ name: "", conferenceId: "", contentText: "{\"msgtype\":\"text\",\"text\":{\"content\":\"会议提醒：请关注最新会务通知。\"}}" });
 const section = computed(() => currentRoute.value.path.split("/").pop() || "config");
-const guideSteps = [
-  "登录企业微信管理后台。",
-  "在「我的企业」复制企业 ID CorpID。",
-  "开启客户联系能力，并复制客户联系 Secret。",
-  "创建或选择自建应用，设置应用可见范围。",
-  "复制自建应用 AgentID 和 Secret。",
-  "在客户联系接收事件服务器填写 URL、Token、EncodingAESKey。",
-  "在自建应用回调配置填写应用回调 URL、Token、EncodingAESKey。",
-  "回到会务系统点击测试连接。",
-  "检测客户联系权限。",
-  "同步客户群并绑定会议。"
-];
+const guideSteps = computed(() =>
+  configForm.authMode === "LEGACY_CUSTOMER_CONTACT"
+    ? [
+        "登录企业微信管理后台。",
+        "在「我的企业」复制企业 ID CorpID。",
+        "确认企业仍可查看客户联系 Secret，并复制到本页。",
+        "在客户联系接收事件服务器填写客户联系回调 URL、Token、EncodingAESKey。",
+        "回到会务系统点击测试 AccessToken。",
+        "检测客户联系权限。",
+        "同步客户群并绑定会议。"
+      ]
+    : [
+        "登录企业微信管理后台。",
+        "在「我的企业」复制企业 ID CorpID。",
+        "创建或选择自建应用，设置应用可见范围。",
+        "复制自建应用 AgentID 和 Secret。",
+        "在自建应用中开通或授权客户联系/客户群相关接口权限。",
+        "在自建应用回调配置填写应用回调 URL、Token、EncodingAESKey。",
+        "如需要客户联系事件，也在客户联系接收事件服务器填写客户联系回调 URL。",
+        "回到会务系统点击测试 AccessToken 和检测客户联系权限。",
+        "同步客户群并绑定会议。"
+      ]
+);
+const authModeTip = computed(() =>
+  configForm.authMode === "LEGACY_CUSTOMER_CONTACT"
+    ? "兼容旧企业微信客户联系 Secret。若后台不再展示该 Secret，请改用自建应用模式。"
+    : "推荐模式：使用自建应用 Secret 获取 AccessToken，并通过应用权限访问客户联系客户群接口。"
+);
 const statusCards = computed(() => {
   const status = config.value.status || {};
   return [
     { label: "企微客户群能力", value: status.enabled ? "已启用" : "未启用", ok: Boolean(status.enabled) },
+    { label: "接入模式", value: authModeText(status.effectiveAuthMode || config.value.effectiveAuthMode), ok: Boolean(status.effectiveAuthMode || config.value.effectiveAuthMode) },
     { label: "CorpID", value: status.corpIdConfigured ? "已配置" : "未配置", ok: Boolean(status.corpIdConfigured) },
-    { label: "客户联系 Secret", value: status.customerContactSecretConfigured ? "已配置" : "未配置", ok: Boolean(status.customerContactSecretConfigured) },
+    { label: "旧客户联系 Secret", value: status.customerContactSecretConfigured ? "已配置" : "未配置", ok: config.value.effectiveAuthMode !== "legacy_customer_contact" || Boolean(status.customerContactSecretConfigured) },
     { label: "自建应用 Secret", value: status.appSecretConfigured ? "已配置" : "未配置", ok: Boolean(status.appSecretConfigured) },
     { label: "回调配置", value: status.callbackConfigured ? (status.callbackVerified ? "已验证" : "待验证") : "未配置", ok: Boolean(status.callbackConfigured && status.callbackVerified) },
     { label: "AccessToken", value: tokenStatusText(status.accessTokenStatus), ok: status.accessTokenStatus === "VALID" }
@@ -249,6 +289,7 @@ async function loadConfig() {
   config.value = await getWecomConfig();
   Object.assign(configForm, {
     enabled: Boolean(config.value.enabled),
+    authMode: String(config.value.authMode || config.value.effectiveAuthMode || "SELF_BUILT_APP").toUpperCase() === "LEGACY_CUSTOMER_CONTACT" ? "LEGACY_CUSTOMER_CONTACT" : "SELF_BUILT_APP",
     corpId: String(config.value.corpId || ""),
     agentId: String(config.value.agentId || ""),
     customerContactSecret: "",
@@ -264,7 +305,11 @@ async function loadConfig() {
 async function loadGroups() {
   const result = await listWecomCustomerGroups({ page: 1, pageSize: 50, keyword: groupKeyword.value });
   groups.value = result.items;
-  for (const item of result.items) bindForms[String(item.id)] = String(item.conferenceId || "");
+  for (const item of result.items) {
+    bindForms[String(item.id)] = String(item.conferenceId || "");
+    bindQrForms[String(item.id)] = String(item.groupQrUrl || "");
+    bindJoinForms[String(item.id)] = String(item.joinLink || "");
+  }
 }
 
 async function loadWelcome() {
@@ -329,7 +374,7 @@ async function syncGroups() {
 }
 
 async function bindGroup(id: string) {
-  await bindWecomCustomerGroupConference(id, { conferenceId: bindForms[id] || null });
+  await bindWecomCustomerGroupConference(id, { conferenceId: bindForms[id] || null, groupQrUrl: bindQrForms[id] || null, joinLink: bindJoinForms[id] || null });
   await loadGroups();
   ElMessage.success("客户群绑定已更新");
 }
@@ -389,6 +434,12 @@ function tokenStatusText(value: string) {
   return "未获取";
 }
 
+function authModeText(value: string) {
+  if (value === "self_built_app" || value === "SELF_BUILT_APP") return "自建应用";
+  if (value === "legacy_customer_contact" || value === "LEGACY_CUSTOMER_CONTACT") return "旧客户联系";
+  return "未配置";
+}
+
 function statusText(value: string) {
   const map: Record<string, string> = {
     DRAFT: "草稿",
@@ -412,7 +463,7 @@ function statusText(value: string) {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
 
@@ -502,6 +553,18 @@ function statusText(value: string) {
   max-width: 980px;
 }
 
+.auth-mode-group {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.form-tip {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .action-row,
 .task-form {
   display: flex;
@@ -539,8 +602,30 @@ function statusText(value: string) {
   max-width: 320px;
 }
 
+.task-form :deep(.el-select) {
+  width: 260px;
+}
+
 .task-form .el-textarea {
   width: 520px;
+}
+
+.binding-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(170px, 1fr) minmax(150px, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.field-row :deep(.el-input) {
+  min-width: 0;
 }
 
 .risk-note {

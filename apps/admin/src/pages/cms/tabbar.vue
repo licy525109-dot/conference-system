@@ -33,15 +33,17 @@
           <template #default="{ row }"><el-input v-model="row.path" placeholder="/pages/index/index" /></template>
         </el-table-column>
         <el-table-column label="普通图标" min-width="190">
+          <template #header>普通图标<MaterialSpecHelp spec-key="tabbarIcon" /></template>
           <template #default="{ row }">
-            <el-input v-model="row.iconUrl" placeholder="素材 URL，可为空" />
+            <el-input v-model="row.iconUrl" placeholder="建议 96x96 PNG/SVG，单张不超过 200KB" />
             <el-select class="icon-library" placeholder="图标库" @change="(value: string) => applyIcon(row, value)">
               <el-option v-for="icon in iconLibrary" :key="icon.key" :label="icon.label" :value="icon.key" />
             </el-select>
           </template>
         </el-table-column>
         <el-table-column label="选中图标" min-width="190">
-          <template #default="{ row }"><el-input v-model="row.selectedIconUrl" placeholder="素材 URL，可为空" /></template>
+          <template #header>选中图标<MaterialSpecHelp spec-key="tabbarIcon" /></template>
+          <template #default="{ row }"><el-input v-model="row.selectedIconUrl" placeholder="建议 96x96 PNG/SVG，单张不超过 200KB" /></template>
         </el-table-column>
         <el-table-column label="显示" width="80">
           <template #default="{ row }"><el-switch v-model="row.visible" /></template>
@@ -72,6 +74,7 @@ import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import { getTabbar, updateTabbar } from "../../services/admin";
 import type { TabBarItem } from "../../services/types";
 

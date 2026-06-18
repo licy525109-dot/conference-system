@@ -102,16 +102,18 @@
             </div>
             <el-form-item label="后台名称"><el-input v-model="form.adminBrandTitle" /></el-form-item>
             <el-form-item label="后台副标题"><el-input v-model="form.adminBrandSubtitle" /></el-form-item>
-            <el-form-item label="后台图标">
+            <el-form-item>
+              <template #label>后台图标<MaterialSpecHelp spec-key="adminBrandIcon" /></template>
               <div class="field-row">
-                <el-input v-model="form.adminBrandLogoUrl" placeholder="可从素材库选择" />
+                <el-input v-model="form.adminBrandLogoUrl" placeholder="建议 96x96 PNG/SVG，单张不超过 300KB" />
                 <el-button @click="openMaterialPicker('adminBrandLogoUrl', 'image')">应用素材库</el-button>
               </div>
             </el-form-item>
             <el-form-item label="浏览器标题"><el-input v-model="form.browserTitle" /></el-form-item>
-            <el-form-item label="浏览器图标">
+            <el-form-item>
+              <template #label>浏览器图标<MaterialSpecHelp spec-key="favicon" /></template>
               <div class="field-row">
-                <el-input v-model="form.browserIconUrl" placeholder="可从素材库选择 favicon 图片" />
+                <el-input v-model="form.browserIconUrl" placeholder="建议 32x32 或 64x64 ICO/PNG/SVG，单张不超过 100KB" />
                 <el-button @click="openMaterialPicker('browserIconUrl', 'image')">应用素材库</el-button>
               </div>
             </el-form-item>
@@ -133,15 +135,17 @@
             </el-form-item>
             <el-form-item label="渐变起点"><div class="color-row"><el-color-picker v-model="form.backgroundGradientFrom" /><el-input v-model="form.backgroundGradientFrom" /></div></el-form-item>
             <el-form-item label="渐变终点"><div class="color-row"><el-color-picker v-model="form.backgroundGradientTo" /><el-input v-model="form.backgroundGradientTo" /></div></el-form-item>
-            <el-form-item label="背景图片">
+            <el-form-item>
+              <template #label>背景图片<MaterialSpecHelp spec-key="backgroundImage" /></template>
               <div class="field-row">
-                <el-input v-model="form.backgroundImageUrl" placeholder="可从素材库选择" />
+                <el-input v-model="form.backgroundImageUrl" placeholder="建议 1920x1080 或 1440x900，JPG/WebP，单张不超过 3MB" />
                 <el-button @click="openMaterialPicker('backgroundImageUrl', 'image')">应用素材库</el-button>
               </div>
             </el-form-item>
-            <el-form-item label="背景视频">
+            <el-form-item>
+              <template #label>背景视频<MaterialSpecHelp spec-key="backgroundVideo" /></template>
               <div class="field-row">
-                <el-input v-model="form.backgroundVideoUrl" placeholder="可从素材库选择 MP4" />
+                <el-input v-model="form.backgroundVideoUrl" placeholder="建议 MP4/H.264，720p 或 1080p，5-15 秒，单个不超过 20MB" />
                 <el-button @click="openMaterialPicker('backgroundVideoUrl', 'video')">应用素材库</el-button>
               </div>
             </el-form-item>
@@ -243,6 +247,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
+import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import { getTheme, listMaterials, listPages, updateTheme } from "../../services/admin";
 import type { MaterialAsset, PageTemplate, ThemeConfig } from "../../services/types";
 

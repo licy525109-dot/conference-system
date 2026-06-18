@@ -128,6 +128,11 @@ enum CustomerGroupMessageStatus {
   CANCELLED
 }
 
+enum WecomAuthMode {
+  SELF_BUILT_APP
+  LEGACY_CUSTOMER_CONTACT
+}
+
 enum CheckinActionType {
   VERIFY
   MANUAL
@@ -332,6 +337,7 @@ model Conference {
 model WecomIntegration {
   id                         String                  @id @default(cuid())
   name                       String                  @default("default")
+  authMode                   WecomAuthMode?
   corpId                     String?
   agentId                    String?
   customerContactSecretEnc   String?

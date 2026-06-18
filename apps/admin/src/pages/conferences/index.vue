@@ -68,9 +68,10 @@
       <el-form :model="form" label-width="120px">
         <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
         <el-form-item label="副标题"><el-input v-model="form.subtitle" /></el-form-item>
-        <el-form-item label="封面 URL">
+        <el-form-item>
+          <template #label>封面 URL<MaterialSpecHelp spec-key="conferenceCover" /></template>
           <div class="cover-row">
-            <el-input v-model="form.coverImage" />
+            <el-input v-model="form.coverImage" placeholder="建议 750x420，JPG/PNG/WebP，单张不超过 2MB" />
             <el-button @click="openMaterialPicker">应用素材库</el-button>
           </div>
         </el-form-item>
@@ -119,6 +120,7 @@ import AdminEmptyState from "../../components/AdminEmptyState.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import { createConference, listConferences, listMaterials, updateConference, updateConferenceStatus } from "../../services/admin";
 import type { Conference, MaterialAsset } from "../../services/types";
 import { navigateTo } from "../../router";

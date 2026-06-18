@@ -30,7 +30,7 @@ export class WecomCustomerGroupService {
   async sync(admin: CurrentAdmin) {
     const integration = await this.config.ensureDefaultIntegration();
     if (!integration.enabled) return ok({ synced: 0, skippedReason: "请先启用企微客户群能力" });
-    const token = await this.tokenService.getAccessToken(integration, "customer_contact", true);
+    const token = await this.tokenService.getConfiguredAccessToken(integration, true);
     const groups = await this.client.listCustomerGroups(token.accessToken);
     let synced = 0;
     for (const group of groups) {
@@ -63,8 +63,8 @@ export class WecomCustomerGroupService {
       synced += 1;
     }
     await this.prisma.wecomIntegration.update({ where: { id: integration.id }, data: { lastGroupSyncedAt: new Date() } });
-    await this.writeAudit(admin, AuditAction.SYSTEM, "WecomCustomerGroup", null, "Sync WeCom customer groups", { synced });
-    return ok({ synced });
+    await this.writeAudit(admin, AuditAction.SYSTEM, "WecomCustomerGroup", null, "Sync WeCom customer groups", { synced, effectiveAuthMode: this.tokenService.getEffectiveMode(integration) });
+    return ok({ synced, effectiveAuthMode: this.tokenService.getEffectiveMode(integration) });
   }
 
   async bindConference(id: string, input: unknown, admin: CurrentAdmin) {

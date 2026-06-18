@@ -62,7 +62,10 @@
             <el-option v-for="item in categories" :key="item.id" :label="item.name" :value="item.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="封面 URL"><el-input v-model="form.coverImageUrl" /></el-form-item>
+        <el-form-item>
+          <template #label>封面 URL<MaterialSpecHelp spec-key="productCover" /></template>
+          <el-input v-model="form.coverImageUrl" placeholder="建议 800x800 或 750x750，JPG/PNG/WebP，单张不超过 2MB" />
+        </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="form.status">
             <el-option label="草稿" value="DRAFT" />
@@ -103,6 +106,7 @@ import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import { createProduct, createProductCategory, createProductSku, listProductCategories, listProducts, updateProduct } from "../../services/admin";
 import type { Product, ProductCategory } from "../../services/types";
 
