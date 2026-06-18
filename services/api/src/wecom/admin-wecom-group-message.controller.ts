@@ -22,6 +22,12 @@ export class AdminWecomGroupMessageController {
     return this.service.createTask(body, request.currentAdmin!);
   }
 
+  @Post("group-message-tasks/test-send")
+  @RequireAdminPermissions("wecom:send")
+  sendTestToGroups(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.service.sendTestToGroups(body, request.currentAdmin!);
+  }
+
   @Post("group-message-tasks/:id/create-wecom-task")
   @RequireAdminPermissions("wecom:send")
   createWecomTask(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {

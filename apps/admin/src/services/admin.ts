@@ -1050,6 +1050,10 @@ export function createWecomGroupMessageTask(input: Record<string, unknown>) {
   return apiRequest<Record<string, unknown>>("/admin/wecom/group-message-tasks", { method: "POST", body: JSON.stringify(input) });
 }
 
+export function testSendWecomGroupMessageTask(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/wecom/group-message-tasks/test-send", { method: "POST", body: JSON.stringify(input) });
+}
+
 export function createOfficialWecomGroupMessageTask(id: string) {
   return apiRequest<Record<string, unknown>>(`/admin/wecom/group-message-tasks/${encodeURIComponent(id)}/create-wecom-task`, { method: "POST" });
 }

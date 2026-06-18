@@ -139,6 +139,35 @@ describe("AdminNotificationsService", () => {
     assert.equal(second.data.task.status, NotificationTaskStatus.PARTIAL_FAILED);
     assert.equal(logs.data.items.some((item) => item.errorCode === "MOCK_FAILED"), true);
   });
+
+  it("stores channel config without returning plaintext secrets and DB switch controls sending", async () => {
+    process.env.NOTIFICATION_CENTER_ENABLED = "false";
+    process.env.SMS_ENABLED = "false";
+    const prisma = createNotificationPrismaMock();
+    const service = new AdminNotificationsService(prisma);
+
+    const config = await service.updateChannelConfig(
+      "SMS",
+      { centerEnabled: true, enabled: true, provider: "aliyun", signature: "会务", smsTemplate: "SMS_001", apiKey: "sms-api-key-secret", apiSecret: "sms-api-secret-value" },
+      admin
+    );
+    const payload = JSON.stringify(config.data);
+
+    assert.equal(config.data.enabled, true);
+    assert.equal(config.data.centerEnabled, true);
+    assert.equal(config.data.providerSource, "DB");
+    assert.equal(config.data.secret.apiKey.configured, true);
+    assert.equal(payload.includes("sms-api-key-secret"), false);
+    assert.equal(payload.includes("sms-api-secret-value"), false);
+
+    const template = await service.createTemplate({ code: "sms_notice", name: "短信", channel: "SMS", status: "ACTIVE", contentJson: { body: "短信" } }, admin);
+    const task = await service.createTask({ name: "短信任务", templateId: template.data.id, payloadJson: { userIds: ["user-1"] }, status: "PENDING" }, admin);
+    const result = await service.sendNow(task.data.id, admin);
+
+    assert.equal(result.data.task.status, NotificationTaskStatus.SKIPPED);
+    assert.equal(result.data.task.providerStatus.providerSource, "DB");
+    assert.equal(prisma.logs[0]?.errorCode, "ADAPTER_RESERVED");
+  });
 });
 
 function createNotificationPrismaMock() {
@@ -147,6 +176,7 @@ function createNotificationPrismaMock() {
   const tasks: NotificationTaskRecord[] = [];
   const logs: NotificationLogRecord[] = [];
   const subscriptions: NotificationSubscriptionRecord[] = [];
+  const configs: NotificationChannelConfigRecord[] = [];
   const auditLogs: AuditLogRecord[] = [];
   const users = [
     { id: "user-1", openid: "openid-1", phone: "13800000000" },
@@ -234,6 +264,19 @@ function createNotificationPrismaMock() {
       },
       findMany: async () => logs.map((log) => ({ ...log, task: tasks.find((task) => task.id === log.taskId) ?? null, template: templates.find((template) => template.id === log.templateId) ?? null, user: null })),
       count: async () => logs.length
+    },
+    notificationChannelConfig: {
+      findUnique: async (args: { where: { channel: NotificationChannelType } }) => configs.find((item) => item.channel === args.where.channel) ?? null,
+      upsert: async (args: { where: { channel: NotificationChannelType }; create: Partial<NotificationChannelConfigRecord>; update: Partial<NotificationChannelConfigRecord> }) => {
+        const existing = configs.find((item) => item.channel === args.where.channel);
+        if (existing) {
+          Object.assign(existing, args.update, { updatedAt: now });
+          return existing;
+        }
+        const item = toChannelConfig({ ...args.create, id: `config-${configs.length + 1}`, channel: args.where.channel });
+        configs.push(item);
+        return item;
+      }
     },
     auditLog: {
       create: async (args: { data: AuditLogRecord }) => {
@@ -361,6 +404,47 @@ interface NotificationSubscriptionRecord {
   enabled: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+interface NotificationChannelConfigRecord {
+  id: string;
+  channel: NotificationChannelType;
+  enabled: boolean;
+  provider: string | null;
+  providerSource: string;
+  signature: string | null;
+  templateKey: string | null;
+  smsTemplate: string | null;
+  apiKeyEnc: string | null;
+  apiSecretEnc: string | null;
+  rateLimitPerMinute: number;
+  retryMaxAttempts: number;
+  retryIntervalSeconds: number;
+  settingsJson: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toChannelConfig(input: Partial<NotificationChannelConfigRecord>): NotificationChannelConfigRecord {
+  const now = new Date("2026-06-17T08:00:00.000Z");
+  return {
+    id: input.id ?? "config-1",
+    channel: input.channel ?? NotificationChannelType.SMS,
+    enabled: input.enabled ?? false,
+    provider: input.provider ?? null,
+    providerSource: input.providerSource ?? "DB",
+    signature: input.signature ?? null,
+    templateKey: input.templateKey ?? null,
+    smsTemplate: input.smsTemplate ?? null,
+    apiKeyEnc: input.apiKeyEnc ?? null,
+    apiSecretEnc: input.apiSecretEnc ?? null,
+    rateLimitPerMinute: input.rateLimitPerMinute ?? 60,
+    retryMaxAttempts: input.retryMaxAttempts ?? 0,
+    retryIntervalSeconds: input.retryIntervalSeconds ?? 60,
+    settingsJson: input.settingsJson ?? null,
+    createdAt: input.createdAt ?? now,
+    updatedAt: input.updatedAt ?? now
+  };
 }
 
 interface AuditLogRecord {

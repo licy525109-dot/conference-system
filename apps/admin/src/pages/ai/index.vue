@@ -62,7 +62,7 @@
 
     <section v-else-if="section === 'documents'" class="table-panel">
       <div class="panel-heading">
-        <div><h3>文档管理</h3><p>支持手动录入文本，或读取本地 txt / md 文件内容后提交。PDF 暂不处理，后续接入解析。</p></div>
+        <div><h3>文档管理</h3><p>支持 txt / md / pdf。PDF 上传后由后端解析文本并分块；扫描件或加密 PDF 会显示失败原因。</p></div>
         <div class="action-row"><ConferenceSelect v-model="conferenceId" placeholder="选择会议" /><el-button type="primary" :disabled="!conferenceId" @click="docVisible = true">新增资料</el-button></div>
       </div>
       <AdminFilterBar>
@@ -144,14 +144,17 @@
       <div class="panel-heading"><div><h3>AI 配置</h3><p>AI provider key 通过服务器环境变量配置，后台不保存明文密钥。</p></div></div>
       <el-form :model="configForm" label-position="top" class="config-form">
         <el-form-item><template #label>启用开关<FieldHelp content="关闭后用户端会议助手返回未启用提示。" /></template><el-switch v-model="configForm.enabled" active-text="启用" inactive-text="停用" /></el-form-item>
-        <el-form-item><template #label>AI provider<FieldHelp content="LOCAL_FALLBACK 表示本地关键词检索；外部 provider 需要服务器配置 AI_API_KEY。" /></template><el-input v-model="configForm.provider" placeholder="LOCAL_FALLBACK" /></el-form-item>
+        <el-form-item><template #label>AI provider<FieldHelp content="LOCAL_FALLBACK 表示本地关键词检索，不是真实 LLM；外部 provider 可使用后台加密 API Key 或服务器 env。" /></template><el-input v-model="configForm.provider" placeholder="LOCAL_FALLBACK / OPENAI / DEEPSEEK" /></el-form-item>
+        <el-form-item><template #label>Base URL<FieldHelp content="外部 provider 的 API baseURL；LOCAL_FALLBACK 可留空。" /></template><el-input v-model="configForm.baseUrl" placeholder="https://api.example.com/v1" /></el-form-item>
         <el-form-item><template #label>模型名称<FieldHelp content="本地降级模式使用 local-keyword；真实 provider 可填服务端实际模型名。" /></template><el-input v-model="configForm.model" placeholder="local-keyword" /></el-form-item>
+        <el-form-item><template #label>API Key<FieldHelp content="保存后加密入库，接口只返回 configured/masked，不返回明文。" /></template><el-input v-model="configForm.apiKey" show-password :placeholder="aiKeyPlaceholder" /></el-form-item>
         <el-form-item label="回答温度"><el-input-number v-model="configForm.temperature" :min="0" :max="200" /></el-form-item>
         <el-form-item label="最大输出长度"><el-input-number v-model="configForm.maxOutputTokens" :min="120" :max="4000" /></el-form-item>
         <el-form-item><template #label>兜底回答<FieldHelp content="未命中当前会议资料时返回兜底，不编造。" /></template><el-switch v-model="configForm.fallbackEnabled" active-text="启用" inactive-text="停用" /></el-form-item>
         <el-form-item><template #label>引用来源<FieldHelp content="开启后回答返回命中文档与摘要。" /></template><el-switch v-model="configForm.citationsEnabled" active-text="启用" inactive-text="停用" /></el-form-item>
         <el-form-item><template #label>问答日志<FieldHelp content="开启后记录问题、答案、命中来源、兜底状态和错误原因。" /></template><el-switch v-model="configForm.questionLogEnabled" active-text="启用" inactive-text="停用" /></el-form-item>
         <el-alert type="warning" :closable="false" :title="configNotice" />
+        <el-alert class="config-source" type="info" :closable="false" :title="`当前来源：${configForm.source || 'LOCAL_FALLBACK'}。${configForm.runtimeNotice || ''}`" />
         <el-form-item><el-button type="primary" :loading="saving" @click="saveConfig">保存 AI 配置</el-button></el-form-item>
       </el-form>
     </section>
@@ -167,12 +170,12 @@
     <el-dialog v-model="docVisible" :title="docForm.id ? '编辑文档' : '新增文档'" width="760px">
       <el-form :model="docForm" label-position="top">
         <el-form-item label="文档标题"><el-input v-model="docForm.title" /></el-form-item>
-        <el-form-item label="文档类型"><el-select v-model="docForm.sourceType"><el-option label="文本" value="TEXT" /><el-option label="Markdown" value="MD" /></el-select></el-form-item>
+        <el-form-item label="文档类型"><el-select v-model="docForm.sourceType"><el-option label="文本" value="TEXT" /><el-option label="Markdown" value="MD" /><el-option label="PDF" value="PDF" /></el-select></el-form-item>
         <el-form-item><template #label>文档状态<FieldHelp content="DRAFT 不建议对用户回答；ACTIVE 会参与检索；DISABLED 不参与检索。" /></template><el-select v-model="docForm.status"><el-option label="草稿" value="DRAFT" /><el-option label="启用" value="ACTIVE" /><el-option label="停用" value="DISABLED" /></el-select></el-form-item>
-        <el-form-item label="上传 txt / md"><input type="file" accept=".txt,.md,text/plain,text/markdown" @change="readDocumentFile" /><p class="muted-text">PDF 暂未解析，本轮先支持 txt / md。</p></el-form-item>
-        <el-form-item label="资料内容"><el-input v-model="docForm.contentText" type="textarea" :rows="10" placeholder="粘贴会议介绍、议程、嘉宾、交通、报名须知等资料" /></el-form-item>
+        <el-form-item label="上传资料文件"><input type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf" @change="readDocumentFile" /><p class="muted-text">txt/md 由浏览器读取；PDF 单个不超过 10MB，由后端解析文本。扫描图片 PDF 可能无法解析。</p></el-form-item>
+        <el-form-item label="资料内容"><el-input v-model="docForm.contentText" type="textarea" :rows="10" :placeholder="docForm.sourceType === 'PDF' ? 'PDF 将由后端解析，解析结果保存后可在列表查看分块数；也可改为 TEXT/MD 粘贴文本。' : '粘贴会议介绍、议程、嘉宾、交通、报名须知等资料'" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="docVisible = false">取消</el-button><el-button type="primary" :disabled="!docForm.title || !docForm.contentText" @click="saveDocument">保存</el-button></template>
+      <template #footer><el-button @click="docVisible = false">取消</el-button><el-button type="primary" :disabled="!canSaveDocument" @click="saveDocument">保存</el-button></template>
     </el-dialog>
   </section>
 </template>
@@ -221,13 +224,15 @@ const filters = reactive({ keyword: "", conferenceId: "", status: "", fallback: 
 const pager = reactive({ knowledgePage: 1, knowledgeTotal: 0, documentPage: 1, documentTotal: 0, logPage: 1, logTotal: 0 });
 const createForm = reactive({ conferenceId: "", title: "会议知识库" });
 const kbForm = reactive({ id: "", title: "", enabled: false, scopeDescription: "", fallbackText: "当前会议资料中未找到相关信息，请联系会务人员确认。", citationsEnabled: true, loggingEnabled: true });
-const docForm = reactive({ id: "", title: "", sourceType: "TEXT", status: "ACTIVE", contentText: "" });
-const configForm = reactive({ enabled: false, provider: "LOCAL_FALLBACK", model: "local-keyword", temperature: 0, maxOutputTokens: 800, fallbackEnabled: true, citationsEnabled: true, questionLogEnabled: true, env: {} as Record<string, any>, secret: {} as Record<string, any> });
+const docForm = reactive({ id: "", title: "", sourceType: "TEXT", status: "ACTIVE", contentText: "", fileBase64: "" });
+const configForm = reactive({ enabled: false, provider: "LOCAL_FALLBACK", baseUrl: "", model: "local-keyword", apiKey: "", temperature: 0, maxOutputTokens: 800, fallbackEnabled: true, citationsEnabled: true, questionLogEnabled: true, source: "LOCAL_FALLBACK", runtimeNotice: "", env: {} as Record<string, any>, secret: {} as Record<string, any> });
 const configNotice = computed(() => {
   const secret = configForm.secret?.apiKey;
   if (String(configForm.provider || "").toUpperCase() !== "LOCAL_FALLBACK" && !secret?.configured) return "当前 AI provider key 未在服务器环境变量中配置，用户端会显示 provider 未配置提示。";
-  return "当前支持 LOCAL_FALLBACK 本地关键词检索；真实 LLM provider 后续可通过服务器环境变量接入。";
+  return "LOCAL_FALLBACK 为本地关键词检索，不是真实 LLM；未命中当前会议资料时返回兜底，不编造答案。";
 });
+const aiKeyPlaceholder = computed(() => (configForm.secret?.apiKey?.configured ? `已配置：${configForm.secret.apiKey.masked || "******"}；留空不修改` : "未配置，填写后加密保存"));
+const canSaveDocument = computed(() => Boolean(docForm.title && (docForm.sourceType === "PDF" ? docForm.fileBase64 || docForm.contentText : docForm.contentText)));
 
 onMounted(() => void loadCurrent());
 watch(section, () => void loadCurrent());
@@ -325,15 +330,15 @@ async function saveConferenceKnowledge() {
 }
 
 function editDocument(row: Record<string, any>) {
-  Object.assign(docForm, { id: row.id, title: row.title, sourceType: row.sourceType || "TEXT", status: row.status || "ACTIVE", contentText: row.contentText || "" });
+  Object.assign(docForm, { id: row.id, title: row.title, sourceType: row.sourceType || "TEXT", status: row.status || "ACTIVE", contentText: row.contentText || "", fileBase64: "" });
   docVisible.value = true;
 }
 
 async function saveDocument() {
-  const payload = { title: docForm.title, sourceType: docForm.sourceType, status: docForm.status, contentText: docForm.contentText };
+  const payload = { title: docForm.title, sourceType: docForm.sourceType, status: docForm.status, contentText: docForm.contentText, fileBase64: docForm.fileBase64 };
   if (docForm.id) await updateKnowledgeDocument(docForm.id, payload);
   else await createKnowledgeDocument(conferenceId.value, payload);
-  Object.assign(docForm, { id: "", title: "", sourceType: "TEXT", status: "ACTIVE", contentText: "" });
+  Object.assign(docForm, { id: "", title: "", sourceType: "TEXT", status: "ACTIVE", contentText: "", fileBase64: "" });
   docVisible.value = false;
   await loadDocuments();
   ElMessage.success("文档已保存并完成分块");
@@ -342,12 +347,24 @@ async function saveDocument() {
 async function readDocumentFile(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (!file) return;
-  if (!/\.(txt|md)$/i.test(file.name)) {
-    ElMessage.warning("当前仅支持 txt / md 文件，PDF 后续支持");
+  if (!/\.(txt|md|pdf)$/i.test(file.name)) {
+    ElMessage.warning("仅支持 txt / md / pdf 文件");
     return;
   }
-  docForm.title ||= file.name.replace(/\.(txt|md)$/i, "");
+  docForm.title ||= file.name.replace(/\.(txt|md|pdf)$/i, "");
+  if (/\.pdf$/i.test(file.name)) {
+    if (file.size > 10 * 1024 * 1024) {
+      ElMessage.error("PDF 文件过大，单个不超过 10MB");
+      return;
+    }
+    docForm.sourceType = "PDF";
+    docForm.fileBase64 = await readAsDataUrl(file);
+    docForm.contentText = "";
+    ElMessage.info("PDF 已读取，保存后由后端解析文本并分块");
+    return;
+  }
   docForm.sourceType = /\.md$/i.test(file.name) ? "MD" : "TEXT";
+  docForm.fileBase64 = "";
   docForm.contentText = await file.text();
 }
 
@@ -385,10 +402,20 @@ async function saveConfig() {
   saving.value = true;
   try {
     Object.assign(configForm, await updateAiConfig({ ...configForm }));
+    configForm.apiKey = "";
     ElMessage.success("AI 配置已保存");
   } finally {
     saving.value = false;
   }
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("文件读取失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function selectConference(id: string, target: string) {
@@ -460,6 +487,10 @@ function changeLogPage(page: number) {
 
 .config-form {
   max-width: 760px;
+}
+
+.config-source {
+  margin-bottom: 12px;
 }
 
 .inline-form {

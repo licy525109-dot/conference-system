@@ -153,7 +153,8 @@ function createWecomClientMock() {
   return {
     fetchAccessToken: async () => ({ accessToken: "token", expiresIn: 7200 }),
     checkCustomerContactPermission: async () => ({ ok: true, message: "ok" }),
-    listCustomerGroups: async () => []
+    listCustomerGroups: async () => [],
+    createCustomerGroupMessageTask: async () => ({ ok: true, msgId: "msg-test", raw: { errcode: 0, msgid: "msg-test" } })
   } as WecomClientAdapter;
 }
 

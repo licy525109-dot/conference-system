@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { CouponClaimStatus, InvoiceStatus, Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
+import { decryptSecret } from "../wecom/wecom.crypto";
 import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled } from "../mall/mall-payment.config";
 
 @Injectable()
@@ -409,7 +410,9 @@ function tokenize(text: string): string[] {
 function resolveAiRuntime(config: {
   enabled: boolean;
   provider: string;
+  baseUrl?: string | null;
   model: string;
+  apiKeyEnc?: string | null;
   maxOutputTokens: number;
   fallbackEnabled: boolean;
   citationsEnabled: boolean;
@@ -417,13 +420,16 @@ function resolveAiRuntime(config: {
 }) {
   const provider = (process.env.AI_PROVIDER || config.provider || "LOCAL_FALLBACK").toUpperCase();
   const model = process.env.AI_MODEL || config.model || "local-keyword";
+  const apiKey = process.env.AI_API_KEY || decryptSecret(config.apiKeyEnc);
   const externalProvider = !["LOCAL_FALLBACK", "MOCK"].includes(provider);
   return {
     enabled: config.enabled || isEnabled("AI_KB_ENABLED"),
     provider: externalProvider ? provider : "LOCAL_FALLBACK",
     model: externalProvider ? model : "local-keyword",
     requiresExternalKey: externalProvider,
-    keyConfigured: Boolean(process.env.AI_API_KEY),
+    keyConfigured: Boolean(apiKey),
+    source: process.env.AI_PROVIDER ? "ENV" : externalProvider ? "DB" : "LOCAL_FALLBACK",
+    baseUrl: process.env.AI_BASE_URL || config.baseUrl || null,
     maxOutputTokens: Math.max(120, config.maxOutputTokens || 800),
     fallbackEnabled: config.fallbackEnabled,
     citationsEnabled: config.citationsEnabled,

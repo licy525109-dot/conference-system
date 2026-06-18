@@ -19,6 +19,13 @@ interface WecomGroupDetailResponse {
   group_chat?: Record<string, unknown>;
 }
 
+interface WecomGroupMessageResponse {
+  errcode?: number;
+  errmsg?: string;
+  msgid?: string;
+  fail_list?: unknown[];
+}
+
 @Injectable()
 export class WecomClientAdapter {
   async fetchAccessToken(corpId: string, secret: string): Promise<{ accessToken: string; expiresIn: number }> {
@@ -58,6 +65,47 @@ export class WecomClientAdapter {
     }
     return groups;
   }
+
+  async createCustomerGroupMessageTask(
+    accessToken: string,
+    input: { groups: Array<{ chatId: string; ownerUserId?: string | null }>; contentJson: Record<string, unknown> }
+  ): Promise<{ ok: boolean; errcode?: number; errmsg?: string; msgId?: string; raw: Record<string, unknown> }> {
+    const payload = buildGroupMessagePayload(input.groups, input.contentJson);
+    const data = await requestJson<WecomGroupMessageResponse>(
+      `https://qyapi.weixin.qq.com/cgi-bin/externalcontact/add_msg_template?access_token=${encodeURIComponent(accessToken)}`,
+      { method: "POST", body: JSON.stringify(payload) }
+    );
+    return {
+      ok: data.errcode === 0,
+      errcode: data.errcode,
+      errmsg: data.errmsg,
+      msgId: data.msgid,
+      raw: data as Record<string, unknown>
+    };
+  }
+}
+
+function buildGroupMessagePayload(groups: Array<{ chatId: string; ownerUserId?: string | null }>, contentJson: Record<string, unknown>) {
+  const text = readMessageText(contentJson);
+  return {
+    chat_type: "group",
+    chat_id_list: groups.map((item) => item.chatId),
+    sender: groups.find((item) => item.ownerUserId)?.ownerUserId,
+    text: { content: text },
+    attachments: Array.isArray(contentJson.attachments) ? contentJson.attachments : undefined
+  };
+}
+
+function readMessageText(contentJson: Record<string, unknown>): string {
+  const text = contentJson.text;
+  if (typeof text === "string" && text.trim()) return text.trim();
+  if (text && typeof text === "object" && !Array.isArray(text)) {
+    const content = (text as Record<string, unknown>).content;
+    if (typeof content === "string" && content.trim()) return content.trim();
+  }
+  const content = contentJson.content;
+  if (typeof content === "string" && content.trim()) return content.trim();
+  throw new BadRequestException("群发内容缺少 text.content");
 }
 
 async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T> {

@@ -369,6 +369,15 @@ export interface NotificationTask {
     title: string | null;
   };
   logCount: number;
+  providerStatus?: {
+    centerEnabled: boolean;
+    enabled: boolean;
+    providerSource: string;
+    provider?: string;
+    canSend: boolean;
+    unavailableReason?: string;
+    statusText: string;
+  };
 }
 
 export interface NotificationLog {
@@ -406,9 +415,25 @@ export interface NotificationLog {
 export interface NotificationChannelConfig {
   channel: NotificationChannelType;
   enabled: boolean;
+  centerEnabled?: boolean;
   envKey: string;
+  provider?: string;
+  providerSource?: string;
+  signature?: string;
+  templateKey?: string | null;
+  smsTemplate?: string | null;
+  rateLimitPerMinute?: number;
+  retryMaxAttempts?: number;
+  retryIntervalSeconds?: number;
+  canSend?: boolean;
+  unavailableReason?: string;
   statusText: string;
   secretVisible: false;
+  secret?: {
+    apiKey?: { configured: boolean; masked: string };
+    apiSecret?: { configured: boolean; masked: string };
+  };
+  envGuide?: Array<{ name: string; location: string; restartRequired: boolean }>;
   templates: Array<{
     id: string;
     code: string;

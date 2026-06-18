@@ -120,11 +120,13 @@ enum NotificationLogStatus {
 
 enum CustomerGroupMessageStatus {
   DRAFT
+  CREATED
   WAITING_CONFIRM
   SENDING
   SENT
   PARTIAL_FAILED
   FAILED
+  SKIPPED
   CANCELLED
 }
 
@@ -407,6 +409,7 @@ model WecomCustomerGroup {
   updatedAt     DateTime         @updatedAt
   integration   WecomIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
   conference    Conference?      @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+  messageLogs   CustomerGroupMessageLog[]
 
   @@index([integrationId])
   @@index([conferenceId])
@@ -1500,6 +1503,29 @@ model NotificationSubscription {
   @@map("notification_subscriptions")
 }
 
+model NotificationChannelConfig {
+  id                    String                  @id @default(cuid())
+  channel               NotificationChannelType @unique
+  enabled               Boolean                 @default(false)
+  provider              String?
+  providerSource        String                  @default("DB")
+  signature             String?
+  templateKey           String?
+  smsTemplate           String?
+  apiKeyEnc             String?
+  apiSecretEnc          String?
+  rateLimitPerMinute    Int                     @default(60)
+  retryMaxAttempts      Int                     @default(0)
+  retryIntervalSeconds  Int                     @default(60)
+  settingsJson          Json?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  @@index([enabled])
+  @@index([providerSource])
+  @@map("notification_channel_configs")
+}
+
 model NotificationTemplate {
   id          String                     @id @default(cuid())
   code        String                     @unique
@@ -1648,9 +1674,15 @@ model CustomerGroupMessageTask {
   name            String
   conferenceId    String?
   contentJson     Json
+  targetScope     String                     @default("SELECTED_GROUPS")
   targetGroupIds  Json?
   status          CustomerGroupMessageStatus @default(DRAFT)
   wecomTaskId     String?
+  wecomMsgId      String?
+  externalResultJson Json?
+  errorCode       String?
+  errorMessage    String?
+  providerSource  String?
   needConfirm     Boolean                    @default(true)
   confirmDeadline DateTime?
   sentAt          DateTime?
@@ -1661,8 +1693,10 @@ model CustomerGroupMessageTask {
   logs            CustomerGroupMessageLog[]
 
   @@index([conferenceId])
+  @@index([targetScope])
   @@index([status])
   @@index([wecomTaskId])
+  @@index([wecomMsgId])
   @@index([createdAt])
   @@map("customer_group_message_tasks")
 }
@@ -1671,8 +1705,10 @@ model CustomerGroupMessageLog {
   id          String                   @id @default(cuid())
   taskId      String
   groupId     String?
+  wecomGroupId String?
   ownerUserId String?
   status      String                   @default("PENDING_CONFIRM")
+  providerMessageId String?
   resultJson  Json?
   errorReason String?
   sentAt      DateTime?
@@ -1680,9 +1716,11 @@ model CustomerGroupMessageLog {
   updatedAt   DateTime                 @updatedAt
   task        CustomerGroupMessageTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   group       CustomerGroup?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  wecomGroup  WecomCustomerGroup?      @relation(fields: [wecomGroupId], references: [id], onDelete: SetNull)
 
   @@index([taskId])
   @@index([groupId])
+  @@index([wecomGroupId])
   @@index([ownerUserId])
   @@index([status])
   @@index([createdAt])
@@ -1802,7 +1840,9 @@ model AiConfig {
   name                String   @default("default")
   enabled             Boolean  @default(false)
   provider            String   @default("LOCAL_FALLBACK")
+  baseUrl             String?
   model               String   @default("local-keyword")
+  apiKeyEnc           String?
   temperature         Int      @default(0)
   maxOutputTokens     Int      @default(800)
   fallbackEnabled     Boolean  @default(true)
