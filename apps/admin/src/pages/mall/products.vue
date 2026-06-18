@@ -3,7 +3,7 @@
     <AdminPageHeader
       title="商品管理"
       eyebrow="商城"
-      subtitle="维护商城商品、封面、详情图和上架状态。商城真实支付暂未开放，用户创建的是待支付订单，不会伪造支付成功。"
+      subtitle="维护商城商品、封面、详情图和上架状态。支付成功后才会进入发货与售后流程。"
     >
       <template #actions>
         <el-button @click="navigateTo('/mall/categories')">商品分类</el-button>

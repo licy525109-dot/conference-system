@@ -1,4 +1,7 @@
+import { PAYMENT_MODE } from "@/config/app";
+import { readUniErrMsg } from "@/utils/uniErrors";
 import { ensureLogin } from "./auth";
+import type { WechatPrepayResponse } from "./payment";
 import { request } from "./request";
 
 export interface CouponClaimResult {
@@ -93,6 +96,42 @@ export async function createMallAfterSale(input: { orderId: string; type?: strin
   return request<MallAfterSale>("/my/mall-aftersales", { method: "POST", data: input });
 }
 
+export async function prepayMallOrderWechat(id: string) {
+  await ensureLogin();
+  return request<WechatPrepayResponse>(`/mall/orders/${encodeURIComponent(id)}/payments/wechat/prepay`, { method: "POST" });
+}
+
+export async function mockPayMallOrder(id: string) {
+  await ensureLogin();
+  return request<MallPaymentResult>(`/mall/orders/${encodeURIComponent(id)}/payments/mock-pay`, { method: "POST" });
+}
+
+export async function getMallPaymentStatus(id: string) {
+  await ensureLogin();
+  return request<MallPaymentStatus>(`/mall/orders/${encodeURIComponent(id)}/payment-status`);
+}
+
+export async function startMallOrderPayment(id: string): Promise<MallPaymentStatus> {
+  await ensureLogin();
+
+  // #ifndef MP-WEIXIN
+  if (PAYMENT_MODE === "mock") {
+    await mockPayMallOrder(id);
+    return pollMallPaidStatus(id);
+  }
+  // #endif
+
+  // #ifdef MP-WEIXIN
+  const prepay = await prepayMallOrderWechat(id);
+  await requestMallMiniProgramPayment(prepay);
+  return pollMallPaidStatus(id);
+  // #endif
+
+  // #ifndef MP-WEIXIN
+  throw new Error("当前平台暂不支持真实微信支付，请在 mock 环境使用测试支付。");
+  // #endif
+}
+
 export interface MallOrderItem {
   id: string;
   orderId: string;
@@ -129,7 +168,44 @@ export interface MallAfterSale {
   handledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  refunds?: MallRefund[];
+  latestRefund?: MallRefund | null;
   refundNotice?: string | null;
+}
+
+export interface MallPayment {
+  id: string;
+  mallOrderId: string;
+  provider: "MOCK" | "WECHAT";
+  status: "PENDING" | "SUCCESS" | "FAILED" | "CLOSED";
+  outTradeNo: string;
+  transactionId: string | null;
+  amountCent: number;
+  notifyRawId: string | null;
+  paidAt: string | null;
+  failedReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MallRefund {
+  id: string;
+  refundNo: string;
+  outRefundNo: string;
+  mallOrderId: string;
+  afterSaleId: string | null;
+  provider: "MOCK" | "WECHAT" | null;
+  providerRefundId: string | null;
+  amountCent: number;
+  status: "REQUESTED" | "APPROVED" | "PROCESSING" | "SUCCESS" | "FAILED" | "REJECTED";
+  reason: string | null;
+  rejectReason: string | null;
+  failedReason: string | null;
+  requestedAt: string;
+  approvedAt: string | null;
+  processedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MallOrder {
@@ -150,6 +226,61 @@ export interface MallOrder {
   items: MallOrderItem[];
   shipments: MallShipment[];
   afterSales: MallAfterSale[];
+  payments?: MallPayment[];
+  refunds?: MallRefund[];
+  latestPayment?: MallPayment | null;
+  latestRefund?: MallRefund | null;
   paymentEnabled?: boolean;
-  paymentNotice?: string;
+  paymentNotice?: string | null;
+}
+
+export interface MallPaymentResult {
+  orderId: string;
+  orderNo: string;
+  orderStatus: string;
+  paidAmountCent: number | null;
+  paidAt: string | null;
+  paymentStatus: "SUCCESS";
+}
+
+export interface MallPaymentStatus {
+  orderNo: string;
+  status: string;
+  paidAt: string | null;
+  paidAmountCent: number | null;
+  paymentProvider: "MOCK" | "WECHAT" | null;
+  paymentStatus: "PENDING" | "SUCCESS" | "FAILED" | "CLOSED" | null;
+  outTradeNo: string | null;
+  transactionId: string | null;
+  refundStatus: string | null;
+  afterSaleStatus: string | null;
+}
+
+function requestMallMiniProgramPayment(input: WechatPrepayResponse): Promise<void> {
+  return new Promise((resolve, reject) => {
+    uni.requestPayment({
+      provider: "wxpay",
+      timeStamp: input.timeStamp,
+      nonceStr: input.nonceStr,
+      package: input.package,
+      signType: input.signType,
+      paySign: input.paySign,
+      success: () => resolve(),
+      fail: (error) => reject(new Error(readUniErrMsg(error, "微信支付失败")))
+    });
+  });
+}
+
+async function pollMallPaidStatus(id: string): Promise<MallPaymentStatus> {
+  let lastStatus: MallPaymentStatus | null = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (attempt > 0) await delay(1500);
+    lastStatus = await getMallPaymentStatus(id);
+    if (["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "REFUNDED"].includes(lastStatus.status)) return lastStatus;
+  }
+  throw new Error(lastStatus?.status === "PAID" ? "商城订单支付结果同步中，请稍后刷新" : "支付结果确认中，请稍后刷新");
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

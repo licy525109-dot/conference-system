@@ -19,7 +19,7 @@
       <ExtensionStatusNotice
         status="商城闭环"
         title="商城订单独立履约"
-        description="商城订单与会议报名订单分开管理，商品金额以后端库存和 SKU 价格计算为准。当前不会跳转支付。"
+        description="商城订单与会议报名订单分开管理，商品金额以后端库存和 SKU 价格计算为准，订单创建后可在我的商城订单中支付。"
         tone="info"
       />
 
@@ -66,7 +66,7 @@
     <view v-if="product" class="bottom-actions">
       <view class="bottom-copy">
         <text class="bottom-title">{{ selectedSku ? `¥${formatCent(selectedSku.priceCent * quantity)}` : "请选择规格" }}</text>
-        <text class="bottom-note">待支付，不跳转支付</text>
+        <text class="bottom-note">后端计价，订单页支付</text>
       </view>
       <button class="ui-button-secondary action-button" @click="goCart">购物车</button>
       <button class="ui-button-primary action-button" :disabled="adding || !canAddProduct" @click="addToCart">
@@ -158,7 +158,7 @@ async function buyNow() {
     });
     uni.showModal({
       title: "商城订单已创建",
-      content: `订单号：${order.orderNo}\n${order.paymentNotice || "当前不会跳转支付，订单保持待支付状态。"}`,
+      content: `订单号：${order.orderNo}\n${order.paymentNotice || "请前往我的商城订单完成支付。"}`,
       showCancel: false,
       success: () => uni.navigateTo({ url: "/pages/mall/orders" })
     });

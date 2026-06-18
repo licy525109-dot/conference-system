@@ -193,7 +193,7 @@ function createService(prisma: PrismaMockShape & PrismaService, options: NotifyO
       return now;
     }
 
-    protected override async createJsapiPrepay(input: { body: Record<string, any> }): Promise<string> {
+    override async createJsapiPrepay(input: { body: Record<string, any> }): Promise<string> {
       this.lastPrepayBody = input.body;
       return "prepay-test";
     }

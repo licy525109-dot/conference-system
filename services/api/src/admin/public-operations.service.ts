@@ -1,7 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { CouponClaimStatus, InvoiceStatus, Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
+import { isWechatPayEnabled } from "../payments/wechat-pay.config";
 import { PrismaService } from "../prisma.service";
+import { isMallMockPaymentEnabled } from "../mall/mall-payment.config";
 
 @Injectable()
 export class PublicOperationsService {
@@ -189,7 +191,7 @@ export class PublicOperationsService {
       where: { userId: currentUser.id },
       orderBy: { createdAt: "desc" },
       take: 100,
-      include: { items: true, shipments: true, afterSales: true }
+      include: { items: true, shipments: true, afterSales: { include: { refunds: true } }, payments: true, refunds: true }
     });
     return ok({
       items: items.map(formatMallOrder)
@@ -200,7 +202,7 @@ export class PublicOperationsService {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
     const item = await this.prisma.mallOrder.findFirst({
       where: { id, userId: currentUser.id },
-      include: { items: true, shipments: true, afterSales: true }
+      include: { items: true, shipments: true, afterSales: { include: { refunds: true } }, payments: true, refunds: true }
     });
     if (!item) throw new NotFoundException("商城订单不存在");
     return ok(formatMallOrder(item));
@@ -385,8 +387,20 @@ function formatMallOrder(item: {
     ...formatDateFields(item),
     items: item.items.map(formatDateFields),
     shipments: item.shipments.map(formatDateFields),
-    afterSales: item.afterSales.map(formatDateFields),
-    paymentEnabled: false,
-    paymentNotice: "商城真实支付暂未开放，待支付订单不会伪造支付成功。"
+    afterSales: item.afterSales.map((afterSale) => ({
+      ...formatDateFields(afterSale),
+      refunds: Array.isArray(afterSale.refunds) ? afterSale.refunds.map(formatDateFields) : []
+    })),
+    payments: Array.isArray(item.payments) ? item.payments.map(formatDateFields) : [],
+    refunds: Array.isArray(item.refunds) ? item.refunds.map(formatDateFields) : [],
+    paymentEnabled: item.status === "PENDING_PAYMENT" && (isWechatPayEnabled() || isMallMockPaymentEnabled()),
+    paymentNotice: buildMallPaymentNotice(String(item.status))
   };
+}
+
+function buildMallPaymentNotice(status: string): string | null {
+  if (status !== "PENDING_PAYMENT") return null;
+  if (isWechatPayEnabled()) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
+  if (isMallMockPaymentEnabled()) return "当前为 mock 支付模式，可使用测试支付完成商城订单。";
+  return "商城支付未启用，订单保持待支付状态，不会伪造支付成功。";
 }

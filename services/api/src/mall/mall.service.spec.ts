@@ -175,7 +175,9 @@ function createMallPrismaMock(options: { stock?: number; lockedStock?: number; s
             createdAt: now
           })),
           shipments: [],
-          afterSales: []
+          afterSales: [],
+          payments: [],
+          refunds: []
         };
         orders.push(order);
         for (const log of data.inventoryLogs.create) {
@@ -291,6 +293,8 @@ interface OrderRecord {
   }>;
   shipments: [];
   afterSales: [];
+  payments: [];
+  refunds: [];
 }
 
 interface InventoryLogRecord {

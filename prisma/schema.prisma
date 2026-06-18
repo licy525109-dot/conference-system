@@ -949,6 +949,8 @@ model MallOrder {
   shipments          MallShipment[]
   afterSales         MallAfterSale[]
   inventoryLogs      MallInventoryLog[]
+  payments           MallPayment[]
+  refunds            MallRefund[]
 
   @@index([userId])
   @@index([status])
@@ -1004,10 +1006,61 @@ model MallAfterSale {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   order     MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds   MallRefund[]
 
   @@index([orderId])
   @@index([status])
   @@map("mall_after_sales")
+}
+
+model MallPayment {
+  id            String          @id @default(cuid())
+  mallOrderId   String
+  provider      PaymentProvider @default(MOCK)
+  status        PaymentStatus   @default(PENDING)
+  outTradeNo    String          @unique
+  transactionId String?         @unique
+  amountCent    Int
+  notifyRawId   String?
+  paidAt        DateTime?
+  failedReason  String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  order         MallOrder       @relation(fields: [mallOrderId], references: [id], onDelete: Cascade)
+
+  @@index([mallOrderId])
+  @@index([outTradeNo])
+  @@index([status])
+  @@index([createdAt])
+  @@map("mall_payments")
+}
+
+model MallRefund {
+  id               String           @id @default(cuid())
+  refundNo         String           @unique
+  outRefundNo      String           @unique
+  mallOrderId      String
+  afterSaleId      String?
+  provider         PaymentProvider?
+  providerRefundId String?          @unique
+  amountCent       Int
+  status           RefundStatus     @default(REQUESTED)
+  reason           String?
+  rejectReason     String?
+  failedReason     String?
+  requestedAt      DateTime         @default(now())
+  approvedAt       DateTime?
+  processedAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  order            MallOrder        @relation(fields: [mallOrderId], references: [id], onDelete: Cascade)
+  afterSale        MallAfterSale?   @relation(fields: [afterSaleId], references: [id], onDelete: SetNull)
+
+  @@index([mallOrderId])
+  @@index([afterSaleId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("mall_refunds")
 }
 
 model MallInventoryLog {

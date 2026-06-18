@@ -6,7 +6,7 @@
       <view>
         <text class="eyebrow">商城</text>
         <text class="title">商城商品</text>
-        <text class="subtitle">可创建商城待支付订单，真实支付暂未开放。</text>
+        <text class="subtitle">可创建商城待支付订单，并在我的商城订单中完成支付。</text>
       </view>
       <button class="ui-button-secondary ui-button-compact" @click="goHome">首页</button>
     </view>
@@ -14,7 +14,7 @@
     <ExtensionStatusNotice
       status="商城基础闭环"
       title="商品可下待支付订单"
-      description="商品金额由后端按 SKU 当前价格重算并锁定库存，当前不会跳转支付，也不会伪造支付成功。"
+      description="商品金额由后端按 SKU 当前价格重算并锁定库存，订单创建后以前往订单页查询和支付为准。"
       tone="info"
     />
 

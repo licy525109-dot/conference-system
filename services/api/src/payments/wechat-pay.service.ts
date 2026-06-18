@@ -233,7 +233,7 @@ export class WechatPayService {
     return new Date();
   }
 
-  protected async createJsapiPrepay(input: {
+  async createJsapiPrepay(input: {
     config: WechatPayConfig;
     body: Record<string, unknown>;
   }): Promise<string> {

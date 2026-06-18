@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
+import { isMallMockPaymentEnabled } from "../mall/mall-payment.config";
+import { isWechatPayEnabled } from "../payments/wechat-pay.config";
 import { PrismaService } from "../prisma.service";
 import { RegistrationService } from "../registration/registration.service";
 
@@ -262,12 +264,25 @@ export class CartService {
       await tx.cartItem.deleteMany({ where: { id: { in: itemIds }, userId: currentUser.id } });
       return created;
     });
-    return ok({ orderNo: order.orderNo, status: order.status, payableAmountCent: order.payableAmountCent, paymentEnabled: false, paymentNotice: "商城真实支付暂未开放，订单已创建为待支付。" });
+    return ok({
+      id: order.id,
+      orderNo: order.orderNo,
+      status: order.status,
+      payableAmountCent: order.payableAmountCent,
+      paymentEnabled: isWechatPayEnabled() || isMallMockPaymentEnabled(),
+      paymentNotice: buildMallPaymentNotice()
+    });
   }
 }
 
 function ok<T>(data: T) {
   return { code: "OK" as const, message: "ok" as const, data };
+}
+
+function buildMallPaymentNotice(): string {
+  if (isWechatPayEnabled()) return "订单已创建，请前往我的商城订单完成微信支付。";
+  if (isMallMockPaymentEnabled()) return "订单已创建，可前往我的商城订单使用测试支付。";
+  return "商城支付未启用，订单保持待支付状态。";
 }
 
 function readObject(value: unknown): Record<string, unknown> {
