@@ -771,10 +771,21 @@ export interface AdminAppUser {
   memberships?: Array<{
     id: string;
     status: string;
+    effectiveStatus?: string;
     startsAt: string;
     endsAt: string | null;
     level: { id: string; code: string; name: string };
   }>;
+}
+
+export interface MemberLevelBase {
+  id: string;
+  code: string;
+  name: string;
+  enabled: boolean;
+  pricingEnabled: boolean;
+  defaultDays: number | null;
+  rank: number;
 }
 
 export interface MemberLevel {
@@ -785,10 +796,58 @@ export interface MemberLevel {
   rank: number;
   priceCent: number;
   discountPercent: number | null;
+  defaultDays: number | null;
+  pricingEnabled: boolean;
   enabled: boolean;
   benefitsJson: Record<string, unknown> | null;
+  benefitCount?: number;
+  memberCount?: number;
+  priceRuleCount?: number;
+  benefits?: MemberBenefit[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MemberBenefit {
+  id: string;
+  levelId: string;
+  title: string;
+  description: string | null;
+  type: string;
+  iconUrl: string | null;
+  autoGrant: boolean;
+  visible: boolean;
+  grantRule: string | null;
+  configJson?: Record<string, unknown> | null;
+  enabled: boolean;
+  sortOrder: number;
+  grantCount?: number;
+  level?: MemberLevelBase;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MemberBenefitGrant {
+  id: string;
+  userId: string;
+  membershipId: string | null;
+  benefitId: string;
+  status: string;
+  source: string;
+  grantedAt: string;
+  usedAt: string | null;
+  expiredAt: string | null;
+  remark: string | null;
+  user: AdminAppUser;
+  benefit: MemberBenefit & { level?: MemberLevelBase };
+  membership: {
+    id: string;
+    status: string;
+    effectiveStatus?: string;
+    startsAt: string;
+    endsAt: string | null;
+    level: MemberLevelBase;
+  } | null;
 }
 
 export interface UserMembership {
@@ -796,12 +855,34 @@ export interface UserMembership {
   userId: string;
   levelId: string;
   status: string;
+  effectiveStatus?: string;
   startsAt: string;
   endsAt: string | null;
   source: string | null;
   remark: string | null;
+  renewedAt?: string | null;
+  disabledAt?: string | null;
+  disabledReason?: string | null;
   user: AdminAppUser;
-  level: { id: string; code: string; name: string };
+  level: MemberLevelBase;
+  benefitGrants?: MemberBenefitGrant[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MembershipPriceRule {
+  id: string;
+  levelId: string;
+  conferenceId: string | null;
+  skuId: string | null;
+  discountPercent: number | null;
+  discountCent: number | null;
+  fixedPriceCent: number | null;
+  enabled: boolean;
+  startAt: string | null;
+  endAt: string | null;
+  level: MemberLevelBase;
+  priorityText?: string;
   createdAt: string;
   updatedAt: string;
 }

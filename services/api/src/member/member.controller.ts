@@ -17,4 +17,16 @@ export class MemberController {
   mine(@Req() request: RequestWithCurrentUser) {
     return this.memberService.mine(request.currentUser);
   }
+
+  @Get("center")
+  @UseGuards(JwtAuthGuard)
+  center(@Req() request: RequestWithCurrentUser) {
+    return this.memberService.center(request.currentUser);
+  }
+
+  @Get("benefits")
+  @UseGuards(JwtAuthGuard)
+  benefits(@Req() request: RequestWithCurrentUser) {
+    return this.memberService.benefits(request.currentUser);
+  }
 }

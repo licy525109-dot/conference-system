@@ -411,12 +411,12 @@ export class RegistrationService {
         status: "ACTIVE",
         startsAt: { lte: now },
         OR: [{ endsAt: null }, { endsAt: { gte: now } }],
-        level: { enabled: true }
+        level: { enabled: true, pricingEnabled: true }
       },
       include: { level: true }
     });
     const membership = memberships
-      .filter((item) => item.level.enabled && item.startsAt <= now && (!item.endsAt || item.endsAt >= now))
+      .filter((item) => item.level.enabled && item.level.pricingEnabled && item.startsAt <= now && (!item.endsAt || item.endsAt >= now))
       .sort((left, right) => right.level.rank - left.level.rank || right.createdAt.getTime() - left.createdAt.getTime())[0];
     if (!membership) {
       return null;
@@ -1267,6 +1267,7 @@ interface MemberLevelRecord {
   name: string;
   rank: number;
   enabled: boolean;
+  pricingEnabled: boolean;
 }
 
 interface UserMembershipRecord {

@@ -138,29 +138,6 @@
       </AdminSectionCard>
     </template>
 
-    <template v-else-if="section.startsWith('member')">
-      <AdminFilterBar>
-        <el-select v-model="memberForm.levelId" placeholder="会员等级" style="width: 220px">
-          <el-option v-for="item in memberLevels" :key="item.id" :label="item.name" :value="item.id" />
-        </el-select>
-        <el-input v-if="section === 'member-benefits'" v-model="memberForm.title" placeholder="权益标题" style="width: 220px" />
-        <el-input-number v-if="section === 'member-pricing'" v-model="memberForm.fixedPriceCent" :min="0" placeholder="固定价(分)" />
-        <el-input-number v-if="section === 'member-pricing'" v-model="memberForm.discountPercent" :min="0" :max="10000" placeholder="折扣基点" />
-        <el-input-number v-if="section === 'member-pricing'" v-model="memberForm.discountCent" :min="0" placeholder="立减(分)" />
-        <template #actions><el-button type="primary" :disabled="!memberForm.levelId" @click="saveMemberConfig">保存配置</el-button></template>
-      </AdminFilterBar>
-      <AdminSectionCard :title="section === 'member-benefits' ? '会员权益' : '会员价规则'" subtitle="会员价规则已参与报名 quote/create order；订单会保存会员价和优惠明细快照。">
-        <el-table :data="section === 'member-benefits' ? memberBenefits : memberPriceRules" empty-text="暂无配置">
-          <el-table-column prop="title" label="标题/等级" min-width="180"><template #default="{ row }">{{ row.title || row.level?.name }}</template></el-table-column>
-          <el-table-column prop="type" label="类型" width="120" />
-          <el-table-column prop="fixedPriceCent" label="固定价分" width="120" />
-          <el-table-column prop="discountPercent" label="折扣基点" width="120" />
-          <el-table-column prop="discountCent" label="减免分" width="110" />
-          <el-table-column label="启用" width="90"><template #default="{ row }"><AdminStatusBadge :status="Boolean(row.enabled)" /></template></el-table-column>
-        </el-table>
-      </AdminSectionCard>
-    </template>
-
     <template v-else-if="section.startsWith('finance')">
       <AdminFilterBar v-if="section === 'finance-wechat-bills'">
         <el-date-picker v-model="billDate" type="date" value-format="YYYY-MM-DD" placeholder="账单日期" />
@@ -202,8 +179,6 @@ import {
   approveInvoice,
   approveRefund,
   createCouponCampaign,
-  createMemberBenefit,
-  createMemberPricingRule,
   createWechatBill,
   generateCouponCampaignQr,
   getCheckinStats,
@@ -216,9 +191,6 @@ import {
   listFinancePayments,
   listInventoryAlertLogs,
   listInvoices,
-  listMemberBenefits,
-  listMemberLevels,
-  listMemberPricingRules,
   listPaymentExceptions,
   listReconciliationResults,
   listRefunds,
@@ -228,7 +200,7 @@ import {
   updateInventoryAlertRule,
   verifyCheckin
 } from "../../services/admin";
-import type { Conference, Coupon, FinancePayment, MemberLevel } from "../../services/types";
+import type { Conference, Coupon, FinancePayment } from "../../services/types";
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -248,16 +220,6 @@ const couponCampaigns = ref<Record<string, unknown>[]>([]);
 const campaignForm = reactive({ name: "", couponIds: [] as string[] });
 const qrInfo = ref("");
 const channelConfig = ref<Record<string, unknown> | null>(null);
-const memberLevels = ref<MemberLevel[]>([]);
-const memberBenefits = ref<Record<string, unknown>[]>([]);
-const memberPriceRules = ref<Record<string, unknown>[]>([]);
-const memberForm = reactive({
-  levelId: "",
-  title: "",
-  fixedPriceCent: undefined as number | undefined,
-  discountPercent: 9000,
-  discountCent: undefined as number | undefined
-});
 const financeRows = ref<Record<string, unknown>[]>([]);
 const billDate = ref("");
 
@@ -272,8 +234,6 @@ const section = computed(() => {
   if (path.includes("coupon-campaigns")) return "coupon-campaigns";
   if (path.includes("wechat-subscribe")) return "notification-config-wechat";
   if (path.includes("notifications/sms")) return "notification-config-sms";
-  if (path.includes("members/benefits")) return "member-benefits";
-  if (path.includes("members/pricing-rules")) return "member-pricing";
   if (path.includes("finance/refunds")) return "finance-refunds";
   if (path.includes("finance/invoices")) return "finance-invoices";
   if (path.includes("finance/wechat-bills")) return "finance-wechat-bills";
@@ -300,7 +260,6 @@ async function load() {
     else if (section.value === "payment-records") await loadPayments();
     else if (section.value === "coupon-campaigns") await loadCampaigns();
     else if (section.value.startsWith("notification-config")) await loadChannelConfig();
-    else if (section.value.startsWith("member")) await loadMemberConfig();
     else if (section.value.startsWith("finance")) await loadFinance();
   } finally {
     loading.value = false;
@@ -377,30 +336,6 @@ async function showCampaignQr(id: string) {
 
 async function loadChannelConfig() {
   channelConfig.value = await getNotificationChannelConfig(section.value === "notification-config-sms" ? "sms" : "wechat-subscribe");
-}
-
-async function loadMemberConfig() {
-  memberLevels.value = (await listMemberLevels()).items;
-  memberForm.levelId ||= memberLevels.value[0]?.id ?? "";
-  const [benefits, rules] = await Promise.all([listMemberBenefits(), listMemberPricingRules()]);
-  memberBenefits.value = benefits.items;
-  memberPriceRules.value = rules.items;
-}
-
-async function saveMemberConfig() {
-  if (section.value === "member-benefits") await createMemberBenefit({ levelId: memberForm.levelId, title: memberForm.title || "会员权益", type: "TEXT", enabled: true });
-  else {
-    await createMemberPricingRule({
-      levelId: memberForm.levelId,
-      fixedPriceCent: memberForm.fixedPriceCent,
-      discountPercent: memberForm.discountPercent,
-      discountCent: memberForm.discountCent,
-      enabled: true
-    });
-  }
-  Object.assign(memberForm, { title: "", fixedPriceCent: undefined, discountPercent: 9000, discountCent: undefined });
-  await loadMemberConfig();
-  ElMessage.success("会员配置已保存");
 }
 
 async function loadFinance() {

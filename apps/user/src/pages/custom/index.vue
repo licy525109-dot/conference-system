@@ -102,7 +102,7 @@ function extensionNoticeFor(key: string):
     "member-center": {
       status: "扩展能力",
       title: "会员权益展示中",
-      description: "会员权益暂不参与会议报名定价，报名金额仍以提交订单时系统计算结果为准。",
+      description: "会员权益以会员中心和后台配置为准，报名会员价仍以提交订单时系统计算结果为准。",
       tone: "warning"
     },
     cart: {
