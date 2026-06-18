@@ -192,12 +192,48 @@ export class PublicOperationsService {
       include: { items: true, shipments: true, afterSales: true }
     });
     return ok({
-      items: items.map((item) => ({
-        ...formatDateFields(item),
-        items: item.items.map(formatDateFields),
-        shipments: item.shipments.map(formatDateFields),
-        afterSales: item.afterSales.map(formatDateFields)
-      }))
+      items: items.map(formatMallOrder)
+    });
+  }
+
+  async myMallOrder(id: string, currentUser: CurrentUser | undefined) {
+    if (!currentUser) throw new UnauthorizedException("Bearer token is required");
+    const item = await this.prisma.mallOrder.findFirst({
+      where: { id, userId: currentUser.id },
+      include: { items: true, shipments: true, afterSales: true }
+    });
+    if (!item) throw new NotFoundException("商城订单不存在");
+    return ok(formatMallOrder(item));
+  }
+
+  async createMallAfterSale(input: unknown, currentUser: CurrentUser | undefined) {
+    if (!currentUser) throw new UnauthorizedException("Bearer token is required");
+    const body = readObject(input);
+    const orderId = readRequiredString(body, "orderId");
+    const type = readMallAfterSaleType(body.type);
+    const order = await this.prisma.mallOrder.findFirst({
+      where: { id: orderId, userId: currentUser.id },
+      include: { afterSales: true }
+    });
+    if (!order) throw new NotFoundException("商城订单不存在");
+    if (!["PAID", "SHIPPED", "COMPLETED"].includes(order.status)) throw new ConflictException("仅已支付、已发货或已完成商城订单可申请售后");
+    if (order.afterSales.some((item) => !["REJECTED", "CANCELLED", "COMPLETED"].includes(item.status))) throw new ConflictException("该订单已有处理中售后申请");
+    const item = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.mallAfterSale.create({
+        data: {
+          orderId,
+          type,
+          status: "REQUESTED",
+          reason: readNullableString(body.reason),
+          note: readNullableString(body.note)
+        }
+      });
+      await tx.mallOrder.update({ where: { id: orderId }, data: { status: "REFUNDING" } });
+      return created;
+    });
+    return ok({
+      ...formatDateFields(item),
+      refundNotice: ["REFUND", "RETURN_REFUND"].includes(type) ? "真实退款暂未开放，提交后需后台审批并走后续退款流程。" : null
     });
   }
 
@@ -271,6 +307,12 @@ function readNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function readMallAfterSaleType(value: unknown): string {
+  const type = typeof value === "string" && value.trim() ? value.trim().toUpperCase() : "REFUND";
+  if (!["REFUND", "RETURN_REFUND", "EXCHANGE"].includes(type)) throw new BadRequestException("售后类型必须是 REFUND / RETURN_REFUND / EXCHANGE");
+  return type;
+}
+
 function scoreQuestion(question: string, content: string): number {
   const tokens = tokenize(question);
   return tokens.reduce((score, token) => score + (content.includes(token) ? Math.min(token.length, 8) : 0), 0);
@@ -332,4 +374,19 @@ function formatDateFields(item: Record<string, unknown>): Record<string, unknown
     if (value instanceof Date) output[key] = value.toISOString();
   }
   return output;
+}
+
+function formatMallOrder(item: {
+  items: Array<Record<string, unknown>>;
+  shipments: Array<Record<string, unknown>>;
+  afterSales: Array<Record<string, unknown>>;
+} & Record<string, unknown>) {
+  return {
+    ...formatDateFields(item),
+    items: item.items.map(formatDateFields),
+    shipments: item.shipments.map(formatDateFields),
+    afterSales: item.afterSales.map(formatDateFields),
+    paymentEnabled: false,
+    paymentNotice: "商城真实支付暂未开放，待支付订单不会伪造支付成功。"
+  };
 }

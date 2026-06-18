@@ -4,6 +4,8 @@ import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { RegistrationService } from "../registration/registration.service";
 
+const FORBIDDEN_AMOUNT_FIELDS = new Set(["originAmountCent", "discountAmountCent", "payableAmountCent", "paidAmountCent", "amountCent", "totalAmountCent", "priceCent"]);
+
 @Injectable()
 export class CartService {
   constructor(
@@ -58,7 +60,9 @@ export class CartService {
           name: item.sku.name,
           priceCent: item.sku.priceCent,
           stock: item.sku.stock,
+          lockedStock: item.sku.lockedStock,
           soldCount: item.sku.soldCount,
+          availableStock: Math.max(0, item.sku.stock - item.sku.lockedStock - item.sku.soldCount),
           status: item.sku.status,
           product: item.sku.product
         },
@@ -127,7 +131,7 @@ export class CartService {
     const sku = await this.prisma.productSku.findUnique({ where: { id: skuId }, include: { product: true } });
     if (!sku || sku.status !== "ACTIVE" || sku.product.status !== "PUBLISHED") throw new NotFoundException("商品规格不存在或未上架");
     const existing = await this.prisma.cartItem.findUnique({ where: { userId_skuId: { userId: currentUser.id, skuId } }, select: { quantity: true } });
-    if (sku.stock - sku.soldCount < quantity + (existing?.quantity ?? 0)) throw new BadRequestException("商品库存不足");
+    if (sku.stock - sku.lockedStock - sku.soldCount < quantity + (existing?.quantity ?? 0)) throw new BadRequestException("商品库存不足");
     const item = await this.prisma.cartItem.upsert({
       where: { userId_skuId: { userId: currentUser.id, skuId } },
       update: { quantity: { increment: quantity } },
@@ -140,10 +144,10 @@ export class CartService {
     const quantity = readQuantity(readObject(input).quantity);
     const existing = await this.prisma.cartItem.findFirst({
       where: { id, userId: currentUser.id },
-      select: { id: true, sku: { select: { stock: true, soldCount: true } } }
+      select: { id: true, sku: { select: { stock: true, lockedStock: true, soldCount: true } } }
     });
     if (!existing) throw new NotFoundException("购物车商品不存在");
-    if (existing.sku.stock - existing.sku.soldCount < quantity) throw new BadRequestException("商品库存不足");
+    if (existing.sku.stock - existing.sku.lockedStock - existing.sku.soldCount < quantity) throw new BadRequestException("商品库存不足");
     const item = await this.prisma.cartItem.update({ where: { id }, data: { quantity } });
     return ok({ id: item.id });
   }
@@ -181,35 +185,84 @@ export class CartService {
   }
 
   async checkoutProducts(input: unknown, currentUser: CurrentUser) {
-    const itemIds = readStringArray(readObject(input).itemIds);
+    const body = readObject(input);
+    assertNoClientAmount(body);
+    const itemIds = readStringArray(body.itemIds);
     if (itemIds.length === 0) throw new BadRequestException("请选择要结算的商品");
+    const receiverName = readRequiredString(body, "receiverName");
+    const receiverPhone = readRequiredString(body, "receiverPhone");
+    const receiverAddress = readRequiredString(body, "receiverAddress");
     const items = await this.prisma.cartItem.findMany({
       where: { id: { in: itemIds }, userId: currentUser.id },
       include: { sku: { include: { product: true } } }
     });
     if (items.length !== itemIds.length) throw new BadRequestException("购物车商品不存在");
-    const originAmountCent = items.reduce((sum, item) => sum + item.quantity * item.sku.priceCent, 0);
-    const order = await this.prisma.mallOrder.create({
-      data: {
-        orderNo: `MALL${Date.now()}${Math.floor(Math.random() * 1000)}`,
-        userId: currentUser.id,
-        originAmountCent,
-        payableAmountCent: originAmountCent,
-        status: "PENDING_PAYMENT",
-        items: {
-          create: items.map((item) => ({
-            skuId: item.skuId,
-            productTitle: item.sku.product.title,
-            skuName: item.sku.name,
-            unitPriceCent: item.sku.priceCent,
-            quantity: item.quantity,
-            totalAmountCent: item.quantity * item.sku.priceCent
-          }))
-        }
+    const order = await this.prisma.$transaction(async (tx) => {
+      const orderItems: Prisma.MallOrderItemCreateWithoutOrderInput[] = [];
+      const logs: Array<{ skuId: string; quantity: number; beforeLockedStock: number; afterLockedStock: number; beforeSoldCount: number; afterSoldCount: number }> = [];
+      for (const item of items) {
+        const sku = item.sku;
+        if (sku.status !== "ACTIVE" || sku.product.status !== "PUBLISHED") throw new BadRequestException("部分商品已下架");
+        if (sku.stock - sku.lockedStock - sku.soldCount < item.quantity) throw new BadRequestException(`${sku.name} 库存不足`);
+        const locked = await tx.productSku.updateMany({
+          where: {
+            id: sku.id,
+            status: "ACTIVE",
+            lockedStock: sku.lockedStock,
+            soldCount: sku.soldCount,
+            stock: { gte: sku.lockedStock + sku.soldCount + item.quantity }
+          },
+          data: { lockedStock: { increment: item.quantity } }
+        });
+        if (locked.count !== 1) throw new BadRequestException(`${sku.name} 库存正在变化，请重试`);
+        orderItems.push({
+          sku: { connect: { id: item.skuId } },
+          productTitle: sku.product.title,
+          skuName: sku.name,
+          unitPriceCent: sku.priceCent,
+          quantity: item.quantity,
+          totalAmountCent: item.quantity * sku.priceCent
+        });
+        logs.push({
+          skuId: item.skuId,
+          quantity: item.quantity,
+          beforeLockedStock: sku.lockedStock,
+          afterLockedStock: sku.lockedStock + item.quantity,
+          beforeSoldCount: sku.soldCount,
+          afterSoldCount: sku.soldCount
+        });
       }
+      const originAmountCent = orderItems.reduce((sum, item) => sum + item.totalAmountCent, 0);
+      const created = await tx.mallOrder.create({
+        data: {
+          orderNo: `MALL${Date.now()}${Math.floor(Math.random() * 1000)}`,
+          userId: currentUser.id,
+          originAmountCent,
+          discountAmountCent: 0,
+          payableAmountCent: originAmountCent,
+          status: "PENDING_PAYMENT",
+          receiverName,
+          receiverPhone,
+          receiverAddress,
+          items: { create: orderItems },
+          inventoryLogs: {
+            create: logs.map((item) => ({
+              skuId: item.skuId,
+              action: "CART_CHECKOUT_LOCK",
+              quantity: item.quantity,
+              beforeLockedStock: item.beforeLockedStock,
+              afterLockedStock: item.afterLockedStock,
+              beforeSoldCount: item.beforeSoldCount,
+              afterSoldCount: item.afterSoldCount,
+              remark: "购物车结算创建商城待支付订单锁定库存"
+            }))
+          }
+        }
+      });
+      await tx.cartItem.deleteMany({ where: { id: { in: itemIds }, userId: currentUser.id } });
+      return created;
     });
-    await this.prisma.cartItem.deleteMany({ where: { id: { in: itemIds }, userId: currentUser.id } });
-    return ok({ orderNo: order.orderNo, status: order.status, payableAmountCent: order.payableAmountCent, paymentEnabled: false });
+    return ok({ orderNo: order.orderNo, status: order.status, payableAmountCent: order.payableAmountCent, paymentEnabled: false, paymentNotice: "商城真实支付暂未开放，订单已创建为待支付。" });
   }
 }
 
@@ -244,4 +297,10 @@ function readOptionalArray(value: unknown): unknown[] | undefined {
 
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
+
+function assertNoClientAmount(body: Record<string, unknown>) {
+  for (const key of Object.keys(body)) {
+    if (FORBIDDEN_AMOUNT_FIELDS.has(key)) throw new BadRequestException(`商城订单金额由后端计算，不能提交 ${key}`);
+  }
 }

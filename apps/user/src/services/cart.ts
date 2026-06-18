@@ -40,7 +40,9 @@ export interface CartProductItem {
     name: string;
     priceCent: number;
     stock: number;
+    lockedStock: number;
     soldCount: number;
+    availableStock: number;
     status: string;
     product: {
       id: string;
@@ -72,6 +74,7 @@ export interface ProductCheckoutResult {
   status: string;
   payableAmountCent: number;
   paymentEnabled: boolean;
+  paymentNotice?: string;
 }
 
 export async function getCart(): Promise<CartData> {
@@ -122,12 +125,12 @@ export async function checkoutRegistrationCart(itemIds: string[]): Promise<Creat
   });
 }
 
-export async function checkoutProductCart(itemIds: string[]): Promise<ProductCheckoutResult> {
+export async function checkoutProductCart(input: { itemIds: string[]; receiverName: string; receiverPhone: string; receiverAddress: string }): Promise<ProductCheckoutResult> {
   await ensureLogin();
   return request<ProductCheckoutResult>("/cart/checkout/products", {
     method: "POST",
     auth: true,
-    data: { itemIds }
+    data: input
   });
 }
 

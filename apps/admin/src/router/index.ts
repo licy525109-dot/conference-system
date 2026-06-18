@@ -19,6 +19,7 @@ import OperationalWorkflowsPage from "../pages/common/OperationalWorkflowsPage.v
 import FinancePage from "../pages/finance/index.vue";
 import MallOrdersPage from "../pages/mall/orders.vue";
 import MallProductsPage from "../pages/mall/products.vue";
+import MallWorkflowsPage from "../pages/mall/workflows.vue";
 import MemberLevelsPage from "../pages/members/levels.vue";
 import MemberUsersPage from "../pages/members/users.vue";
 import AuditLogsPage from "../pages/system/audit-logs.vue";
@@ -85,12 +86,12 @@ export const routes: AdminRoute[] = [
   { path: "/members/levels", title: "会员等级", menuTitle: "会员等级", group: "会员", badge: "后续", description: "会员等级、价格和权益展示配置", permission: "member:view", component: MemberLevelsPage },
   { path: "/members/benefits", title: "会员权益", menuTitle: "会员权益", group: "会员", badge: "后续", description: "会员权益包、展示说明和领取规则入口。", permission: "member:view", component: OperationalWorkflowsPage },
   { path: "/members/pricing-rules", title: "会员价规则", menuTitle: "会员价规则", group: "会员", description: "会员价已参与报名 quote/create order，订单保存计价快照。", permission: "member:view", component: OperationalWorkflowsPage },
-  { path: "/mall/products", title: "商品管理", menuTitle: "商品管理", group: "商城", badge: "灰度", description: "商城商品、封面、状态和规格入口", permission: "mall:view", component: MallProductsPage },
-  { path: "/mall/categories", title: "商品分类", menuTitle: "商品分类", group: "商城", badge: "灰度", description: "商城商品分类、排序和展示入口。", permission: "mall:view", component: OperationalWorkflowsPage },
-  { path: "/mall/skus", title: "SKU 库存", menuTitle: "SKU 库存", group: "商城", badge: "灰度", description: "SKU 库存、锁定库存和库存流水入口。", permission: "mall:view", component: OperationalWorkflowsPage },
-  { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "商城", badge: "灰度", description: "商城订单查询，不与会议报名订单混用", permission: "mall:view", component: MallOrdersPage },
-  { path: "/mall/fulfillment", title: "发货核销", menuTitle: "发货核销", group: "商城", badge: "灰度", description: "商城发货、到店核销和履约日志入口。", permission: "mall:view", component: OperationalWorkflowsPage },
-  { path: "/mall/aftersales", title: "商城售后", menuTitle: "商城售后", group: "商城", badge: "灰度", description: "售后申请、处理记录和退款联动入口。", permission: "mall:view", component: OperationalWorkflowsPage },
+  { path: "/mall/products", title: "商品管理", menuTitle: "商品管理", group: "商城", description: "商城商品、封面、状态和规格入口", permission: "mall:view", component: MallProductsPage },
+  { path: "/mall/categories", title: "商品分类", menuTitle: "商品分类", group: "商城", description: "商城商品分类、排序和展示入口。", permission: "mall:view", component: MallWorkflowsPage },
+  { path: "/mall/skus", title: "SKU 库存", menuTitle: "SKU 库存", group: "商城", description: "SKU 库存、锁定库存和库存流水入口。", permission: "mall:view", component: MallWorkflowsPage },
+  { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "商城", description: "商城订单查询，不与会议报名订单混用", permission: "mall:order", component: MallOrdersPage },
+  { path: "/mall/fulfillment", title: "发货核销", menuTitle: "发货核销", group: "商城", description: "商城发货、到店核销和履约日志入口。", permission: "mall:shipment", component: MallWorkflowsPage },
+  { path: "/mall/aftersales", title: "商城售后", menuTitle: "商城售后", group: "商城", description: "售后申请、处理记录和退款联动入口。", permission: "mall:aftersale", component: MallWorkflowsPage },
   { path: "/finance/payments", title: "支付流水", menuTitle: "支付流水", group: "财务管理", badge: "辅助", description: "基于系统内支付记录的只读查询。", permission: "finance:view", component: FinancePage },
   { path: "/finance/refunds", title: "退款管理", menuTitle: "退款管理", group: "财务管理", badge: "灰度", description: "退款审批、退款查询和退款回调入口。", permission: "refund:view", component: OperationalWorkflowsPage },
   { path: "/finance/invoices", title: "发票申请", menuTitle: "发票申请", group: "财务管理", badge: "灰度", description: "发票申请审核、驳回和开票记录入口。", permission: "invoice:view", component: OperationalWorkflowsPage },

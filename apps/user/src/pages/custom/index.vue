@@ -101,14 +101,14 @@ function extensionNoticeFor(key: string):
     cart: {
       status: "主线提醒",
       title: "会议报名结算优先",
-      description: "购物车商品支付后续开放，请优先完成会议报名缴费主流程。",
+      description: "购物车商品可创建待支付订单，真实支付暂未开放；会议报名缴费仍走现有主链路。",
       tone: "info"
     },
     mall: {
-      status: "商城试运行",
-      title: "商品支付后续开放",
-      description: "商城内容可展示和加入购物车，暂不提供完整商品支付和履约。",
-      tone: "warning"
+      status: "商城基础闭环",
+      title: "商品可创建待支付订单",
+      description: "商城订单独立于会议报名订单，后端重算金额并锁定库存，当前不会跳转支付。",
+      tone: "info"
     }
   };
   return map[normalized] ?? null;

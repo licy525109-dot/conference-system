@@ -862,6 +862,7 @@ model ProductSku {
   name           String
   priceCent      Int
   stock          Int             @default(0)
+  lockedStock    Int             @default(0)
   soldCount      Int             @default(0)
   status         String          @default("ACTIVE")
   specsJson      Json?
@@ -870,6 +871,7 @@ model ProductSku {
   product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
   cartItems      CartItem[]
   mallOrderItems MallOrderItem[]
+  inventoryLogs  MallInventoryLog[]
 
   @@index([productId])
   @@index([status])
@@ -934,7 +936,7 @@ model MallOrder {
   discountAmountCent Int             @default(0)
   payableAmountCent  Int
   paidAmountCent     Int?
-  status             String          @default("PENDING")
+  status             String          @default("PENDING_PAYMENT")
   receiverName       String?
   receiverPhone      String?
   receiverAddress    String?
@@ -946,6 +948,7 @@ model MallOrder {
   items              MallOrderItem[]
   shipments          MallShipment[]
   afterSales         MallAfterSale[]
+  inventoryLogs      MallInventoryLog[]
 
   @@index([userId])
   @@index([status])
@@ -976,8 +979,11 @@ model MallShipment {
   orderId    String
   company    String?
   trackingNo String?
+  pickupCode String?
+  remark     String?
   status     String    @default("PENDING")
   shippedAt  DateTime?
+  completedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   order      MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -991,8 +997,10 @@ model MallAfterSale {
   id        String    @id @default(cuid())
   orderId   String
   type      String
-  status    String    @default("PENDING")
+  status    String    @default("REQUESTED")
   reason    String?
+  note      String?
+  handledAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   order     MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -1000,6 +1008,28 @@ model MallAfterSale {
   @@index([orderId])
   @@index([status])
   @@map("mall_after_sales")
+}
+
+model MallInventoryLog {
+  id                String      @id @default(cuid())
+  skuId             String
+  orderId           String?
+  action            String
+  quantity          Int
+  beforeLockedStock Int
+  afterLockedStock  Int
+  beforeSoldCount   Int
+  afterSoldCount    Int
+  remark            String?
+  createdAt         DateTime    @default(now())
+  sku               ProductSku  @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  order             MallOrder?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([skuId])
+  @@index([orderId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("mall_inventory_logs")
 }
 
 model RegistrationSku {

@@ -31,7 +31,10 @@ import type {
   FormField,
   MaterialAsset,
   MaterialCategory,
+  MallAfterSale,
+  MallInventoryLog,
   MallOrder,
+  MallShipment,
   MemberLevel,
   NotificationLog,
   NotificationChannelConfig,
@@ -733,8 +736,12 @@ export function createFinanceBatch() {
   });
 }
 
-export function listProductCategories() {
-  return apiRequest<{ items: ProductCategory[] }>("/admin/mall/categories");
+export function listProductCategories(params: { page?: number; pageSize?: number; keyword?: string; enabled?: boolean } = {}) {
+  return apiRequest<ApiList<ProductCategory>>(`/admin/mall/categories${toQuery(params)}`);
+}
+
+export function getProductCategoryOptions(params: { keyword?: string } = {}) {
+  return apiRequest<{ items: ProductCategory[] }>(`/admin/mall/categories/options${toQuery(params)}`);
 }
 
 export function createProductCategory(input: Record<string, unknown>) {
@@ -744,8 +751,23 @@ export function createProductCategory(input: Record<string, unknown>) {
   });
 }
 
-export function listProducts(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
+export function updateProductCategory(id: string, input: Record<string, unknown>) {
+  return apiRequest<ProductCategory>(`/admin/mall/categories/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listProducts(params: { page?: number; pageSize?: number; keyword?: string; status?: string; categoryId?: string }) {
   return apiRequest<ApiList<Product>>(`/admin/mall/products${toQuery(params)}`);
+}
+
+export function getProductOptions(params: { keyword?: string } = {}) {
+  return apiRequest<{ items: Product[] }>(`/admin/mall/products/options${toQuery(params)}`);
+}
+
+export function getProductDetail(id: string) {
+  return apiRequest<Product>(`/admin/mall/products/${encodeURIComponent(id)}`);
 }
 
 export function createProduct(input: Record<string, unknown>) {
@@ -769,31 +791,91 @@ export function createProductSku(productId: string, input: Record<string, unknow
   });
 }
 
-export function listProductSkus(params: { productId?: string; status?: string } = {}) {
-  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/mall/skus${toQuery(params)}`);
+export function createProductSkuFromBody(input: Record<string, unknown>) {
+  return apiRequest<ProductSku>("/admin/mall/skus", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateProductSku(id: string, input: Record<string, unknown>) {
+  return apiRequest<ProductSku>(`/admin/mall/skus/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listProductSkus(params: { page?: number; pageSize?: number; productId?: string; status?: string; keyword?: string } = {}) {
+  return apiRequest<ApiList<ProductSku>>(`/admin/mall/skus${toQuery(params)}`);
+}
+
+export function listMallInventoryLogs(params: { page?: number; pageSize?: number; skuId?: string } = {}) {
+  return apiRequest<ApiList<MallInventoryLog>>(`/admin/mall/inventory-logs${toQuery(params)}`);
 }
 
 export function listMallOrders(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
   return apiRequest<ApiList<MallOrder>>(`/admin/mall/orders${toQuery(params)}`);
 }
 
+export function getMallOrderOptions(params: { keyword?: string } = {}) {
+  return apiRequest<{ items: MallOrder[] }>(`/admin/mall/orders/options${toQuery(params)}`);
+}
+
+export function getMallOrder(id: string) {
+  return apiRequest<MallOrder>(`/admin/mall/orders/${encodeURIComponent(id)}`);
+}
+
+export function closeMallOrder(id: string) {
+  return apiRequest<MallOrder>(`/admin/mall/orders/${encodeURIComponent(id)}/close`, {
+    method: "PATCH"
+  });
+}
+
 export function shipMallOrder(id: string, input: Record<string, unknown>) {
-  return apiRequest(`/admin/mall/orders/${encodeURIComponent(id)}/ship`, {
+  return apiRequest<MallShipment>(`/admin/mall/orders/${encodeURIComponent(id)}/ship`, {
     method: "POST",
     body: JSON.stringify(input)
   });
 }
 
 export function verifyMallOrder(id: string) {
-  return apiRequest(`/admin/mall/orders/${encodeURIComponent(id)}/verify`, { method: "POST" });
+  return apiRequest<MallOrder>(`/admin/mall/orders/${encodeURIComponent(id)}/verify`, { method: "POST" });
 }
 
-export function listMallShipments(params: { status?: string } = {}) {
-  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/mall/shipments${toQuery(params)}`);
+export function listMallShipments(params: { page?: number; pageSize?: number; status?: string; orderId?: string } = {}) {
+  return apiRequest<ApiList<MallShipment>>(`/admin/mall/shipments${toQuery(params)}`);
 }
 
-export function listMallAfterSales(params: { status?: string } = {}) {
-  return apiRequest<{ items: Record<string, unknown>[] }>(`/admin/mall/aftersales${toQuery(params)}`);
+export function createMallShipment(input: Record<string, unknown>) {
+  return apiRequest<MallShipment>("/admin/mall/shipments", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateMallShipment(id: string, input: Record<string, unknown>) {
+  return apiRequest<MallShipment>(`/admin/mall/shipments/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listMallAfterSales(params: { page?: number; pageSize?: number; status?: string; orderId?: string } = {}) {
+  return apiRequest<ApiList<MallAfterSale>>(`/admin/mall/aftersales${toQuery(params)}`);
+}
+
+export function createMallAfterSale(input: Record<string, unknown>) {
+  return apiRequest<MallAfterSale>("/admin/mall/aftersales", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateMallAfterSale(id: string, input: Record<string, unknown>) {
+  return apiRequest<MallAfterSale>(`/admin/mall/aftersales/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
 }
 
 export function getInventoryAlertRule(conferenceId: string) {

@@ -53,4 +53,16 @@ export class PublicOperationsController {
   myMallOrders(@Req() request: RequestWithCurrentUser) {
     return this.operations.myMallOrders(request.currentUser);
   }
+
+  @Get("my/mall-orders/:id")
+  @UseGuards(JwtAuthGuard)
+  myMallOrder(@Param("id") id: string, @Req() request: RequestWithCurrentUser) {
+    return this.operations.myMallOrder(id, request.currentUser);
+  }
+
+  @Post("my/mall-aftersales")
+  @UseGuards(JwtAuthGuard)
+  createMallAfterSale(@Body() body: unknown, @Req() request: RequestWithCurrentUser) {
+    return this.operations.createMallAfterSale(body, request.currentUser);
+  }
 }

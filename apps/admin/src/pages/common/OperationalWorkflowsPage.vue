@@ -161,20 +161,6 @@
       </AdminSectionCard>
     </template>
 
-    <template v-else-if="section.startsWith('mall')">
-      <AdminSectionCard :title="currentRoute.title" subtitle="读取商城真实商品、SKU、订单、发货和售后数据。">
-        <el-table :data="mallRows" empty-text="暂无商城数据">
-          <el-table-column prop="name" label="名称" min-width="180"><template #default="{ row }">{{ row.name || row.title || row.orderNo || row.productTitle || row.id }}</template></el-table-column>
-          <el-table-column prop="code" label="编码" width="140" />
-          <el-table-column prop="status" label="状态" width="120" />
-          <el-table-column label="价格/金额" width="130"><template #default="{ row }">{{ moneyMaybe(row.priceCent ?? row.payableAmountCent) }}</template></el-table-column>
-          <el-table-column prop="stock" label="库存" width="90" />
-          <el-table-column prop="receiverName" label="收件人" width="120" />
-          <el-table-column prop="createdAt" label="创建时间" width="190" />
-        </el-table>
-      </AdminSectionCard>
-    </template>
-
     <template v-else-if="section.startsWith('finance')">
       <AdminFilterBar v-if="section === 'finance-wechat-bills'">
         <el-date-picker v-model="billDate" type="date" value-format="YYYY-MM-DD" placeholder="账单日期" />
@@ -230,16 +216,10 @@ import {
   listFinancePayments,
   listInventoryAlertLogs,
   listInvoices,
-  listMallAfterSales,
-  listMallOrders,
-  listMallShipments,
   listMemberBenefits,
   listMemberLevels,
   listMemberPricingRules,
   listPaymentExceptions,
-  listProductCategories,
-  listProducts,
-  listProductSkus,
   listReconciliationResults,
   listRefunds,
   listWechatBills,
@@ -278,7 +258,6 @@ const memberForm = reactive({
   discountPercent: 9000,
   discountCent: undefined as number | undefined
 });
-const mallRows = ref<Record<string, unknown>[]>([]);
 const financeRows = ref<Record<string, unknown>[]>([]);
 const billDate = ref("");
 
@@ -295,10 +274,6 @@ const section = computed(() => {
   if (path.includes("notifications/sms")) return "notification-config-sms";
   if (path.includes("members/benefits")) return "member-benefits";
   if (path.includes("members/pricing-rules")) return "member-pricing";
-  if (path.includes("mall/categories")) return "mall-categories";
-  if (path.includes("mall/skus")) return "mall-skus";
-  if (path.includes("mall/fulfillment")) return "mall-fulfillment";
-  if (path.includes("mall/aftersales")) return "mall-aftersales";
   if (path.includes("finance/refunds")) return "finance-refunds";
   if (path.includes("finance/invoices")) return "finance-invoices";
   if (path.includes("finance/wechat-bills")) return "finance-wechat-bills";
@@ -326,7 +301,6 @@ async function load() {
     else if (section.value === "coupon-campaigns") await loadCampaigns();
     else if (section.value.startsWith("notification-config")) await loadChannelConfig();
     else if (section.value.startsWith("member")) await loadMemberConfig();
-    else if (section.value.startsWith("mall")) await loadMall();
     else if (section.value.startsWith("finance")) await loadFinance();
   } finally {
     loading.value = false;
@@ -427,14 +401,6 @@ async function saveMemberConfig() {
   Object.assign(memberForm, { title: "", fixedPriceCent: undefined, discountPercent: 9000, discountCent: undefined });
   await loadMemberConfig();
   ElMessage.success("会员配置已保存");
-}
-
-async function loadMall() {
-  if (section.value === "mall-categories") mallRows.value = (await listProductCategories()).items as unknown as Record<string, unknown>[];
-  else if (section.value === "mall-skus") mallRows.value = (await listProductSkus()).items;
-  else if (section.value === "mall-fulfillment") mallRows.value = (await listMallShipments()).items;
-  else if (section.value === "mall-aftersales") mallRows.value = (await listMallAfterSales()).items;
-  else mallRows.value = (await listMallOrders({ page: 1, pageSize: 100 })).items as unknown as Record<string, unknown>[];
 }
 
 async function loadFinance() {
