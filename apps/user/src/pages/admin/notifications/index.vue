@@ -2,14 +2,24 @@
   <view class="page ui-page">
     <view class="topbar ui-card">
       <view>
-        <text class="eyebrow">管理员</text>
-        <text class="title">通知中心</text>
-        <text class="subtitle">{{ admin ? `当前账号：${admin.displayName || admin.username}` : "绑定后台账号后可在手机端查看和发送通知任务" }}</text>
+        <text class="eyebrow">管理员 / 工作人员</text>
+        <text class="title">工作人员工具</text>
+        <text class="subtitle">{{ admin ? `当前账号：${admin.displayName || admin.username}` : "绑定后台账号后可使用扫码签到和通知工具" }}</text>
       </view>
       <view v-if="admin" class="top-actions">
-        <button class="ui-button-primary ui-button-compact" @click="goScanCheckin">扫码签到</button>
         <button class="ui-button-secondary ui-button-compact" @click="logout">退出</button>
       </view>
+    </view>
+
+    <view class="tool-card tool-card--primary ui-card">
+      <view>
+        <text class="section-kicker">签到工具</text>
+        <text class="section-title">扫码签到</text>
+        <text class="subtitle">用于工作人员扫描参会人报名凭证二维码完成签到。</text>
+        <text class="muted">需要后台管理员账号或具备 checkin:write 权限。</text>
+      </view>
+      <button class="ui-button-primary scan-button" :disabled="!admin" @click="goScanCheckin">扫码签到</button>
+      <text v-if="!admin" class="tool-hint">请先绑定后台账号后使用扫码签到。</text>
     </view>
 
     <view v-if="!admin" class="bind-card ui-card">
@@ -21,13 +31,18 @@
     </view>
 
     <template v-else>
+      <view class="tool-card ui-card">
+        <text class="section-kicker">通知工具</text>
+        <text class="section-title">通知任务 / 发送记录</text>
+        <text class="subtitle">查看手机端允许操作的通知任务、模板和发送日志。</text>
+      </view>
       <view class="tabs ui-card">
-        <button :class="tabClass('tasks')" @click="activeTab = 'tasks'">任务</button>
-        <button :class="tabClass('templates')" @click="activeTab = 'templates'">模板</button>
-        <button :class="tabClass('logs')" @click="activeTab = 'logs'">日志</button>
+        <button :class="tabClass('tasks')" @click="activeTab = 'tasks'">通知任务</button>
+        <button :class="tabClass('templates')" @click="activeTab = 'templates'">通知模板</button>
+        <button :class="tabClass('logs')" @click="activeTab = 'logs'">发送记录</button>
       </view>
 
-      <LoadingState v-if="loading" title="加载通知中心" description="正在读取模板、任务和发送记录。" />
+      <LoadingState v-if="loading" title="加载工作人员工具" description="正在读取通知模板、任务和发送记录。" />
       <ErrorState v-else-if="error" :message="error" primary-text="重试" @retry="loadAll" />
 
       <view v-else-if="activeTab === 'tasks'" class="list">
@@ -142,7 +157,7 @@ async function loadAll() {
     tasks.value = taskData.items;
     logs.value = logData.items;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "通知中心加载失败";
+    error.value = err instanceof Error ? err.message : "工作人员工具加载失败";
   } finally {
     loading.value = false;
   }
@@ -256,11 +271,13 @@ function formatTime(value: string) {
 .topbar,
 .bind-card,
 .item,
-.tabs {
+.tabs,
+.tool-card {
   padding: 28rpx;
 }
 
 .eyebrow,
+.section-kicker,
 .muted {
   display: block;
   color: var(--ui-color-muted);
@@ -268,6 +285,11 @@ function formatTime(value: string) {
 }
 
 .eyebrow {
+  color: var(--ui-color-primary);
+  font-weight: 800;
+}
+
+.section-kicker {
   color: var(--ui-color-primary);
   font-weight: 800;
 }
@@ -297,6 +319,27 @@ function formatTime(value: string) {
 .section-title,
 .item-title {
   font-size: 30rpx;
+}
+
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.tool-card--primary {
+  border-color: var(--ui-color-primary);
+  background: var(--ui-color-primary-soft);
+}
+
+.scan-button {
+  width: 100%;
+}
+
+.tool-hint {
+  color: var(--ui-color-warning);
+  font-size: 24rpx;
+  line-height: 1.5;
 }
 
 .bind-card {
