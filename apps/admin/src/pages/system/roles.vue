@@ -138,11 +138,18 @@ async function save() {
 function permissionMenuGroup(permission: Permission): string {
   const route = routes.find((item) => item.permission === permission.code);
   if (route) return route.group;
-  if (permission.code.startsWith("conference:") || permission.code.startsWith("registration:") || permission.code.startsWith("checkin:") || permission.code.startsWith("inventory:")) return "会议管理";
+  if (permission.code.startsWith("dashboard:")) return "控制台";
+  if (
+    permission.code.startsWith("conference:") ||
+    permission.code.startsWith("registration:") ||
+    permission.code.startsWith("checkin:") ||
+    permission.code.startsWith("inventory:") ||
+    permission.code.startsWith("inventory-alert:")
+  ) return "会议管理";
   if (permission.code.startsWith("order:") || permission.code.startsWith("payment:")) return "订单交易";
   if (permission.code.startsWith("coupon:") || permission.code.startsWith("promotion:")) return "营销活动";
   if (permission.code.startsWith("notification:") || permission.code.startsWith("sms:")) return "通知中心";
-  if (permission.code.startsWith("wecom:")) return "企微客户群";
+  if (permission.code.startsWith("wecom:") || permission.code.startsWith("customer-group:")) return "企微客户群";
   if (permission.code.startsWith("ai-kb:") || permission.code.startsWith("ai:") || permission.code.startsWith("knowledge:")) return "AI 知识库";
   if (permission.code.startsWith("member:")) return "会员";
   if (permission.code.startsWith("mall:")) return "商城";

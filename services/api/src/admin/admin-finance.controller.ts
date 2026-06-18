@@ -149,7 +149,7 @@ export class AdminPaymentsController {
   constructor(private readonly financeService: AdminFinanceService) {}
 
   @Get()
-  @RequireAdminPermissions("finance:view")
+  @RequireAdminPermissions("payment:view")
   payments(@Query() query: Record<string, unknown>) {
     return this.financeService.listPayments(query);
   }
