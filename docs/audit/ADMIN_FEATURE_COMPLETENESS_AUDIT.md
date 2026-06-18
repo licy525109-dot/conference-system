@@ -34,12 +34,12 @@
 | 订单交易 | `/orders` | 订单支付 | `/admin/orders*` | Order, Payment | 支付/我的报名 | 无 | 是 | 单删/筛选删除受后端规则保护。 |
 | 订单交易 | `/payment-exceptions` | OperationalWorkflowsPage | `/admin/payment-exceptions` | Order, Payment | 不需要 | 辅助 | 否 | 只读异常辅助，不允许后台改成功支付状态。 |
 | 订单交易 | `/payment-records` | OperationalWorkflowsPage | `/admin/payments`, `/admin/finance/payments` | Payment | 不需要 | 无 | 是 | 支付流水只读查询已接入。 |
-| 营销活动 | `/coupons` | 优惠券 | `/admin/coupons*` | Coupon | 领券/我的券 | 灰度 | 否 | 后端计价需继续以金额测试保护。 |
-| 营销活动 | `/coupon-campaigns` | OperationalWorkflowsPage | `/admin/coupon-campaigns*`, `/coupons/claim`, `/my/coupons` | CouponCampaign, CouponClaim | 领券页/我的券 | 灰度 | 否 | 批次二维码和领取已接入，仍需库存耗尽和重复领取测试。 |
-| 营销活动 | `/promotions` | 满减规则 | `/admin/promotion-rules*` | PromotionRule | 下单 quote/create order | 灰度 | 否 | 计价链路需持续回归金额不可篡改。 |
-| 通知中心 | `/notifications*` | 通知中心 | `/admin/notification-*`, `/notifications/subscribe` | NotificationTemplate, NotificationTask, NotificationLog, NotificationSubscription | 订阅入口 | 灰度 | 否 | mock 可用，微信订阅/短信未配置时跳过。 |
-| 通知中心 | `/notifications/wechat-subscribe` | OperationalWorkflowsPage | `/admin/wechat-subscribe-config` | NotificationTemplate, AuditLog | 不需要 | 辅助 | 否 | 只读模板映射和开关，不在后台保存 Secret。 |
-| 通知中心 | `/notifications/sms` | OperationalWorkflowsPage | `/admin/sms-config` | NotificationTemplate, AuditLog | 不需要 | 辅助 | 否 | 短信供应商未配置时不发送。 |
+| 营销活动 | `/coupons` | 优惠券 | `/admin/coupons*` | Coupon, CouponRedemption | 领券/我的券/报名下单 | 无 | 是 | 支持自动券码、启停、时效、领取限制、适用会议/票种；quote/create order 后端重算并固化用券快照。 |
+| 营销活动 | `/coupon-campaigns` | 券活动 | `/admin/coupon-campaigns*`, `/coupons/claim`, `/my/coupons` | CouponCampaign, CouponClaim | 领券页/我的券/CMS 券卡入口 | 无 | 是 | 活动批次、领取码、小程序路径、重复领取和库存耗尽拦截已接入，并补单测。 |
+| 营销活动 | `/promotions` | 满减规则 | `/admin/promotion-rules*` | PromotionRule | 下单 quote/create order | 无 | 是 | 满金额/满张数、适用会议/票种、启停、时效和叠加规则已进入后端计价链路。 |
+| 通知中心 | `/notifications*` | 通知中心 | `/admin/notification-*`, `/notifications/subscribe` | NotificationTemplate, NotificationTask, NotificationLog, NotificationSubscription | 订阅入口/小程序管理员通知入口 | 无 | 是 | 模板、任务、日志、预览、测试发送、重试和 SKIPPED 状态已接入；未配置外部 provider 不伪造成功。 |
+| 通知中心 | `/notifications/wechat-subscribe` | 通知中心配置视图 | `/admin/wechat-subscribe-config` | NotificationTemplate, NotificationSubscription, AuditLog | 订阅入口 | 辅助 | 否 | 微信订阅消息必须依赖官方模板 ID 和用户订阅；未配置或未订阅时记录 SKIPPED。 |
+| 通知中心 | `/notifications/sms` | 通知中心配置视图 | `/admin/sms-config` | NotificationTemplate, NotificationLog, AuditLog | 不需要 | 辅助 | 否 | 短信供应商和密钥通过服务器 env 控制；未配置时记录 SKIPPED，不保存明文敏感 key。 |
 | 企微客户群 | `/wecom/config` | WecomPage | `/admin/wecom/config*` | WecomIntegration, WecomAccessTokenCache | 加群入口 | 无 | 是 | Secret 加密存储，前端脱敏展示。 |
 | 企微客户群 | `/wecom/groups` | WecomPage | `/admin/wecom/customer-groups*` | WecomCustomerGroup | 加群入口 | 无 | 是 | 只做企微客户群官方接口。 |
 | 企微客户群 | `/wecom/bindings` | WecomPage | `/admin/wecom/customer-groups/:id/bind-conference` | WecomCustomerGroup | 会议客户群入口 | 无 | 是 | 绑定会议已接入。 |
@@ -101,12 +101,12 @@
 - 未改支付回调验签、解密、金额校验和报名生成主事务。
 - 新增退款、财务、商城、通知、AI、企微相关入口默认走现有鉴权和权限码。
 - 企微 Secret、Token、EncodingAESKey 仍只在后台配置，前端不展示原文。
-- 微信订阅、短信、AI provider、微信退款、微信账单真实下载在无配置时保持跳过或灰度，不伪造外部成功。
+- 微信订阅、短信、AI provider、微信退款、微信账单真实下载在无配置时保持跳过或灰度，不伪造外部成功。通知中心核心任务会区分 SENT、PARTIAL_FAILED、FAILED、SKIPPED。
 - 后台新增只读列表均限制分页或最多 100 条，避免默认大表全扫。
 
 ## 后续测试缺口
 
-- 优惠券、满减组合计价需继续补更多边界测试。
+- 营销活动已补优惠券适用范围、领取库存、重复领取、会员价/优惠券/满减组合和金额篡改回归测试；后续主要关注真实运营数据下的人工验收。
 - 签到扫码、重复核销、撤销核销需补 E2E。
 - 微信退款回调金额校验需补 mock/provider 双路径测试。
 - 商城 SKU 库存扣减、商城支付、发货核销、售后退款联动需补专项测试。

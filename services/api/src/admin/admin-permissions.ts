@@ -13,6 +13,8 @@ export const ADMIN_PERMISSIONS = [
   { code: "notification:view", name: "查看通知中心", group: "通知中心" },
   { code: "notification:write", name: "编辑通知模板和任务", group: "通知中心" },
   { code: "notification:send", name: "发送通知任务", group: "通知中心" },
+  { code: "sms:view", name: "查看短信配置", group: "通知中心" },
+  { code: "sms:write", name: "编辑短信配置", group: "通知中心" },
   { code: "inventory-alert:view", name: "查看库存预警", group: "库存预警" },
   { code: "inventory-alert:write", name: "编辑库存预警", group: "库存预警" },
   { code: "customer-group:view", name: "查看企业微信客户群运营", group: "客户群运营" },

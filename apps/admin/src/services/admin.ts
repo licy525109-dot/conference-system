@@ -15,6 +15,8 @@ import type {
   AdminAppUser,
   Conference,
   ComponentPreset,
+  CouponCampaign,
+  CouponCampaignQr,
   Coupon,
   PageTemplate,
   PageLibraryTemplate,
@@ -32,6 +34,7 @@ import type {
   MallOrder,
   MemberLevel,
   NotificationLog,
+  NotificationChannelConfig,
   NotificationTask,
   NotificationTemplate,
   Permission,
@@ -266,6 +269,30 @@ export function updatePromotionRule(id: string, input: Record<string, unknown>) 
   });
 }
 
+export function listCouponCampaigns(params: { page?: number; pageSize?: number; keyword?: string }) {
+  return apiRequest<ApiList<CouponCampaign>>(`/admin/coupon-campaigns${toQuery(params)}`);
+}
+
+export function createCouponCampaign(input: Record<string, unknown>) {
+  return apiRequest<CouponCampaign>("/admin/coupon-campaigns", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateCouponCampaign(id: string, input: Record<string, unknown>) {
+  return apiRequest<CouponCampaign>(`/admin/coupon-campaigns/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function generateCouponCampaignQr(id: string) {
+  return apiRequest<CouponCampaignQr>(`/admin/coupon-campaigns/${encodeURIComponent(id)}/generate-qr`, {
+    method: "POST"
+  });
+}
+
 export function listNotificationTemplates(params: { page?: number; pageSize?: number; keyword?: string; channel?: string; status?: string }) {
   return apiRequest<ApiList<NotificationTemplate>>(`/admin/notification-templates${toQuery(params)}`);
 }
@@ -280,6 +307,31 @@ export function createNotificationTemplate(input: Record<string, unknown>) {
 export function updateNotificationTemplate(id: string, input: Record<string, unknown>) {
   return apiRequest<NotificationTemplate>(`/admin/notification-templates/${encodeURIComponent(id)}`, {
     method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function previewNotificationTemplate(id: string, input: Record<string, unknown>) {
+  return apiRequest<{ templateId: string; code: string; channel: string; title: string; content: unknown; variables: Record<string, unknown> }>(
+    `/admin/notification-templates/${encodeURIComponent(id)}/preview`,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function testSendNotificationTemplate(id: string, input: Record<string, unknown>) {
+  return apiRequest<{
+    task: NotificationTask;
+    result: {
+      total: number;
+      successCount: number;
+      failedCount: number;
+      skippedCount: number;
+    };
+  }>(`/admin/notification-templates/${encodeURIComponent(id)}/test-send`, {
+    method: "POST",
     body: JSON.stringify(input)
   });
 }
@@ -309,8 +361,44 @@ export function sendNotificationTaskNow(id: string) {
   });
 }
 
+export function retryNotificationTask(id: string) {
+  return apiRequest<{
+    task: NotificationTask;
+    result: {
+      total: number;
+      successCount: number;
+      failedCount: number;
+      skippedCount: number;
+    };
+  }>(`/admin/notification-tasks/${encodeURIComponent(id)}/retry`, {
+    method: "POST"
+  });
+}
+
 export function listNotificationLogs(params: { page?: number; pageSize?: number; taskId?: string; status?: string }) {
   return apiRequest<ApiList<NotificationLog>>(`/admin/notification-logs${toQuery(params)}`);
+}
+
+export function getWechatSubscribeConfig() {
+  return apiRequest<NotificationChannelConfig>("/admin/wechat-subscribe-config");
+}
+
+export function updateWechatSubscribeConfig(input: Record<string, unknown>) {
+  return apiRequest<NotificationChannelConfig>("/admin/wechat-subscribe-config", {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function getSmsConfig() {
+  return apiRequest<NotificationChannelConfig>("/admin/sms-config");
+}
+
+export function updateSmsConfig(input: Record<string, unknown>) {
+  return apiRequest<NotificationChannelConfig>("/admin/sms-config", {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
 }
 
 export function listAccounts() {
@@ -829,18 +917,6 @@ export function listKnowledgeBases(params: { page?: number; pageSize?: number; k
 
 export function createKnowledgeDocument(conferenceId: string, input: Record<string, unknown>) {
   return apiRequest<Record<string, unknown>>(`/admin/conferences/${encodeURIComponent(conferenceId)}/knowledge-documents`, { method: "POST", body: JSON.stringify(input) });
-}
-
-export function createCouponCampaign(input: Record<string, unknown>) {
-  return apiRequest<Record<string, unknown>>("/admin/coupon-campaigns", { method: "POST", body: JSON.stringify(input) });
-}
-
-export function listCouponCampaigns(params: { page?: number; pageSize?: number; keyword?: string } = {}) {
-  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/coupon-campaigns${toQuery(params)}`);
-}
-
-export function generateCouponCampaignQr(id: string) {
-  return apiRequest<Record<string, unknown>>(`/admin/coupon-campaigns/${encodeURIComponent(id)}/generate-qr`, { method: "POST" });
 }
 
 export function verifyCheckin(input: Record<string, unknown>) {

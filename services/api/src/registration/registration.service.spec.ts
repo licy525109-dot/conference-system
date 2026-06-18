@@ -219,6 +219,23 @@ describe("RegistrationService quote", () => {
     await assert.rejects(() => service.createOrder({ ...validOrderInput(), couponCode: "LIMITED" }, currentUser), BadRequestException);
   });
 
+  it("rejects coupons outside conference, SKU scope, or per-user limits", async () => {
+    const service = createService(
+      createPrismaMock({
+        coupons: [
+          coupon({ id: "coupon-other-conf", code: "OTHERCONF", conferenceId: "other-conf" }),
+          coupon({ id: "coupon-other-sku", code: "OTHERSKU", allowedSkuIds: ["active-sku-b"] }),
+          coupon({ id: "coupon-user-limit", code: "USERLIMIT", perUserLimit: 1 })
+        ],
+        couponRedemptions: [{ couponId: "coupon-user-limit", userId: currentUser.id, status: CouponRedemptionStatus.USED }]
+      })
+    );
+
+    await assert.rejects(() => service.quote({ conferenceId: "published-conf", skuId: "active-sku", quantity: 1, couponCode: "OTHERCONF" }, currentUser), BadRequestException);
+    await assert.rejects(() => service.quote({ conferenceId: "published-conf", skuId: "active-sku", quantity: 1, couponCode: "OTHERSKU" }, currentUser), BadRequestException);
+    await assert.rejects(() => service.quote({ conferenceId: "published-conf", skuId: "active-sku", quantity: 1, couponCode: "USERLIMIT" }, currentUser), BadRequestException);
+  });
+
   it("rejects client-supplied amount fields", async () => {
     const service = createService(createPrismaMock());
 

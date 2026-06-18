@@ -108,6 +108,7 @@ enum NotificationTaskStatus {
   PARTIAL_FAILED
   FAILED
   CANCELLED
+  SKIPPED
 }
 
 enum NotificationLogStatus {

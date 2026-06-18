@@ -421,7 +421,7 @@ async function loadPayments() {
 async function loadCampaigns() {
   const [couponData, campaignData] = await Promise.all([listCoupons({ page: 1, pageSize: 100 }), listCouponCampaigns({ page: 1, pageSize: 100 })]);
   coupons.value = couponData.items;
-  couponCampaigns.value = campaignData.items;
+  couponCampaigns.value = campaignData.items as unknown as Record<string, unknown>[];
 }
 
 async function createCampaign() {

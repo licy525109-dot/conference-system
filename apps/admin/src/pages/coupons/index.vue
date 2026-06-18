@@ -4,11 +4,9 @@
       v-if="!embedded"
       title="优惠券"
       eyebrow="营销活动"
-      badge="灰度能力"
-      badge-tone="warning"
       subtitle="配置固定金额或折扣券；订单创建时后端会重新计算优惠，前端金额仅用于展示。"
     >
-      <AdminFeatureBadge label="营销活动 / 灰度能力" description="不改变 quote、下单和支付金额计算逻辑。" tone="warning" />
+      <AdminFeatureBadge label="后端计价已接入" description="优惠券参与 quote 和 create order；最终金额以后端重新计算和订单快照为准。" tone="success" />
       <template #actions>
         <el-button type="primary" @click="openCreate">新增优惠券</el-button>
       </template>
@@ -32,13 +30,13 @@
         <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
         <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
         <template #empty>
-          <AdminEmptyState title="暂无优惠券" description="优惠券为灰度营销能力，第一版会议报名可先不配置。" action-text="新增优惠券" @action="openCreate" />
+          <AdminEmptyState title="暂无优惠券" description="可创建优惠码、领取限制和适用范围；没有配置时订单按原价或会员价计算。" action-text="新增优惠券" @action="openCreate" />
         </template>
       </el-table>
     </section>
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑优惠券' : '新增优惠券'" width="680px">
       <el-form :model="form" label-width="120px">
-        <el-form-item label="券码"><el-input v-model="form.code" /></el-form-item>
+        <el-form-item label="券码"><el-input v-model="form.code" placeholder="留空后端自动生成" /></el-form-item>
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="类型"><el-select v-model="form.type"><el-option label="固定金额" value="AMOUNT" /><el-option label="百分比" value="PERCENT" /></el-select></el-form-item>
         <el-form-item v-if="form.type === 'AMOUNT'" label="优惠金额(元)"><el-input-number v-model="form.discountAmountYuan" :min="0" :precision="2" /></el-form-item>
@@ -48,6 +46,9 @@
         <el-form-item label="最低张数"><el-input-number v-model="form.minQuantity" :min="0" /></el-form-item>
         <el-form-item label="总次数"><el-input-number v-model="form.totalLimit" :min="0" /></el-form-item>
         <el-form-item label="每人次数"><el-input-number v-model="form.perUserLimit" :min="0" /></el-form-item>
+        <el-form-item label="适用票种 ID"><el-input v-model="form.allowedSkuIdsText" placeholder="多个 ID 用英文逗号分隔，留空表示不限" /></el-form-item>
+        <el-form-item label="开始时间"><el-date-picker v-model="form.startAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" style="width: 100%" /></el-form-item>
+        <el-form-item label="结束时间"><el-date-picker v-model="form.endAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" style="width: 100%" /></el-form-item>
         <el-form-item label="可与满减叠加"><el-switch v-model="form.stackableWithPromotion" /></el-form-item>
         <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
       </el-form>
@@ -84,6 +85,9 @@ const form = reactive({
   minQuantity: 0,
   totalLimit: 0,
   perUserLimit: 0,
+  allowedSkuIdsText: "",
+  startAt: "",
+  endAt: "",
   enabled: true,
   stackableWithPromotion: false
 });
@@ -101,7 +105,7 @@ async function load() {
 }
 
 function openCreate() {
-  Object.assign(form, { id: "", code: "", name: "", type: "AMOUNT", discountAmountYuan: 0, discountPercent: 8500, maxDiscountYuan: 0, minAmountYuan: 0, minQuantity: 0, totalLimit: 0, perUserLimit: 0, enabled: true, stackableWithPromotion: false });
+  Object.assign(form, { id: "", code: "", name: "", type: "AMOUNT", discountAmountYuan: 0, discountPercent: 8500, maxDiscountYuan: 0, minAmountYuan: 0, minQuantity: 0, totalLimit: 0, perUserLimit: 0, allowedSkuIdsText: "", startAt: "", endAt: "", enabled: true, stackableWithPromotion: false });
   dialogVisible.value = true;
 }
 
@@ -118,6 +122,9 @@ function openEdit(row: Coupon) {
     minQuantity: row.minQuantity ?? 0,
     totalLimit: row.totalLimit ?? 0,
     perUserLimit: row.perUserLimit ?? 0,
+    allowedSkuIdsText: row.allowedSkuIds.join(","),
+    startAt: row.startAt ?? "",
+    endAt: row.endAt ?? "",
     enabled: row.enabled,
     stackableWithPromotion: row.stackableWithPromotion
   });
@@ -126,7 +133,7 @@ function openEdit(row: Coupon) {
 
 async function save() {
   const payload = {
-    code: form.code,
+    ...(form.code.trim() ? { code: form.code.trim() } : {}),
     name: form.name,
     type: form.type,
     discountAmountCent: form.type === "AMOUNT" ? yuanToCent(form.discountAmountYuan) : null,
@@ -136,6 +143,9 @@ async function save() {
     minQuantity: form.minQuantity > 0 ? form.minQuantity : null,
     totalLimit: form.totalLimit > 0 ? form.totalLimit : null,
     perUserLimit: form.perUserLimit > 0 ? form.perUserLimit : null,
+    allowedSkuIds: form.allowedSkuIdsText.split(",").map((item) => item.trim()).filter(Boolean),
+    startAt: form.startAt || null,
+    endAt: form.endAt || null,
     enabled: form.enabled,
     stackableWithPromotion: form.stackableWithPromotion,
     conferenceId: props.conferenceId ?? null

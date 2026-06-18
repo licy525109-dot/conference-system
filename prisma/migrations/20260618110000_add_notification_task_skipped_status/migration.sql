@@ -1,0 +1,1 @@
+ALTER TYPE "NotificationTaskStatus" ADD VALUE IF NOT EXISTS 'SKIPPED';

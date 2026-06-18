@@ -7,7 +7,7 @@ const ADMIN_PROFILE_STORAGE_KEY = "conference_mobile_admin_profile";
 
 export type NotificationChannelType = "MOCK" | "WECHAT_SUBSCRIBE" | "SMS";
 export type NotificationTemplateStatus = "DRAFT" | "ACTIVE" | "DISABLED";
-export type NotificationTaskStatus = "DRAFT" | "PENDING" | "SENDING" | "SENT" | "PARTIAL_FAILED" | "FAILED" | "CANCELLED";
+export type NotificationTaskStatus = "DRAFT" | "PENDING" | "SENDING" | "SENT" | "PARTIAL_FAILED" | "FAILED" | "CANCELLED" | "SKIPPED";
 export type NotificationLogStatus = "PENDING" | "SUCCESS" | "FAILED" | "SKIPPED";
 
 export interface MobileAdminUser {
