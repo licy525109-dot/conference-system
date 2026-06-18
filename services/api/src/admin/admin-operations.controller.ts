@@ -15,25 +15,25 @@ export class AdminOperationsController {
   ) {}
 
   @Get("conferences/:id/inventory-alert-rule")
-  @RequireAdminPermissions("inventory-alert:view")
+  @RequireAdminPermissions("inventory:view")
   getInventoryRule(@Param("id") id: string) {
     return this.operations.getInventoryAlertRule(id);
   }
 
   @Patch("conferences/:id/inventory-alert-rule")
-  @RequireAdminPermissions("inventory-alert:write")
+  @RequireAdminPermissions("inventory:write")
   updateInventoryRule(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.operations.updateInventoryAlertRule(id, body, request.currentAdmin!);
   }
 
   @Post("inventory-alerts/scan")
-  @RequireAdminPermissions("inventory-alert:write")
+  @RequireAdminPermissions("inventory:write")
   scanInventory(@Req() request: RequestWithCurrentAdmin) {
     return this.operations.scanInventoryAlerts(request.currentAdmin!);
   }
 
   @Get("inventory-alert-logs")
-  @RequireAdminPermissions("inventory-alert:view")
+  @RequireAdminPermissions("inventory:view")
   inventoryLogs(@Query() query: Record<string, unknown>) {
     return this.operations.listInventoryAlertLogs(query);
   }
@@ -267,31 +267,31 @@ export class AdminOperationsController {
   }
 
   @Post("checkin/verify")
-  @RequireAdminPermissions("registration:write")
+  @RequireAdminPermissions("checkin:write")
   verifyCheckin(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.operations.verifyCheckin(body, request.currentAdmin!);
   }
 
   @Post("checkin/manual")
-  @RequireAdminPermissions("registration:write")
+  @RequireAdminPermissions("checkin:write")
   manualCheckin(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.operations.manualCheckin(body, request.currentAdmin!);
   }
 
   @Post("checkin/:id/revoke")
-  @RequireAdminPermissions("registration:write")
+  @RequireAdminPermissions("checkin:write")
   revokeCheckin(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
     return this.operations.revokeCheckin(id, request.currentAdmin!);
   }
 
   @Get("checkin/logs")
-  @RequireAdminPermissions("registration:view")
+  @RequireAdminPermissions("checkin:view")
   checkinLogs(@Query() query: Record<string, unknown>) {
     return this.operations.listCheckinLogs(query);
   }
 
   @Get("checkin/stats")
-  @RequireAdminPermissions("registration:view")
+  @RequireAdminPermissions("checkin:view")
   checkinStats(@Query() query: Record<string, unknown>) {
     return this.operations.checkinStats(query);
   }
