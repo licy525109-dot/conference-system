@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it } from "node:test";
+import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AuditAction, PaymentProvider, PaymentStatus, RefundStatus } from "@prisma/client";
@@ -7,12 +7,30 @@ import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { AdminMallService } from "../admin/admin-mall.service";
 import { CurrentAdmin } from "../admin/current-admin";
-import { MallPaymentSuccessService } from "./mall-payment-success.service";
+import { MallPaymentCompletionService } from "./mall-payment-completion.service";
 import { MallPaymentService } from "./mall-payment.service";
 
 const now = new Date("2026-06-18T12:00:00.000Z");
 const currentUser: CurrentUser = { id: "user-1", openid: "real-openid-1", nickname: "用户" };
 const currentAdmin: CurrentAdmin = { id: "admin-1", username: "admin", displayName: "管理员", permissions: ["*"] };
+
+beforeEach(() => {
+  resetMallPaymentEnv();
+});
+
+function resetMallPaymentEnv(): void {
+  delete process.env.MALL_PAYMENT_MODE;
+  delete process.env.MALL_MOCK_PAYMENT_ENABLED;
+  delete process.env.WECHAT_PAY_MALL_NOTIFY_URL;
+  delete process.env.MALL_REFUND_MODE;
+  delete process.env.MALL_MOCK_REFUND_ENABLED;
+  delete process.env.MALL_WECHAT_REFUND_ENABLED;
+  delete process.env.WECHAT_PAY_REFUND_ENABLED;
+  delete process.env.WECHAT_PAY_MODE;
+  delete process.env.PAYMENT_MODE;
+  delete process.env.WECHAT_PAY_MOCK;
+  delete process.env.WECHAT_PAY_ENABLED;
+}
 
 describe("MallPaymentService", () => {
   it("creates WeChat prepay with server amount and mall out_trade_no", async () => {
@@ -30,21 +48,22 @@ describe("MallPaymentService", () => {
   });
 
   it("rejects paying another user's mall order", async () => {
-    process.env.WECHAT_PAY_MODE = "mock";
+    process.env.MALL_PAYMENT_MODE = "mock";
     const service = createMallPaymentService(createPrismaMock());
 
     await assert.rejects(() => service.confirmMockPayment("mall-order-other", currentUser), NotFoundException);
   });
 
   it("rejects closed mall orders", async () => {
-    process.env.WECHAT_PAY_MODE = "mock";
+    process.env.MALL_PAYMENT_MODE = "mock";
     const service = createMallPaymentService(createPrismaMock({ orderStatus: "CLOSED" }));
 
     await assert.rejects(() => service.confirmMockPayment("mall-order-1", currentUser), ConflictException);
   });
 
   it("mock pay marks order paid and converts locked stock to sold", async () => {
-    process.env.WECHAT_PAY_MODE = "mock";
+    process.env.MALL_PAYMENT_MODE = "mock";
+    process.env.MALL_MOCK_PAYMENT_ENABLED = "true";
     const prisma = createPrismaMock();
     const service = createMallPaymentService(prisma);
 
@@ -59,13 +78,14 @@ describe("MallPaymentService", () => {
     assert.equal(prisma.inventoryLogs[0]?.action, "PAYMENT_SUCCESS");
     assert.equal(prisma.auditLogs[0]?.action, AuditAction.SYSTEM);
     assert.equal("registration" in prisma, false);
+    assert.equal("payment" in prisma, false);
   });
 
   it("is idempotent for duplicate mall payment success callbacks", async () => {
     const prisma = createPrismaMock({ withWechatPayment: true });
-    const service = new MallPaymentSuccessService(prisma);
+    const service = new MallPaymentCompletionService(prisma);
 
-    await service.processPaymentSuccess({
+    await service.completePayment({
       provider: PaymentProvider.WECHAT,
       outTradeNo: "MALL_SHOP001",
       transactionId: "wx-transaction-1",
@@ -73,7 +93,7 @@ describe("MallPaymentService", () => {
       paidAt: now,
       rawSummary: { id: "notify-1" }
     });
-    await service.processPaymentSuccess({
+    await service.completePayment({
       provider: PaymentProvider.WECHAT,
       outTradeNo: "MALL_SHOP001",
       transactionId: "wx-transaction-1",
@@ -90,11 +110,11 @@ describe("MallPaymentService", () => {
 
   it("rejects amount mismatch without updating mall order or stock", async () => {
     const prisma = createPrismaMock({ withWechatPayment: true });
-    const service = new MallPaymentSuccessService(prisma);
+    const service = new MallPaymentCompletionService(prisma);
 
     await assert.rejects(
       () =>
-        service.processPaymentSuccess({
+        service.completePayment({
           provider: PaymentProvider.WECHAT,
           outTradeNo: "MALL_SHOP001",
           transactionId: "wx-transaction-1",
@@ -109,17 +129,34 @@ describe("MallPaymentService", () => {
   });
 
   it("rejects mock pay when mock mode is disabled", async () => {
-    process.env.WECHAT_PAY_MODE = "real";
+    process.env.MALL_PAYMENT_MODE = "disabled";
     process.env.MALL_MOCK_PAYMENT_ENABLED = "false";
     const service = createMallPaymentService(createPrismaMock());
 
     await assert.rejects(() => service.confirmMockPayment("mall-order-1", currentUser), ForbiddenException);
   });
+
+  it("rejects mall prepay when mall payment mode is disabled", async () => {
+    process.env.MALL_PAYMENT_MODE = "disabled";
+    withWechatPayConfig();
+    process.env.MALL_PAYMENT_MODE = "disabled";
+    const service = createMallPaymentService(createPrismaMock());
+
+    await assert.rejects(() => service.prepayWechat("mall-order-1", currentUser), ForbiddenException);
+  });
+
+  it("rejects mall WeChat prepay when mall notify url is missing", async () => {
+    withWechatPayConfig();
+    delete process.env.WECHAT_PAY_MALL_NOTIFY_URL;
+    const service = createMallPaymentService(createPrismaMock());
+
+    await assert.rejects(() => service.prepayWechat("mall-order-1", currentUser), ForbiddenException);
+  });
 });
 
 describe("AdminMallService mall refunds", () => {
   it("creates a mall refund and completes it in mock refund mode", async () => {
-    process.env.WECHAT_PAY_MODE = "mock";
+    process.env.MALL_REFUND_MODE = "mock";
     const prisma = createPrismaMock({ orderStatus: "REFUNDING", afterSaleStatus: "APPROVED", paidAmountCent: 12000 });
     const service = new AdminMallService(prisma);
 
@@ -133,7 +170,7 @@ describe("AdminMallService mall refunds", () => {
   });
 
   it("is idempotent for duplicate mall refund processing", async () => {
-    process.env.WECHAT_PAY_MODE = "mock";
+    process.env.MALL_REFUND_MODE = "mock";
     const prisma = createPrismaMock({ orderStatus: "REFUNDING", afterSaleStatus: "APPROVED", paidAmountCent: 12000 });
     const service = new AdminMallService(prisma);
 
@@ -145,7 +182,6 @@ describe("AdminMallService mall refunds", () => {
   });
 
   it("does not fake success when WeChat refund is not configured", async () => {
-    process.env.WECHAT_PAY_MODE = "real";
     delete process.env.WECHAT_PAY_REFUND_ENABLED;
     delete process.env.MALL_WECHAT_REFUND_ENABLED;
     const prisma = createPrismaMock({ orderStatus: "REFUNDING", afterSaleStatus: "APPROVED", paidAmountCent: 12000 });
@@ -161,7 +197,7 @@ describe("AdminMallService mall refunds", () => {
   });
 
   it("rejects over-refund records", async () => {
-    process.env.WECHAT_PAY_MODE = "mock";
+    process.env.MALL_REFUND_MODE = "mock";
     const prisma = createPrismaMock({
       orderStatus: "REFUNDING",
       afterSaleStatus: "APPROVED",
@@ -177,6 +213,7 @@ describe("AdminMallService mall refunds", () => {
 function withWechatPayConfig(): void {
   process.env.WECHAT_PAY_MODE = "real";
   process.env.WECHAT_PAY_ENABLED = "true";
+  process.env.MALL_PAYMENT_MODE = "wechat";
   process.env.WECHAT_PAY_APP_ID = "wx-real-app";
   process.env.WECHAT_PAY_MCH_ID = "1900000001";
   process.env.WECHAT_PAY_MCH_SERIAL_NO = "merchant-serial";
@@ -187,8 +224,8 @@ function withWechatPayConfig(): void {
 }
 
 function createMallPaymentService(prisma: PrismaMock & PrismaService) {
-  const paymentSuccess = new MallPaymentSuccessService(prisma);
-  const wechatPayService = {
+  const paymentCompletion = new MallPaymentCompletionService(prisma);
+  const prepayClient = {
     createJsapiPrepay: async (input: { body: Record<string, any> }) => {
       prisma.lastPrepayBody = input.body;
       return "mall-prepay-test";
@@ -207,7 +244,7 @@ function createMallPaymentService(prisma: PrismaMock & PrismaService) {
     verifySignature: () => undefined,
     decryptResource: () => ({})
   };
-  return new MallPaymentService(prisma, paymentSuccess, wechatPayService as any, signer as any, notifyVerifier as any);
+  return new MallPaymentService(prisma, paymentCompletion, prepayClient as any, signer as any, notifyVerifier as any);
 }
 
 function createPrismaMock(options: PrismaMockOptions = {}) {

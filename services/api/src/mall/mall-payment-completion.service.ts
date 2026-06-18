@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { AuditAction, PaymentProvider, PaymentStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 
-export interface MallPaymentSuccessInput {
+export interface MallPaymentCompletionInput {
   provider: PaymentProvider;
   outTradeNo: string;
   transactionId?: string | null;
@@ -12,10 +12,10 @@ export interface MallPaymentSuccessInput {
 }
 
 @Injectable()
-export class MallPaymentSuccessService {
+export class MallPaymentCompletionService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async processPaymentSuccess(input: MallPaymentSuccessInput) {
+  async completePayment(input: MallPaymentCompletionInput) {
     const result = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.mallPayment.findUnique({
         where: { outTradeNo: input.outTradeNo },
@@ -27,7 +27,7 @@ export class MallPaymentSuccessService {
       if (payment.status === PaymentStatus.SUCCESS) {
         await tx.mallPayment.update({
           where: { id: payment.id },
-          data: buildPaymentSuccessData(input)
+          data: buildPaymentCompletionData(input)
         });
         return payment.order;
       }
@@ -36,7 +36,7 @@ export class MallPaymentSuccessService {
 
       await tx.mallPayment.update({
         where: { id: payment.id },
-        data: buildPaymentSuccessData(input)
+        data: buildPaymentCompletionData(input)
       });
 
       const paidOrder = await tx.mallOrder.update({
@@ -82,7 +82,7 @@ export class MallPaymentSuccessService {
   }
 }
 
-function buildPaymentSuccessData(input: MallPaymentSuccessInput): Prisma.MallPaymentUpdateInput {
+function buildPaymentCompletionData(input: MallPaymentCompletionInput): Prisma.MallPaymentUpdateInput {
   return {
     provider: input.provider,
     status: PaymentStatus.SUCCESS,

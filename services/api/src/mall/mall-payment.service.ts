@@ -9,26 +9,27 @@ import {
 import { PaymentProvider, PaymentStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
-import { isWechatPayEnabled, readWechatPayConfig } from "../payments/wechat-pay.config";
+import { readWechatPayConfig } from "../payments/wechat-pay.config";
 import { WechatPayEncryptedResource, WechatPayHeaders, WechatPayNotifyVerifier } from "../payments/wechat-pay.notify-verifier";
-import { WechatPayService, WechatNotifySuccessResponse, WechatPrepayResponse } from "../payments/wechat-pay.service";
+import { WechatPayPrepayClient } from "../payments/wechat-pay.prepay-client";
+import { WechatNotifySuccessResponse, WechatPrepayResponse } from "../payments/wechat-pay.service";
 import { WechatPaySigner } from "../payments/wechat-pay.signer";
-import { isMallMockPaymentEnabled, readMallWechatNotifyUrl } from "./mall-payment.config";
-import { MallPaymentSuccessService } from "./mall-payment-success.service";
+import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled, readMallWechatNotifyUrl } from "./mall-payment.config";
+import { MallPaymentCompletionService } from "./mall-payment-completion.service";
 
 @Injectable()
 export class MallPaymentService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly paymentSuccessService: MallPaymentSuccessService,
-    private readonly wechatPayService: WechatPayService,
+    private readonly paymentCompletionService: MallPaymentCompletionService,
+    private readonly prepayClient: WechatPayPrepayClient,
     private readonly signer: WechatPaySigner,
     private readonly notifyVerifier: WechatPayNotifyVerifier
   ) {}
 
   async prepayWechat(orderId: string, currentUser: CurrentUser | undefined): Promise<WechatPrepayResponse> {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
-    if (!isWechatPayEnabled()) throw new ForbiddenException("Real WeChat Pay is disabled. Use mall mock pay in local development.");
+    if (!isMallWechatPaymentEnabled()) throw new ForbiddenException("Mall WeChat Pay is disabled");
 
     const order = await this.prisma.mallOrder.findFirst({
       where: { id: orderId, userId: currentUser.id },
@@ -60,14 +61,14 @@ export class MallPaymentService {
       }
     });
 
-    const prepayId = await this.wechatPayService.createJsapiPrepay({
+    const prepayId = await this.prepayClient.createJsapiPrepay({
       config,
       body: {
         appid: config.appId,
         mchid: config.mchId,
         description: buildMallDescription(order.items[0]?.productTitle, order.orderNo),
         out_trade_no: outTradeNo,
-        notify_url: readMallWechatNotifyUrl(config.notifyUrl),
+        notify_url: readMallWechatNotifyUrl(),
         amount: {
           total: order.payableAmountCent,
           currency: "CNY"
@@ -113,7 +114,7 @@ export class MallPaymentService {
       }
     });
 
-    return this.paymentSuccessService.processPaymentSuccess({
+    return this.paymentCompletionService.completePayment({
       provider: PaymentProvider.MOCK,
       outTradeNo,
       transactionId: `mock-${order.orderNo}`,
@@ -156,7 +157,7 @@ export class MallPaymentService {
     rawBody: Buffer;
     headers: WechatPayHeaders;
   }): Promise<WechatNotifySuccessResponse> {
-    if (!isWechatPayEnabled()) throw new ForbiddenException("Real WeChat Pay notify is disabled");
+    if (!isMallWechatPaymentEnabled()) throw new ForbiddenException("Mall WeChat Pay notify is disabled");
 
     const notifyContext: WechatNotifyLogContext = { headerSerialSuffix: input.headers.serial.slice(-6) };
     try {
@@ -184,7 +185,7 @@ export class MallPaymentService {
       if (!payment) throw new NotFoundException("Mall payment out_trade_no not found");
       if (transaction.amountTotal !== payment.order.payableAmountCent) throw new ConflictException("WeChat Pay amount does not match mall order payable amount");
 
-      await this.paymentSuccessService.processPaymentSuccess({
+      await this.paymentCompletionService.completePayment({
         provider: PaymentProvider.WECHAT,
         outTradeNo: transaction.outTradeNo,
         transactionId: transaction.transactionId,

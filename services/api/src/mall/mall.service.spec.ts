@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it } from "node:test";
+import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import { AuditAction } from "@prisma/client";
@@ -11,6 +11,10 @@ import { MallService } from "./mall.service";
 
 const currentUser: CurrentUser = { id: "user-1", openid: "openid-1", nickname: "用户" };
 const currentAdmin: CurrentAdmin = { id: "admin-1", username: "admin", displayName: "管理员", permissions: ["*"] };
+
+beforeEach(() => {
+  resetMallPaymentEnv();
+});
 
 describe("MallService createOrder", () => {
   it("rejects client-submitted amount fields", async () => {
@@ -56,6 +60,26 @@ describe("MallService createOrder", () => {
     assert.equal(prisma.inventoryLogs[0].quantity, 2);
   });
 
+  it("keeps mall payment disabled when registration WeChat Pay is enabled but mall mode is unset", async () => {
+    process.env.WECHAT_PAY_MODE = "real";
+    process.env.WECHAT_PAY_ENABLED = "true";
+    process.env.WECHAT_PAY_NOTIFY_URL = "https://example.com/api/payments/wechat/notify";
+    const service = new MallService(createMallPrismaMock());
+
+    const response = await service.createOrder(
+      {
+        items: [{ skuId: "sku-1", quantity: 1 }],
+        receiverName: "张三",
+        receiverPhone: "13800000000",
+        receiverAddress: "上海"
+      },
+      currentUser
+    );
+
+    assert.equal(response.data.status, "PENDING_PAYMENT");
+    assert.equal(response.data.paymentEnabled, false);
+  });
+
   it("rejects insufficient available stock after locked stock is considered", async () => {
     const prisma = createMallPrismaMock({ lockedStock: 4, soldCount: 1, stock: 5 });
     const service = new MallService(prisma);
@@ -98,6 +122,16 @@ describe("AdminMallService order close", () => {
     assert.equal(prisma.auditLogs[0].action, AuditAction.UPDATE);
   });
 });
+
+function resetMallPaymentEnv(): void {
+  delete process.env.MALL_PAYMENT_MODE;
+  delete process.env.MALL_MOCK_PAYMENT_ENABLED;
+  delete process.env.WECHAT_PAY_MALL_NOTIFY_URL;
+  delete process.env.WECHAT_PAY_MODE;
+  delete process.env.PAYMENT_MODE;
+  delete process.env.WECHAT_PAY_MOCK;
+  delete process.env.WECHAT_PAY_ENABLED;
+}
 
 function createMallPrismaMock(options: { stock?: number; lockedStock?: number; soldCount?: number } = {}) {
   const now = new Date("2026-06-18T10:00:00.000Z");

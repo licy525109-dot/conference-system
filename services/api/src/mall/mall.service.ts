@@ -1,9 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
-import { isWechatPayEnabled } from "../payments/wechat-pay.config";
 import { PrismaService } from "../prisma.service";
-import { isMallMockPaymentEnabled } from "./mall-payment.config";
+import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled } from "./mall-payment.config";
 
 const FORBIDDEN_AMOUNT_FIELDS = new Set(["originAmountCent", "discountAmountCent", "payableAmountCent", "paidAmountCent", "amountCent", "totalAmountCent", "priceCent"]);
 
@@ -230,14 +229,14 @@ function formatOrder(item: Prisma.MallOrderGetPayload<{ include: typeof mallOrde
     })),
     payments: item.payments.map(formatPayment),
     refunds: item.refunds.map(formatRefund),
-    paymentEnabled: item.status === "PENDING_PAYMENT" && (isWechatPayEnabled() || isMallMockPaymentEnabled()),
+    paymentEnabled: item.status === "PENDING_PAYMENT" && (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()),
     paymentNotice: buildPaymentNotice(item.status)
   };
 }
 
 function buildPaymentNotice(status: string): string | null {
   if (status !== "PENDING_PAYMENT") return null;
-  if (isWechatPayEnabled()) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
+  if (isMallWechatPaymentEnabled()) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
   if (isMallMockPaymentEnabled()) return "当前为 mock 支付模式，可使用测试支付完成商城订单。";
   return "商城支付未启用，订单保持待支付状态，不会伪造支付成功。";
 }

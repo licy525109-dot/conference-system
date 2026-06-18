@@ -1,8 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
-import { isMallMockPaymentEnabled } from "../mall/mall-payment.config";
-import { isWechatPayEnabled } from "../payments/wechat-pay.config";
+import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled } from "../mall/mall-payment.config";
 import { PrismaService } from "../prisma.service";
 import { RegistrationService } from "../registration/registration.service";
 
@@ -269,7 +268,7 @@ export class CartService {
       orderNo: order.orderNo,
       status: order.status,
       payableAmountCent: order.payableAmountCent,
-      paymentEnabled: isWechatPayEnabled() || isMallMockPaymentEnabled(),
+      paymentEnabled: isMallWechatPaymentEnabled() || isMallMockPaymentEnabled(),
       paymentNotice: buildMallPaymentNotice()
     });
   }
@@ -280,7 +279,7 @@ function ok<T>(data: T) {
 }
 
 function buildMallPaymentNotice(): string {
-  if (isWechatPayEnabled()) return "订单已创建，请前往我的商城订单完成微信支付。";
+  if (isMallWechatPaymentEnabled()) return "订单已创建，请前往我的商城订单完成微信支付。";
   if (isMallMockPaymentEnabled()) return "订单已创建，可前往我的商城订单使用测试支付。";
   return "商城支付未启用，订单保持待支付状态。";
 }
