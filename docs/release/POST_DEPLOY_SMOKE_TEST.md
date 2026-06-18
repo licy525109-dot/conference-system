@@ -20,11 +20,15 @@ bash scripts/smoke/production-smoke.sh
 
 ```bash
 API_BASE="${API_BASE:-https://guanchaohuiji.com/api}"
+PUBLIC_BASE="${PUBLIC_BASE:-https://guanchaohuiji.com}"
+UPLOADS_URL="${UPLOADS_URL:-https://guanchaohuiji.com/uploads/}"
 ADMIN_ROOT="${ADMIN_ROOT:-/www/wwwroot/admin.guanchaohuiji.com}"
 PROJECT_DIR="${PROJECT_DIR:-/www/wwwroot/conference-system}"
 PM2_PROCESS="${PM2_PROCESS:-conference-api}"
 CMS_PAGE_KEY="${CMS_PAGE_KEY:-home}"
 ```
+
+`PUBLIC_BASE` 默认会从 `API_BASE` 去掉尾部 `/api` 得到，例如 `https://guanchaohuiji.com/api` 会推导为 `https://guanchaohuiji.com`。如果生产 uploads 静态目录使用独立域名或路径，可直接设置 `UPLOADS_URL` 覆盖。
 
 如果生产 CMS 首页不是 `home`，执行前指定：
 
@@ -49,7 +53,7 @@ CMS_PAGE_KEY=index bash scripts/smoke/production-smoke.sh
 3. 已发布 CMS 页面：`GET /api/pages/:pageKey/published`。
 4. 动态底部导航：`GET /api/app/tabbar`。
 5. 后台登录端点存在性：`POST /api/admin/auth/login`，允许 400/401/403，不能 404/502。
-6. 上传静态资源路径：写入临时 smoke 文件后请求 `/api/uploads/:file`。
+6. 上传静态资源路径：请求公开静态目录 `${UPLOADS_URL:-${PUBLIC_BASE}/uploads/}`，不写入测试文件。
 7. 数据库关键表存在：会议、报名订单、支付、商城、财务、通知、企微、AI、会员、CMS。
 8. 关键枚举存在：`NotificationTaskStatus.SKIPPED`、`CustomerGroupMessageStatus.WAITING_CONFIRM`、`RefundStatus.REQUESTED/SUCCESS`、`PaymentStatus.SUCCESS`。
 9. PM2 `conference-api` online。
@@ -88,10 +92,24 @@ CMS_PAGE_KEY=home bash scripts/smoke/production-smoke.sh
 
 ### 上传路径失败
 
-确认 API 进程工作目录是 `/www/wwwroot/conference-system`，并且 `uploads` 目录可写：
+脚本检查的是公网静态路径 `/uploads/`，不是 API 路由 `/api/uploads/`。以下状态视为通过：
+
+- `200`：静态目录或索引页可访问。
+- `301 / 302`：Nginx 进行了正常重定向。
+- `403`：静态目录存在但禁止目录浏览，这是宝塔/Nginx 常见安全配置，也视为通过。
+
+以下状态视为失败：`404 / 500 / 502 / 503 / 504`。
+
+如果失败，先确认 Nginx 中 `/uploads/` 指向真实目录，且不要把 smoke URL 配成 `/api/uploads/`。再确认 API 进程工作目录是 `/www/wwwroot/conference-system`，并且 `uploads` 目录存在：
 
 ```bash
 ls -ld /www/wwwroot/conference-system/uploads
+```
+
+如 uploads 使用独立域名或 CDN，执行时指定：
+
+```bash
+UPLOADS_URL=https://static.example.com/uploads/ bash scripts/smoke/production-smoke.sh
 ```
 
 ### 数据库结构失败

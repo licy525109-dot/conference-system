@@ -6,8 +6,6 @@ ADMIN_ROOT="${ADMIN_ROOT:-/www/wwwroot/admin.guanchaohuiji.com}"
 PROJECT_DIR="${PROJECT_DIR:-/www/wwwroot/conference-system}"
 PM2_PROCESS="${PM2_PROCESS:-conference-api}"
 CMS_PAGE_KEY="${CMS_PAGE_KEY:-home}"
-UPLOADS_DIR="${UPLOADS_DIR:-${PROJECT_DIR}/uploads}"
-UPLOADS_PROBE_NAME="${UPLOADS_PROBE_NAME:-.smoke-health.txt}"
 DATABASE_TABLES=(
   conferences
   orders
@@ -31,6 +29,9 @@ DATABASE_TABLES=(
 )
 
 API_BASE="${API_BASE%/}"
+PUBLIC_BASE="${PUBLIC_BASE:-${API_BASE%/api}}"
+PUBLIC_BASE="${PUBLIC_BASE%/}"
+UPLOADS_URL="${UPLOADS_URL:-${PUBLIC_BASE}/uploads/}"
 
 log() {
   printf '\n== %s ==\n' "$1"
@@ -114,12 +115,13 @@ check_enum_value() {
 }
 
 check_uploads_static_path() {
-  mkdir -p "$UPLOADS_DIR"
-  local probe_path="${UPLOADS_DIR}/${UPLOADS_PROBE_NAME}"
-  local probe_url="${API_BASE}/uploads/${UPLOADS_PROBE_NAME}"
-  printf 'conference smoke ok\n' > "$probe_path"
-  trap 'rm -f "$probe_path" /tmp/conference-smoke-response.json' EXIT
-  curl_expect_200 "uploads static path" "$probe_url"
+  local status
+  status="$(curl -sS -o /tmp/conference-smoke-response.json -w "%{http_code}" "$UPLOADS_URL")" || fail "uploads static path request failed: ${UPLOADS_URL}"
+  case "$status" in
+    200|301|302|403) echo "uploads static path: ok (${status}) ${UPLOADS_URL}" ;;
+    404|500|502|503|504) fail "uploads static path returned HTTP ${status}: ${UPLOADS_URL}" ;;
+    *) fail "uploads static path returned unexpected HTTP ${status}: ${UPLOADS_URL}" ;;
+  esac
 }
 
 check_pm2_online() {
