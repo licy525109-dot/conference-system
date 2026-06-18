@@ -26,8 +26,10 @@ import type {
   DashboardTicketSales,
   DashboardTrend,
   FinanceBatch,
+  FinanceInvoice,
   FinanceOverview,
   FinancePayment,
+  FinanceRefund,
   FormField,
   MaterialAsset,
   MaterialCategory,
@@ -46,9 +48,11 @@ import type {
   ProductSku,
   PromotionRule,
   Role,
+  ReconciliationResult,
   Sku,
   TabBarConfig,
   ThemePreset,
+  WechatBill,
   UserMembership
 } from "./types";
 
@@ -719,7 +723,7 @@ export function getFinanceOverview() {
   return apiRequest<FinanceOverview>("/admin/finance/overview");
 }
 
-export function listFinancePayments(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
+export function listFinancePayments(params: { page?: number; pageSize?: number; keyword?: string; status?: string; provider?: string; sourceType?: string; startAt?: string; endAt?: string }) {
   return apiRequest<ApiList<FinancePayment>>(`/admin/finance/payments${toQuery(params)}`);
 }
 
@@ -727,13 +731,14 @@ export function listPaymentExceptions(params: { page?: number; pageSize?: number
   return apiRequest<{ items: Record<string, unknown>[]; total: number }>(`/admin/payment-exceptions${toQuery(params)}`);
 }
 
-export function listFinanceBatches() {
-  return apiRequest<{ items: FinanceBatch[] }>("/admin/finance/reconciliation-batches");
+export function listFinanceBatches(params: { page?: number; pageSize?: number } = {}) {
+  return apiRequest<ApiList<FinanceBatch>>(`/admin/finance/reconciliation-batches${toQuery(params)}`);
 }
 
-export function createFinanceBatch() {
+export function createFinanceBatch(input: Record<string, unknown> = {}) {
   return apiRequest<FinanceBatch>("/admin/finance/reconciliation-batches", {
-    method: "POST"
+    method: "POST",
+    body: JSON.stringify(input)
   });
 }
 
@@ -1076,52 +1081,64 @@ export function getCheckinStats(params: { conferenceId?: string } = {}) {
   return apiRequest<Record<string, unknown>>(`/admin/checkin/stats${toQuery(params)}`);
 }
 
-export function listRefunds(params: { page?: number; pageSize?: number }) {
-  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/refunds${toQuery(params)}`);
+export function listRefunds(params: { page?: number; pageSize?: number; keyword?: string; status?: string; sourceType?: string }) {
+  return apiRequest<ApiList<FinanceRefund>>(`/admin/finance/refunds${toQuery(params)}`);
 }
 
 export function createRefund(input: Record<string, unknown>) {
-  return apiRequest<Record<string, unknown>>("/admin/refunds", { method: "POST", body: JSON.stringify(input) });
+  return apiRequest<FinanceRefund>("/admin/finance/refunds", { method: "POST", body: JSON.stringify(input) });
 }
 
 export function approveRefund(id: string) {
-  return apiRequest<Record<string, unknown>>(`/admin/refunds/${encodeURIComponent(id)}/approve`, { method: "POST" });
+  return apiRequest<FinanceRefund>(`/admin/finance/refunds/${encodeURIComponent(id)}/approve`, { method: "POST" });
 }
 
 export function rejectRefund(id: string, reason: string) {
-  return apiRequest<Record<string, unknown>>(`/admin/refunds/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
+  return apiRequest<FinanceRefund>(`/admin/finance/refunds/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
 }
 
-export function listInvoices(params: { page?: number; pageSize?: number }) {
-  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/invoices${toQuery(params)}`);
+export function listInvoices(params: { page?: number; pageSize?: number; keyword?: string; status?: string; sourceType?: string }) {
+  return apiRequest<ApiList<FinanceInvoice>>(`/admin/finance/invoices${toQuery(params)}`);
 }
 
 export function approveInvoice(id: string) {
-  return apiRequest<Record<string, unknown>>(`/admin/invoices/${encodeURIComponent(id)}/approve`, { method: "POST" });
+  return apiRequest<FinanceInvoice>(`/admin/finance/invoices/${encodeURIComponent(id)}/approve`, { method: "POST" });
 }
 
 export function rejectInvoice(id: string, reason: string) {
-  return apiRequest<Record<string, unknown>>(`/admin/invoices/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
+  return apiRequest<FinanceInvoice>(`/admin/finance/invoices/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
 }
 
-export function markInvoiceIssued(id: string) {
-  return apiRequest<Record<string, unknown>>(`/admin/invoices/${encodeURIComponent(id)}/mark-issued`, { method: "POST" });
+export function markInvoiceIssued(id: string, input: Record<string, unknown> = {}) {
+  return apiRequest<FinanceInvoice>(`/admin/finance/invoices/${encodeURIComponent(id)}/mark-issued`, { method: "POST", body: JSON.stringify(input) });
 }
 
 export function createWechatBill(input: Record<string, unknown>) {
-  return apiRequest<Record<string, unknown>>("/admin/finance/wechat-bills", { method: "POST", body: JSON.stringify(input) });
+  return apiRequest<WechatBill>("/admin/finance/wechat-bills", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function listWechatBills() {
-  return apiRequest<{ items: Record<string, unknown>[] }>("/admin/finance/wechat-bills");
+export function listWechatBills(params: { page?: number; pageSize?: number; status?: string } = {}) {
+  return apiRequest<ApiList<WechatBill>>(`/admin/finance/wechat-bills${toQuery(params)}`);
 }
 
-export function reconcileWechatBill(id: string) {
-  return apiRequest<Record<string, unknown>>(`/admin/finance/wechat-bills/${encodeURIComponent(id)}/reconcile`, { method: "POST" });
+export function importWechatBill(input: Record<string, unknown>) {
+  return apiRequest<WechatBill>("/admin/finance/wechat-bills/import", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function listReconciliationResults(params: { page?: number; pageSize?: number }) {
-  return apiRequest<ApiList<Record<string, unknown>>>(`/admin/finance/reconciliation-results${toQuery(params)}`);
+export function downloadWechatBill(id: string) {
+  return apiRequest<WechatBill>(`/admin/finance/wechat-bills/${encodeURIComponent(id)}/download`, { method: "POST" });
+}
+
+export function reconcileWechatBill(id: string, input: Record<string, unknown> = {}) {
+  return apiRequest<WechatBill>(`/admin/finance/wechat-bills/${encodeURIComponent(id)}/reconcile`, { method: "POST", body: JSON.stringify(input) });
+}
+
+export function listReconciliationResults(params: { page?: number; pageSize?: number; keyword?: string; status?: string; type?: string }) {
+  return apiRequest<ApiList<ReconciliationResult>>(`/admin/finance/reconciliation-results${toQuery(params)}`);
+}
+
+export function markReconciliationReviewed(id: string, remark: string) {
+  return apiRequest<ReconciliationResult>(`/admin/finance/reconciliation-results/${encodeURIComponent(id)}/mark-reviewed`, { method: "POST", body: JSON.stringify({ remark }) });
 }
 
 export function getNotificationChannelConfig(channel: "wechat-subscribe" | "sms") {

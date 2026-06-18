@@ -184,18 +184,40 @@ export class PublicOperationsService {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
     if (!isEnabled("INVOICE_ENABLED")) return ok({ skippedReason: "INVOICE_ENABLED=false" });
     const body = readObject(input);
-    const order = await this.prisma.order.findFirst({ where: { orderNo: readRequiredString(body, "orderNo"), userId: currentUser.id } });
-    if (!order || order.status !== "PAID") throw new ConflictException("仅已支付订单可申请发票");
+    const sourceType = normalizeFinanceSourceType(body.sourceType);
+    const orderNo = readRequiredString(body, "orderNo");
+    const order =
+      sourceType === "MALL"
+        ? await this.prisma.mallOrder.findFirst({ where: { orderNo, userId: currentUser.id }, include: { refunds: true } })
+        : await this.prisma.order.findFirst({ where: { orderNo, userId: currentUser.id }, include: { refunds: true } });
+    if (!order || (sourceType === "MALL" ? !["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "REFUNDED"].includes(order.status) : order.status !== "PAID")) {
+      throw new ConflictException("仅已支付订单可申请发票");
+    }
+    const paidAmountCent = order.paidAmountCent ?? order.payableAmountCent;
+    const existing = await this.prisma.invoiceApplication.findMany({
+      where: {
+        userId: currentUser.id,
+        orderNo,
+        sourceType,
+        status: { in: [InvoiceStatus.REQUESTED, InvoiceStatus.APPROVED, InvoiceStatus.ISSUED] }
+      }
+    });
+    const issuedOrPendingAmountCent = existing.reduce((sum, item) => sum + item.amountCent, 0);
+    if (issuedOrPendingAmountCent >= paidAmountCent) throw new ConflictException("该订单已存在发票申请或已完成开票");
     const item = await this.prisma.invoiceApplication.create({
       data: {
         invoiceNo: generateCode("INV"),
-        orderNo: order.orderNo,
-        orderId: order.id,
+        sourceType,
+        orderNo,
+        orderId: sourceType === "REGISTRATION" ? order.id : null,
         userId: currentUser.id,
         title: readRequiredString(body, "title"),
         taxNo: readNullableString(body.taxNo),
+        invoiceType: readOptionalString(body.invoiceType) ?? "GENERAL",
         email: readNullableString(body.email),
-        amountCent: order.paidAmountCent ?? order.payableAmountCent,
+        phone: readNullableString(body.phone),
+        amountCent: paidAmountCent - issuedOrPendingAmountCent,
+        remark: readNullableString(body.remark),
         status: InvoiceStatus.REQUESTED
       }
     });
@@ -210,12 +232,25 @@ export class PublicOperationsService {
 
   async myRefunds(currentUser: CurrentUser | undefined) {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
-    const items = await this.prisma.refund.findMany({
-      where: { userId: currentUser.id },
-      orderBy: { createdAt: "desc" },
-      take: 100
-    });
-    return ok({ items: items.map(formatDateFields) });
+    const [registrationRefunds, mallRefunds] = await this.prisma.$transaction([
+      this.prisma.refund.findMany({
+        where: { userId: currentUser.id },
+        orderBy: { createdAt: "desc" },
+        take: 100
+      }),
+      this.prisma.mallRefund.findMany({
+        where: { order: { userId: currentUser.id } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        include: { order: { select: { orderNo: true } }, afterSale: true }
+      })
+    ]);
+    const items: Array<Record<string, unknown>> = [
+      ...registrationRefunds.map((item) => ({ ...formatDateFields(item), sourceType: "REGISTRATION", orderNo: item.orderNo })),
+      ...mallRefunds.map((item) => ({ ...formatDateFields(item), sourceType: "MALL", orderNo: item.order.orderNo, afterSaleStatus: item.afterSale?.status ?? null }))
+    ];
+    items.sort((a, b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt)));
+    return ok({ items });
   }
 
   async myMallOrders(currentUser: CurrentUser | undefined) {
@@ -340,6 +375,16 @@ function readRequiredString(body: Record<string, unknown>, key: string): string 
 
 function readNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeFinanceSourceType(value: unknown): "REGISTRATION" | "MALL" {
+  const sourceType = typeof value === "string" && value.trim() ? value.trim().toUpperCase() : "REGISTRATION";
+  if (sourceType === "REGISTRATION" || sourceType === "MALL") return sourceType;
+  throw new BadRequestException("sourceType 必须是 REGISTRATION 或 MALL");
 }
 
 function readMallAfterSaleType(value: unknown): string {

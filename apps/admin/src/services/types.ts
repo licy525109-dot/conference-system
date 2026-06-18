@@ -810,12 +810,15 @@ export interface FinanceOverview {
   cards: {
     totalRevenueCent: number;
     paidAmountCent: number;
+    registrationPaidAmountCent?: number;
+    mallPaidAmountCent?: number;
     discountAmountCent: number;
     refundAmountCent: number;
     netRevenueCent: number;
     paidOrders: number;
     pendingOrders: number;
     registrationCount: number;
+    mallPaidOrders?: number;
   };
   conferences: Array<{
     id: string;
@@ -829,6 +832,7 @@ export interface FinanceOverview {
 
 export interface FinancePayment {
   id: string;
+  sourceType: "REGISTRATION" | "MALL";
   provider: string;
   status: string;
   outTradeNo: string;
@@ -838,7 +842,13 @@ export interface FinancePayment {
   createdAt: string;
   orderNo: string;
   orderStatus: string;
-  conferenceTitle: string;
+  businessTitle: string;
+  conferenceTitle: string | null;
+  userName: string | null;
+  userPhone: string | null;
+  refundStatus: string | null;
+  reconciliationStatus: string;
+  reconciliationType: string | null;
 }
 
 export interface FinanceBatch {
@@ -849,6 +859,86 @@ export interface FinanceBatch {
   differenceCount: number;
   startedAt: string | null;
   finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FinanceRefund {
+  id: string;
+  sourceType: "REGISTRATION" | "MALL";
+  refundNo: string;
+  outRefundNo?: string | null;
+  orderNo: string | null;
+  provider: string | null;
+  providerRefundId: string | null;
+  amountCent: number;
+  status: string;
+  reason: string | null;
+  rejectReason: string | null;
+  failedReason: string | null;
+  requestedAt: string;
+  approvedAt: string | null;
+  processedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  businessTitle?: string | null;
+  userName?: string | null;
+  userPhone?: string | null;
+  afterSaleStatus?: string | null;
+}
+
+export interface FinanceInvoice {
+  id: string;
+  invoiceNo: string;
+  sourceType: "REGISTRATION" | "MALL";
+  orderNo: string;
+  title: string;
+  taxNo: string | null;
+  invoiceType: string;
+  amountCent: number;
+  email: string | null;
+  phone: string | null;
+  status: string;
+  rejectReason: string | null;
+  issuedInvoiceNo: string | null;
+  invoiceLink: string | null;
+  remark: string | null;
+  issuedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  businessTitle?: string | null;
+  userName?: string | null;
+  userPhone?: string | null;
+}
+
+export interface WechatBill {
+  id: string;
+  billDate: string;
+  billType: string;
+  status: string;
+  downloadUrl: string | null;
+  storagePath: string | null;
+  summaryJson: Record<string, unknown> | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  rowCount?: number;
+  skippedReason?: string;
+}
+
+export interface ReconciliationResult {
+  id: string;
+  billId: string | null;
+  billDate?: string | null;
+  billType?: string | null;
+  orderNo: string | null;
+  outTradeNo: string | null;
+  transactionId: string | null;
+  localAmountCent: number | null;
+  remoteAmountCent: number | null;
+  type: string;
+  status: string;
+  detailJson: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 }

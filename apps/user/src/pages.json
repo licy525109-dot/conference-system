@@ -97,6 +97,12 @@
       }
     },
     {
+      "path": "pages/refund/index",
+      "style": {
+        "navigationBarTitleText": "我的退款"
+      }
+    },
+    {
       "path": "pages/custom/index",
       "style": {
         "navigationBarTitleText": "自定义页面"

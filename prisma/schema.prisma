@@ -1851,6 +1851,7 @@ model CheckinLog {
 model Refund {
   id               String           @id @default(cuid())
   refundNo         String           @unique
+  outRefundNo      String?          @unique
   orderNo          String
   orderId          String?
   userId           String?
@@ -1858,6 +1859,7 @@ model Refund {
   status           RefundStatus     @default(REQUESTED)
   reason           String?
   rejectReason     String?
+  failedReason     String?
   provider         PaymentProvider?
   providerRefundId String?
   requestedAt      DateTime         @default(now())
@@ -1879,15 +1881,21 @@ model Refund {
 model InvoiceApplication {
   id           String        @id @default(cuid())
   invoiceNo    String        @unique
+  sourceType    String        @default("REGISTRATION")
   orderNo      String
   orderId      String?
   userId       String?
   title        String
   taxNo        String?
+  invoiceType  String        @default("GENERAL")
   amountCent   Int
   email        String?
+  phone        String?
   status       InvoiceStatus @default(REQUESTED)
   rejectReason String?
+  issuedInvoiceNo String?
+  invoiceLink  String?
+  remark       String?
   issuedAt     DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -1895,6 +1903,7 @@ model InvoiceApplication {
   user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([orderNo])
+  @@index([sourceType])
   @@index([orderId])
   @@index([userId])
   @@index([status])
