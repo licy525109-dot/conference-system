@@ -478,7 +478,7 @@ export class AdminOperationsService {
       create: {
         name: "default",
         enabled: readOptionalBoolean(body.enabled) ?? false,
-        provider: readOptionalString(body.provider) ?? "LOCAL_FALLBACK",
+        provider: normalizeAiProvider(readOptionalString(body.provider) ?? "LOCAL_FALLBACK"),
         baseUrl: readNullableString(body.baseUrl),
         model: readOptionalString(body.model) ?? "local-keyword",
         apiKeyEnc: readSensitive(body.apiKey) ? encryptSecret(readSensitive(body.apiKey)) : null,
@@ -490,7 +490,7 @@ export class AdminOperationsService {
       },
       update: {
         ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {}),
-        ...(typeof body.provider !== "undefined" ? { provider: readRequiredString(body, "provider") } : {}),
+        ...(typeof body.provider !== "undefined" ? { provider: normalizeAiProvider(readRequiredString(body, "provider")) } : {}),
         ...(typeof body.baseUrl !== "undefined" ? { baseUrl: readNullableString(body.baseUrl) } : {}),
         ...(typeof body.model !== "undefined" ? { model: readRequiredString(body, "model") } : {}),
         ...(readSensitive(body.apiKey) ? { apiKeyEnc: encryptSecret(readSensitive(body.apiKey)) } : {}),
@@ -503,6 +503,40 @@ export class AdminOperationsService {
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "AiConfig", updated.id, "Update AI config", { provider: updated.provider, keyConfigured: Boolean(process.env.AI_API_KEY || decryptSecret(updated.apiKeyEnc)) });
     return ok(formatAiConfig(updated));
+  }
+
+  async testAiConfig(input: unknown, admin: CurrentAdmin) {
+    const body = isRecord(input) ? input : {};
+    const current = await this.ensureAiConfig();
+    const provider = normalizeAiProvider(readOptionalString(body.provider) ?? process.env.AI_PROVIDER ?? current.provider ?? "LOCAL_FALLBACK");
+    const model = readOptionalString(body.model) ?? process.env.AI_MODEL ?? current.model ?? "local-keyword";
+    const apiKey = readSensitive(body.apiKey) ?? process.env.AI_API_KEY ?? decryptSecret(current.apiKeyEnc);
+    const baseUrl = normalizeBaseUrl(readNullableString(body.baseUrl) ?? process.env.AI_BASE_URL ?? current.baseUrl ?? defaultAiBaseUrl(provider));
+
+    let result: Record<string, unknown>;
+    if (provider === "LOCAL_FALLBACK") {
+      result = {
+        success: true,
+        provider,
+        model: "local-keyword",
+        source: "LOCAL_FALLBACK",
+        realLlm: false,
+        message: "LOCAL_FALLBACK 为本地关键词检索，不调用外部 LLM。"
+      };
+    } else if (!baseUrl) {
+      result = { success: false, provider, model, realLlm: true, reason: "Base URL 未配置" };
+    } else if (!apiKey) {
+      result = { success: false, provider, model, baseUrl, realLlm: true, reason: "API Key 未配置" };
+    } else {
+      result = await probeAiProvider(baseUrl, apiKey, provider, model);
+    }
+    await this.writeAudit(admin, AuditAction.SYSTEM, "AiConfig", current.id, "Test AI provider connection", {
+      provider,
+      model,
+      success: Boolean(result.success),
+      reason: typeof result.reason === "string" ? result.reason : null
+    });
+    return ok(result);
   }
 
   async listAutoReplyRules() {
@@ -929,10 +963,11 @@ function formatAiConfig(config: Record<string, unknown>) {
   const dbApiKey = decryptSecret(typeof config.apiKeyEnc === "string" ? config.apiKeyEnc : null);
   const envApiKey = process.env.AI_API_KEY;
   const providerFromEnv = process.env.AI_PROVIDER || null;
-  const providerFromDb = typeof config.provider === "string" ? config.provider : "LOCAL_FALLBACK";
+  const providerFromDb = normalizeAiProvider(typeof config.provider === "string" ? config.provider : "LOCAL_FALLBACK");
   const source = providerFromEnv ? "ENV" : providerFromDb && providerFromDb !== "LOCAL_FALLBACK" ? "DB" : "LOCAL_FALLBACK";
   return {
     ...formatDateFields(config),
+    provider: providerFromDb,
     env: {
       aiKbEnabled: isEnabled("AI_KB_ENABLED"),
       providerFromEnv,
@@ -947,6 +982,58 @@ function formatAiConfig(config: Record<string, unknown>) {
     keyPolicy: "AI provider key 可通过后台加密保存或服务器环境变量配置；接口只返回 configured/masked，不返回明文密钥。",
     runtimeNotice: source === "LOCAL_FALLBACK" ? "LOCAL_FALLBACK 为本地关键词检索，不是真实 LLM。" : `${source} 配置会作为 AI provider 运行时来源。`
   };
+}
+
+function normalizeAiProvider(value: string): string {
+  const provider = value.trim().toUpperCase();
+  if (provider === "OPENAI") return "OPENAI_COMPATIBLE";
+  if (["LOCAL_FALLBACK", "DEEPSEEK", "OPENAI_COMPATIBLE", "CUSTOM"].includes(provider)) return provider;
+  throw new BadRequestException("AI provider 只能选择 LOCAL_FALLBACK / DEEPSEEK / OPENAI_COMPATIBLE / CUSTOM");
+}
+
+function defaultAiBaseUrl(provider: string): string | null {
+  return provider === "DEEPSEEK" ? "https://api.deepseek.com/v1" : null;
+}
+
+function normalizeBaseUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return value.replace(/\/+$/, "");
+}
+
+async function probeAiProvider(baseUrl: string, apiKey: string, provider: string, model: string): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${baseUrl}/models`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${apiKey}` },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      return {
+        success: false,
+        provider,
+        model,
+        baseUrl,
+        realLlm: true,
+        status: response.status,
+        reason: `Provider 返回 ${response.status}${text ? `：${text.slice(0, 160)}` : ""}`
+      };
+    }
+    return { success: true, provider, model, baseUrl, realLlm: true, message: "Provider /models 接口可访问，API Key 已通过最小连接检查。" };
+  } catch (error) {
+    return {
+      success: false,
+      provider,
+      model,
+      baseUrl,
+      realLlm: true,
+      reason: error instanceof Error ? error.message : "AI provider 连接失败"
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function summarizeStatuses(statuses: string[]) {
@@ -1069,6 +1156,10 @@ function isEnabled(name: string): boolean {
 function readObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new BadRequestException("请求体格式不正确");
   return value as Record<string, unknown>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readRequiredString(body: Record<string, unknown>, key: string): string {

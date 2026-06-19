@@ -586,6 +586,13 @@ export function disableMaterial(id: string) {
   });
 }
 
+export function hardDeleteMaterial(id: string) {
+  return apiRequest<{ id: string; deleted: boolean; references: { total: number; items: Array<{ type: string; id: string; label: string }> }; file: Record<string, unknown> }>(
+    `/admin/materials/${encodeURIComponent(id)}/hard`,
+    { method: "DELETE" }
+  );
+}
+
 export function listPages() {
   return apiRequest<{ items: PageTemplate[] }>("/admin/pages");
 }
@@ -1132,6 +1139,10 @@ export function getAiConfig() {
 
 export function updateAiConfig(input: Record<string, unknown>) {
   return apiRequest<Record<string, unknown>>("/admin/ai-config", { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function testAiConfig(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/ai-config/test-connection", { method: "POST", body: JSON.stringify(input) });
 }
 
 export function verifyCheckin(input: Record<string, unknown>) {

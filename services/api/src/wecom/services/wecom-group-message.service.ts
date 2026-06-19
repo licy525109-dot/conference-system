@@ -29,6 +29,8 @@ export class WecomGroupMessageService {
 
   async createTask(input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
+    const sendMode = nullableString(body.sendMode) ?? "CUSTOMER_GROUP";
+    if (sendMode !== "CUSTOMER_GROUP") throw new BadRequestException("群机器人直发暂未接入，请使用企业微信客户群群发任务");
     const targetScope = normalizeTargetScope(body.targetScope, body.conferenceId);
     const targetGroupIds = readStringArray(body.targetGroupIds);
     if (targetScope === "SELECTED_GROUPS" && targetGroupIds.length === 0) throw new BadRequestException("请选择至少一个客户群");
@@ -37,7 +39,7 @@ export class WecomGroupMessageService {
       data: {
         name: requiredString(body.name, "任务名称"),
         conferenceId: nullableString(body.conferenceId),
-        contentJson: jsonObject(body.contentJson),
+        contentJson: buildWecomContentJson(body),
         targetScope,
         targetGroupIds: targetGroupIds.length ? (targetGroupIds as Prisma.InputJsonArray) : Prisma.JsonNull,
         status: CustomerGroupMessageStatus.DRAFT,
@@ -124,9 +126,10 @@ export class WecomGroupMessageService {
     const created = await this.createTask(
       {
         name: requiredString(body.name, "任务名称"),
+        sendMode: "CUSTOMER_GROUP",
         targetScope: "SELECTED_GROUPS",
         targetGroupIds,
-        contentJson: jsonObject(body.contentJson)
+        contentJson: buildWecomContentJson(body)
       },
       admin
     );
@@ -232,11 +235,75 @@ function normalizeTargetScope(value: unknown, conferenceId: unknown): string {
   throw new BadRequestException("发送范围必须是 ALL_GROUPS / SELECTED_GROUPS / CONFERENCE_GROUPS");
 }
 
+function buildWecomContentJson(body: Record<string, unknown>): Prisma.InputJsonObject {
+  if (isRecord(body.contentJson) && !hasStructuredMessageFields(body)) return jsonObject(body.contentJson);
+  const messageType = (nullableString(body.messageType) ?? "TEXT").toUpperCase();
+  const content = nullableString(body.textContent) ?? nullableString(body.content) ?? "";
+  const attachments: Array<Record<string, unknown>> = [];
+  if (messageType === "IMAGE") {
+    const url = requiredString(body.imageUrl ?? body.materialUrl, "图片素材");
+    attachments.push({ msgtype: "image", image: { pic_url: url } });
+  } else if (messageType === "FILE") {
+    const url = requiredString(body.fileUrl ?? body.materialUrl, "文件素材");
+    attachments.push({ msgtype: "file", file: { file_url: url, title: nullableString(body.fileName) ?? "会务资料" } });
+  } else if (messageType === "LINK") {
+    attachments.push({
+      msgtype: "link",
+      link: {
+        title: requiredString(body.linkTitle, "链接标题"),
+        desc: nullableString(body.linkDescription) ?? "",
+        url: requiredString(body.linkUrl, "链接 URL"),
+        picurl: nullableString(body.coverUrl) ?? nullableString(body.materialUrl) ?? undefined
+      }
+    });
+  } else if (messageType === "MINIPROGRAM") {
+    attachments.push({
+      msgtype: "miniprogram",
+      miniprogram: {
+        title: requiredString(body.linkTitle, "小程序标题"),
+        appid: requiredString(body.appid, "小程序 appid"),
+        page: requiredString(body.pagePath, "小程序页面路径"),
+        pic_media_id: nullableString(body.mediaId) ?? undefined
+      }
+    });
+  } else if (messageType !== "TEXT") {
+    throw new BadRequestException("消息类型只支持文字 / 图片 / 文件 / 链接 / 小程序");
+  }
+  const text = content || (messageType === "TEXT" ? requiredString(body.textContent ?? body.content, "正文内容") : `${messageType} 消息，请在企业微信中确认后发送。`);
+  return {
+    msgtype: messageType.toLowerCase(),
+    text: { content: text },
+    content: text,
+    attachments: attachments as Prisma.InputJsonArray,
+    allowMemberModifyRange: readOptionalBoolean(body.allowMemberModifyRange) ?? false,
+    remark: nullableString(body.remark)
+  };
+}
+
+function hasStructuredMessageFields(body: Record<string, unknown>): boolean {
+  return ["messageType", "textContent", "content", "imageUrl", "fileUrl", "linkTitle", "linkUrl", "appid", "pagePath", "materialUrl"].some((key) => Object.prototype.hasOwnProperty.call(body, key));
+}
+
+function readOptionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "undefined" || value === null || value === "") return undefined;
+  if (typeof value === "boolean") return value;
+  throw new BadRequestException("Expected boolean");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function formatTask(item: Record<string, any>) {
+  const logs = Array.isArray(item.logs) ? item.logs : [];
+  const targetGroupIds = Array.isArray(item.targetGroupIds) ? item.targetGroupIds : [];
   return {
     ...formatDateFields(item),
     conferenceTitle: item.conference?.title ?? null,
-    logCount: Array.isArray(item.logs) ? item.logs.length : 0,
+    logCount: logs.length,
+    targetGroupCount: logs.length || targetGroupIds.length,
+    sender: logs.find((log: Record<string, unknown>) => typeof log.ownerUserId === "string" && log.ownerUserId)?.ownerUserId ?? null,
+    lastRefreshedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt ?? null,
     troubleshooting:
       item.status === CustomerGroupMessageStatus.WAITING_CONFIRM
         ? "等待群主或成员在企业微信中确认。若没有收到确认，请检查自建应用客户联系权限、应用可见范围、群是否有效、频控和内容合规。"

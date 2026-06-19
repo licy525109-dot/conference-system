@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { extname, join, resolve } from "node:path";
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
@@ -178,12 +178,59 @@ export class AdminMaterialsService {
     return ok(formatAsset(asset));
   }
 
+  async hardDeleteAsset(id: string, admin: CurrentAdmin) {
+    const asset = await this.prisma.materialAsset.findUnique({ where: { id }, select: assetSelect });
+    if (!asset) throw new NotFoundException("Material asset not found");
+    const references = await this.listAssetReferences(asset);
+    if (references.total > 0) {
+      throw new BadRequestException(`素材仍被引用，不能彻底删除：${references.items.map((item) => item.label).slice(0, 8).join("；")}`);
+    }
+    const fileResult = deleteLocalMaterialFile(asset.url);
+    await this.prisma.materialAsset.delete({ where: { id } });
+    await this.writeAudit(admin, AuditAction.DELETE, "MaterialAsset", id, "Hard delete material asset", {
+      usage: asset.usage,
+      url: asset.url,
+      references,
+      file: fileResult
+    });
+    return ok({ id, deleted: true, references, file: fileResult });
+  }
+
   private async countAssetReferences(id: string) {
     const [productCovers, productImages] = await this.prisma.$transaction([
       this.prisma.product.count({ where: { coverMaterialId: id } }),
       this.prisma.productImage.count({ where: { materialId: id } })
     ]);
     return { productCovers, productImages, total: productCovers + productImages };
+  }
+
+  private async listAssetReferences(asset: { id: string; url: string }) {
+    const [productsByMaterial, productImagesByMaterial, productsByUrl, productImagesByUrl, conferences, pageVersions, themes, tabbarItems, memberBenefits, wecomGroups] =
+      await this.prisma.$transaction([
+        this.prisma.product.findMany({ where: { coverMaterialId: asset.id }, select: { id: true, title: true } }),
+        this.prisma.productImage.findMany({ where: { materialId: asset.id }, select: { id: true, product: { select: { title: true } } } }),
+        this.prisma.product.findMany({ where: { coverImageUrl: asset.url }, select: { id: true, title: true } }),
+        this.prisma.productImage.findMany({ where: { url: asset.url }, select: { id: true, product: { select: { title: true } } } }),
+        this.prisma.conference.findMany({ where: { coverImageUrl: asset.url }, select: { id: true, title: true } }),
+        this.prisma.pageVersion.findMany({ select: { id: true, title: true, status: true, components: true, themeJson: true, template: { select: { title: true, pageKey: true } } } }),
+        this.prisma.activeThemeConfig.findMany({ select: { id: true, scope: true, configJson: true } }),
+        this.prisma.tabBarItem.findMany({ where: { OR: [{ iconUrl: asset.url }, { selectedIconUrl: asset.url }] }, select: { id: true, title: true, pageKey: true } }),
+        this.prisma.memberBenefit.findMany({ where: { iconUrl: asset.url }, select: { id: true, title: true } }),
+        this.prisma.wecomCustomerGroup.findMany({ where: { groupQrUrl: asset.url }, select: { id: true, name: true } })
+      ]);
+    const items = [
+      ...productsByMaterial.map((item) => referenceItem("商品封面", item.id, item.title)),
+      ...productImagesByMaterial.map((item) => referenceItem("商品详情图", item.id, item.product?.title)),
+      ...productsByUrl.map((item) => referenceItem("商品封面 URL", item.id, item.title)),
+      ...productImagesByUrl.map((item) => referenceItem("商品详情图 URL", item.id, item.product?.title)),
+      ...conferences.map((item) => referenceItem("会议封面", item.id, item.title)),
+      ...pageVersions.filter((item) => jsonMentionsMaterial(item.components, asset) || jsonMentionsMaterial(item.themeJson, asset)).map((item) => referenceItem("CMS 页面版本", item.id, `${item.template?.title || item.title} / ${item.status}`)),
+      ...themes.filter((item) => jsonMentionsMaterial(item.configJson, asset)).map((item) => referenceItem("主题配置", item.id, item.scope)),
+      ...tabbarItems.map((item) => referenceItem("底部导航图标", item.id, `${item.title} / ${item.pageKey}`)),
+      ...memberBenefits.map((item) => referenceItem("会员权益图标", item.id, item.title)),
+      ...wecomGroups.map((item) => referenceItem("企微群二维码", item.id, item.name))
+    ];
+    return { items, total: items.length };
   }
 
   private async ensureAsset(id: string): Promise<void> {
@@ -282,6 +329,40 @@ function saveMaterialFile(file: UploadedMaterialFile, publicOrigin: string) {
     fileType: file.mimetype ?? inferFileType(fileName),
     sizeBytes: file.size
   };
+}
+
+function deleteLocalMaterialFile(url: string) {
+  const filePath = resolveLocalMaterialPath(url);
+  if (!filePath) return { local: false, deleted: false, missing: false, message: "外部 URL 或非素材上传路径，不删除服务器文件" };
+  if (!existsSync(filePath)) return { local: true, deleted: false, missing: true, path: filePath, message: "服务器文件不存在，已删除数据库记录" };
+  unlinkSync(filePath);
+  return { local: true, deleted: true, missing: false, path: filePath, message: "服务器文件已删除" };
+}
+
+function resolveLocalMaterialPath(url: string): string | null {
+  let pathname = url;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    pathname = url;
+  }
+  const marker = "/uploads/materials/";
+  const index = pathname.indexOf(marker);
+  if (index < 0) return null;
+  const fileName = decodeURIComponent(pathname.slice(index + marker.length)).replace(/^\/+/, "");
+  if (!fileName || fileName.includes("..")) return null;
+  const filePath = resolve(MATERIAL_UPLOAD_DIR, fileName);
+  const root = resolve(MATERIAL_UPLOAD_DIR);
+  return filePath.startsWith(`${root}/`) ? filePath : null;
+}
+
+function jsonMentionsMaterial(value: unknown, asset: { id: string; url: string }): boolean {
+  const text = JSON.stringify(value ?? "");
+  return text.includes(asset.id) || text.includes(asset.url);
+}
+
+function referenceItem(type: string, id: string, name?: string | null) {
+  return { type, id, label: `${type}${name ? `：${name}` : ""}` };
 }
 
 function readAllowedExtension(file: UploadedMaterialFile): string {

@@ -126,9 +126,23 @@
     </section>
 
     <section v-else-if="section === 'tasks'" class="table-panel">
-      <div class="risk-note">企业微信群发任务创建后，通常需要群主或成员在企业微信中确认后才会真正发送。请确认内容准确，避免频繁打扰参会人。</div>
+      <div class="mode-grid">
+        <div class="mode-card">
+          <strong>A. 企业微信客户群群发</strong>
+          <span>官方接口创建群发任务，需要群主/成员在企业微信客户端确认后发送。</span>
+        </div>
+        <div class="mode-card is-disabled">
+          <strong>B. 群机器人/Webhook 直发</strong>
+          <span>暂未接入。只有提前配置群机器人 webhook 的群才可直发，不属于客户群群发接口。</span>
+        </div>
+      </div>
+      <div class="risk-note">WAITING_CONFIRM 不是系统卡住，而是企业微信官方规则要求成员确认。请在企业微信客户端的客户联系 / 群发助手查看待确认任务。</div>
       <div class="task-form">
         <el-input v-model="taskForm.name" placeholder="群发任务名称" />
+        <el-radio-group v-model="taskForm.sendMode">
+          <el-radio-button label="CUSTOMER_GROUP">客户群群发</el-radio-button>
+          <el-radio-button label="GROUP_WEBHOOK" disabled>群机器人直发（暂未接入）</el-radio-button>
+        </el-radio-group>
         <ConferenceSelect v-model="taskForm.conferenceId" placeholder="会议（可选）" />
         <el-radio-group v-model="taskForm.targetScope">
           <el-radio-button label="SELECTED_GROUPS">指定客户群</el-radio-button>
@@ -138,7 +152,27 @@
         <el-select v-if="taskForm.targetScope === 'SELECTED_GROUPS'" v-model="taskForm.targetGroupIds" multiple filterable placeholder="选择客户群" style="width: 100%">
           <el-option v-for="group in groups" :key="group.id" :label="`${group.name || group.chatId} / ${group.ownerName || '未知群主'}`" :value="group.id" />
         </el-select>
-        <el-input v-model="taskForm.contentText" type="textarea" :rows="4" placeholder='{"msgtype":"text","text":{"content":"会议提醒..."}}' />
+        <el-select v-model="taskForm.messageType" placeholder="消息类型">
+          <el-option label="文字" value="TEXT" />
+          <el-option label="图片" value="IMAGE" />
+          <el-option label="文件" value="FILE" />
+          <el-option label="链接" value="LINK" />
+          <el-option label="小程序" value="MINIPROGRAM" />
+        </el-select>
+        <el-input v-model="taskForm.textContent" type="textarea" :rows="3" placeholder="正文内容" />
+        <el-select v-if="['IMAGE', 'FILE'].includes(taskForm.messageType)" v-model="taskForm.materialUrl" filterable clearable placeholder="从素材库选择图片/文件" style="width: 100%">
+          <el-option v-for="asset in materialAssets" :key="asset.id" :label="`${asset.name} / ${asset.usage}`" :value="asset.url" />
+        </el-select>
+        <input v-if="['IMAGE', 'FILE'].includes(taskForm.messageType)" type="file" :accept="taskForm.messageType === 'IMAGE' ? 'image/*' : '*/*'" @change="uploadWecomMaterial" />
+        <el-input v-if="taskForm.messageType === 'LINK'" v-model="taskForm.linkTitle" placeholder="链接标题" />
+        <el-input v-if="taskForm.messageType === 'LINK'" v-model="taskForm.linkDescription" placeholder="链接描述" />
+        <el-input v-if="taskForm.messageType === 'LINK'" v-model="taskForm.linkUrl" placeholder="链接 URL" />
+        <el-input v-if="taskForm.messageType === 'LINK'" v-model="taskForm.coverUrl" placeholder="封面图 URL（可选）" />
+        <el-input v-if="taskForm.messageType === 'MINIPROGRAM'" v-model="taskForm.linkTitle" placeholder="小程序卡片标题" />
+        <el-input v-if="taskForm.messageType === 'MINIPROGRAM'" v-model="taskForm.appid" placeholder="小程序 appid" />
+        <el-input v-if="taskForm.messageType === 'MINIPROGRAM'" v-model="taskForm.pagePath" placeholder="小程序页面路径" />
+        <el-switch v-model="taskForm.allowMemberModifyRange" active-text="允许成员修改发送范围" />
+        <el-input v-model="taskForm.remark" placeholder="备注" />
         <div class="action-row">
           <el-button type="primary" @click="saveTask">创建任务</el-button>
           <el-button @click="sendTestTask">发送测试到指定群</el-button>
@@ -152,10 +186,14 @@
         </el-table-column>
         <el-table-column prop="wecomTaskId" label="企微任务 ID" min-width="200" />
         <el-table-column prop="wecomMsgId" label="企微 msgId" min-width="180" />
+        <el-table-column prop="sender" label="发送人 sender" min-width="150" />
+        <el-table-column prop="targetGroupCount" label="目标群数" width="100" />
+        <el-table-column prop="errorCode" label="错误码" min-width="120" />
         <el-table-column prop="conferenceTitle" label="会议" min-width="160" />
         <el-table-column prop="errorMessage" label="失败/排查" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">{{ row.errorMessage || row.troubleshooting || "-" }}</template>
         </el-table-column>
+        <el-table-column prop="lastRefreshedAt" label="最近刷新" min-width="170" />
         <el-table-column label="操作" width="260">
           <template #default="{ row }">
             <el-button size="small" type="primary" @click="createTask(row.id)">创建企微任务</el-button>
@@ -203,10 +241,12 @@ import { currentRoute, navigateTo } from "../../router";
 import {
   bindWecomCustomerGroupConference,
   checkWecomPermissions,
+  createMaterial,
   createOfficialWecomGroupMessageTask,
   createWecomGroupMessageTask,
   createWecomWelcomeTemplate,
   getWecomConfig,
+  listMaterials,
   listWecomCallbackEvents,
   listWecomCustomerGroups,
   listWecomGroupMessageLogs,
@@ -227,6 +267,7 @@ const tasks = ref<AnyRecord[]>([]);
 const logs = ref<AnyRecord[]>([]);
 const callbackEvents = ref<AnyRecord[]>([]);
 const welcomeTemplates = ref<AnyRecord[]>([]);
+const materialAssets = ref<AnyRecord[]>([]);
 const welcomeNotice = ref("");
 const groupKeyword = ref("");
 const lastResult = ref("");
@@ -251,7 +292,24 @@ const configForm = reactive({
   remark: ""
 });
 const welcomeForm = reactive({ name: "", contentText: "{\"text\":\"欢迎加入会议客户群\",\"agendaUrl\":\"\",\"aiAssistantUrl\":\"\",\"advisorPhone\":\"\"}" });
-const taskForm = reactive({ name: "", conferenceId: "", targetScope: "SELECTED_GROUPS", targetGroupIds: [] as string[], contentText: "{\"msgtype\":\"text\",\"text\":{\"content\":\"会议提醒：请关注最新会务通知。\"}}" });
+const taskForm = reactive({
+  name: "",
+  sendMode: "CUSTOMER_GROUP",
+  conferenceId: "",
+  targetScope: "SELECTED_GROUPS",
+  targetGroupIds: [] as string[],
+  messageType: "TEXT",
+  textContent: "会议提醒：请关注最新会务通知。",
+  materialUrl: "",
+  linkTitle: "",
+  linkDescription: "",
+  linkUrl: "",
+  coverUrl: "",
+  appid: "",
+  pagePath: "",
+  allowMemberModifyRange: false,
+  remark: ""
+});
 const section = computed(() => currentRoute.value.path.split("/").pop() || "config");
 const guideSteps = computed(() =>
   configForm.authMode === "LEGACY_CUSTOMER_CONTACT"
@@ -340,7 +398,12 @@ async function loadWelcome() {
 
 async function loadTasks() {
   if (groups.value.length === 0) await loadGroups();
+  if (materialAssets.value.length === 0) await loadMaterials();
   tasks.value = (await listWecomGroupMessageTasks({ page: 1, pageSize: 50 })).items;
+}
+
+async function loadMaterials() {
+  materialAssets.value = (await listMaterials({ page: 1, pageSize: 100, enabled: true })).items;
 }
 
 async function loadLogs() {
@@ -410,10 +473,11 @@ async function saveWelcome() {
 async function saveTask() {
   await createWecomGroupMessageTask({
     name: taskForm.name,
+    sendMode: taskForm.sendMode,
     conferenceId: taskForm.conferenceId || null,
     targetScope: taskForm.targetScope,
     targetGroupIds: taskForm.targetScope === "SELECTED_GROUPS" ? taskForm.targetGroupIds : [],
-    contentJson: parseJson(taskForm.contentText)
+    ...buildWecomMessagePayload()
   });
   taskForm.name = "";
   await loadTasks();
@@ -429,13 +493,40 @@ async function sendTestTask() {
     await testSendWecomGroupMessageTask({
       name: taskForm.name || "企微客户群测试发送",
       targetGroupIds: taskForm.targetGroupIds,
-      contentJson: parseJson(taskForm.contentText)
+      ...buildWecomMessagePayload()
     }),
     null,
     2
   );
   await loadTasks();
   ElMessage.success("测试任务已提交，请查看任务状态和日志");
+}
+
+async function uploadWecomMaterial(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  const saved = await createMaterial({ name: file.name, usage: taskForm.messageType === "IMAGE" ? "wecom_message_image" : "wecom_message_file", file });
+  taskForm.materialUrl = saved.url;
+  await loadMaterials();
+  ElMessage.success("素材已上传并选择");
+}
+
+function buildWecomMessagePayload() {
+  return {
+    messageType: taskForm.messageType,
+    textContent: taskForm.textContent,
+    materialUrl: taskForm.materialUrl,
+    imageUrl: taskForm.messageType === "IMAGE" ? taskForm.materialUrl : undefined,
+    fileUrl: taskForm.messageType === "FILE" ? taskForm.materialUrl : undefined,
+    linkTitle: taskForm.linkTitle,
+    linkDescription: taskForm.linkDescription,
+    linkUrl: taskForm.linkUrl,
+    coverUrl: taskForm.coverUrl,
+    appid: taskForm.appid,
+    pagePath: taskForm.pagePath,
+    allowMemberModifyRange: taskForm.allowMemberModifyRange,
+    remark: taskForm.remark
+  };
 }
 
 async function createTask(id: string) {
@@ -512,6 +603,32 @@ function statusText(value: string) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mode-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.mode-card.is-disabled {
+  opacity: 0.72;
+}
+
+.mode-card span {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .status-card {

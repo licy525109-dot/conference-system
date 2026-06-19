@@ -91,7 +91,7 @@ export class AdminNotificationsService {
         status: body.status ? readTemplateStatus(body.status) : NotificationTemplateStatus.DRAFT,
         title: readOptionalString(body.title),
         templateKey: readOptionalString(body.templateKey),
-        contentJson: readJsonObject(body.contentJson, "contentJson"),
+        contentJson: buildTemplateContent(body),
         remark: readOptionalString(body.remark),
         createdById: admin.id
       }
@@ -111,7 +111,7 @@ export class AdminNotificationsService {
         ...(typeof body.status !== "undefined" ? { status: readTemplateStatus(body.status) } : {}),
         ...(typeof body.title !== "undefined" ? { title: readNullableString(body.title) } : {}),
         ...(typeof body.templateKey !== "undefined" ? { templateKey: readNullableString(body.templateKey) } : {}),
-        ...(typeof body.contentJson !== "undefined" ? { contentJson: readJsonObject(body.contentJson, "contentJson") } : {}),
+        ...(hasAny(body, ["contentJson", "bodyText", "body", "content", "purpose", "variables"]) ? { contentJson: buildTemplateContent(body) } : {}),
         ...(typeof body.remark !== "undefined" ? { remark: readNullableString(body.remark) } : {})
       }
     });
@@ -161,8 +161,8 @@ export class AdminNotificationsService {
         name: readRequiredString(body, "name"),
         templateId: template.id,
         channel: template.channel,
-        targetType: readOptionalString(body.targetType) ?? "MANUAL",
-        payloadJson: typeof body.payloadJson === "undefined" ? undefined : readJsonObject(body.payloadJson, "payloadJson"),
+        targetType: readOptionalString(body.recipientType) ?? readOptionalString(body.targetType) ?? "MANUAL",
+        payloadJson: buildTaskPayload(body),
         status: body.status ? readTaskStatus(body.status) : NotificationTaskStatus.DRAFT,
         scheduledAt: readOptionalDate(body.scheduledAt),
         createdById: admin.id
@@ -808,6 +808,43 @@ function readJsonObject(value: unknown, field: string): Prisma.InputJsonObject {
   return compactJsonObject(value) as Prisma.InputJsonObject;
 }
 
+function buildTemplateContent(body: Record<string, unknown>): Prisma.InputJsonObject {
+  const base = isRecord(body.contentJson) ? compactJsonObject(body.contentJson) : {};
+  const bodyText = readOptionalString(body.bodyText) ?? readOptionalString(body.body) ?? readOptionalString(body.content);
+  const purpose = readOptionalString(body.purpose);
+  const variables = stringArray(body.variables);
+  const content = compactJsonObject({
+    ...base,
+    ...(purpose ? { purpose } : {}),
+    ...(bodyText ? { body: bodyText, content: bodyText } : {}),
+    ...(variables.length ? { variables } : {})
+  });
+  if (!Object.keys(content).length) throw new BadRequestException("通知模板正文不能为空");
+  return content as Prisma.InputJsonObject;
+}
+
+function buildTaskPayload(body: Record<string, unknown>): Prisma.InputJsonObject {
+  const base = isRecord(body.payloadJson) ? compactJsonObject(body.payloadJson) : {};
+  const recipientType = readOptionalString(body.recipientType) ?? readOptionalString(body.targetType) ?? "MANUAL";
+  const recipients = [
+    ...stringArray(body.recipients),
+    ...splitLines(readOptionalString(body.recipientText) ?? readOptionalString(body.phoneText) ?? readOptionalString(body.manualList))
+  ];
+  const userIds = stringArray(body.userIds);
+  const variables = isRecord(body.variables) ? compactJsonObject(body.variables) : {};
+  const payload = compactJsonObject({
+    ...base,
+    recipientType,
+    targetType: recipientType,
+    conferenceId: readOptionalString(body.conferenceId),
+    range: readOptionalString(body.range)
+  });
+  if (recipients.length) payload.recipients = recipients;
+  if (userIds.length) payload.userIds = userIds;
+  if (Object.keys(variables).length) payload.variables = variables;
+  return payload as Prisma.InputJsonObject;
+}
+
 function readChannel(value: unknown): NotificationChannelType {
   if (typeof value === "string" && Object.values(NotificationChannelType).includes(value as NotificationChannelType)) {
     return value as NotificationChannelType;
@@ -849,6 +886,10 @@ function taskStatusFromResultCounts(total: number, successCount: number, failedC
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function splitLines(value: string | undefined): string[] {
+  return value ? value.split(/[\n,，;；]+/).map((item) => item.trim()).filter(Boolean) : [];
 }
 
 function compactJsonObject(value: Record<string, unknown>): Record<string, unknown> {

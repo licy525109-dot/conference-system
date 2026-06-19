@@ -168,6 +168,43 @@ describe("AdminNotificationsService", () => {
     assert.equal(result.data.task.providerStatus.providerSource, "DB");
     assert.equal(prisma.logs[0]?.errorCode, "ADAPTER_RESERVED");
   });
+
+  it("creates templates and tasks from operator forms without JSON editing", async () => {
+    process.env.NOTIFICATION_CENTER_ENABLED = "true";
+    const prisma = createNotificationPrismaMock();
+    const service = new AdminNotificationsService(prisma);
+
+    const template = await service.createTemplate(
+      {
+        code: "registration_success_form",
+        name: "报名成功通知",
+        channel: "MOCK",
+        status: "ACTIVE",
+        purpose: "REGISTRATION_SUCCESS",
+        title: "报名成功",
+        bodyText: "您好 {{参会人姓名}}，您已报名 {{会议名称}}。",
+        variables: ["{{参会人姓名}}", "{{会议名称}}"]
+      },
+      admin
+    );
+    const task = await service.createTask(
+      {
+        name: "已支付用户提醒",
+        templateId: template.data.id,
+        recipientType: "PAID_USERS",
+        conferenceId: "conference-1",
+        recipientText: "13800000000\n13900000000",
+        status: "PENDING"
+      },
+      admin
+    );
+
+    assert.equal((prisma.templates[0]?.contentJson as Record<string, unknown>).purpose, "REGISTRATION_SUCCESS");
+    assert.match(String((prisma.templates[0]?.contentJson as Record<string, unknown>).body), /会议名称/);
+    assert.equal(prisma.tasks[0]?.targetType, "PAID_USERS");
+    assert.deepEqual((prisma.tasks[0]?.payloadJson as Record<string, unknown>).recipients, ["13800000000", "13900000000"]);
+    assert.equal((task.data.payloadJson as Record<string, unknown>).conferenceId, "conference-1");
+  });
 });
 
 function createNotificationPrismaMock() {

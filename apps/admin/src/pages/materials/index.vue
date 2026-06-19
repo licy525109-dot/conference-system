@@ -56,11 +56,12 @@
         <el-table-column prop="usage" label="使用位置" width="160" />
         <el-table-column prop="url" label="URL" min-width="240" show-overflow-tooltip />
         <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
-        <el-table-column label="操作" width="190">
+        <el-table-column label="操作" width="280">
           <template #default="{ row }">
             <el-button size="small" @click="copyUrl(row.url)">复制 URL</el-button>
             <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" type="warning" :disabled="!row.enabled" @click="disable(row.id)">软删除</el-button>
+            <el-button size="small" type="warning" :disabled="!row.enabled" @click="disable(row.id)">停用</el-button>
+            <el-button size="small" type="danger" @click="hardDelete(row)">彻底删除</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -146,7 +147,7 @@ import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import { materialSpecs, materialSpecText, materialUsageSpecMap, validateMaterialFile } from "../../constants/materialSpecs";
-import { createMaterial, createMaterialCategory, disableMaterial, listMaterialCategories, listMaterials, updateMaterial } from "../../services/admin";
+import { createMaterial, createMaterialCategory, disableMaterial, hardDeleteMaterial, listMaterialCategories, listMaterials, updateMaterial } from "../../services/admin";
 import type { MaterialAsset, MaterialCategory } from "../../services/types";
 
 const categories = ref<MaterialCategory[]>([]);
@@ -336,6 +337,30 @@ async function disable(id: string) {
   await disableMaterial(id);
   await load();
   ElMessage.success("素材已停用");
+}
+
+async function hardDelete(row: MaterialAsset) {
+  try {
+    await ElMessageBox.confirm(
+      `彻底删除会检查 CMS、商品、主题、底部导航、会议封面等引用，并删除 uploads 下实际文件；该操作不可恢复。\n\n素材：${row.name}\nURL：${row.url}`,
+      "确认彻底删除素材",
+      {
+        confirmButtonText: "彻底删除",
+        cancelButtonText: "取消",
+        type: "error"
+      }
+    );
+  } catch {
+    return;
+  }
+  try {
+    const result = await hardDeleteMaterial(row.id);
+    await load();
+    const file = result.file || {};
+    ElMessage.success(`素材已彻底删除；${String(file.message || "文件处理完成")}`);
+  } catch (error) {
+    await showError("无法彻底删除素材", errorMessage(error));
+  }
 }
 
 async function copyUrl(url: string) {

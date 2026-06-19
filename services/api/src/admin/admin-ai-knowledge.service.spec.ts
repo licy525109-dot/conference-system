@@ -100,6 +100,33 @@ describe("AdminOperationsService AI knowledge workflows", () => {
     }
   });
 
+  it("tests LOCAL_FALLBACK as a non-LLM provider", async () => {
+    const { prisma } = createAdminAiPrismaMock();
+    const service = new AdminOperationsService(prisma);
+
+    const response = await service.testAiConfig({ provider: "LOCAL_FALLBACK" }, currentAdmin);
+
+    assert.equal(response.data.success, true);
+    assert.equal(response.data.realLlm, false);
+    assert.match(String(response.data.message), /本地关键词检索/);
+  });
+
+  it("returns a clear AI connection failure when external key is missing", async () => {
+    const restore = withEnv({ AI_API_KEY: undefined, AI_PROVIDER: undefined });
+    const { prisma } = createAdminAiPrismaMock();
+    const service = new AdminOperationsService(prisma);
+    try {
+      const response = await service.testAiConfig({ provider: "DEEPSEEK", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" }, currentAdmin);
+      const payload = JSON.stringify(response.data);
+
+      assert.equal(response.data.success, false);
+      assert.match(String(response.data.reason), /API Key/);
+      assert.equal(payload.includes("sk-"), false);
+    } finally {
+      restore();
+    }
+  });
+
   it("exposes AI knowledge permission codes for RBAC", () => {
     assert.equal(ADMIN_PERMISSION_CODES.includes("ai-kb:view"), true);
     assert.equal(ADMIN_PERMISSION_CODES.includes("ai-kb:write"), true);
