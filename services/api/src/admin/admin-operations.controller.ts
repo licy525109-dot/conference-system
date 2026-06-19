@@ -218,6 +218,12 @@ export class AdminOperationsController {
     return this.operations.updateAiConfig(body, request.currentAdmin!);
   }
 
+  @Post("ai-config/test-connection")
+  @RequireAdminPermissions("ai-kb:write")
+  testAiConfig(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.operations.testAiConfig(body, request.currentAdmin!);
+  }
+
   @Get("auto-reply-rules")
   @RequireAdminPermissions("ai-kb:view")
   autoReplyRules() {

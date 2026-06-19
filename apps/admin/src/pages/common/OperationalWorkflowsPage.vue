@@ -275,7 +275,11 @@ const section = computed(() => {
   return "unknown";
 });
 const statusLabel = computed(() => (currentRoute.value.badge ? `${currentRoute.value.badge}能力` : "已接入真实数据"));
-const statusDescription = computed(() => (currentRoute.value.badge ? "该页面已接入真实接口；是否移除标签以审计表为准。" : "页面、接口和数据链路已接入。"));
+const statusDescription = computed(() => {
+  if (!currentRoute.value.badge) return "页面、接口和数据链路已接入，可按业务流程使用。";
+  if (currentRoute.value.badge === "辅助") return "该入口用于运营核查和人工备注，不会绕过支付、退款或签到主链路。";
+  return "该能力仍需按页面提示完成配置或联调后再开放给一线运营使用。";
+});
 const checkinRegistered = computed(() => toNumber(checkinStats.value.registeredCount));
 const checkinPaid = computed(() => toNumber(checkinStats.value.paidCount));
 const checkinCheckedIn = computed(() => toNumber(checkinStats.value.checkedIn));

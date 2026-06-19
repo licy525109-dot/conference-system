@@ -80,6 +80,28 @@ describe("Admin materials", () => {
     assert.ok(deleteLog);
     assert.deepEqual(deleteLog.metadataJson, { usage: "home_banner", references: { productCovers: 0, productImages: 0, total: 0 } });
   });
+
+  it("blocks hard delete when a material is referenced", async () => {
+    const prisma = createMaterialsPrismaMock({ referenced: true });
+    const service = new AdminMaterialsService(prisma);
+    const created = await service.createAsset({ name: "商品封面", usage: "product_cover", url: "https://example.com/product.png" }, undefined, "https://admin.example.com", currentAdmin);
+
+    await assert.rejects(() => service.hardDeleteAsset(created.data.id, currentAdmin), /素材仍被引用/);
+    assert.equal(prisma.assets.length, 1);
+  });
+
+  it("hard deletes unreferenced material records and tolerates missing local files", async () => {
+    const prisma = createMaterialsPrismaMock();
+    const service = new AdminMaterialsService(prisma);
+    const created = await service.createAsset({ name: "本地素材", usage: "home_banner", url: "https://admin.example.com/uploads/materials/missing.png" }, undefined, "https://admin.example.com", currentAdmin);
+
+    const deleted = await service.hardDeleteAsset(created.data.id, currentAdmin);
+
+    assert.equal(deleted.data.deleted, true);
+    assert.equal((deleted.data.file as { missing?: boolean }).missing, true);
+    assert.equal(prisma.assets.length, 0);
+    assert.equal(prisma.auditLogs.some((log) => log.summary === "Hard delete material asset"), true);
+  });
 });
 
 function createDashboardPrismaMock() {
@@ -150,7 +172,7 @@ function createDashboardPrismaMock() {
   return mock as typeof mock & PrismaService;
 }
 
-function createMaterialsPrismaMock() {
+function createMaterialsPrismaMock(options: { referenced?: boolean } = {}) {
   const auditLogs: AuditLogRecord[] = [];
   const assets: MaterialAssetRecord[] = [];
   const mock = {
@@ -176,13 +198,38 @@ function createMaterialsPrismaMock() {
         return asset;
       },
       findMany: async () => assets,
-      count: async () => assets.length
+      count: async () => assets.length,
+      delete: async (args: { where: { id: string } }) => {
+        const index = assets.findIndex((asset) => asset.id === args.where.id);
+        if (index >= 0) assets.splice(index, 1);
+        return {};
+      }
     },
     product: {
-      count: async () => 0
+      count: async () => (options.referenced ? 1 : 0),
+      findMany: async () => (options.referenced ? [{ id: "product-1", title: "商品" }] : [])
     },
     productImage: {
-      count: async () => 0
+      count: async () => 0,
+      findMany: async () => []
+    },
+    conference: {
+      findMany: async () => []
+    },
+    pageVersion: {
+      findMany: async () => []
+    },
+    activeThemeConfig: {
+      findMany: async () => []
+    },
+    tabBarItem: {
+      findMany: async () => []
+    },
+    memberBenefit: {
+      findMany: async () => []
+    },
+    wecomCustomerGroup: {
+      findMany: async () => []
     },
     auditLog: {
       create: async (args: { data: AuditLogRecord }) => {

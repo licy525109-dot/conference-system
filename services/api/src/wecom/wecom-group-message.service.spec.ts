@@ -44,6 +44,31 @@ describe("WecomGroupMessageService targeted sending", () => {
     assert.equal(tasks[0]?.errorCode, "48002");
     assert.equal(logs[0]?.errorReason, "api forbidden");
   });
+
+  it("creates selected-group tasks from operator message fields without JSON editing", async () => {
+    const { service, tasks, clientCalls } = createService();
+
+    const created = await service.createTask(
+      {
+        name: "链接消息",
+        targetScope: "SELECTED_GROUPS",
+        targetGroupIds: ["group-2"],
+        messageType: "LINK",
+        textContent: "请查看会议资料",
+        linkTitle: "会议资料",
+        linkDescription: "议程和交通信息",
+        linkUrl: "https://example.com/agenda",
+        coverUrl: "https://example.com/cover.png"
+      },
+      admin
+    );
+    await service.createWecomTask(String(created.data.id), admin);
+
+    const content = tasks[0]?.contentJson as any;
+    assert.equal(content.msgtype, "link");
+    assert.equal(content.attachments[0]?.link?.title, "会议资料");
+    assert.deepEqual(clientCalls[0]?.groups.map((item) => item.chatId), ["chat-2"]);
+  });
 });
 
 function createService(options: { enabled?: boolean; apiResult?: { ok: boolean; errcode?: number; errmsg?: string; msgId?: string; raw: Record<string, unknown> } } = {}) {

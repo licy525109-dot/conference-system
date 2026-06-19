@@ -55,6 +55,12 @@ export class AdminMaterialsController {
   disableAsset(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
     return this.materialsService.disableAsset(id, request.currentAdmin!);
   }
+
+  @Delete("materials/:id/hard")
+  @RequireAdminPermissions("material:write")
+  hardDeleteAsset(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.materialsService.hardDeleteAsset(id, request.currentAdmin!);
+  }
 }
 
 function getPublicOrigin(request: { headers?: Record<string, string | string[] | undefined> }): string {

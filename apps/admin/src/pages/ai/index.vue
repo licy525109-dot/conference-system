@@ -141,10 +141,25 @@
     </section>
 
     <section v-else class="table-panel">
-      <div class="panel-heading"><div><h3>AI 配置</h3><p>AI provider key 通过服务器环境变量配置，后台不保存明文密钥。</p></div></div>
+      <div class="panel-heading">
+        <div>
+          <h3>AI 配置</h3>
+          <p>选择 provider 后按提示填写 Base URL、模型和 API Key；LOCAL_FALLBACK 不调用外部 LLM。</p>
+        </div>
+        <el-button :loading="testingConfig" @click="testConfig">测试连接</el-button>
+      </div>
       <el-form :model="configForm" label-position="top" class="config-form">
         <el-form-item><template #label>启用开关<FieldHelp content="关闭后用户端会议助手返回未启用提示。" /></template><el-switch v-model="configForm.enabled" active-text="启用" inactive-text="停用" /></el-form-item>
-        <el-form-item><template #label>AI provider<FieldHelp content="LOCAL_FALLBACK 表示本地关键词检索，不是真实 LLM；外部 provider 可使用后台加密 API Key 或服务器 env。" /></template><el-input v-model="configForm.provider" placeholder="LOCAL_FALLBACK / OPENAI / DEEPSEEK" /></el-form-item>
+        <el-form-item>
+          <template #label>AI provider<FieldHelp content="LOCAL_FALLBACK 表示本地关键词检索，不是真实 LLM；外部 provider 可使用后台加密 API Key 或服务器 env。" /></template>
+          <el-select v-model="configForm.provider" style="width: 100%" @change="applyProviderDefaults">
+            <el-option label="LOCAL_FALLBACK：本地关键词检索" value="LOCAL_FALLBACK" />
+            <el-option label="DEEPSEEK：DeepSeek API" value="DEEPSEEK" />
+            <el-option label="OPENAI_COMPATIBLE：OpenAI 兼容接口" value="OPENAI_COMPATIBLE" />
+            <el-option label="CUSTOM：自定义兼容接口" value="CUSTOM" />
+          </el-select>
+        </el-form-item>
+        <el-alert class="config-source" type="info" :closable="false" :title="providerHelp" />
         <el-form-item><template #label>Base URL<FieldHelp content="外部 provider 的 API baseURL；LOCAL_FALLBACK 可留空。" /></template><el-input v-model="configForm.baseUrl" placeholder="https://api.example.com/v1" /></el-form-item>
         <el-form-item><template #label>模型名称<FieldHelp content="本地降级模式使用 local-keyword；真实 provider 可填服务端实际模型名。" /></template><el-input v-model="configForm.model" placeholder="local-keyword" /></el-form-item>
         <el-form-item><template #label>API Key<FieldHelp content="保存后加密入库，接口只返回 configured/masked，不返回明文。" /></template><el-input v-model="configForm.apiKey" show-password :placeholder="aiKeyPlaceholder" /></el-form-item>
@@ -154,7 +169,8 @@
         <el-form-item><template #label>引用来源<FieldHelp content="开启后回答返回命中文档与摘要。" /></template><el-switch v-model="configForm.citationsEnabled" active-text="启用" inactive-text="停用" /></el-form-item>
         <el-form-item><template #label>问答日志<FieldHelp content="开启后记录问题、答案、命中来源、兜底状态和错误原因。" /></template><el-switch v-model="configForm.questionLogEnabled" active-text="启用" inactive-text="停用" /></el-form-item>
         <el-alert type="warning" :closable="false" :title="configNotice" />
-        <el-alert class="config-source" type="info" :closable="false" :title="`当前来源：${configForm.source || 'LOCAL_FALLBACK'}。${configForm.runtimeNotice || ''}`" />
+        <el-alert class="config-source" type="info" :closable="false" :title="`当前生效来源：${sourceText(configForm.source)}；当前是否真实 LLM：${isRealLlm ? '是' : '否'}。${configForm.runtimeNotice || ''}`" />
+        <pre v-if="testResult" class="test-result">{{ testResult }}</pre>
         <el-form-item><el-button type="primary" :loading="saving" @click="saveConfig">保存 AI 配置</el-button></el-form-item>
       </el-form>
     </section>
@@ -201,6 +217,7 @@ import {
   listKnowledgeBases,
   listKnowledgeDocuments,
   rebuildKnowledgeDocument,
+  testAiConfig,
   updateAiConfig,
   updateAiSuggestion,
   updateConferenceKnowledgeBase,
@@ -211,6 +228,7 @@ import {
 const section = computed(() => currentRoute.value.path.split("/").pop() || "knowledge-bases");
 const loading = ref(false);
 const saving = ref(false);
+const testingConfig = ref(false);
 const conferenceId = ref("");
 const knowledgeBases = ref<Record<string, any>[]>([]);
 const documents = ref<Record<string, any>[]>([]);
@@ -226,11 +244,20 @@ const createForm = reactive({ conferenceId: "", title: "会议知识库" });
 const kbForm = reactive({ id: "", title: "", enabled: false, scopeDescription: "", fallbackText: "当前会议资料中未找到相关信息，请联系会务人员确认。", citationsEnabled: true, loggingEnabled: true });
 const docForm = reactive({ id: "", title: "", sourceType: "TEXT", status: "ACTIVE", contentText: "", fileBase64: "" });
 const configForm = reactive({ enabled: false, provider: "LOCAL_FALLBACK", baseUrl: "", model: "local-keyword", apiKey: "", temperature: 0, maxOutputTokens: 800, fallbackEnabled: true, citationsEnabled: true, questionLogEnabled: true, source: "LOCAL_FALLBACK", runtimeNotice: "", env: {} as Record<string, any>, secret: {} as Record<string, any> });
+const testResult = ref("");
 const configNotice = computed(() => {
   const secret = configForm.secret?.apiKey;
   if (String(configForm.provider || "").toUpperCase() !== "LOCAL_FALLBACK" && !secret?.configured) return "当前 AI provider key 未在服务器环境变量中配置，用户端会显示 provider 未配置提示。";
   return "LOCAL_FALLBACK 为本地关键词检索，不是真实 LLM；未命中当前会议资料时返回兜底，不编造答案。";
 });
+const providerHelp = computed(() => {
+  const provider = String(configForm.provider || "LOCAL_FALLBACK").toUpperCase();
+  if (provider === "DEEPSEEK") return "DEEPSEEK：Base URL 可填 https://api.deepseek.com 或 https://api.deepseek.com/v1；模型示例 deepseek-chat / deepseek-reasoner。";
+  if (provider === "OPENAI_COMPATIBLE") return "OPENAI_COMPATIBLE：Base URL 和模型名称由服务商提供，例如 https://api.example.com/v1。";
+  if (provider === "CUSTOM") return "CUSTOM：用于兼容 OpenAI API 形态的自定义服务，请确认 /models 或 chat 接口可访问。";
+  return "LOCAL_FALLBACK：无需 API Key，只做本地关键词检索，不是真实大模型。";
+});
+const isRealLlm = computed(() => String(configForm.provider || configForm.source || "LOCAL_FALLBACK").toUpperCase() !== "LOCAL_FALLBACK");
 const aiKeyPlaceholder = computed(() => (configForm.secret?.apiKey?.configured ? `已配置：${configForm.secret.apiKey.masked || "******"}；留空不修改` : "未配置，填写后加密保存"));
 const canSaveDocument = computed(() => Boolean(docForm.title && (docForm.sourceType === "PDF" ? docForm.fileBase64 || docForm.contentText : docForm.contentText)));
 
@@ -409,6 +436,35 @@ async function saveConfig() {
   }
 }
 
+async function testConfig() {
+  testingConfig.value = true;
+  try {
+    const result = await testAiConfig({ provider: configForm.provider, baseUrl: configForm.baseUrl, model: configForm.model, apiKey: configForm.apiKey });
+    testResult.value = JSON.stringify(result, null, 2);
+    if (result.success) ElMessage.success("AI 配置测试通过");
+    else ElMessage.warning(String(result.reason || "AI 配置测试失败"));
+  } finally {
+    testingConfig.value = false;
+  }
+}
+
+function applyProviderDefaults() {
+  const provider = String(configForm.provider || "").toUpperCase();
+  if (provider === "LOCAL_FALLBACK") {
+    configForm.baseUrl = "";
+    configForm.model = "local-keyword";
+  } else if (provider === "DEEPSEEK") {
+    configForm.baseUrl ||= "https://api.deepseek.com/v1";
+    if (!configForm.model || configForm.model === "local-keyword") configForm.model = "deepseek-chat";
+  } else if (!configForm.model || configForm.model === "local-keyword") {
+    configForm.model = "gpt-compatible";
+  }
+}
+
+function sourceText(value: unknown) {
+  return ({ DB: "后台配置", ENV: "环境变量", LOCAL_FALLBACK: "LOCAL_FALLBACK" } as Record<string, string>)[String(value || "LOCAL_FALLBACK")] ?? String(value || "LOCAL_FALLBACK");
+}
+
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -491,6 +547,16 @@ function changeLogPage(page: number) {
 
 .config-source {
   margin-bottom: 12px;
+}
+
+.test-result {
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  white-space: pre-wrap;
 }
 
 .inline-form {
