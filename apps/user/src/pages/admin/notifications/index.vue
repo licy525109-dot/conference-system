@@ -18,8 +18,9 @@
         <text class="subtitle">用于工作人员扫描参会人报名凭证二维码完成签到。</text>
         <text class="muted">需要后台管理员账号或具备 checkin:write 权限。</text>
       </view>
-      <button class="ui-button-primary scan-button" :disabled="!admin" @click="goScanCheckin">扫码签到</button>
+      <button class="ui-button-primary scan-button" :disabled="!canScanCheckin" @click="goScanCheckin">扫码签到</button>
       <text v-if="!admin" class="tool-hint">请先绑定后台账号后使用扫码签到。</text>
+      <text v-else-if="!hasCheckinWrite" class="tool-hint">当前后台账号暂无 checkin:write 权限，请联系管理员授权。</text>
     </view>
 
     <view v-if="!admin" class="bind-card ui-card">
@@ -89,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
@@ -119,6 +120,8 @@ const templates = ref<NotificationTemplate[]>([]);
 const tasks = ref<NotificationTask[]>([]);
 const logs = ref<NotificationLog[]>([]);
 const loginForm = reactive({ username: "", password: "" });
+const hasCheckinWrite = computed(() => Boolean(admin.value?.permissions?.includes("*") || admin.value?.permissions?.includes("checkin:write")));
+const canScanCheckin = computed(() => Boolean(admin.value && hasCheckinWrite.value));
 
 onMounted(() => void bootstrap());
 
@@ -198,6 +201,14 @@ function logout() {
 }
 
 function goScanCheckin() {
+  if (!admin.value) {
+    uni.showToast({ title: "请先绑定后台账号", icon: "none" });
+    return;
+  }
+  if (!hasCheckinWrite.value) {
+    uni.showToast({ title: "暂无扫码签到权限", icon: "none" });
+    return;
+  }
   uni.navigateTo({ url: "/pages/checkin/scan" });
 }
 
@@ -210,7 +221,7 @@ function canSend(status: NotificationTaskStatus) {
 }
 
 function channelText(channel: string) {
-  return ({ MOCK: "Mock", WECHAT_SUBSCRIBE: "微信订阅消息", SMS: "短信" } as Record<string, string>)[channel] ?? channel;
+  return ({ MOCK: "Mock 测试", WECHAT_SUBSCRIBE: "微信订阅消息", SMS: "短信" } as Record<string, string>)[channel] ?? channel;
 }
 
 function templateStatusText(status: string) {

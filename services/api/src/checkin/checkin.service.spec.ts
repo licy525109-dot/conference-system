@@ -113,10 +113,12 @@ describe("CheckinService QR scan and admin manual check-in", () => {
 
     await service.selfCheckin(selfPayload({ name: "李四" }), currentUser);
     const stats = await service.statistics({ conferenceId: "conference-1" });
-    const data = stats.data as { checkedIn: number; byMethod: Array<{ count: number }> };
+    const data = stats.data as { checkedIn: number; byMethod: Array<{ count: number }>; checkedInList: Array<{ attendeeName: string }>; uncheckedInList: unknown[] };
 
     assert.equal(data.checkedIn, 1);
     assert.equal(data.byMethod[0]?.count, 1);
+    assert.equal(data.checkedInList[0]?.attendeeName, "李四");
+    assert.equal(data.uncheckedInList.length, 0);
   });
 });
 
@@ -189,7 +191,8 @@ function createPrismaMock(options: {
     confirmedAt: new Date("2026-06-19T08:00:00.000Z"),
     createdAt: new Date("2026-06-19T08:00:00.000Z"),
     updatedAt: new Date("2026-06-19T08:00:00.000Z"),
-    order: { status: options.orderStatus ?? OrderStatus.PAID },
+    order: { status: options.orderStatus ?? OrderStatus.PAID, paidAt: new Date("2026-06-19T08:00:00.000Z") },
+    conference: { title: "大会" },
     attendees: [attendee]
   };
   const checkinLogs: CheckinLogRecord[] = [];
@@ -212,7 +215,7 @@ function createPrismaMock(options: {
         Object.assign(attendee, data);
         return { ...attendee };
       },
-      findMany: async () => [attendee]
+      findMany: async () => [{ ...attendee, sku: { name: "标准票" }, registration }]
     },
     checkinLog: {
       create: async ({ data }: { data: Omit<CheckinLogRecord, "id" | "createdAt"> }) => {

@@ -238,13 +238,23 @@ export class CheckinService {
     const [registeredCount, paidCount, attendees, logs] = await this.prisma.$transaction([
       this.prisma.registration.count({ where: registrationWhere }),
       this.prisma.registration.count({ where: { ...registrationWhere, order: { status: OrderStatus.PAID } } }),
-      this.prisma.registrationAttendee.findMany({ where: attendeeWhere, include: { sku: { select: { name: true } }, registration: { select: { conferenceId: true } } } }),
+      this.prisma.registrationAttendee.findMany({ where: attendeeWhere, include: checkinStatsAttendeeInclude }),
       this.prisma.checkinLog.findMany({ where: conferenceId ? { registration: { conferenceId } } : {}, orderBy: { createdAt: "asc" } })
     ]);
     const checkedIn = attendees.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN).length;
     const pending = attendees.filter((item) => item.checkInStatus === CheckInStatus.PENDING).length;
     const notRequired = attendees.filter((item) => item.checkInStatus === CheckInStatus.NOT_REQUIRED).length;
     const total = attendees.length;
+    const latestSuccessLogByAttendee = new Map<string, { method: string | null; action: CheckinActionType; createdAt: Date }>();
+    for (const log of logs) {
+      if (log.afterStatus === CheckInStatus.CHECKED_IN) {
+        latestSuccessLogByAttendee.set(log.attendeeId, { method: log.method, action: log.action, createdAt: log.createdAt });
+      }
+    }
+    const paidAttendees = attendees.filter((item) => item.registration.order?.status === OrderStatus.PAID);
+    const attendeeRows = paidAttendees.map((item) => formatCheckinAttendeeRow(item, latestSuccessLogByAttendee.get(item.id) ?? null));
+    const checkedInList = attendeeRows.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN);
+    const uncheckedInList = attendeeRows.filter((item) => item.checkInStatus !== CheckInStatus.CHECKED_IN);
 
     return ok({
       registeredCount,
@@ -260,7 +270,10 @@ export class CheckinService {
         checkedIn: rows.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN).length
       })),
       byMethod: aggregateBy(logs.filter((log) => log.afterStatus === CheckInStatus.CHECKED_IN), (log) => log.method ?? actionToMethod(log.action), (rows) => ({ count: rows.length })),
-      byHour: aggregateBy(logs.filter((log) => log.afterStatus === CheckInStatus.CHECKED_IN), (log) => log.createdAt.toISOString().slice(0, 13) + ":00:00.000Z", (rows) => ({ count: rows.length }))
+      byHour: aggregateBy(logs.filter((log) => log.afterStatus === CheckInStatus.CHECKED_IN), (log) => log.createdAt.toISOString().slice(0, 13) + ":00:00.000Z", (rows) => ({ count: rows.length })),
+      checkedInList,
+      uncheckedInList,
+      paidList: attendeeRows
     });
   }
 
@@ -520,6 +533,51 @@ function actionToMethod(action: CheckinActionType) {
   return action;
 }
 
+function formatCheckinAttendeeRow(
+  item: CheckinStatsAttendee,
+  log: { method: string | null; action: CheckinActionType; createdAt: Date } | null
+) {
+  const registrationData = readObject(item.registration.formDataJson);
+  const attendeeData = readObject(item.formDataJson);
+  const method = log ? log.method ?? actionToMethod(log.action) : null;
+  const company = item.company || readValue(attendeeData, "company") || readValue(registrationData, "company");
+  return {
+    attendeeId: item.id,
+    registrationId: item.registrationId,
+    conferenceTitle: item.registration.conference.title,
+    registrationNo: item.registration.registrationNo,
+    attendeeName: item.name || item.registration.attendeeName,
+    phone: item.phone || item.registration.phone || readValue(attendeeData, "phone") || readValue(registrationData, "phone"),
+    company,
+    skuName: item.sku.name,
+    paymentStatus: item.registration.order.status,
+    paymentStatusText: orderStatusText(item.registration.order.status),
+    registrationStatus: item.registration.status,
+    checkInStatus: item.checkInStatus,
+    checkInStatusText: checkInStatusShortText(item.checkInStatus),
+    checkedInAt: item.checkedInAt?.toISOString() ?? null,
+    checkInMethod: method,
+    checkInMethodText: method ? checkinMethodText(method) : "-",
+    checkInLogAt: log?.createdAt.toISOString() ?? null,
+    paidAt: item.registration.order.paidAt?.toISOString() ?? null
+  };
+}
+
+function checkInStatusShortText(status: CheckInStatus) {
+  if (status === CheckInStatus.CHECKED_IN) return "已签到";
+  if (status === CheckInStatus.PENDING) return "未签到";
+  if (status === CheckInStatus.CANCELLED) return "已取消";
+  return "无需核销";
+}
+
+function checkinMethodText(method: string) {
+  return ({ SELF_INPUT: "客户自助", QR_SCAN: "工作人员扫码", ADMIN_MANUAL: "后台应急补签", REVOKE: "撤销核销" } as Record<string, string>)[method] ?? method;
+}
+
+function orderStatusText(status: OrderStatus) {
+  return ({ PENDING: "待支付", PAID: "已支付", CANCELLED: "已取消", CLOSED: "已关闭", REFUNDED: "已退款" } as Record<string, string>)[status] ?? status;
+}
+
 function aggregateBy<T>(rows: T[], keyFn: (row: T) => string, valueFn: (rows: T[]) => Record<string, unknown>) {
   const groups = new Map<string, T[]>();
   for (const row of rows) {
@@ -590,8 +648,25 @@ const registrationCheckinInclude = {
   attendees: { orderBy: { createdAt: "asc" }, include: { sku: { select: { name: true } } } }
 } satisfies Prisma.RegistrationInclude;
 
+const checkinStatsAttendeeInclude = {
+  sku: { select: { name: true } },
+  registration: {
+    select: {
+      conferenceId: true,
+      registrationNo: true,
+      attendeeName: true,
+      phone: true,
+      status: true,
+      formDataJson: true,
+      order: { select: { status: true, paidAt: true } },
+      conference: { select: { title: true } }
+    }
+  }
+} satisfies Prisma.RegistrationAttendeeInclude;
+
 type RegistrationForCheckin = Prisma.RegistrationGetPayload<{ include: typeof registrationCheckinInclude }>;
 type AdminAttendeeForCheckin = Prisma.RegistrationAttendeeGetPayload<{ include: { registration: { include: typeof registrationCheckinInclude } } }>;
+type CheckinStatsAttendee = Prisma.RegistrationAttendeeGetPayload<{ include: typeof checkinStatsAttendeeInclude }>;
 type ConferenceWithFields = Prisma.ConferenceGetPayload<{
   include: {
     formDefinition: {

@@ -14,7 +14,7 @@ import { WechatPayEncryptedResource, WechatPayHeaders, WechatPayNotifyVerifier }
 import { WechatPayPrepayClient } from "../payments/wechat-pay.prepay-client";
 import { WechatNotifySuccessResponse, WechatPrepayResponse } from "../payments/wechat-pay.service";
 import { WechatPaySigner } from "../payments/wechat-pay.signer";
-import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled, readMallWechatNotifyUrl } from "./mall-payment.config";
+import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled, readMallWechatNotifyUrl, type MallPaymentRuntimeConfig } from "./mall-payment.config";
 import { MallPaymentCompletionService } from "./mall-payment-completion.service";
 
 @Injectable()
@@ -29,7 +29,8 @@ export class MallPaymentService {
 
   async prepayWechat(orderId: string, currentUser: CurrentUser | undefined): Promise<WechatPrepayResponse> {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
-    if (!isMallWechatPaymentEnabled()) throw new ForbiddenException("Mall WeChat Pay is disabled");
+    const paymentConfig = await this.getPaymentConfig();
+    if (!isMallWechatPaymentEnabled(paymentConfig)) throw new ForbiddenException("Mall WeChat Pay is disabled");
 
     const order = await this.prisma.mallOrder.findFirst({
       where: { id: orderId, userId: currentUser.id },
@@ -68,7 +69,7 @@ export class MallPaymentService {
         mchid: config.mchId,
         description: buildMallDescription(order.items[0]?.productTitle, order.orderNo),
         out_trade_no: outTradeNo,
-        notify_url: readMallWechatNotifyUrl(),
+        notify_url: readMallWechatNotifyUrl(paymentConfig),
         amount: {
           total: order.payableAmountCent,
           currency: "CNY"
@@ -90,7 +91,8 @@ export class MallPaymentService {
 
   async confirmMockPayment(orderId: string, currentUser: CurrentUser | undefined) {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
-    if (!isMallMockPaymentEnabled()) throw new ForbiddenException("Mall mock payment is disabled");
+    const paymentConfig = await this.getPaymentConfig();
+    if (!isMallMockPaymentEnabled(paymentConfig)) throw new ForbiddenException("Mall mock payment is disabled");
 
     const order = await this.prisma.mallOrder.findFirst({ where: { id: orderId, userId: currentUser.id } });
     if (!order) throw new NotFoundException("商城订单不存在");
@@ -157,7 +159,8 @@ export class MallPaymentService {
     rawBody: Buffer;
     headers: WechatPayHeaders;
   }): Promise<WechatNotifySuccessResponse> {
-    if (!isMallWechatPaymentEnabled()) throw new ForbiddenException("Mall WeChat Pay notify is disabled");
+    const paymentConfig = await this.getPaymentConfig();
+    if (!isMallWechatPaymentEnabled(paymentConfig)) throw new ForbiddenException("Mall WeChat Pay notify is disabled");
 
     const notifyContext: WechatNotifyLogContext = { headerSerialSuffix: input.headers.serial.slice(-6) };
     try {
@@ -203,6 +206,10 @@ export class MallPaymentService {
     }
 
     return { code: "SUCCESS", message: "OK" };
+  }
+
+  private async getPaymentConfig(): Promise<MallPaymentRuntimeConfig | null> {
+    return this.prisma.mallPaymentConfig?.findUnique({ where: { name: "default" } }) ?? null;
   }
 }
 

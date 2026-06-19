@@ -32,13 +32,17 @@ export class WecomConfigService {
         ...(has(body, "corpId") ? { corpId: readNullableString(body.corpId) } : {}),
         ...(has(body, "agentId") ? { agentId: readNullableString(body.agentId) } : {}),
         ...(has(body, "enabled") ? { enabled: readBoolean(body.enabled) } : {}),
+        ...(has(body, "groupRobotEnabled") ? { groupRobotEnabled: readBoolean(body.groupRobotEnabled) } : {}),
+        ...(has(body, "groupRobotName") ? { groupRobotName: readNullableString(body.groupRobotName) } : {}),
         ...(has(body, "remark") ? { remark: readNullableString(body.remark) } : {}),
         ...(has(body, "customerContactCallbackUrl") ? { customerContactCallbackUrl: readNullableString(body.customerContactCallbackUrl) } : {}),
         ...(has(body, "appCallbackUrl") ? { appCallbackUrl: readNullableString(body.appCallbackUrl) } : {}),
         ...(readSensitive(body.customerContactSecret) ? { customerContactSecretEnc: encryptSecret(readSensitive(body.customerContactSecret)) } : {}),
         ...(readSensitive(body.appSecret) ? { appSecretEnc: encryptSecret(readSensitive(body.appSecret)) } : {}),
         ...(readSensitive(body.callbackToken) ? { callbackTokenEnc: encryptSecret(readSensitive(body.callbackToken)) } : {}),
-        ...(readSensitive(body.callbackEncodingAesKey) ? { callbackEncodingAesKeyEnc: encryptSecret(readSensitive(body.callbackEncodingAesKey)) } : {})
+        ...(readSensitive(body.callbackEncodingAesKey) ? { callbackEncodingAesKeyEnc: encryptSecret(readSensitive(body.callbackEncodingAesKey)) } : {}),
+        ...(has(body, "groupRobotWebhookUrl") && !isMaskedSensitive(body.groupRobotWebhookUrl) ? { groupRobotWebhookUrlEnc: encryptNullableSecret(body.groupRobotWebhookUrl) } : {}),
+        ...(has(body, "groupRobotSecret") && !isMaskedSensitive(body.groupRobotSecret) ? { groupRobotSecretEnc: encryptNullableSecret(body.groupRobotSecret) } : {})
       }
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "WecomIntegration", updated.id, "Update WeCom integration config");
@@ -69,6 +73,21 @@ export class WecomConfigService {
     const result = await this.client.checkCustomerContactPermission(token.accessToken);
     const payload = { ...result, effectiveAuthMode: this.tokenService.getEffectiveMode(integration) };
     await this.writeAudit(admin, AuditAction.SYSTEM, "WecomIntegration", integration.id, "Check WeCom customer contact permission", payload);
+    return ok(payload);
+  }
+
+  async testGroupRobot(admin: CurrentAdmin) {
+    const integration = await this.ensureDefaultIntegration();
+    const webhookUrl = decryptSecret(integration.groupRobotWebhookUrlEnc);
+    const secret = decryptSecret(integration.groupRobotSecretEnc);
+    const payload = {
+      ok: Boolean(integration.groupRobotEnabled && webhookUrl),
+      enabled: integration.groupRobotEnabled,
+      webhookConfigured: Boolean(webhookUrl),
+      secretConfigured: Boolean(secret),
+      message: integration.groupRobotEnabled && webhookUrl ? "群机器人配置已就绪，可创建群机器人直发任务。" : "群机器人未启用或未配置 Webhook。"
+    };
+    await this.writeAudit(admin, AuditAction.SYSTEM, "WecomIntegration", integration.id, "Test WeCom group robot config", payload);
     return ok(payload);
   }
 
@@ -119,7 +138,16 @@ export class WecomConfigService {
         customerContactSecret: { configured: Boolean(customerSecret), masked: maskSecret(customerSecret) },
         appSecret: { configured: Boolean(appSecret), masked: maskSecret(appSecret) },
         callbackToken: { configured: Boolean(callbackToken), masked: maskSecret(callbackToken) },
-        callbackEncodingAesKey: { configured: Boolean(aesKey), masked: maskSecret(aesKey) }
+        callbackEncodingAesKey: { configured: Boolean(aesKey), masked: maskSecret(aesKey) },
+        groupRobotWebhookUrl: { configured: Boolean(decryptSecret(integration.groupRobotWebhookUrlEnc)), masked: maskSecret(decryptSecret(integration.groupRobotWebhookUrlEnc)) },
+        groupRobotSecret: { configured: Boolean(decryptSecret(integration.groupRobotSecretEnc)), masked: maskSecret(decryptSecret(integration.groupRobotSecretEnc)) }
+      },
+      groupRobot: {
+        enabled: integration.groupRobotEnabled,
+        name: integration.groupRobotName ?? "",
+        webhookConfigured: Boolean(decryptSecret(integration.groupRobotWebhookUrlEnc)),
+        secretConfigured: Boolean(decryptSecret(integration.groupRobotSecretEnc)),
+        guide: "群机器人适合向指定外部客户群 Webhook 直发。图片和文件会由后端处理为企微机器人支持的素材格式；未配置时任务会 SKIPPED，不会伪造成功。"
       },
       status: {
         enabled: integration.enabled,
@@ -131,6 +159,7 @@ export class WecomConfigService {
         callbackConfigured: Boolean(callbackToken && aesKey),
         callbackVerified: integration.verified,
         accessTokenStatus: token ? (token.expiresAt > new Date() ? "VALID" : "EXPIRED") : "MISSING",
+        groupRobotConfigured: Boolean(integration.groupRobotEnabled && decryptSecret(integration.groupRobotWebhookUrlEnc)),
         lastTokenCheckedAt: integration.lastTokenCheckedAt?.toISOString() ?? null,
         lastGroupSyncedAt: integration.lastGroupSyncedAt?.toISOString() ?? null,
         lastCallbackAt: (integration.lastCallbackAt ?? lastCallback?.createdAt)?.toISOString() ?? null
@@ -191,6 +220,17 @@ function readSensitive(value: unknown): string | null {
   const trimmed = value.trim();
   if (!trimmed || /^\*+$/.test(trimmed)) return null;
   return trimmed;
+}
+
+function encryptNullableSecret(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || /^\*+$/.test(trimmed)) return null;
+  return encryptSecret(trimmed);
+}
+
+function isMaskedSensitive(value: unknown): boolean {
+  return typeof value === "string" && /^\*+$/.test(value.trim());
 }
 
 function readAuthMode(value: unknown): WecomAuthMode | null {

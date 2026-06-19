@@ -307,7 +307,7 @@ function productStatusText(value: string) {
 }
 
 function productTypeText(value: string) {
-  return { PHYSICAL: "实体", VIRTUAL: "虚拟", SERVICE: "服务" }[value] ?? value;
+  return { PHYSICAL: "实物商品", VIRTUAL: "虚拟商品", SERVICE: "服务类商品" }[value] ?? value;
 }
 
 async function openMaterialPicker(target: "cover" | "detail") {

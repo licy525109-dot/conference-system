@@ -51,7 +51,7 @@
           <el-descriptions-item label="支付时间">{{ formatDate(detail.order.paidAt) }}</el-descriptions-item>
         </el-descriptions>
         <el-table class="section-table" :data="detail.order.payments" empty-text="暂无支付流水">
-          <el-table-column prop="provider" label="渠道" width="100" />
+          <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
           <el-table-column label="状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
           <el-table-column prop="outTradeNo" label="商户单号" min-width="180" />
           <el-table-column prop="transactionId" label="微信交易号" min-width="180" />
@@ -178,6 +178,10 @@ async function saveFormValues() {
 
 function goBack() {
   navigateTo("/registrations");
+}
+
+function providerText(value?: string | null) {
+  return value ? ({ MOCK: "Mock 测试", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
 </script>
 

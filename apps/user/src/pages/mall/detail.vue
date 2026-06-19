@@ -1,9 +1,7 @@
 <template>
   <view class="page ui-page" :style="pageStyle">
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
-    <!-- #ifdef MP-WEIXIN -->
-    <view v-if="showBodyVideo" class="mp-video-notice">小程序端背景视频可能受自动播放限制，请以页面内容为准。</view>
-    <!-- #endif -->
+    <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <LoadingState v-if="loading" title="加载商品详情中" description="正在读取商品图片、规格和库存。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回商城" @retry="load" @secondary="goMall" />

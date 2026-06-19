@@ -33,4 +33,10 @@ export class AdminWecomConfigController {
   checkPermissions(@Req() request: RequestWithCurrentAdmin) {
     return this.service.checkCustomerContactPermission(request.currentAdmin!);
   }
+
+  @Post("test-group-robot")
+  @RequireAdminPermissions("wecom:write")
+  testGroupRobot(@Req() request: RequestWithCurrentAdmin) {
+    return this.service.testGroupRobot(request.currentAdmin!);
+  }
 }

@@ -350,7 +350,7 @@ export class AdminOperationsService {
         title: readRequiredString(body, "title"),
         sourceType: prepared.sourceType,
         contentText: prepared.contentText,
-        status: prepared.lastError ? "DISABLED" : normalizeDocumentStatus(readOptionalString(body.status) ?? "ACTIVE"),
+        status: prepared.lastError ? "FAILED" : normalizeDocumentStatus(readOptionalString(body.status) ?? "ACTIVE"),
         chunkCount: chunks.length,
         lastError: prepared.lastError,
         indexedAt: prepared.lastError ? null : new Date(),
@@ -379,7 +379,7 @@ export class AdminOperationsService {
                 chunkCount: chunks.length,
                 indexedAt: prepared.lastError ? null : new Date(),
                 lastError: prepared.lastError,
-                ...(prepared.lastError ? { status: "DISABLED" } : {}),
+                ...(prepared.lastError ? { status: "FAILED" } : {}),
                 chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) }
               }
             : {})
@@ -1054,9 +1054,9 @@ function extractKeywords(text: string): Prisma.InputJsonArray {
 
 function normalizeDocumentStatus(value: string): string {
   const upper = value.trim().toUpperCase();
-  if (["DRAFT", "ACTIVE", "DISABLED"].includes(upper)) return upper;
+  if (["DRAFT", "PROCESSING", "ACTIVE", "FAILED", "DISABLED"].includes(upper)) return upper;
   if (upper === "INDEXED") return "ACTIVE";
-  throw new BadRequestException("文档状态必须是 DRAFT / ACTIVE / DISABLED");
+  throw new BadRequestException("文档状态必须是 DRAFT / PROCESSING / ACTIVE / FAILED / DISABLED");
 }
 
 function normalizeDocumentSourceType(value: string | undefined): string {
@@ -1072,10 +1072,15 @@ function prepareKnowledgeDocumentContent(body: Record<string, unknown>): { sourc
   if (sourceType !== "PDF") {
     return { sourceType, contentText: readRequiredString(body, "contentText"), lastError: null };
   }
+  const pastedText = readOptionalString(body.contentText);
+  if (pastedText && !readOptionalString(body.fileBase64)) {
+    return { sourceType, contentText: pastedText, lastError: null };
+  }
   try {
     return { sourceType, contentText: parsePdfTextFromBase64(readRequiredString(body, "fileBase64")), lastError: null };
   } catch (error) {
-    return { sourceType, contentText: "", lastError: error instanceof Error ? error.message : "PDF 解析失败" };
+    const message = error instanceof Error ? error.message : "PDF 解析失败";
+    return { sourceType, contentText: "", lastError: message.includes("PDF") ? message : `PDF 解析失败：${message}` };
   }
 }
 

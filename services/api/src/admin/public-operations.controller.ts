@@ -47,6 +47,12 @@ export class PublicOperationsController {
     return this.operations.myInvoices(request.currentUser);
   }
 
+  @Get("my/invoiceable-orders")
+  @UseGuards(JwtAuthGuard)
+  myInvoiceableOrders(@Req() request: RequestWithCurrentUser) {
+    return this.operations.myInvoiceableOrders(request.currentUser);
+  }
+
   @Get("my/refunds")
   @UseGuards(JwtAuthGuard)
   myRefunds(@Req() request: RequestWithCurrentUser) {

@@ -355,6 +355,10 @@ model WecomIntegration {
   appSecretEnc               String?
   callbackTokenEnc           String?
   callbackEncodingAesKeyEnc  String?
+  groupRobotEnabled          Boolean                 @default(false)
+  groupRobotWebhookUrlEnc    String?
+  groupRobotSecretEnc        String?
+  groupRobotName             String?
   customerContactCallbackUrl String?
   appCallbackUrl             String?
   enabled                    Boolean                 @default(false)
@@ -1131,6 +1135,21 @@ model MallRefund {
   @@index([status])
   @@index([createdAt])
   @@map("mall_refunds")
+}
+
+model MallPaymentConfig {
+  id               String   @id @default(cuid())
+  name             String   @default("default")
+  mode             String   @default("disabled")
+  notifyUrl        String?
+  allowMockPayment Boolean  @default(false)
+  remark           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([name])
+  @@index([mode])
+  @@map("mall_payment_configs")
 }
 
 model MallInventoryLog {

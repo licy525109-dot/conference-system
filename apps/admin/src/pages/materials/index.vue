@@ -23,9 +23,14 @@
         <el-option label="底部导航图标" value="tabbar_icon" />
         <el-option label="支付结果页" value="payment_result" />
         <el-option label="页面字体" value="page_font" />
+        <el-option label="主题背景视频" value="theme_background_video" />
+        <el-option label="资料下载" value="download_file" />
+        <el-option label="AI 知识库文档" value="ai_document" />
         <el-option label="商品封面" value="product_cover" />
         <el-option label="商品详情图" value="product_detail" />
         <el-option label="企微群二维码" value="wecom_qr" />
+        <el-option label="企微群发图片" value="wecom_message_image" />
+        <el-option label="企微群发文件" value="wecom_message_file" />
       </el-select>
       <el-select v-model="enabledFilter" clearable placeholder="状态" style="width: 130px">
         <el-option label="启用" value="true" />
@@ -82,15 +87,20 @@
             <el-option label="详情头图" value="conference_header" />
             <el-option label="底部导航图标" value="tabbar_icon" />
             <el-option label="页面字体" value="page_font" />
+            <el-option label="主题背景视频" value="theme_background_video" />
+            <el-option label="资料下载" value="download_file" />
+            <el-option label="AI 知识库文档" value="ai_document" />
             <el-option label="商品封面" value="product_cover" />
             <el-option label="商品详情图" value="product_detail" />
             <el-option label="企微群二维码" value="wecom_qr" />
+            <el-option label="企微群发图片" value="wecom_message_image" />
+            <el-option label="企微群发文件" value="wecom_message_file" />
           </el-select>
           <p class="upload-tip">{{ currentUploadSpecText }}</p>
         </el-form-item>
         <el-form-item>
           <template #label>上传文件<MaterialSpecHelp :spec="currentUploadSpec" /></template>
-          <input type="file" accept="image/*,video/mp4,.ttf,.otf,.woff,.woff2" @change="onFileChange" />
+          <input type="file" accept="image/*,video/mp4,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.ttf,.otf,.woff,.woff2" @change="onFileChange" />
         </el-form-item>
         <el-form-item v-if="form.file || uploadProgress > 0" label="上传进度">
           <el-progress :percentage="uploadProgress" />
@@ -115,9 +125,14 @@
             <el-option label="详情头图" value="conference_header" />
             <el-option label="底部导航图标" value="tabbar_icon" />
             <el-option label="页面字体" value="page_font" />
+            <el-option label="主题背景视频" value="theme_background_video" />
+            <el-option label="资料下载" value="download_file" />
+            <el-option label="AI 知识库文档" value="ai_document" />
             <el-option label="商品封面" value="product_cover" />
             <el-option label="商品详情图" value="product_detail" />
             <el-option label="企微群二维码" value="wecom_qr" />
+            <el-option label="企微群发图片" value="wecom_message_image" />
+            <el-option label="企微群发文件" value="wecom_message_file" />
           </el-select>
         </el-form-item>
         <el-form-item label="URL"><el-input v-model="editForm.url" /></el-form-item>

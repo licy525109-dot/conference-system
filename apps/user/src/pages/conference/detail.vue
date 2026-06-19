@@ -1,9 +1,7 @@
 <template>
   <view :class="pageClass" :style="pageStyle">
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
-    <!-- #ifdef MP-WEIXIN -->
-    <view v-if="showBodyVideo" class="mp-video-notice">小程序端背景视频可能受自动播放限制，请以页面内容为准。</view>
-    <!-- #endif -->
+    <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <view class="page-content">
       <LoadingState v-if="loading" title="加载会议详情中" description="正在读取会议、票种和页面内容。" />
@@ -17,7 +15,7 @@
       />
 
       <view v-else-if="conference" class="content">
-        <view class="hero ui-card">
+        <view v-if="isModuleVisible('conferenceInfo')" class="hero ui-card">
           <StatusTag :label="registrationStatus.label" :tone="registrationStatus.tone" />
           <text class="title">{{ conference.title }}</text>
           <text class="summary">{{ conference.summary || "会议报名已开放，请选择合适的报名规格并填写参会信息。" }}</text>
@@ -37,29 +35,29 @@
           </view>
         </view>
 
-        <AiAssistantEntry :conference-id="conference.id" />
+        <AiAssistantEntry v-if="showAssistant" :conference-id="conference.id" />
 
-        <FormSection title="报名规格" description="选择票种后进入报名表单。库存和金额以提交订单时系统计算结果为准。">
+        <FormSection v-if="isModuleVisible('skus')" :title="displaySettings.skusTitle" description="报名规格来自后台票种配置。金额以提交订单时系统计算结果为准。">
           <EmptyState v-if="conference.skus.length === 0" title="暂无可报名规格" description="主办方尚未开放报名票种。" mark="票" />
           <view v-else class="sku-list">
             <view v-for="sku in conference.skus" :key="sku.id" class="sku-card">
               <view class="sku-info">
                 <text class="sku-name">{{ sku.name }}</text>
                 <text class="sku-desc">{{ sku.description || "标准报名规格" }}</text>
-                <view class="stock-row">
+                <view v-if="isModuleVisible('inventory') && stockDisplayMode !== 'HIDDEN'" class="stock-row">
                   <StatusTag :label="stockLabel(sku)" :tone="remainingStock(sku) > 0 ? 'success' : 'neutral'" />
-                  <text class="stock">库存 {{ Math.max(sku.stock - sku.soldCount, 0) }} / {{ sku.stock }}</text>
+                  <text v-if="stockDisplayMode === 'EXACT'" class="stock">库存 {{ Math.max(sku.stock - sku.soldCount, 0) }} / {{ sku.stock }}</text>
                 </view>
               </view>
               <view class="sku-side">
                 <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
-                <button class="ui-button-primary ui-button-compact sku-button" @click="goRegister(sku.id)">报名</button>
+                <button v-if="isModuleVisible('submitOrder')" class="ui-button-primary ui-button-compact sku-button" @click="goRegister(sku.id)">{{ displaySettings.primaryButtonText }}</button>
               </view>
             </view>
           </view>
         </FormSection>
 
-        <FormSection title="会议详情" description="以下内容由主办方维护，报名前请确认参会安排。">
+        <FormSection v-if="isModuleVisible('guide')" :title="displaySettings.guideTitle" description="以下内容由主办方维护，报名前请确认参会安排。">
           <PageRenderer
             v-if="cmsPage"
             :components="cmsPage.version.components"
@@ -75,11 +73,11 @@
     </view>
     <CustomTabbar active-page-key="conference-detail" />
     <FixedBottomActionBar
-      v-if="conference"
+      v-if="conference && isModuleVisible('submitOrder')"
       amount-label="报名费用"
       :amount-value="priceRangeText"
       note="金额以提交订单时系统计算结果为准"
-      primary-text="立即报名"
+      :primary-text="displaySettings.primaryButtonText"
       :primary-disabled="conference.skus.length === 0"
       tabbar-offset
       @primary="goRegisterFirst"
@@ -122,6 +120,9 @@ const pageClass = computed(() => ["page", "ui-page"]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
 const showBodyDynamicBackground = computed(() => theme.value.backgroundMode === "dynamic-gradient" && theme.value.backgroundApplyTo !== "header");
 
+const displaySettings = computed(() => normalizeDetailDisplay(conference.value?.contentJson));
+const stockDisplayMode = computed(() => displaySettings.value.inventoryDisplayMode);
+const showAssistant = computed(() => isModuleVisible("assistant") && displaySettings.value.assistantMode === "ai");
 const contentText = computed(() => toContentText(conference.value?.contentJson) || "会议议程、嘉宾和报名说明请以主办方发布内容为准。");
 const priceRangeText = computed(() => {
   const prices = conference.value?.skus.map((sku) => sku.priceCent).filter(Number.isFinite) ?? [];
@@ -205,7 +206,14 @@ function remainingStock(sku: RegistrationSku): number {
 }
 
 function stockLabel(sku: RegistrationSku): string {
-  return remainingStock(sku) > 0 ? "可报名" : "已售罄";
+  const remaining = remainingStock(sku);
+  if (remaining <= 0) return "已售罄";
+  if (stockDisplayMode.value === "EXACT") return "可报名";
+  return remaining <= displaySettings.value.lowStockThreshold ? "库存紧张" : "名额充足";
+}
+
+function isModuleVisible(moduleKey: string): boolean {
+  return displaySettings.value.visibleModules.includes(moduleKey);
 }
 
 function toContentText(value: unknown): string {
@@ -228,6 +236,36 @@ function toContentText(value: unknown): string {
   }
 
   return "";
+}
+
+function normalizeDetailDisplay(value: unknown) {
+  const defaults = {
+    visibleModules: ["conferenceInfo", "assistant", "skus", "inventory", "submitOrder", "guide"],
+    assistantMode: "ai",
+    skusTitle: "报名规格",
+    guideTitle: "会议详情",
+    primaryButtonText: "立即报名",
+    inventoryDisplayMode: "STATUS" as "EXACT" | "STATUS" | "HIDDEN",
+    lowStockThreshold: 10
+  };
+  const content = readRecord(value);
+  const source = readRecord(content.detailDisplay);
+  const visibleModules = Array.isArray(source.visibleModules) ? source.visibleModules.filter((item): item is string => typeof item === "string") : defaults.visibleModules;
+  const mode = String(source.inventoryDisplayMode || defaults.inventoryDisplayMode).toUpperCase();
+  return {
+    ...defaults,
+    visibleModules: visibleModules.length ? visibleModules : defaults.visibleModules,
+    assistantMode: typeof source.assistantMode === "string" ? source.assistantMode : defaults.assistantMode,
+    skusTitle: typeof source.skusTitle === "string" && source.skusTitle.trim() ? source.skusTitle.trim() : defaults.skusTitle,
+    guideTitle: typeof source.guideTitle === "string" && source.guideTitle.trim() ? source.guideTitle.trim() : defaults.guideTitle,
+    primaryButtonText: typeof source.primaryButtonText === "string" && source.primaryButtonText.trim() ? source.primaryButtonText.trim() : defaults.primaryButtonText,
+    inventoryDisplayMode: mode === "EXACT" || mode === "HIDDEN" ? mode : "STATUS",
+    lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : defaults.lowStockThreshold
+  };
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 </script>
 

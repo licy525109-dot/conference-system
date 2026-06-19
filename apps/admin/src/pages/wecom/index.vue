@@ -60,12 +60,18 @@
             <el-col :span="12"><el-form-item><template #label>回调 EncodingAESKey<FieldHelp content="填写到企业微信回调配置中的 EncodingAESKey，保存后加密存储，不返回明文。" /></template><el-input v-model="configForm.callbackEncodingAesKey" :placeholder="secretPlaceholder('callbackEncodingAesKey')" show-password /></el-form-item></el-col>
             <el-col :span="12"><el-form-item><template #label>客户联系回调 URL<FieldHelp content="复制到企业微信「客户联系」接收事件服务器配置中。" /></template><el-input v-model="configForm.customerContactCallbackUrl" /></el-form-item></el-col>
             <el-col :span="12"><el-form-item><template #label>应用回调 URL<FieldHelp content="复制到企业微信自建应用的接收消息/事件服务器配置中。" /></template><el-input v-model="configForm.appCallbackUrl" /></el-form-item></el-col>
+            <el-col :span="24"><el-divider content-position="left">群机器人直发配置</el-divider></el-col>
+            <el-col :span="12"><el-form-item label="启用群机器人"><el-switch v-model="configForm.groupRobotEnabled" active-text="启用 Webhook 直发" /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>目标群名称<FieldHelp content="用于后台识别 webhook 属于哪个客户群；实际发送以 webhook 所在群为准。" /></template><el-input v-model="configForm.groupRobotName" placeholder="如：2026 会议客户群" /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>机器人 Webhook URL<FieldHelp content="企业微信群机器人 webhook，保存后加密存储，接口只返回脱敏状态。" /></template><el-input v-model="configForm.groupRobotWebhookUrl" :placeholder="secretPlaceholder('groupRobotWebhookUrl')" show-password /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item><template #label>机器人 Secret<FieldHelp content="如群机器人启用了签名，可填写 Secret；保存后加密存储。" /></template><el-input v-model="configForm.groupRobotSecret" :placeholder="secretPlaceholder('groupRobotSecret')" show-password /></el-form-item></el-col>
             <el-col :span="24"><el-form-item label="备注"><el-input v-model="configForm.remark" type="textarea" :rows="3" /></el-form-item></el-col>
           </el-row>
         </el-form>
         <div class="action-row">
           <el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button>
           <el-button :loading="testing" @click="testToken">测试 AccessToken</el-button>
+          <el-button :loading="testingRobot" @click="testRobot">检测群机器人</el-button>
           <el-button :loading="checking" @click="checkPermission">检测客户联系权限</el-button>
           <el-button :loading="syncing" @click="syncGroups">同步客户群</el-button>
         </div>
@@ -128,20 +134,20 @@
     <section v-else-if="section === 'tasks'" class="table-panel">
       <div class="mode-grid">
         <div class="mode-card">
-          <strong>A. 企业微信客户群群发</strong>
-          <span>官方接口创建群发任务，需要群主/成员在企业微信客户端确认后发送。</span>
+          <strong>A. 群机器人 / Webhook 直发（默认）</strong>
+          <span>直接向已配置 webhook 的外部客户群发送，errcode=0 才会标记成功。</span>
         </div>
-        <div class="mode-card is-disabled">
-          <strong>B. 群机器人/Webhook 直发</strong>
-          <span>暂未接入。只有提前配置群机器人 webhook 的群才可直发，不属于客户群群发接口。</span>
+        <div class="mode-card">
+          <strong>B. 客户群群发官方任务（高级）</strong>
+          <span>需要群主/成员在企业微信客户端确认，不再作为默认推荐路径。</span>
         </div>
       </div>
-      <div class="risk-note">WAITING_CONFIRM 不是系统卡住，而是企业微信官方规则要求成员确认。请在企业微信客户端的客户联系 / 群发助手查看待确认任务。</div>
+      <div class="risk-note">机器人发送成功以企业微信 webhook 返回 errcode=0 为准。若返回成功但群内无消息，请检查 webhook 是否属于目标群、机器人是否被移除、群是否支持机器人和素材格式是否合规。</div>
       <div class="task-form">
         <el-input v-model="taskForm.name" placeholder="群发任务名称" />
         <el-radio-group v-model="taskForm.sendMode">
-          <el-radio-button label="CUSTOMER_GROUP">客户群群发</el-radio-button>
-          <el-radio-button label="GROUP_WEBHOOK" disabled>群机器人直发（暂未接入）</el-radio-button>
+          <el-radio-button label="GROUP_WEBHOOK">群机器人直发</el-radio-button>
+          <el-radio-button label="CUSTOMER_GROUP">客户群群发（高级）</el-radio-button>
         </el-radio-group>
         <ConferenceSelect v-model="taskForm.conferenceId" placeholder="会议（可选）" />
         <el-radio-group v-model="taskForm.targetScope">
@@ -160,10 +166,12 @@
           <el-option label="小程序" value="MINIPROGRAM" />
         </el-select>
         <el-input v-model="taskForm.textContent" type="textarea" :rows="3" placeholder="正文内容" />
-        <el-select v-if="['IMAGE', 'FILE'].includes(taskForm.messageType)" v-model="taskForm.materialUrl" filterable clearable placeholder="从素材库选择图片/文件" style="width: 100%">
+        <el-select v-if="['IMAGE', 'FILE'].includes(taskForm.messageType)" v-model="taskForm.materialUrl" filterable clearable :placeholder="taskForm.messageType === 'IMAGE' ? '从素材库选择图片' : '从素材库选择文件'" style="width: 100%">
           <el-option v-for="asset in materialAssets" :key="asset.id" :label="`${asset.name} / ${asset.usage}`" :value="asset.url" />
         </el-select>
-        <input v-if="['IMAGE', 'FILE'].includes(taskForm.messageType)" type="file" :accept="taskForm.messageType === 'IMAGE' ? 'image/*' : '*/*'" @change="uploadWecomMaterial" />
+        <img v-if="taskForm.messageType === 'IMAGE' && taskForm.materialUrl" class="message-preview" :src="taskForm.materialUrl" alt="" />
+        <div v-if="taskForm.messageType === 'FILE' && taskForm.materialUrl" class="file-preview">已选择文件：{{ taskForm.materialUrl }}</div>
+        <input v-if="['IMAGE', 'FILE'].includes(taskForm.messageType)" type="file" :accept="taskForm.messageType === 'IMAGE' ? 'image/*' : '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md'" @change="uploadWecomMaterial" />
         <el-input v-if="taskForm.messageType === 'LINK'" v-model="taskForm.linkTitle" placeholder="链接标题" />
         <el-input v-if="taskForm.messageType === 'LINK'" v-model="taskForm.linkDescription" placeholder="链接描述" />
         <el-input v-if="taskForm.messageType === 'LINK'" v-model="taskForm.linkUrl" placeholder="链接 URL" />
@@ -180,6 +188,7 @@
       </div>
       <el-table :data="tasks" border>
         <el-table-column prop="name" label="任务" min-width="180" />
+        <el-table-column prop="sendMode" label="发送模式" min-width="140"><template #default="{ row }">{{ sendModeText(row.sendMode) }}</template></el-table-column>
         <el-table-column prop="targetScope" label="范围" min-width="130" />
         <el-table-column prop="status" label="状态" width="150">
           <template #default="{ row }">{{ statusText(row.status) }}</template>
@@ -196,7 +205,7 @@
         <el-table-column prop="lastRefreshedAt" label="最近刷新" min-width="170" />
         <el-table-column label="操作" width="260">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="createTask(row.id)">创建企微任务</el-button>
+            <el-button size="small" type="primary" @click="createTask(row)">{{ row.sendMode === 'GROUP_WEBHOOK' ? '机器人发送' : '创建企微任务' }}</el-button>
             <el-button size="small" @click="refreshTask(row.id)">刷新结果</el-button>
           </template>
         </el-table-column>
@@ -231,7 +240,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
@@ -256,6 +265,7 @@ import {
   syncWecomCustomerGroups,
   testSendWecomGroupMessageTask,
   testWecomAccessToken,
+  testWecomGroupRobot,
   updateWecomConfig
 } from "../../services/admin";
 
@@ -273,6 +283,7 @@ const groupKeyword = ref("");
 const lastResult = ref("");
 const saving = ref(false);
 const testing = ref(false);
+const testingRobot = ref(false);
 const checking = ref(false);
 const syncing = ref(false);
 const bindForms = reactive<Record<string, string>>({});
@@ -289,12 +300,16 @@ const configForm = reactive({
   callbackEncodingAesKey: "",
   customerContactCallbackUrl: "",
   appCallbackUrl: "",
+  groupRobotEnabled: false,
+  groupRobotName: "",
+  groupRobotWebhookUrl: "",
+  groupRobotSecret: "",
   remark: ""
 });
 const welcomeForm = reactive({ name: "", contentText: "{\"text\":\"欢迎加入会议客户群\",\"agendaUrl\":\"\",\"aiAssistantUrl\":\"\",\"advisorPhone\":\"\"}" });
 const taskForm = reactive({
   name: "",
-  sendMode: "CUSTOMER_GROUP",
+  sendMode: "GROUP_WEBHOOK",
   conferenceId: "",
   targetScope: "SELECTED_GROUPS",
   targetGroupIds: [] as string[],
@@ -348,11 +363,16 @@ const statusCards = computed(() => {
     { label: "旧客户联系 Secret", value: status.customerContactSecretConfigured ? "已配置" : "未配置", ok: config.value.effectiveAuthMode !== "legacy_customer_contact" || Boolean(status.customerContactSecretConfigured) },
     { label: "自建应用 Secret", value: status.appSecretConfigured ? "已配置" : "未配置", ok: Boolean(status.appSecretConfigured) },
     { label: "回调配置", value: status.callbackConfigured ? (status.callbackVerified ? "已验证" : "待验证") : "未配置", ok: Boolean(status.callbackConfigured && status.callbackVerified) },
+    { label: "群机器人", value: status.groupRobotConfigured ? "已配置" : "未配置", ok: Boolean(status.groupRobotConfigured) },
     { label: "AccessToken", value: tokenStatusText(status.accessTokenStatus), ok: status.accessTokenStatus === "VALID" }
   ];
 });
 
 onMounted(() => void loadAll());
+watch(() => taskForm.messageType, () => {
+  taskForm.materialUrl = "";
+  void loadMaterials();
+});
 
 async function loadAll() {
   await loadConfig();
@@ -376,6 +396,10 @@ async function loadConfig() {
     callbackEncodingAesKey: "",
     customerContactCallbackUrl: String(config.value.customerContactCallbackUrl || ""),
     appCallbackUrl: String(config.value.appCallbackUrl || ""),
+    groupRobotEnabled: Boolean(config.value.groupRobot?.enabled),
+    groupRobotName: String(config.value.groupRobot?.name || ""),
+    groupRobotWebhookUrl: "",
+    groupRobotSecret: "",
     remark: String(config.value.remark || "")
   });
 }
@@ -403,7 +427,13 @@ async function loadTasks() {
 }
 
 async function loadMaterials() {
-  materialAssets.value = (await listMaterials({ page: 1, pageSize: 100, enabled: true })).items;
+  const result = await listMaterials({ page: 1, pageSize: 100, enabled: true });
+  materialAssets.value = result.items.filter((asset: AnyRecord) => {
+    const fileType = String(asset.fileType || "");
+    if (taskForm.messageType === "IMAGE") return fileType.startsWith("image/");
+    if (taskForm.messageType === "FILE") return !fileType.startsWith("image/") && !fileType.startsWith("video/") && !fileType.startsWith("font/");
+    return true;
+  });
 }
 
 async function loadLogs() {
@@ -433,6 +463,16 @@ async function testToken() {
     await loadConfig();
   } finally {
     testing.value = false;
+  }
+}
+
+async function testRobot() {
+  testingRobot.value = true;
+  try {
+    lastResult.value = JSON.stringify(await testWecomGroupRobot(), null, 2);
+    await loadConfig();
+  } finally {
+    testingRobot.value = false;
   }
 }
 
@@ -480,6 +520,7 @@ async function saveTask() {
     ...buildWecomMessagePayload()
   });
   taskForm.name = "";
+  taskForm.sendMode = "GROUP_WEBHOOK";
   await loadTasks();
   ElMessage.success("群发任务已创建");
 }
@@ -492,6 +533,7 @@ async function sendTestTask() {
   lastResult.value = JSON.stringify(
     await testSendWecomGroupMessageTask({
       name: taskForm.name || "企微客户群测试发送",
+      sendMode: taskForm.sendMode,
       targetGroupIds: taskForm.targetGroupIds,
       ...buildWecomMessagePayload()
     }),
@@ -529,9 +571,16 @@ function buildWecomMessagePayload() {
   };
 }
 
-async function createTask(id: string) {
-  await ElMessageBox.confirm("企业微信群发任务创建后通常需要群主或成员在企业微信中确认后才会真正发送，请确认内容准确。", "创建企微群发任务", { type: "warning" });
-  lastResult.value = JSON.stringify(await createOfficialWecomGroupMessageTask(id), null, 2);
+async function createTask(row: AnyRecord) {
+  const isRobot = row.sendMode === "GROUP_WEBHOOK";
+  await ElMessageBox.confirm(
+    isRobot
+      ? "将调用已配置的企业微信群机器人 Webhook。只有企业微信返回 errcode=0 才会标记发送成功。"
+      : "企业微信群发任务创建后通常需要群主或成员在企业微信中确认后才会真正发送，请确认内容准确。",
+    isRobot ? "机器人发送" : "创建企微群发任务",
+    { type: "warning" }
+  );
+  lastResult.value = JSON.stringify(await createOfficialWecomGroupMessageTask(String(row.id)), null, 2);
   await loadTasks();
 }
 
@@ -590,6 +639,10 @@ function statusText(value: string) {
   };
   return map[value] || value;
 }
+
+function sendModeText(value: string) {
+  return ({ GROUP_WEBHOOK: "机器人直发", CUSTOMER_GROUP: "客户群群发" } as Record<string, string>)[value] || value;
+}
 </script>
 
 <style scoped>
@@ -629,6 +682,24 @@ function statusText(value: string) {
   color: #64748b;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.message-preview {
+  width: 180px;
+  max-height: 120px;
+  object-fit: cover;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.file-preview {
+  padding: 10px 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  word-break: break-all;
 }
 
 .status-card {

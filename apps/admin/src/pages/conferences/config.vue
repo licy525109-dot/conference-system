@@ -119,6 +119,34 @@
 
       <el-tab-pane label="页面装修" name="page">
         <section class="form-panel">
+          <h3>用户端显示设置</h3>
+          <p class="muted-text">控制会议详情页固定模块显示。报名规格来自票种配置；库存默认只展示“充足/紧张/售罄”，不向用户暴露具体剩余量。</p>
+          <el-form :model="conferenceForm.detailDisplay" label-width="140px" class="display-form">
+            <el-form-item label="固定模块">
+              <el-checkbox-group v-model="conferenceForm.detailDisplay.visibleModules" class="module-grid">
+                <el-checkbox label="conferenceInfo">会议信息</el-checkbox>
+                <el-checkbox label="assistant">会议助手</el-checkbox>
+                <el-checkbox label="skus">报名规格</el-checkbox>
+                <el-checkbox label="coupon">优惠码</el-checkbox>
+                <el-checkbox label="inventory">库存展示</el-checkbox>
+                <el-checkbox label="cart">加入购物车</el-checkbox>
+                <el-checkbox label="submitOrder">提交订单</el-checkbox>
+                <el-checkbox label="guide">参会指南</el-checkbox>
+                <el-checkbox label="customerService">联系客服</el-checkbox>
+                <el-checkbox label="customerGroup">加入客户群</el-checkbox>
+                <el-checkbox label="calendar">添加到日历</el-checkbox>
+              </el-checkbox-group>
+            </el-form-item>
+            <el-form-item label="会议助手入口"><el-select v-model="conferenceForm.detailDisplay.assistantMode"><el-option label="隐藏" value="hidden" /><el-option label="AI 助手" value="ai" /><el-option label="客服链接" value="customer_service" /><el-option label="自定义页面" value="custom_page" /></el-select></el-form-item>
+            <el-form-item label="报名规格标题"><el-input v-model="conferenceForm.detailDisplay.skusTitle" placeholder="报名规格" /></el-form-item>
+            <el-form-item label="详情标题"><el-input v-model="conferenceForm.detailDisplay.guideTitle" placeholder="会议详情" /></el-form-item>
+            <el-form-item label="底部按钮文案"><el-input v-model="conferenceForm.detailDisplay.primaryButtonText" placeholder="立即报名" /></el-form-item>
+            <el-form-item label="库存展示"><el-select v-model="conferenceForm.detailDisplay.inventoryDisplayMode"><el-option label="显示具体数量" value="EXACT" /><el-option label="仅显示充足/紧张/售罄" value="STATUS" /><el-option label="完全隐藏库存" value="HIDDEN" /></el-select></el-form-item>
+            <el-form-item label="库存紧张阈值"><el-input-number v-model="conferenceForm.detailDisplay.lowStockThreshold" :min="1" :max="9999" /></el-form-item>
+            <el-form-item><el-button type="primary" @click="saveConference">保存显示设置</el-button></el-form-item>
+          </el-form>
+        </section>
+        <section class="form-panel">
           <h3>会议详情页装修</h3>
           <p class="muted-text">进入小程序页面装修，编辑并发布会议详情页组件。会议详情页仍保留当前固定页面作为接口失败兜底。</p>
           <el-button type="primary" @click="openPageBuilder">打开页面装修</el-button>
@@ -231,6 +259,7 @@ const conferenceForm = reactive({
   },
   groupRegistrationEnabled: true,
   maxTicketsPerOrder: 0,
+  detailDisplay: defaultDetailDisplay(),
   contentJsonText: "{}",
   styleJsonText: "{}"
 });
@@ -288,6 +317,7 @@ async function loadAll() {
 
 function syncConferenceForm() {
   if (!conference.value) return;
+  const contentJson = readRecord(conference.value.contentJson);
   Object.assign(conferenceForm, {
     title: conference.value.title,
     subtitle: conference.value.subtitle ?? "",
@@ -306,6 +336,7 @@ function syncConferenceForm() {
     },
     groupRegistrationEnabled: conference.value.groupRegistrationEnabled,
     maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0,
+    detailDisplay: normalizeDetailDisplay(contentJson.detailDisplay),
     contentJsonText: JSON.stringify(conference.value.contentJson ?? {}, null, 2),
     styleJsonText: JSON.stringify(conference.value.styleJson ?? {}, null, 2)
   });
@@ -313,6 +344,10 @@ function syncConferenceForm() {
 
 async function saveConference() {
   if (!conferenceId.value) return;
+  const contentJson = {
+    ...parseJsonObject(conferenceForm.contentJsonText),
+    detailDisplay: normalizeDetailDisplay(conferenceForm.detailDisplay)
+  };
   await updateConference(conferenceId.value, {
     title: conferenceForm.title,
     subtitle: conferenceForm.subtitle,
@@ -322,7 +357,7 @@ async function saveConference() {
     endAt: conferenceForm.endAt,
     groupRegistrationEnabled: conferenceForm.groupRegistrationEnabled,
     maxTicketsPerOrder: conferenceForm.maxTicketsPerOrder > 0 ? conferenceForm.maxTicketsPerOrder : null,
-    contentJson: parseJsonObject(conferenceForm.contentJsonText),
+    contentJson,
     styleJson: parseJsonObject(conferenceForm.styleJsonText)
   });
   await updateConferenceCheckInConfig(conferenceId.value, {
@@ -481,6 +516,37 @@ function textToOptions(value: string) {
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function defaultDetailDisplay() {
+  return {
+    visibleModules: ["conferenceInfo", "assistant", "skus", "inventory", "submitOrder", "guide"] as string[],
+    assistantMode: "ai",
+    skusTitle: "报名规格",
+    guideTitle: "会议详情",
+    primaryButtonText: "立即报名",
+    inventoryDisplayMode: "STATUS",
+    lowStockThreshold: 10
+  };
+}
+
+function normalizeDetailDisplay(value: unknown) {
+  const defaults = defaultDetailDisplay();
+  const source = readRecord(value);
+  return {
+    ...defaults,
+    visibleModules: readStringArray(source.visibleModules).length ? readStringArray(source.visibleModules) : defaults.visibleModules,
+    assistantMode: typeof source.assistantMode === "string" ? source.assistantMode : defaults.assistantMode,
+    skusTitle: typeof source.skusTitle === "string" && source.skusTitle.trim() ? source.skusTitle.trim() : defaults.skusTitle,
+    guideTitle: typeof source.guideTitle === "string" && source.guideTitle.trim() ? source.guideTitle.trim() : defaults.guideTitle,
+    primaryButtonText: typeof source.primaryButtonText === "string" && source.primaryButtonText.trim() ? source.primaryButtonText.trim() : defaults.primaryButtonText,
+    inventoryDisplayMode: ["EXACT", "STATUS", "HIDDEN"].includes(String(source.inventoryDisplayMode)) ? String(source.inventoryDisplayMode) : defaults.inventoryDisplayMode,
+    lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : defaults.lowStockThreshold
+  };
+}
 </script>
 
 <style scoped>
@@ -517,5 +583,15 @@ function readStringArray(value: unknown): string[] {
 
 .form-warning {
   color: #b45309;
+}
+
+.display-form {
+  margin-top: 12px;
+}
+
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 14px;
 }
 </style>

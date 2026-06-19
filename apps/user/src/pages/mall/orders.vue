@@ -143,7 +143,7 @@ function refundStatusText(value?: string | null) {
 }
 
 function providerText(value?: string | null) {
-  return value ? ({ MOCK: "mock", WECHAT: "微信" }[value] ?? value) : "-";
+  return value ? ({ MOCK: "Mock 测试", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
 </script>
 

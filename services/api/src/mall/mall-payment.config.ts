@@ -3,18 +3,52 @@ import { InternalServerErrorException } from "@nestjs/common";
 export type MallPaymentMode = "disabled" | "mock" | "wechat";
 export type MallRefundMode = "disabled" | "mock" | "wechat";
 
-export function readMallPaymentMode(): MallPaymentMode {
-  const mode = process.env.MALL_PAYMENT_MODE?.trim().toLowerCase();
+export interface MallPaymentRuntimeConfig {
+  mode?: string | null;
+  notifyUrl?: string | null;
+  allowMockPayment?: boolean | null;
+}
+
+export interface ResolvedMallPaymentRuntime {
+  mode: MallPaymentMode;
+  notifyUrl: string | null;
+  wechatEnabled: boolean;
+  mockEnabled: boolean;
+  paymentEnabled: boolean;
+  source: "DB" | "ENV";
+  unavailableReason: string | null;
+}
+
+export function readMallPaymentMode(config?: MallPaymentRuntimeConfig | null): MallPaymentMode {
+  const mode = (config ? config.mode : process.env.MALL_PAYMENT_MODE)?.trim().toLowerCase();
   if (mode === "mock" || mode === "wechat") return mode;
   return "disabled";
 }
 
-export function isMallWechatPaymentEnabled(): boolean {
-  return readMallPaymentMode() === "wechat" && Boolean(process.env.WECHAT_PAY_MALL_NOTIFY_URL?.trim());
+export function resolveMallPaymentRuntime(config?: MallPaymentRuntimeConfig | null): ResolvedMallPaymentRuntime {
+  const source: "DB" | "ENV" = config ? "DB" : "ENV";
+  const mode = readMallPaymentMode(config);
+  const notifyUrl = (config?.notifyUrl ?? process.env.WECHAT_PAY_MALL_NOTIFY_URL ?? "").trim() || null;
+  const wechatEnabled = mode === "wechat" && Boolean(notifyUrl);
+  const mockEnabled = config ? mode === "mock" && config.allowMockPayment === true : mode === "mock" || process.env.MALL_MOCK_PAYMENT_ENABLED === "true";
+  const paymentEnabled = wechatEnabled || mockEnabled;
+  return {
+    mode,
+    notifyUrl,
+    wechatEnabled,
+    mockEnabled,
+    paymentEnabled,
+    source,
+    unavailableReason: paymentEnabled ? null : buildUnavailableReason(mode, notifyUrl, source)
+  };
 }
 
-export function isMallMockPaymentEnabled(): boolean {
-  return readMallPaymentMode() === "mock" || process.env.MALL_MOCK_PAYMENT_ENABLED === "true";
+export function isMallWechatPaymentEnabled(config?: MallPaymentRuntimeConfig | null): boolean {
+  return resolveMallPaymentRuntime(config).wechatEnabled;
+}
+
+export function isMallMockPaymentEnabled(config?: MallPaymentRuntimeConfig | null): boolean {
+  return resolveMallPaymentRuntime(config).mockEnabled;
 }
 
 export function readMallRefundMode(): MallRefundMode {
@@ -31,8 +65,8 @@ export function isMallWechatRefundConfigured(): boolean {
   return readMallRefundMode() === "wechat" || process.env.MALL_WECHAT_REFUND_ENABLED === "true";
 }
 
-export function readMallWechatNotifyUrl(): string {
-  const value = process.env.WECHAT_PAY_MALL_NOTIFY_URL?.trim();
+export function readMallWechatNotifyUrl(config?: MallPaymentRuntimeConfig | null): string {
+  const value = (config?.notifyUrl ?? process.env.WECHAT_PAY_MALL_NOTIFY_URL)?.trim();
   if (!value) {
     throw new InternalServerErrorException("WECHAT_PAY_MALL_NOTIFY_URL is required when MALL_PAYMENT_MODE=wechat");
   }
@@ -40,7 +74,7 @@ export function readMallWechatNotifyUrl(): string {
   return value;
 }
 
-function validateMallNotifyUrl(value: string): void {
+export function validateMallNotifyUrl(value: string): void {
   let url: URL;
   try {
     url = new URL(value);
@@ -55,4 +89,10 @@ function validateMallNotifyUrl(value: string): void {
   if (!url.pathname.endsWith("/mall/payments/wechat/notify")) {
     throw new InternalServerErrorException("WECHAT_PAY_MALL_NOTIFY_URL must point to /mall/payments/wechat/notify");
   }
+}
+
+function buildUnavailableReason(mode: MallPaymentMode, notifyUrl: string | null, source: "DB" | "ENV"): string {
+  if (mode === "wechat" && !notifyUrl) return "商城微信支付未配置专用回调地址 WECHAT_PAY_MALL_NOTIFY_URL 或后台 notifyUrl。";
+  if (mode === "mock") return source === "DB" ? "后台未勾选允许商城 mock 支付，生产默认不开放 mock。" : "MALL_MOCK_PAYMENT_ENABLED 未开启。";
+  return "商城支付未启用，生产默认保持 disabled。";
 }

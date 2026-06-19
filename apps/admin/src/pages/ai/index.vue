@@ -69,15 +69,17 @@
         <el-input v-model="filters.keyword" clearable placeholder="搜索文档标题 / 内容" @keyup.enter="loadDocuments" />
         <el-select v-model="filters.status" clearable placeholder="状态" style="width: 150px">
           <el-option label="草稿" value="DRAFT" />
+          <el-option label="处理中" value="PROCESSING" />
           <el-option label="启用" value="ACTIVE" />
+          <el-option label="解析失败" value="FAILED" />
           <el-option label="停用" value="DISABLED" />
         </el-select>
         <template #actions><el-button :disabled="!conferenceId" @click="loadDocuments">查询</el-button></template>
       </AdminFilterBar>
       <el-table v-loading="loading" :data="documents" empty-text="暂无文档">
         <el-table-column prop="title" label="文档标题" min-width="180" />
-        <el-table-column prop="sourceType" label="类型" width="90" />
-        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column prop="sourceType" label="类型" width="90"><template #default="{ row }">{{ sourceTypeText(row.sourceType) }}</template></el-table-column>
+        <el-table-column prop="status" label="状态" width="100"><template #default="{ row }">{{ documentStatusText(row.status) }}</template></el-table-column>
         <el-table-column prop="chunkCount" label="分块" width="90" />
         <el-table-column prop="indexedAt" label="最后处理" min-width="170" />
         <el-table-column prop="lastError" label="失败原因" min-width="180" />
@@ -132,7 +134,7 @@
         <el-table-column prop="hit" label="命中" width="80" />
         <el-table-column prop="fallback" label="兜底" width="80" />
         <el-table-column prop="matchedDocumentTitle" label="命中文档" min-width="160" />
-        <el-table-column prop="provider" label="Provider" width="150" />
+        <el-table-column prop="provider" label="来源" width="150"><template #default="{ row }">{{ aiProviderText(row.provider) }}</template></el-table-column>
         <el-table-column prop="model" label="模型" width="130" />
         <el-table-column prop="errorReason" label="错误原因" min-width="150" />
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
@@ -144,23 +146,23 @@
       <div class="panel-heading">
         <div>
           <h3>AI 配置</h3>
-          <p>选择 provider 后按提示填写 Base URL、模型和 API Key；LOCAL_FALLBACK 不调用外部 LLM。</p>
+          <p>选择 provider 后按提示填写 Base URL、模型和 API Key；本地关键词检索不调用外部 LLM。</p>
         </div>
         <el-button :loading="testingConfig" @click="testConfig">测试连接</el-button>
       </div>
       <el-form :model="configForm" label-position="top" class="config-form">
         <el-form-item><template #label>启用开关<FieldHelp content="关闭后用户端会议助手返回未启用提示。" /></template><el-switch v-model="configForm.enabled" active-text="启用" inactive-text="停用" /></el-form-item>
         <el-form-item>
-          <template #label>AI provider<FieldHelp content="LOCAL_FALLBACK 表示本地关键词检索，不是真实 LLM；外部 provider 可使用后台加密 API Key 或服务器 env。" /></template>
+          <template #label>AI provider<FieldHelp content="本地关键词检索不是真实 LLM；外部 provider 可使用后台加密 API Key 或服务器环境变量。" /></template>
           <el-select v-model="configForm.provider" style="width: 100%" @change="applyProviderDefaults">
-            <el-option label="LOCAL_FALLBACK：本地关键词检索" value="LOCAL_FALLBACK" />
+            <el-option label="本地关键词检索" value="LOCAL_FALLBACK" />
             <el-option label="DEEPSEEK：DeepSeek API" value="DEEPSEEK" />
             <el-option label="OPENAI_COMPATIBLE：OpenAI 兼容接口" value="OPENAI_COMPATIBLE" />
             <el-option label="CUSTOM：自定义兼容接口" value="CUSTOM" />
           </el-select>
         </el-form-item>
         <el-alert class="config-source" type="info" :closable="false" :title="providerHelp" />
-        <el-form-item><template #label>Base URL<FieldHelp content="外部 provider 的 API baseURL；LOCAL_FALLBACK 可留空。" /></template><el-input v-model="configForm.baseUrl" placeholder="https://api.example.com/v1" /></el-form-item>
+        <el-form-item><template #label>Base URL<FieldHelp content="外部 provider 的 API baseURL；本地关键词检索可留空。" /></template><el-input v-model="configForm.baseUrl" placeholder="https://api.example.com/v1" /></el-form-item>
         <el-form-item><template #label>模型名称<FieldHelp content="本地降级模式使用 local-keyword；真实 provider 可填服务端实际模型名。" /></template><el-input v-model="configForm.model" placeholder="local-keyword" /></el-form-item>
         <el-form-item><template #label>API Key<FieldHelp content="保存后加密入库，接口只返回 configured/masked，不返回明文。" /></template><el-input v-model="configForm.apiKey" show-password :placeholder="aiKeyPlaceholder" /></el-form-item>
         <el-form-item label="回答温度"><el-input-number v-model="configForm.temperature" :min="0" :max="200" /></el-form-item>
@@ -187,7 +189,7 @@
       <el-form :model="docForm" label-position="top">
         <el-form-item label="文档标题"><el-input v-model="docForm.title" /></el-form-item>
         <el-form-item label="文档类型"><el-select v-model="docForm.sourceType"><el-option label="文本" value="TEXT" /><el-option label="Markdown" value="MD" /><el-option label="PDF" value="PDF" /></el-select></el-form-item>
-        <el-form-item><template #label>文档状态<FieldHelp content="DRAFT 不建议对用户回答；ACTIVE 会参与检索；DISABLED 不参与检索。" /></template><el-select v-model="docForm.status"><el-option label="草稿" value="DRAFT" /><el-option label="启用" value="ACTIVE" /><el-option label="停用" value="DISABLED" /></el-select></el-form-item>
+        <el-form-item><template #label>文档状态<FieldHelp content="草稿不建议对用户回答；启用会参与检索；解析失败会保留失败原因；停用不参与检索。" /></template><el-select v-model="docForm.status"><el-option label="草稿" value="DRAFT" /><el-option label="处理中" value="PROCESSING" /><el-option label="启用" value="ACTIVE" /><el-option label="解析失败" value="FAILED" /><el-option label="停用" value="DISABLED" /></el-select></el-form-item>
         <el-form-item label="上传资料文件"><input type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf" @change="readDocumentFile" /><p class="muted-text">txt/md 由浏览器读取；PDF 单个不超过 10MB，由后端解析文本。扫描图片 PDF 可能无法解析。</p></el-form-item>
         <el-form-item label="资料内容"><el-input v-model="docForm.contentText" type="textarea" :rows="10" :placeholder="docForm.sourceType === 'PDF' ? 'PDF 将由后端解析，解析结果保存后可在列表查看分块数；也可改为 TEXT/MD 粘贴文本。' : '粘贴会议介绍、议程、嘉宾、交通、报名须知等资料'" /></el-form-item>
       </el-form>
@@ -248,14 +250,14 @@ const testResult = ref("");
 const configNotice = computed(() => {
   const secret = configForm.secret?.apiKey;
   if (String(configForm.provider || "").toUpperCase() !== "LOCAL_FALLBACK" && !secret?.configured) return "当前 AI provider key 未在服务器环境变量中配置，用户端会显示 provider 未配置提示。";
-  return "LOCAL_FALLBACK 为本地关键词检索，不是真实 LLM；未命中当前会议资料时返回兜底，不编造答案。";
+  return "本地关键词检索不是真实 LLM；未命中当前会议资料时返回兜底，不编造答案。";
 });
 const providerHelp = computed(() => {
   const provider = String(configForm.provider || "LOCAL_FALLBACK").toUpperCase();
   if (provider === "DEEPSEEK") return "DEEPSEEK：Base URL 可填 https://api.deepseek.com 或 https://api.deepseek.com/v1；模型示例 deepseek-chat / deepseek-reasoner。";
   if (provider === "OPENAI_COMPATIBLE") return "OPENAI_COMPATIBLE：Base URL 和模型名称由服务商提供，例如 https://api.example.com/v1。";
   if (provider === "CUSTOM") return "CUSTOM：用于兼容 OpenAI API 形态的自定义服务，请确认 /models 或 chat 接口可访问。";
-  return "LOCAL_FALLBACK：无需 API Key，只做本地关键词检索，不是真实大模型。";
+  return "本地关键词检索：无需 API Key，只检索当前会议资料，不是真实大模型。";
 });
 const isRealLlm = computed(() => String(configForm.provider || configForm.source || "LOCAL_FALLBACK").toUpperCase() !== "LOCAL_FALLBACK");
 const aiKeyPlaceholder = computed(() => (configForm.secret?.apiKey?.configured ? `已配置：${configForm.secret.apiKey.masked || "******"}；留空不修改` : "未配置，填写后加密保存"));
@@ -462,7 +464,19 @@ function applyProviderDefaults() {
 }
 
 function sourceText(value: unknown) {
-  return ({ DB: "后台配置", ENV: "环境变量", LOCAL_FALLBACK: "LOCAL_FALLBACK" } as Record<string, string>)[String(value || "LOCAL_FALLBACK")] ?? String(value || "LOCAL_FALLBACK");
+  return ({ DB: "后台配置", ENV: "环境变量", LOCAL_FALLBACK: "本地关键词检索" } as Record<string, string>)[String(value || "LOCAL_FALLBACK")] ?? String(value || "LOCAL_FALLBACK");
+}
+
+function documentStatusText(value: unknown) {
+  return ({ DRAFT: "草稿", PROCESSING: "处理中", ACTIVE: "启用", FAILED: "解析失败", DISABLED: "停用" } as Record<string, string>)[String(value || "")] ?? String(value || "-");
+}
+
+function sourceTypeText(value: unknown) {
+  return ({ TEXT: "文本", MD: "Markdown", PDF: "PDF" } as Record<string, string>)[String(value || "")] ?? String(value || "-");
+}
+
+function aiProviderText(value: unknown) {
+  return ({ LOCAL_FALLBACK: "本地关键词检索", DEEPSEEK: "DeepSeek", OPENAI_COMPATIBLE: "OpenAI 兼容接口", CUSTOM: "自定义接口" } as Record<string, string>)[String(value || "")] ?? String(value || "-");
 }
 
 function readAsDataUrl(file: File): Promise<string> {

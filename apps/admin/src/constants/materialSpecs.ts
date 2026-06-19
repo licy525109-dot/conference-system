@@ -26,14 +26,17 @@ export const materialSpecs = {
   backgroundImage: spec("背景图片", "1920x1080 或 1440x900", "JPG/WebP", 3 * MB, "背景图建议弱化细节，避免干扰页面内容。", ["image/jpeg", "image/webp", "image/png"]),
   backgroundVideo: spec("背景视频", "720p 或 1080p，5-15 秒", "MP4/H.264", 20 * MB, "建议静音循环，控制体积，避免影响移动端加载。", ["video/mp4"]),
   videoFile: spec("视频组件", "720p 或 1080p", "MP4/H.264", 20 * MB, "自动播放默认关闭；小程序端建议使用 HTTPS MP4，控制首屏加载体积。", ["video/mp4"]),
-  downloadFile: spec("下载资料", "按资料类型", "PDF/JPG/PNG/WebP", 10 * MB, "小程序对部分文件类型有打开限制，建议优先 PDF 或图片，并提供复制链接兜底。", ["application/pdf", "image/jpeg", "image/png", "image/webp"]),
+  downloadFile: spec("下载资料", "按资料类型", "PDF/Office/TXT/MD/JPG/PNG/WebP", 20 * MB, "小程序对部分文件类型有打开限制，建议优先 PDF 或图片，并提供复制链接兜底。", ["application/pdf", "text/plain", "text/markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "image/jpeg", "image/png", "image/webp"]),
   productCover: spec("商品封面", "800x800 或 750x750", "JPG/PNG/WebP", 2 * MB, "建议正方形商品图，主体居中。", ["image/jpeg", "image/png", "image/webp"]),
   productDetail: spec("商品详情图", "建议宽度 750px", "JPG/PNG/WebP", 2 * MB, "详情长图请切片上传，避免单图过大。", ["image/jpeg", "image/png", "image/webp"]),
   testimonialAvatar: spec("评价头像", "200x200 或 300x300", "JPG/PNG/WebP", 500 * KB, "头像建议正方形，主体居中，避免过大影响列表加载。", ["image/jpeg", "image/png", "image/webp"]),
   fontFile: spec("页面字体文件", "字体文件", "TTF/OTF/WOFF/WOFF2", 5 * MB, "上传前确认字体授权，避免商用版权风险。", ["font/ttf", "font/otf", "font/woff", "font/woff2", "application/x-font-ttf", "application/x-font-otf", "application/font-woff", "application/font-woff2"]),
   wecomQr: spec("企微群二维码 / 封面", "建议 600x600", "JPG/PNG/WebP", 1 * MB, "二维码需清晰可扫码，避免压缩过度或加复杂背景。", ["image/jpeg", "image/png", "image/webp"]),
-  notificationCover: spec("通知图片 / 文件", "按通知渠道要求", "JPG/PNG/WebP/PDF", 2 * MB, "外部通道有模板限制时，以供应商后台审核规则为准。", ["image/jpeg", "image/png", "image/webp", "application/pdf"]),
-  materialUpload: spec("素材上传", "按使用位置选择", "JPG/PNG/WebP/GIF/SVG/MP4/TTF/OTF/WOFF/WOFF2", 10 * MB, "后端硬限制单文件 10MB；图片/视频建议按具体使用位置进一步压缩。", ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml", "video/mp4", "font/ttf", "font/otf", "font/woff", "font/woff2", "application/x-font-ttf", "application/x-font-otf", "application/font-woff", "application/font-woff2"])
+  notificationCover: spec("通知图片 / 文件", "按通知渠道要求", "JPG/PNG/WebP/PDF/Office", 20 * MB, "外部通道有模板限制时，以供应商后台审核规则为准。", ["image/jpeg", "image/png", "image/webp", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]),
+  wecomMessageImage: spec("企微群发图片", "建议 750x420 或 600x600", "JPG/PNG/WebP", 2 * MB, "群机器人图片会由后端转为企微支持的 base64+md5 格式。", ["image/jpeg", "image/png", "image/webp"]),
+  wecomMessageFile: spec("企微群发文件", "按资料类型", "PDF/Office/TXT/MD", 20 * MB, "群机器人文件会由后端上传临时素材并换取 media_id。", ["application/pdf", "text/plain", "text/markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]),
+  aiDocument: spec("AI 知识库文档", "文字型资料", "TXT/MD/PDF", 10 * MB, "PDF 仅支持可复制文本，扫描版 PDF 暂不支持 OCR。", ["text/plain", "text/markdown", "application/pdf"]),
+  materialUpload: spec("素材上传", "按使用位置选择", "JPG/PNG/WebP/GIF/SVG/MP4/PDF/Office/TXT/MD/TTF/OTF/WOFF/WOFF2", 20 * MB, "后端按类型限制：图片不超过 2MB，视频/文件不超过 20MB，字体不超过 5MB。", ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml", "video/mp4", "application/pdf", "text/plain", "text/markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "font/ttf", "font/otf", "font/woff", "font/woff2", "application/x-font-ttf", "application/x-font-otf", "application/font-woff", "application/font-woff2"])
 } as const satisfies Record<string, MaterialSpec>;
 
 export type MaterialSpecKey = keyof typeof materialSpecs;
@@ -47,8 +50,12 @@ export const materialUsageSpecMap: Record<string, MaterialSpecKey> = {
   product_cover: "productCover",
   product_detail: "productDetail",
   download_file: "downloadFile",
+  ai_document: "aiDocument",
+  theme_background_video: "backgroundVideo",
   video_file: "videoFile",
-  wecom_qr: "wecomQr"
+  wecom_qr: "wecomQr",
+  wecom_message_image: "wecomMessageImage",
+  wecom_message_file: "wecomMessageFile"
 };
 
 export function materialSpecText(spec: MaterialSpec): string {
@@ -72,5 +79,16 @@ function spec(label: string, size: string, formats: string, maxBytes: number, ti
 
 function matchesAcceptedType(file: File, accept: string[]): boolean {
   const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  return accept.some((type) => file.type === type || type.endsWith(`/${extension}`) || (type === "image/jpeg" && ["jpg", "jpeg"].includes(extension)));
+  const extensionTypes: Record<string, string[]> = {
+    jpg: ["image/jpeg"],
+    jpeg: ["image/jpeg"],
+    md: ["text/markdown", "text/plain"],
+    doc: ["application/msword"],
+    docx: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    xls: ["application/vnd.ms-excel"],
+    xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+    ppt: ["application/vnd.ms-powerpoint"],
+    pptx: ["application/vnd.openxmlformats-officedocument.presentationml.presentation"]
+  };
+  return accept.some((type) => file.type === type || type.endsWith(`/${extension}`) || extensionTypes[extension]?.includes(type));
 }
