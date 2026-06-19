@@ -22,18 +22,33 @@
           <div>
             <h3>{{ visibleSection === "sms" ? "短信配置" : "微信订阅消息配置" }}</h3>
             <p>{{ channelConfig?.statusText || "正在读取配置" }}</p>
+            <p class="muted-text">Provider 来源：{{ channelConfig?.providerSource || "disabled" }}；当前可发送：{{ channelConfig?.canSend ? "是" : "否" }}</p>
+            <p v-if="channelConfig?.unavailableReason" class="muted-text">不可发送原因：{{ channelConfig.unavailableReason }}</p>
             <p v-if="visibleSection === 'sms'" class="muted-text">短信供应商未启用，相关任务会记录为 SKIPPED，不会伪造发送成功。</p>
             <p v-else class="muted-text">未配置微信模板 ID、用户未订阅或 provider 未启用时，发送日志会记录为 SKIPPED。</p>
           </div>
-          <el-tag :type="channelConfig?.enabled ? 'success' : 'info'">{{ channelConfig?.enabled ? "已启用" : "未启用" }}</el-tag>
+          <div class="tag-stack">
+            <el-tag :type="channelConfig?.centerEnabled ? 'success' : 'info'">总开关 {{ channelConfig?.centerEnabled ? "开启" : "关闭" }}</el-tag>
+            <el-tag :type="channelConfig?.enabled ? 'success' : 'info'">通道 {{ channelConfig?.enabled ? "启用" : "停用" }}</el-tag>
+          </div>
         </div>
         <el-form :model="configForm" label-width="120px" class="config-form">
+          <el-form-item label="通知总开关"><el-switch v-model="configForm.centerEnabled" /></el-form-item>
           <el-form-item label="启用开关"><el-switch v-model="configForm.enabled" /></el-form-item>
-          <el-form-item v-if="visibleSection === 'sms'" label="供应商"><el-input v-model="configForm.provider" placeholder="aliyun / tencent，敏感 key 仅通过服务器 env 配置" /></el-form-item>
-          <el-form-item v-if="visibleSection === 'sms'" label="短信签名"><el-input v-model="configForm.signature" placeholder="短信签名，不保存敏感 key" /></el-form-item>
+          <el-form-item v-if="visibleSection === 'sms'" label="供应商"><el-input v-model="configForm.provider" placeholder="aliyun / tencent" /></el-form-item>
+          <el-form-item v-if="visibleSection === 'sms'" label="短信签名"><el-input v-model="configForm.signature" placeholder="短信签名" /></el-form-item>
+          <el-form-item v-if="visibleSection === 'sms'" label="短信模板"><el-input v-model="configForm.smsTemplate" placeholder="供应商短信模板编码" /></el-form-item>
+          <el-form-item v-else label="微信模板 ID"><el-input v-model="configForm.templateKey" placeholder="微信订阅消息模板 ID" /></el-form-item>
+          <el-form-item label="API Key"><el-input v-model="configForm.apiKey" show-password :placeholder="secretPlaceholder(channelConfig?.secret?.apiKey)" /></el-form-item>
+          <el-form-item label="API Secret"><el-input v-model="configForm.apiSecret" show-password :placeholder="secretPlaceholder(channelConfig?.secret?.apiSecret)" /></el-form-item>
+          <el-form-item label="频率限制"><el-input-number v-model="configForm.rateLimitPerMinute" :min="0" :max="10000" /><span class="inline-help">次 / 分钟</span></el-form-item>
+          <el-form-item label="失败重试"><div class="retry-row"><el-input-number v-model="configForm.retryMaxAttempts" :min="0" :max="10" /><span>次，间隔</span><el-input-number v-model="configForm.retryIntervalSeconds" :min="0" :max="86400" /><span>秒</span></div></el-form-item>
           <el-form-item label="说明"><el-input v-model="configForm.note" type="textarea" :rows="2" /></el-form-item>
           <el-form-item><el-button type="primary" @click="saveChannelConfig">保存配置说明</el-button></el-form-item>
         </el-form>
+        <el-descriptions v-if="channelConfig?.envGuide?.length" class="env-guide" title="仍可通过服务器配置的项目" :column="1" border>
+          <el-descriptions-item v-for="item in channelConfig.envGuide" :key="item.name" :label="item.name">{{ item.location }}；{{ item.restartRequired ? "需要重启 API" : "通常无需重启" }}</el-descriptions-item>
+        </el-descriptions>
         <el-table :data="channelConfig?.templates ?? []" empty-text="暂无模板映射">
           <el-table-column prop="code" label="模板编码" min-width="160" />
           <el-table-column prop="name" label="模板名称" min-width="160" />
@@ -65,6 +80,12 @@
           <el-table-column prop="name" label="任务" min-width="200" />
           <el-table-column label="模板" min-width="180"><template #default="{ row }">{{ row.template?.name || row.templateId }}</template></el-table-column>
           <el-table-column label="渠道" width="150"><template #default="{ row }">{{ channelText(row.channel) }}</template></el-table-column>
+          <el-table-column label="Provider" min-width="220">
+            <template #default="{ row }">
+              <div>{{ row.providerStatus?.providerSource || "-" }}</div>
+              <small>{{ row.providerStatus?.unavailableReason || row.providerStatus?.statusText || "-" }}</small>
+            </template>
+          </el-table-column>
           <el-table-column label="状态" width="140"><template #default="{ row }"><el-tag :type="taskStatusType(row.status)">{{ taskStatusText(row.status) }}</el-tag></template></el-table-column>
           <el-table-column prop="logCount" label="日志" width="90" />
           <el-table-column label="发送时间" width="180"><template #default="{ row }">{{ row.sentAt ? formatTime(row.sentAt) : "-" }}</template></el-table-column>
@@ -193,7 +214,7 @@ const taskForm = reactive({
   targetType: "MANUAL",
   payloadText: "{}"
 });
-const configForm = reactive({ enabled: false, provider: "", signature: "", note: "" });
+const configForm = reactive({ centerEnabled: false, enabled: false, provider: "", signature: "", templateKey: "", smsTemplate: "", apiKey: "", apiSecret: "", rateLimitPerMinute: 60, retryMaxAttempts: 0, retryIntervalSeconds: 60, note: "" });
 const activeTemplates = computed(() => templates.value.filter((item) => item.status === "ACTIVE"));
 const routeSection = computed(() => {
   const path = currentRoute.value.path;
@@ -325,12 +346,31 @@ async function testSendTemplate(row: NotificationTemplate) {
 
 async function loadChannelConfig() {
   channelConfig.value = visibleSection.value === "sms" ? await getSmsConfig() : await getWechatSubscribeConfig();
-  Object.assign(configForm, { enabled: channelConfig.value.enabled, provider: "", signature: "", note: "" });
+  Object.assign(configForm, {
+    centerEnabled: Boolean(channelConfig.value.centerEnabled),
+    enabled: Boolean(channelConfig.value.enabled),
+    provider: channelConfig.value.provider || "",
+    signature: channelConfig.value.signature || "",
+    templateKey: channelConfig.value.templateKey || "",
+    smsTemplate: channelConfig.value.smsTemplate || "",
+    apiKey: "",
+    apiSecret: "",
+    rateLimitPerMinute: Number(channelConfig.value.rateLimitPerMinute ?? 60),
+    retryMaxAttempts: Number(channelConfig.value.retryMaxAttempts ?? 0),
+    retryIntervalSeconds: Number(channelConfig.value.retryIntervalSeconds ?? 60),
+    note: ""
+  });
 }
 
 async function saveChannelConfig() {
   channelConfig.value = visibleSection.value === "sms" ? await updateSmsConfig(configForm) : await updateWechatSubscribeConfig(configForm);
-  ElMessage.success("配置说明已保存；敏感密钥仍仅通过服务器 env 配置");
+  configForm.apiKey = "";
+  configForm.apiSecret = "";
+  ElMessage.success("配置已保存；敏感字段不会回显");
+}
+
+function secretPlaceholder(secret?: { configured: boolean; masked: string }) {
+  return secret?.configured ? `已配置：${secret.masked || "******"}；留空不修改` : "未配置，填写后加密保存";
 }
 
 function parseJson(text: string): Record<string, unknown> {
@@ -417,6 +457,25 @@ function formatTime(value: string) {
 
 .config-form {
   max-width: 760px;
+}
+
+.tag-stack,
+.retry-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.inline-help {
+  margin-left: 8px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.env-guide {
+  margin: 12px 0 16px;
 }
 
 .preview-box {

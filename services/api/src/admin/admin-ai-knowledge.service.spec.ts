@@ -57,6 +57,49 @@ describe("AdminOperationsService AI knowledge workflows", () => {
     }
   });
 
+  it("parses PDF text into knowledge chunks", async () => {
+    const { prisma, documents, chunks } = createAdminAiPrismaMock();
+    const service = new AdminOperationsService(prisma);
+    const pdfBase64 = Buffer.from("%PDF-1.4\nBT (PDF会议将在上海中心举行) Tj ET").toString("base64");
+
+    const created = await service.createKnowledgeDocument("conference-a", { title: "PDF资料", sourceType: "PDF", fileBase64: pdfBase64, status: "ACTIVE" }, currentAdmin);
+
+    const data = created.data as Record<string, unknown>;
+    assert.equal(data.sourceType, "PDF");
+    assert.equal(data.status, "ACTIVE");
+    assert.match(documents[0]?.contentText ?? "", /上海中心/);
+    assert.equal(chunks.length, 1);
+  });
+
+  it("keeps PDF parse failures visible on the document record", async () => {
+    const { prisma, documents, chunks } = createAdminAiPrismaMock();
+    const service = new AdminOperationsService(prisma);
+
+    const created = await service.createKnowledgeDocument("conference-a", { title: "坏 PDF", sourceType: "PDF", fileBase64: Buffer.from("not-a-pdf").toString("base64"), status: "ACTIVE" }, currentAdmin);
+
+    const data = created.data as Record<string, unknown>;
+    assert.equal(data.status, "DISABLED");
+    assert.equal(documents[0]?.sourceType, "PDF");
+    assert.match(documents[0]?.lastError ?? "", /PDF/);
+    assert.equal(chunks.length, 0);
+  });
+
+  it("stores DB AI API key encrypted and never returns plaintext", async () => {
+    const restore = withEnv({ AI_API_KEY: undefined, AI_PROVIDER: undefined });
+    const { prisma } = createAdminAiPrismaMock();
+    const service = new AdminOperationsService(prisma);
+    try {
+      const response = await service.updateAiConfig({ enabled: true, provider: "OPENAI", baseUrl: "https://api.example.com/v1", model: "gpt-test", apiKey: "sk-db-secret-value" }, currentAdmin);
+      const payload = JSON.stringify(response.data);
+
+      assert.equal(response.data.source, "DB");
+      assert.equal((response.data.secret as { apiKey: { configured: boolean } }).apiKey.configured, true);
+      assert.equal(payload.includes("sk-db-secret-value"), false);
+    } finally {
+      restore();
+    }
+  });
+
   it("exposes AI knowledge permission codes for RBAC", () => {
     assert.equal(ADMIN_PERMISSION_CODES.includes("ai-kb:view"), true);
     assert.equal(ADMIN_PERMISSION_CODES.includes("ai-kb:write"), true);
@@ -87,7 +130,9 @@ function createAdminAiPrismaMock() {
     name: "default",
     enabled: true,
     provider: "LOCAL_FALLBACK",
+    baseUrl: null,
     model: "local-keyword",
+    apiKeyEnc: null,
     temperature: 0,
     maxOutputTokens: 800,
     fallbackEnabled: true,
@@ -131,7 +176,7 @@ function createAdminAiPrismaMock() {
           contentText: data.contentText,
           status: data.status,
           chunkCount: data.chunkCount,
-          lastError: null,
+          lastError: data.lastError ?? null,
           indexedAt: data.indexedAt,
           createdAt: now,
           updatedAt: now
@@ -165,7 +210,10 @@ function createAdminAiPrismaMock() {
       }
     },
     aiConfig: {
-      upsert: async () => config
+      upsert: async ({ create, update }: { create?: Partial<typeof config>; update?: Partial<typeof config> }) => {
+        Object.assign(config, create ?? {}, update ?? {}, { updatedAt: now });
+        return config;
+      }
     },
     auditLog: {
       create: async ({ data }: { data: AuditRecord }) => {
@@ -228,6 +276,7 @@ interface KnowledgeDocumentCreateInput {
   contentText: string;
   status: string;
   chunkCount: number;
+  lastError?: string | null;
   indexedAt: Date;
   chunks: { create: KnowledgeChunkCreateInput[] };
 }

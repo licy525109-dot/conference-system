@@ -9,6 +9,7 @@ import {
 } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
+import { decryptSecret, encryptSecret, maskSecret } from "../wecom/wecom.crypto";
 import { CurrentAdmin } from "./current-admin";
 
 @Injectable()
@@ -145,7 +146,7 @@ export class AdminNotificationsService {
       this.prisma.notificationTask.count({ where })
     ]);
 
-    return ok({ items: items.map(formatTask), total, page, pageSize });
+    return ok({ items: await Promise.all(items.map((item) => this.formatTaskWithRuntime(item))), total, page, pageSize });
   }
 
   async createTask(input: unknown, admin: CurrentAdmin) {
@@ -169,7 +170,7 @@ export class AdminNotificationsService {
       include: { template: true, _count: { select: { logs: true } } }
     });
     await this.writeAudit(admin, AuditAction.CREATE, "NotificationTask", item.id, "Create notification task");
-    return ok(formatTask(item));
+    return ok(await this.formatTaskWithRuntime(item));
   }
 
   async previewTemplate(id: string, input: unknown) {
@@ -233,10 +234,6 @@ export class AdminNotificationsService {
   }
 
   async sendNow(id: string, admin: CurrentAdmin) {
-    if (!isEnabled("NOTIFICATION_CENTER_ENABLED")) {
-      throw new BadRequestException("通知中心未启用，请先配置 NOTIFICATION_CENTER_ENABLED=true");
-    }
-
     const task = await this.prisma.notificationTask.findUnique({
       where: { id },
       include: { template: true }
@@ -254,9 +251,10 @@ export class AdminNotificationsService {
 
     await this.prisma.notificationTask.update({ where: { id }, data: { status: NotificationTaskStatus.SENDING } });
     const recipients = await this.resolveRecipients(task.payloadJson, task.channel);
+    const runtime = await this.resolveChannelRuntime(task.channel);
     const results = recipients.length
-      ? await Promise.all(recipients.map((recipient) => this.sendOne(task, recipient)))
-      : [await this.sendOne(task, { userId: null, recipient: null })];
+      ? await Promise.all(recipients.map((recipient) => this.sendOne(task, recipient, runtime)))
+      : [await this.sendOne(task, { userId: null, recipient: null }, runtime)];
 
     const sentAt = new Date();
     await Promise.all(
@@ -297,7 +295,7 @@ export class AdminNotificationsService {
       failedCount,
       skippedCount
     });
-    return ok({ task: formatTask(updated), result: { total: results.length, successCount, failedCount, skippedCount } });
+    return ok({ task: await this.formatTaskWithRuntime(updated), result: { total: results.length, successCount, failedCount, skippedCount } });
   }
 
   async listLogs(query: Record<string, unknown>) {
@@ -327,6 +325,9 @@ export class AdminNotificationsService {
   }
 
   async getChannelConfig(channel: "WECHAT_SUBSCRIBE" | "SMS") {
+    const config = await this.getStoredChannelConfig(channel);
+    const center = await this.getCenterRuntime();
+    const runtime = await this.resolveChannelRuntime(channel);
     const templates = await this.prisma.notificationTemplate.findMany({
       where: { channel },
       orderBy: { updatedAt: "desc" },
@@ -335,21 +336,73 @@ export class AdminNotificationsService {
     const envKey = channel === "SMS" ? "SMS_ENABLED" : "WECHAT_SUBSCRIBE_MESSAGE_ENABLED";
     return ok({
       channel,
-      enabled: process.env[envKey] === "true",
+      enabled: runtime.enabled,
+      centerEnabled: center.enabled,
       envKey,
-      statusText: process.env[envKey] === "true" ? "已开启，真实发送适配器仍以供应商配置为准" : "未启用",
+      provider: config?.provider ?? (channel === "SMS" ? process.env.SMS_PROVIDER ?? "" : "WECHAT_SUBSCRIBE"),
+      providerSource: runtime.providerSource,
+      signature: config?.signature ?? "",
+      templateKey: config?.templateKey ? maskValue(config.templateKey) : null,
+      smsTemplate: config?.smsTemplate ?? null,
+      rateLimitPerMinute: config?.rateLimitPerMinute ?? 60,
+      retryMaxAttempts: config?.retryMaxAttempts ?? 0,
+      retryIntervalSeconds: config?.retryIntervalSeconds ?? 60,
+      canSend: runtime.canSend,
+      unavailableReason: runtime.unavailableReason,
+      statusText: runtime.statusText,
       templates: templates.map((item) => ({ ...item, hasTemplateKey: Boolean(item.templateKey), templateKey: item.templateKey ? maskValue(item.templateKey) : null, updatedAt: item.updatedAt.toISOString() })),
-      secretVisible: false
+      secretVisible: false,
+      secret: {
+        apiKey: { configured: Boolean(decryptSecret(config?.apiKeyEnc)), masked: maskSecret(decryptSecret(config?.apiKeyEnc)) },
+        apiSecret: { configured: Boolean(decryptSecret(config?.apiSecretEnc)), masked: maskSecret(decryptSecret(config?.apiSecretEnc)) }
+      },
+      envGuide: notificationEnvGuide(channel, envKey)
     });
   }
 
   async updateChannelConfig(channel: "WECHAT_SUBSCRIBE" | "SMS", input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
+    if (typeof body.centerEnabled !== "undefined") {
+      await this.upsertCenterConfig(readBoolean(body.centerEnabled, "centerEnabled"));
+    }
+    await this.prisma.notificationChannelConfig.upsert({
+      where: { channel },
+      create: {
+        channel,
+        enabled: readOptionalBoolean(body.enabled) ?? false,
+        provider: readOptionalString(body.provider),
+        providerSource: "DB",
+        signature: readOptionalString(body.signature),
+        templateKey: readOptionalString(body.templateKey),
+        smsTemplate: readOptionalString(body.smsTemplate),
+        apiKeyEnc: readSensitive(body.apiKey) ? encryptSecret(readSensitive(body.apiKey)) : null,
+        apiSecretEnc: readSensitive(body.apiSecret) ? encryptSecret(readSensitive(body.apiSecret)) : null,
+        rateLimitPerMinute: readOptionalNonNegativeInt(body.rateLimitPerMinute) ?? 60,
+        retryMaxAttempts: readOptionalNonNegativeInt(body.retryMaxAttempts) ?? 0,
+        retryIntervalSeconds: readOptionalNonNegativeInt(body.retryIntervalSeconds) ?? 60,
+        settingsJson: readOptionalSettings(body)
+      },
+      update: {
+        ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {}),
+        ...(typeof body.provider !== "undefined" ? { provider: readNullableString(body.provider) } : {}),
+        ...(typeof body.signature !== "undefined" ? { signature: readNullableString(body.signature) } : {}),
+        ...(typeof body.templateKey !== "undefined" ? { templateKey: readNullableString(body.templateKey) } : {}),
+        ...(typeof body.smsTemplate !== "undefined" ? { smsTemplate: readNullableString(body.smsTemplate) } : {}),
+        ...(readSensitive(body.apiKey) ? { apiKeyEnc: encryptSecret(readSensitive(body.apiKey)) } : {}),
+        ...(readSensitive(body.apiSecret) ? { apiSecretEnc: encryptSecret(readSensitive(body.apiSecret)) } : {}),
+        ...(typeof body.rateLimitPerMinute !== "undefined" ? { rateLimitPerMinute: readNonNegativeInt(body.rateLimitPerMinute, "rateLimitPerMinute") } : {}),
+        ...(typeof body.retryMaxAttempts !== "undefined" ? { retryMaxAttempts: readNonNegativeInt(body.retryMaxAttempts, "retryMaxAttempts") } : {}),
+        ...(typeof body.retryIntervalSeconds !== "undefined" ? { retryIntervalSeconds: readNonNegativeInt(body.retryIntervalSeconds, "retryIntervalSeconds") } : {}),
+        ...(hasAny(body, ["settingsJson", "note"]) ? { settingsJson: readOptionalSettings(body) } : {})
+      }
+    });
     await this.writeAudit(admin, AuditAction.UPDATE, "NotificationChannelConfig", channel, "Update notification channel config", {
       channel,
       enabled: readOptionalBoolean(body.enabled),
       provider: readOptionalString(body.provider),
-      note: "Secrets are configured through server env only"
+      centerEnabled: readOptionalBoolean(body.centerEnabled),
+      keyConfigured: Boolean(readSensitive(body.apiKey)),
+      secretConfigured: Boolean(readSensitive(body.apiSecret))
     });
     return this.getChannelConfig(channel);
   }
@@ -360,6 +413,73 @@ export class AdminNotificationsService {
       throw new NotFoundException("Notification template not found");
     }
     return template;
+  }
+
+  private async getStoredChannelConfig(channel: NotificationChannelType) {
+    return this.prisma.notificationChannelConfig.findUnique({ where: { channel } });
+  }
+
+  private async getCenterRuntime() {
+    const config = await this.getStoredChannelConfig(NotificationChannelType.MOCK);
+    if (config) return { enabled: config.enabled, source: "DB" };
+    return { enabled: isEnabled("NOTIFICATION_CENTER_ENABLED"), source: isEnabled("NOTIFICATION_CENTER_ENABLED") ? "ENV" : "disabled" };
+  }
+
+  private upsertCenterConfig(enabled: boolean) {
+    return this.prisma.notificationChannelConfig.upsert({
+      where: { channel: NotificationChannelType.MOCK },
+      create: { channel: NotificationChannelType.MOCK, enabled, provider: "mock", providerSource: "DB", settingsJson: { role: "notification-center-switch" } },
+      update: { enabled, providerSource: "DB" }
+    });
+  }
+
+  private async resolveChannelRuntime(channel: NotificationChannelType): Promise<NotificationRuntime> {
+    const center = await this.getCenterRuntime();
+    if (!center.enabled) {
+      return {
+        centerEnabled: false,
+        enabled: false,
+        providerSource: center.source,
+        canSend: false,
+        unavailableReason: "通知中心总开关未启用",
+        statusText: "通知中心未启用，任务会记录 SKIPPED"
+      };
+    }
+    if (channel === NotificationChannelType.MOCK) {
+      return { centerEnabled: true, enabled: true, providerSource: center.source, canSend: true, statusText: "Mock 通道可用于测试" };
+    }
+    const config = await this.getStoredChannelConfig(channel);
+    const envEnabled = channel === NotificationChannelType.SMS ? isEnabled("SMS_ENABLED") : isEnabled("WECHAT_SUBSCRIBE_MESSAGE_ENABLED");
+    const envProvider = channel === NotificationChannelType.SMS ? process.env.SMS_PROVIDER || "" : "WECHAT_SUBSCRIBE";
+    const enabled = config ? config.enabled : envEnabled;
+    const providerSource = config ? "DB" : envEnabled ? "ENV" : "disabled";
+    const provider = config?.provider || envProvider;
+    const templateKey = config?.templateKey || (channel === NotificationChannelType.WECHAT_SUBSCRIBE ? process.env.WECHAT_SUBSCRIBE_TEMPLATE_ID || "" : "");
+    const apiKeyConfigured = Boolean(decryptSecret(config?.apiKeyEnc) || process.env.SMS_API_KEY || process.env.WECHAT_SUBSCRIBE_API_KEY);
+    if (!enabled) {
+      return { centerEnabled: true, enabled: false, providerSource, provider, canSend: false, unavailableReason: "通道未启用", statusText: "通道未启用，任务会记录 SKIPPED", templateKey };
+    }
+    if (channel === NotificationChannelType.SMS && !provider) {
+      return { centerEnabled: true, enabled, providerSource, provider, canSend: false, unavailableReason: "短信供应商未配置", statusText: "短信供应商未配置，任务会记录 SKIPPED" };
+    }
+    if (channel === NotificationChannelType.WECHAT_SUBSCRIBE && !templateKey) {
+      return { centerEnabled: true, enabled, providerSource, provider, canSend: false, unavailableReason: "微信订阅模板 ID 未配置", statusText: "微信订阅模板 ID 未配置，任务会记录 SKIPPED" };
+    }
+    return {
+      centerEnabled: true,
+      enabled,
+      providerSource,
+      provider,
+      templateKey,
+      apiKeyConfigured,
+      canSend: false,
+      unavailableReason: "真实发送适配器仍未接入，任务会记录 SKIPPED",
+      statusText: "配置已保存；真实发送适配器未接入时不会伪造成功"
+    };
+  }
+
+  private async formatTaskWithRuntime(item: Parameters<typeof formatTask>[0]) {
+    return { ...formatTask(item), providerStatus: await this.resolveChannelRuntime(item.channel) };
   }
 
   private async resolveRecipients(payloadJson: Prisma.JsonValue | null, channel: NotificationChannelType): Promise<Array<{ userId: string | null; recipient: string | null }>> {
@@ -389,9 +509,13 @@ export class AdminNotificationsService {
 
   private async sendOne(
     task: { id: string; channel: NotificationChannelType; template: { code: string; templateKey: string | null }; payloadJson: Prisma.JsonValue | null },
-    recipient: { userId: string | null; recipient: string | null }
+    recipient: { userId: string | null; recipient: string | null },
+    runtime: NotificationRuntime
   ): Promise<NotificationSendResult> {
     const payload = isRecord(task.payloadJson) ? task.payloadJson : {};
+    if (!runtime.centerEnabled) {
+      return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "NOTIFICATION_CENTER_DISABLED", errorMessage: runtime.unavailableReason || "通知中心总开关未启用" };
+    }
     if (task.channel === NotificationChannelType.MOCK) {
       if (recipient.userId && stringArray(payload.mockSkipUserIds).includes(recipient.userId)) {
         return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "MOCK_SKIPPED", errorMessage: "mock skip configured" };
@@ -409,10 +533,11 @@ export class AdminNotificationsService {
       };
     }
     if (task.channel === NotificationChannelType.WECHAT_SUBSCRIBE) {
-      if (!isEnabled("WECHAT_SUBSCRIBE_MESSAGE_ENABLED")) {
-        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_SUBSCRIBE_DISABLED", errorMessage: "WECHAT_SUBSCRIBE_MESSAGE_ENABLED=false" };
+      if (!runtime.enabled) {
+        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_SUBSCRIBE_DISABLED", errorMessage: runtime.unavailableReason || "微信订阅消息未启用" };
       }
-      if (!task.template.templateKey) {
+      const templateKey = task.template.templateKey || runtime.templateKey;
+      if (!templateKey) {
         return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_TEMPLATE_KEY_MISSING", errorMessage: "微信订阅消息模板 ID 未配置" };
       }
       if (!recipient.userId || !recipient.recipient) {
@@ -426,8 +551,11 @@ export class AdminNotificationsService {
       }
       return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "ADAPTER_RESERVED", errorMessage: "微信订阅消息真实发送适配器待接入" };
     }
-    if (!isEnabled("SMS_ENABLED")) {
-      return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "SMS_DISABLED", errorMessage: "SMS_ENABLED=false" };
+    if (!runtime.enabled) {
+      return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "SMS_DISABLED", errorMessage: runtime.unavailableReason || "短信通道未启用" };
+    }
+    if (!runtime.provider) {
+      return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "SMS_PROVIDER_MISSING", errorMessage: "短信供应商未配置" };
     }
     if (!recipient.recipient) {
       return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "SMS_RECIPIENT_MISSING", errorMessage: "用户手机号不存在" };
@@ -458,12 +586,39 @@ interface NotificationSendResult {
   errorMessage?: string;
 }
 
+export interface NotificationRuntime {
+  centerEnabled: boolean;
+  enabled: boolean;
+  providerSource: string;
+  provider?: string;
+  templateKey?: string;
+  apiKeyConfigured?: boolean;
+  canSend: boolean;
+  unavailableReason?: string;
+  statusText: string;
+}
+
 function ok<TData>(data: TData) {
   return { code: "OK", message: "ok", data };
 }
 
 function maskValue(value: string): string {
   return value.length <= 6 ? "***" : `${value.slice(0, 3)}***${value.slice(-3)}`;
+}
+
+function notificationEnvGuide(channel: "WECHAT_SUBSCRIBE" | "SMS", enabledEnvKey: string) {
+  const items =
+    channel === "SMS"
+      ? [
+          { name: "SMS_PROVIDER", location: "services/api/.env.production", restartRequired: true },
+          { name: "SMS_API_KEY / SMS_API_SECRET", location: "services/api/.env.production 或后台加密配置", restartRequired: true },
+          { name: enabledEnvKey, location: "services/api/.env.production 或后台开关", restartRequired: true }
+        ]
+      : [
+          { name: "WECHAT_SUBSCRIBE_TEMPLATE_ID", location: "后台模板配置或 services/api/.env.production", restartRequired: false },
+          { name: enabledEnvKey, location: "services/api/.env.production 或后台开关", restartRequired: true }
+        ];
+  return items;
 }
 
 function formatSubscription(item: {
@@ -603,6 +758,39 @@ function readOptionalBoolean(value: unknown): boolean | undefined {
   if (typeof value === "undefined") return undefined;
   if (typeof value !== "boolean") throw new BadRequestException("Expected boolean");
   return value;
+}
+
+function readBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") throw new BadRequestException(`${field} must be boolean`);
+  return value;
+}
+
+function readNonNegativeInt(value: unknown, field: string): number {
+  const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number.parseInt(value, 10) : Number.NaN;
+  if (!Number.isInteger(parsed) || parsed < 0) throw new BadRequestException(`${field} must be a non-negative integer`);
+  return parsed;
+}
+
+function readOptionalNonNegativeInt(value: unknown): number | undefined {
+  if (typeof value === "undefined" || value === null || value === "") return undefined;
+  return readNonNegativeInt(value, "value");
+}
+
+function readSensitive(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || /^\*+$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+function hasAny(body: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(body, key));
+}
+
+function readOptionalSettings(body: Record<string, unknown>): Prisma.InputJsonObject | undefined {
+  if (isRecord(body.settingsJson)) return compactJsonObject(body.settingsJson) as Prisma.InputJsonObject;
+  const note = readOptionalString(body.note);
+  return note ? { note } : undefined;
 }
 
 function readOptionalDate(value: unknown): Date | undefined {

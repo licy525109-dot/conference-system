@@ -130,16 +130,32 @@
       <div class="task-form">
         <el-input v-model="taskForm.name" placeholder="群发任务名称" />
         <ConferenceSelect v-model="taskForm.conferenceId" placeholder="会议（可选）" />
+        <el-radio-group v-model="taskForm.targetScope">
+          <el-radio-button label="SELECTED_GROUPS">指定客户群</el-radio-button>
+          <el-radio-button label="CONFERENCE_GROUPS">会议关联群</el-radio-button>
+          <el-radio-button label="ALL_GROUPS">全部客户群</el-radio-button>
+        </el-radio-group>
+        <el-select v-if="taskForm.targetScope === 'SELECTED_GROUPS'" v-model="taskForm.targetGroupIds" multiple filterable placeholder="选择客户群" style="width: 100%">
+          <el-option v-for="group in groups" :key="group.id" :label="`${group.name || group.chatId} / ${group.ownerName || '未知群主'}`" :value="group.id" />
+        </el-select>
         <el-input v-model="taskForm.contentText" type="textarea" :rows="4" placeholder='{"msgtype":"text","text":{"content":"会议提醒..."}}' />
-        <el-button type="primary" @click="saveTask">创建任务</el-button>
+        <div class="action-row">
+          <el-button type="primary" @click="saveTask">创建任务</el-button>
+          <el-button @click="sendTestTask">发送测试到指定群</el-button>
+        </div>
       </div>
       <el-table :data="tasks" border>
         <el-table-column prop="name" label="任务" min-width="180" />
+        <el-table-column prop="targetScope" label="范围" min-width="130" />
         <el-table-column prop="status" label="状态" width="150">
           <template #default="{ row }">{{ statusText(row.status) }}</template>
         </el-table-column>
         <el-table-column prop="wecomTaskId" label="企微任务 ID" min-width="200" />
+        <el-table-column prop="wecomMsgId" label="企微 msgId" min-width="180" />
         <el-table-column prop="conferenceTitle" label="会议" min-width="160" />
+        <el-table-column prop="errorMessage" label="失败/排查" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.errorMessage || row.troubleshooting || "-" }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="260">
           <template #default="{ row }">
             <el-button size="small" type="primary" @click="createTask(row.id)">创建企微任务</el-button>
@@ -152,8 +168,11 @@
     <section v-else-if="section === 'logs'" class="table-panel">
       <el-table :data="logs" border>
         <el-table-column prop="taskName" label="任务" min-width="180" />
+        <el-table-column prop="groupName" label="客户群" min-width="160" />
+        <el-table-column prop="chatId" label="chat_id" min-width="160" />
         <el-table-column prop="ownerUserId" label="群主/成员" min-width="160" />
         <el-table-column prop="status" label="确认/发送状态" min-width="160" />
+        <el-table-column prop="providerMessageId" label="msgId" min-width="180" />
         <el-table-column prop="errorReason" label="失败原因" min-width="180" />
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
       </el-table>
@@ -195,6 +214,7 @@ import {
   listWecomWelcomeTemplates,
   refreshWecomGroupMessageTaskResult,
   syncWecomCustomerGroups,
+  testSendWecomGroupMessageTask,
   testWecomAccessToken,
   updateWecomConfig
 } from "../../services/admin";
@@ -231,7 +251,7 @@ const configForm = reactive({
   remark: ""
 });
 const welcomeForm = reactive({ name: "", contentText: "{\"text\":\"欢迎加入会议客户群\",\"agendaUrl\":\"\",\"aiAssistantUrl\":\"\",\"advisorPhone\":\"\"}" });
-const taskForm = reactive({ name: "", conferenceId: "", contentText: "{\"msgtype\":\"text\",\"text\":{\"content\":\"会议提醒：请关注最新会务通知。\"}}" });
+const taskForm = reactive({ name: "", conferenceId: "", targetScope: "SELECTED_GROUPS", targetGroupIds: [] as string[], contentText: "{\"msgtype\":\"text\",\"text\":{\"content\":\"会议提醒：请关注最新会务通知。\"}}" });
 const section = computed(() => currentRoute.value.path.split("/").pop() || "config");
 const guideSteps = computed(() =>
   configForm.authMode === "LEGACY_CUSTOMER_CONTACT"
@@ -319,6 +339,7 @@ async function loadWelcome() {
 }
 
 async function loadTasks() {
+  if (groups.value.length === 0) await loadGroups();
   tasks.value = (await listWecomGroupMessageTasks({ page: 1, pageSize: 50 })).items;
 }
 
@@ -387,10 +408,34 @@ async function saveWelcome() {
 }
 
 async function saveTask() {
-  await createWecomGroupMessageTask({ name: taskForm.name, conferenceId: taskForm.conferenceId || null, contentJson: parseJson(taskForm.contentText) });
+  await createWecomGroupMessageTask({
+    name: taskForm.name,
+    conferenceId: taskForm.conferenceId || null,
+    targetScope: taskForm.targetScope,
+    targetGroupIds: taskForm.targetScope === "SELECTED_GROUPS" ? taskForm.targetGroupIds : [],
+    contentJson: parseJson(taskForm.contentText)
+  });
   taskForm.name = "";
   await loadTasks();
   ElMessage.success("群发任务已创建");
+}
+
+async function sendTestTask() {
+  if (taskForm.targetGroupIds.length === 0) {
+    ElMessage.warning("请选择至少一个测试客户群");
+    return;
+  }
+  lastResult.value = JSON.stringify(
+    await testSendWecomGroupMessageTask({
+      name: taskForm.name || "企微客户群测试发送",
+      targetGroupIds: taskForm.targetGroupIds,
+      contentJson: parseJson(taskForm.contentText)
+    }),
+    null,
+    2
+  );
+  await loadTasks();
+  ElMessage.success("测试任务已提交，请查看任务状态和日志");
 }
 
 async function createTask(id: string) {
@@ -443,11 +488,13 @@ function authModeText(value: string) {
 function statusText(value: string) {
   const map: Record<string, string> = {
     DRAFT: "草稿",
+    CREATED: "已创建",
     WAITING_CONFIRM: "待成员确认",
     SENDING: "发送中",
     SENT: "已发送",
     PARTIAL_FAILED: "部分失败",
     FAILED: "失败",
+    SKIPPED: "已跳过",
     CANCELLED: "已取消"
   };
   return map[value] || value;

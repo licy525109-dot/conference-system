@@ -1,3 +1,4 @@
+import { inflateSync } from "node:zlib";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   AuditAction,
@@ -11,6 +12,7 @@ import {
   RefundStatus
 } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { decryptSecret, encryptSecret, maskSecret } from "../wecom/wecom.crypto";
 import { CurrentAdmin } from "./current-admin";
 
 @Injectable()
@@ -340,37 +342,47 @@ export class AdminOperationsService {
   async createKnowledgeDocument(conferenceId: string, input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
     const kb = await this.ensureKnowledgeBase(conferenceId);
-    const contentText = readRequiredString(body, "contentText");
-    const chunks = chunkText(contentText);
+    const prepared = prepareKnowledgeDocumentContent(body);
+    const chunks = prepared.lastError ? [] : chunkText(prepared.contentText);
     const doc = await this.prisma.knowledgeDocument.create({
       data: {
         knowledgeBaseId: kb.id,
         title: readRequiredString(body, "title"),
-        sourceType: normalizeDocumentSourceType(readOptionalString(body.sourceType)),
-        contentText,
-        status: normalizeDocumentStatus(readOptionalString(body.status) ?? "ACTIVE"),
+        sourceType: prepared.sourceType,
+        contentText: prepared.contentText,
+        status: prepared.lastError ? "DISABLED" : normalizeDocumentStatus(readOptionalString(body.status) ?? "ACTIVE"),
         chunkCount: chunks.length,
-        indexedAt: new Date(),
+        lastError: prepared.lastError,
+        indexedAt: prepared.lastError ? null : new Date(),
         chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) }
       }
     });
-    await this.writeAudit(admin, AuditAction.CREATE, "KnowledgeDocument", doc.id, "Create AI knowledge document", { conferenceId, chunkCount: chunks.length });
+    await this.writeAudit(admin, AuditAction.CREATE, "KnowledgeDocument", doc.id, "Create AI knowledge document", { conferenceId, chunkCount: chunks.length, sourceType: prepared.sourceType, lastError: prepared.lastError });
     return ok(formatKnowledgeDocument({ ...doc, chunks: chunks.map((_, index) => ({ id: `${doc.id}-${index}` })) }));
   }
 
   async updateKnowledgeDocument(id: string, input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
-    const contentText = typeof body.contentText === "undefined" ? undefined : readRequiredString(body, "contentText");
+    const prepared = hasAny(body, ["contentText", "fileBase64", "sourceType"]) ? prepareKnowledgeDocumentContent(body) : undefined;
     const doc = await this.prisma.$transaction(async (tx) => {
-      if (contentText) await tx.knowledgeChunk.deleteMany({ where: { documentId: id } });
-      const chunks = contentText ? chunkText(contentText) : [];
+      if (prepared) await tx.knowledgeChunk.deleteMany({ where: { documentId: id } });
+      const chunks = prepared && !prepared.lastError ? chunkText(prepared.contentText) : [];
       return tx.knowledgeDocument.update({
         where: { id },
         data: {
           ...(typeof body.title !== "undefined" ? { title: readRequiredString(body, "title") } : {}),
-          ...(typeof body.sourceType !== "undefined" ? { sourceType: normalizeDocumentSourceType(readOptionalString(body.sourceType)) } : {}),
+          ...(prepared ? { sourceType: prepared.sourceType } : {}),
           ...(typeof body.status !== "undefined" ? { status: normalizeDocumentStatus(readRequiredString(body, "status")) } : {}),
-          ...(contentText ? { contentText, chunkCount: chunks.length, indexedAt: new Date(), lastError: null, chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) } } : {})
+          ...(prepared
+            ? {
+                contentText: prepared.contentText,
+                chunkCount: chunks.length,
+                indexedAt: prepared.lastError ? null : new Date(),
+                lastError: prepared.lastError,
+                ...(prepared.lastError ? { status: "DISABLED" } : {}),
+                chunks: { create: chunks.map((content, chunkIndex) => ({ chunkIndex, content, keywords: extractKeywords(content) })) }
+              }
+            : {})
         }
       });
     });
@@ -467,7 +479,9 @@ export class AdminOperationsService {
         name: "default",
         enabled: readOptionalBoolean(body.enabled) ?? false,
         provider: readOptionalString(body.provider) ?? "LOCAL_FALLBACK",
+        baseUrl: readNullableString(body.baseUrl),
         model: readOptionalString(body.model) ?? "local-keyword",
+        apiKeyEnc: readSensitive(body.apiKey) ? encryptSecret(readSensitive(body.apiKey)) : null,
         temperature: readOptionalNonNegativeInt(body.temperature) ?? 0,
         maxOutputTokens: readOptionalNonNegativeInt(body.maxOutputTokens) ?? 800,
         fallbackEnabled: readOptionalBoolean(body.fallbackEnabled) ?? true,
@@ -477,7 +491,9 @@ export class AdminOperationsService {
       update: {
         ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {}),
         ...(typeof body.provider !== "undefined" ? { provider: readRequiredString(body, "provider") } : {}),
+        ...(typeof body.baseUrl !== "undefined" ? { baseUrl: readNullableString(body.baseUrl) } : {}),
         ...(typeof body.model !== "undefined" ? { model: readRequiredString(body, "model") } : {}),
+        ...(readSensitive(body.apiKey) ? { apiKeyEnc: encryptSecret(readSensitive(body.apiKey)) } : {}),
         ...(typeof body.temperature !== "undefined" ? { temperature: readNonNegativeInt(body.temperature, "temperature") } : {}),
         ...(typeof body.maxOutputTokens !== "undefined" ? { maxOutputTokens: readNonNegativeInt(body.maxOutputTokens, "maxOutputTokens") } : {}),
         ...(typeof body.fallbackEnabled !== "undefined" ? { fallbackEnabled: readBoolean(body.fallbackEnabled, "fallbackEnabled") } : {}),
@@ -485,7 +501,7 @@ export class AdminOperationsService {
         ...(typeof body.questionLogEnabled !== "undefined" ? { questionLogEnabled: readBoolean(body.questionLogEnabled, "questionLogEnabled") } : {})
       }
     });
-    await this.writeAudit(admin, AuditAction.UPDATE, "AiConfig", updated.id, "Update AI config", { provider: updated.provider, keyConfigured: Boolean(process.env.AI_API_KEY) });
+    await this.writeAudit(admin, AuditAction.UPDATE, "AiConfig", updated.id, "Update AI config", { provider: updated.provider, keyConfigured: Boolean(process.env.AI_API_KEY || decryptSecret(updated.apiKeyEnc)) });
     return ok(formatAiConfig(updated));
   }
 
@@ -910,18 +926,26 @@ function formatAiQuestionLog(log: Record<string, unknown> & { matchedDocument?: 
 }
 
 function formatAiConfig(config: Record<string, unknown>) {
+  const dbApiKey = decryptSecret(typeof config.apiKeyEnc === "string" ? config.apiKeyEnc : null);
+  const envApiKey = process.env.AI_API_KEY;
+  const providerFromEnv = process.env.AI_PROVIDER || null;
+  const providerFromDb = typeof config.provider === "string" ? config.provider : "LOCAL_FALLBACK";
+  const source = providerFromEnv ? "ENV" : providerFromDb && providerFromDb !== "LOCAL_FALLBACK" ? "DB" : "LOCAL_FALLBACK";
   return {
     ...formatDateFields(config),
     env: {
       aiKbEnabled: isEnabled("AI_KB_ENABLED"),
-      providerFromEnv: process.env.AI_PROVIDER || null,
+      providerFromEnv,
       modelFromEnv: process.env.AI_MODEL || null,
-      keyConfigured: Boolean(process.env.AI_API_KEY)
+      keyConfigured: Boolean(envApiKey)
     },
+    source,
+    baseUrl: typeof config.baseUrl === "string" ? config.baseUrl : null,
     secret: {
-      apiKey: { configured: Boolean(process.env.AI_API_KEY), masked: maskEnvSecret(process.env.AI_API_KEY) }
+      apiKey: { configured: Boolean(envApiKey || dbApiKey), masked: maskSecret(envApiKey || dbApiKey) }
     },
-    keyPolicy: "AI provider key 通过服务器环境变量配置，后台不保存也不返回明文密钥。"
+    keyPolicy: "AI provider key 可通过后台加密保存或服务器环境变量配置；接口只返回 configured/masked，不返回明文密钥。",
+    runtimeNotice: source === "LOCAL_FALLBACK" ? "LOCAL_FALLBACK 为本地关键词检索，不是真实 LLM。" : `${source} 配置会作为 AI provider 运行时来源。`
   };
 }
 
@@ -952,7 +976,76 @@ function normalizeDocumentSourceType(value: string | undefined): string {
   const upper = (value || "TEXT").trim().toUpperCase();
   if (["TEXT", "TXT"].includes(upper)) return "TEXT";
   if (["MD", "MARKDOWN"].includes(upper)) return "MD";
-  throw new BadRequestException("文档来源暂只支持 TEXT / MD");
+  if (upper === "PDF") return "PDF";
+  throw new BadRequestException("文档来源只支持 TEXT / MD / PDF");
+}
+
+function prepareKnowledgeDocumentContent(body: Record<string, unknown>): { sourceType: string; contentText: string; lastError: string | null } {
+  const sourceType = normalizeDocumentSourceType(readOptionalString(body.sourceType));
+  if (sourceType !== "PDF") {
+    return { sourceType, contentText: readRequiredString(body, "contentText"), lastError: null };
+  }
+  try {
+    return { sourceType, contentText: parsePdfTextFromBase64(readRequiredString(body, "fileBase64")), lastError: null };
+  } catch (error) {
+    return { sourceType, contentText: "", lastError: error instanceof Error ? error.message : "PDF 解析失败" };
+  }
+}
+
+function parsePdfTextFromBase64(input: string): string {
+  const base64 = input.replace(/^data:application\/pdf;base64,/i, "").trim();
+  const buffer = Buffer.from(base64, "base64");
+  if (buffer.length === 0 || !buffer.subarray(0, 1024).toString("latin1").includes("%PDF")) throw new BadRequestException("文件格式不支持，请上传 PDF 文件");
+  if (buffer.length > 10 * 1024 * 1024) throw new BadRequestException("PDF 文件过大，单个不超过 10MB");
+  const latin = buffer.toString("latin1");
+  const streamTexts: string[] = [];
+  for (const match of latin.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    const raw = Buffer.from(match[1] ?? "", "latin1");
+    try {
+      streamTexts.push(inflateSync(raw).toString("latin1"));
+    } catch {
+      streamTexts.push(raw.toString("latin1"));
+    }
+  }
+  const text = decodePdfText([latin, ...streamTexts].join("\n"));
+  if (text.length < 2) throw new BadRequestException("PDF 未解析到可用文本，请确认文件不是扫描图片或加密 PDF");
+  return text;
+}
+
+function decodePdfText(content: string): string {
+  const parts: string[] = [];
+  for (const match of content.matchAll(/\((?:\\.|[^\\)])*\)\s*Tj/g)) parts.push(unescapePdfLiteral(match[0].replace(/\)\s*Tj$/, "").slice(1)));
+  for (const match of content.matchAll(/\[(.*?)\]\s*TJ/g)) {
+    for (const item of (match[1] ?? "").matchAll(/\((?:\\.|[^\\)])*\)/g)) parts.push(unescapePdfLiteral(item[0].slice(1, -1)));
+  }
+  for (const match of content.matchAll(/<([0-9A-Fa-f\s]+)>\s*Tj/g)) {
+    const hex = (match[1] ?? "").replace(/\s+/g, "");
+    if (hex.length >= 4) {
+      try {
+        parts.push(Buffer.from(hex, "hex").toString(hex.startsWith("FEFF") || hex.startsWith("feff") ? "utf16le" : "utf8"));
+      } catch {
+        // Ignore invalid hex fragments and keep parsing other text operators.
+      }
+    }
+  }
+  return parts.join(" ").replace(/[\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function unescapePdfLiteral(value: string): string {
+  const unescaped = value
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\b/g, "\b")
+    .replace(/\\f/g, "\f")
+    .replace(/\\([()\\])/g, "$1")
+    .replace(/\\([0-7]{1,3})/g, (_, octal: string) => String.fromCharCode(Number.parseInt(octal, 8)));
+  return decodeLatin1Utf8(unescaped);
+}
+
+function decodeLatin1Utf8(value: string): string {
+  const decoded = Buffer.from(value, "latin1").toString("utf8");
+  return decoded.includes("�") ? value : decoded;
 }
 
 function defaultAiFallbackText() {
@@ -986,6 +1079,17 @@ function readRequiredString(body: Record<string, unknown>, key: string): string 
 
 function readOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readSensitive(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || /^\*+$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+function hasAny(body: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(body, key));
 }
 
 function readNullableString(value: unknown): string | null {
