@@ -80,7 +80,7 @@ page {
   box-sizing: border-box;
   background: var(--cms-gradient-page);
   background-repeat: no-repeat;
-  background-size: 100% 100%;
+  background-size: cover;
   overflow-x: hidden;
   overflow-y: visible;
 }

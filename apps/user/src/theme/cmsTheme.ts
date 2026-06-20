@@ -474,15 +474,13 @@ export function createCmsBackgroundStyle(config: ThemeConfig, target: "body" | "
       backgroundImage: `${overlay}url("${config.backgroundImageUrl}")`,
       backgroundSize: "cover",
       backgroundPosition: "center top",
-      backgroundRepeat: "no-repeat"
+      backgroundRepeat: "repeat-y"
     };
   }
 
   if (config.backgroundMode === "dynamic-gradient") {
     return {
-      backgroundImage: dynamicGradientBackground(config),
-      backgroundSize: "240% 240%",
-      backgroundPosition: "center top"
+      background: config.backgroundColor || theme.colors.pageBg
     };
   }
 

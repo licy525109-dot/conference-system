@@ -1360,11 +1360,11 @@ function readErrorText(error: unknown, fallback: string): string {
 <style scoped>
 .cms-page {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   min-height: auto;
   padding: 0;
   box-sizing: border-box;
-  background: var(--cms-bg);
+  background: transparent;
 }
 
 .cms-block {
