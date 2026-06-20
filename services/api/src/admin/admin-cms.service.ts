@@ -14,7 +14,20 @@ import { assertCmsPresetsArePublishable, assertCmsPublishable, buildCmsPublishCh
 import { ok } from "../cms/cms.service";
 import { CurrentAdmin } from "./current-admin";
 
-const KNOWN_PAGE_KEYS = new Set(["home", "conference-list", "conference-detail", "my-registrations", "cart", "member-center", "mall", "mall-detail"]);
+const KNOWN_PAGE_KEYS = new Set([
+  "home",
+  "conference-list",
+  "conference-detail",
+  "registration-form",
+  "registration-success",
+  "my-registrations",
+  "cart",
+  "member-center",
+  "mall",
+  "mall-detail",
+  "mall-orders",
+  "invoice"
+]);
 const PAGE_TYPES_REQUIRING_CONFERENCE = new Set(["CONFERENCE_DETAIL_PAGE"]);
 const PAGE_TYPES_REQUIRING_PRODUCT = new Set(["PRODUCT_DETAIL_PAGE"]);
 const DEFAULT_SCOPE = "global";
@@ -562,11 +575,15 @@ export class AdminCmsService {
       { pageKey: "home", title: "首页", pageType: "HOME", sortOrder: 0 },
       { pageKey: "conference-list", title: "会议列表页", pageType: "CONFERENCE_LIST", sortOrder: 10 },
       { pageKey: "conference-detail", title: "会议详情页", pageType: "CONFERENCE_DETAIL", sortOrder: 20 },
-      { pageKey: "my-registrations", title: "我的报名页", pageType: "USER", sortOrder: 30 },
-      { pageKey: "cart", title: "购物车页", pageType: "USER", sortOrder: 40 },
-      { pageKey: "member-center", title: "会员中心页", pageType: "USER", sortOrder: 50 },
-      { pageKey: "mall", title: "商城首页", pageType: "MALL", sortOrder: 60 },
-      { pageKey: "mall-detail", title: "商品详情模板", pageType: "PRODUCT_DETAIL_TEMPLATE", sortOrder: 70 }
+      { pageKey: "registration-form", title: "会议报名页", pageType: "REGISTRATION_FORM", sortOrder: 30 },
+      { pageKey: "registration-success", title: "报名凭证页", pageType: "REGISTRATION_CREDENTIAL", sortOrder: 40 },
+      { pageKey: "my-registrations", title: "我的报名页", pageType: "USER", sortOrder: 50 },
+      { pageKey: "cart", title: "商城下单/购物车页", pageType: "MALL_CHECKOUT", sortOrder: 60 },
+      { pageKey: "member-center", title: "会员中心页", pageType: "USER", sortOrder: 70 },
+      { pageKey: "mall", title: "商城首页", pageType: "MALL", sortOrder: 80 },
+      { pageKey: "mall-detail", title: "商城商品详情页", pageType: "PRODUCT_DETAIL_TEMPLATE", sortOrder: 90 },
+      { pageKey: "mall-orders", title: "售后申请页", pageType: "MALL_AFTERSALE", sortOrder: 100 },
+      { pageKey: "invoice", title: "发票申请页", pageType: "INVOICE", sortOrder: 110 }
     ]) {
       const template = await this.prisma.pageTemplate.upsert({
         where: { pageKey: page.pageKey },
@@ -1019,10 +1036,15 @@ function inferPageType(pageKey: string): string {
   if (pageKey === "home") return "HOME";
   if (pageKey === "conference-list") return "CONFERENCE_LIST";
   if (pageKey === "conference-detail") return "CONFERENCE_DETAIL";
+  if (pageKey === "registration-form") return "REGISTRATION_FORM";
+  if (pageKey === "registration-success") return "REGISTRATION_CREDENTIAL";
   if (pageKey === "my-registrations") return "USER";
-  if (pageKey === "cart") return "USER";
+  if (pageKey === "cart") return "MALL_CHECKOUT";
   if (pageKey === "member-center") return "USER";
   if (pageKey === "mall") return "MALL";
+  if (pageKey === "mall-detail") return "PRODUCT_DETAIL_TEMPLATE";
+  if (pageKey === "mall-orders") return "MALL_AFTERSALE";
+  if (pageKey === "invoice") return "INVOICE";
   return "CUSTOM";
 }
 

@@ -41,20 +41,6 @@
           </div>
         </section>
 
-        <section class="data-panel cms-panel cms-planning-panel">
-          <div class="library-head">
-            <div>
-              <div class="panel-title">业务页接入说明</div>
-              <p class="page-subtitle">真实可编辑、可预览、可发布的业务页直接在上方页面列表中管理。</p>
-            </div>
-          </div>
-          <div class="cms-planning-list">
-            <p><strong>已接入渲染：</strong>会议详情页、商城商品详情页。请在页面列表中选择对应模板或指定页面编辑。</p>
-            <p><strong>后续规划：</strong>会议报名页、订单支付页、报名凭证页、会员中心页、发票申请页、售后申请页暂不放入主列表，避免运营误以为已在用户端生效。</p>
-            <p><strong>页面区分：</strong>会议详情页用于“查看详情”，会议报名页用于“立即报名”，两者配置不会互相覆盖。</p>
-          </div>
-        </section>
-
         <section class="data-panel cms-panel">
           <div class="library-head">
             <div>
@@ -132,7 +118,7 @@
           <div class="library-head">
             <div>
               <div class="panel-title">手机预览</div>
-              <p class="page-subtitle">实际小程序预览效果：使用与用户端一致的组件字段协议；未接入渲染的配置不会标为已生效。</p>
+              <p class="page-subtitle">实际小程序预览效果：页面列表中的业务页使用同一套组件字段协议，发布后由对应小程序页面读取。</p>
             </div>
             <el-select
               v-model="selectedComponentId"
@@ -633,7 +619,15 @@ const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
   "membership-benefits": { label: "已支持", status: "supported", description: "小程序/H5 支持会员权益展示和会员中心入口" },
   "user-profile-card": { label: "已支持", status: "supported", description: "小程序/H5 支持登录资料和未登录引导" },
   "my-order-list": { label: "已支持", status: "supported", description: "小程序/H5 支持报名和商城订单入口" },
-  "mall-product-grid": { label: "已支持", status: "supported", description: "小程序/H5 支持真实商品展示和详情跳转" }
+  "mall-product-grid": { label: "已支持", status: "supported", description: "小程序/H5 支持真实商品展示和详情跳转" },
+  "credential-header": { label: "已支持", status: "supported", description: "小程序/H5 报名凭证页支持报名状态、会议名称和报名号展示" },
+  "credential-qr": { label: "已支持", status: "supported", description: "小程序/H5 报名凭证页支持真实二维码展示" },
+  "credential-conference-info": { label: "已支持", status: "supported", description: "小程序/H5 报名凭证页支持会议时间、地点和票种展示" },
+  "credential-attendee-info": { label: "已支持", status: "supported", description: "小程序/H5 报名凭证页支持参会人和微信用户信息展示" },
+  "credential-payment-info": { label: "已支持", status: "supported", description: "小程序/H5 报名凭证页支持支付状态、金额、渠道和订单号展示" },
+  "credential-form-summary": { label: "已支持", status: "supported", description: "小程序/H5 报名凭证页支持报名字段摘要展示" },
+  "credential-checkin-info": { label: "已支持", status: "supported", description: "小程序/H5 报名凭证页支持签到状态和签到时间展示" },
+  "credential-actions": { label: "已支持", status: "supported", description: "小程序/H5 报名凭证页支持签到、客户群、议程、指南、客服和日历入口" }
 };
 
 const ADDABLE_SUPPORT_STATUSES: CmsComponentSupportStatus[] = ["supported", "basic"];
@@ -676,6 +670,13 @@ const productOptions = ref<Product[]>([]);
 const pageTypeOptions = [
   { label: "普通页面", value: "CUSTOM" },
   { label: "会议首页", value: "HOME" },
+  { label: "会议报名页", value: "REGISTRATION_FORM" },
+  { label: "报名凭证页", value: "REGISTRATION_CREDENTIAL" },
+  { label: "用户页", value: "USER" },
+  { label: "商城下单/购物车页", value: "MALL_CHECKOUT" },
+  { label: "商城首页", value: "MALL" },
+  { label: "商城订单/售后申请页", value: "MALL_AFTERSALE" },
+  { label: "发票申请页", value: "INVOICE" },
   { label: "会议详情模板", value: "CONFERENCE_DETAIL_TEMPLATE" },
   { label: "指定会议详情页", value: "CONFERENCE_DETAIL_PAGE" },
   { label: "商品详情模板", value: "PRODUCT_DETAIL_TEMPLATE" },
@@ -1383,6 +1384,21 @@ function fieldsFor(type: string): ConfigField[] {
     { key: "targetProductId", label: "目标商品", kind: "select", options: productSelectOptions() },
     { key: "targetCouponCampaignId", label: "目标券活动", kind: "select", options: couponCampaignSelectOptions() }
   ];
+  const credentialFields = (extraFields: ConfigField[]): ConfigField[] => withTextStyle([
+    ...commonTitle,
+    {
+      key: "cardStyle",
+      label: "卡片样式",
+      kind: "select",
+      fallback: "standard",
+      options: [
+        { label: "标准卡片", value: "standard" },
+        { label: "强调卡片", value: "highlight" },
+        { label: "轻量卡片", value: "plain" }
+      ]
+    },
+    ...extraFields
+  ], 26);
   const map: Record<string, ConfigField[]> = {
     hero: [
       { key: "kicker", label: "眉标文字", placeholder: "会议报名" },
@@ -1504,6 +1520,29 @@ function fieldsFor(type: string): ConfigField[] {
     "user-profile-card": withTextStyle([...commonTitle, { key: "description", label: "未登录提示", kind: "textarea", rows: 2 }, { key: "target", label: "点击目标", kind: "select", fallback: "member", options: profileTargetOptions() }], 26),
     "my-order-list": withTextStyle([...commonTitle, { key: "orderType", label: "展示类型", kind: "select", fallback: "both", options: orderTypeOptions() }], 26),
     "mall-product-grid": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 4 }, { key: "keyword", label: "商品关键词", placeholder: "按商品标题过滤" }, { key: "productCategoryId", label: "商品分类", kind: "select", options: productCategorySelectOptions() }, { key: "buttonText", label: "按钮文案", placeholder: "查看商城" }], 26),
+    "credential-header": credentialFields([
+      { key: "statusText", label: "状态文案", placeholder: "报名成功" }
+    ]),
+    "credential-qr": credentialFields([
+      { key: "description", label: "二维码说明", kind: "textarea", rows: 2, placeholder: "工作人员可扫码完成签到核销。" }
+    ]),
+    "credential-conference-info": credentialFields([]),
+    "credential-attendee-info": credentialFields([
+      { key: "showWechatUser", label: "显示微信用户", kind: "switch", fallback: "true" }
+    ]),
+    "credential-payment-info": credentialFields([]),
+    "credential-form-summary": credentialFields([
+      { key: "emptyText", label: "无字段文案", placeholder: "暂无补充报名字段" }
+    ]),
+    "credential-checkin-info": credentialFields([]),
+    "credential-actions": credentialFields([
+      { key: "checkinText", label: "签到按钮文案", placeholder: "去签到" },
+      { key: "groupText", label: "客户群按钮文案", placeholder: "加入会议客户群" },
+      { key: "agendaText", label: "议程按钮文案", placeholder: "查看议程" },
+      { key: "guideText", label: "指南按钮文案", placeholder: "参会指南" },
+      { key: "contactText", label: "客服按钮文案", placeholder: "联系客服" },
+      { key: "calendarText", label: "日历按钮文案", placeholder: "添加到日历" }
+    ]),
     title: withTextStyle([{ key: "text", label: "标题文字", placeholder: "请输入标题" }], 34),
     divider: [],
     spacer: [{ key: "height", label: "留白高度", kind: "number", fallback: 24 }]
@@ -1996,6 +2035,70 @@ const ComponentPreview = defineComponent({
       if (type === "registration-button" || type === "floating-registration-button") {
         return h("button", { class: "preview-button", style: textStyle() }, value("text", "立即报名"));
       }
+      if (type.startsWith("credential-")) {
+        const title = value("title", credentialPreviewTitle(type));
+        const cardClass = ["preview-credential-card", `is-${value("cardStyle", "standard")}`];
+        if (type === "credential-header") {
+          return h("div", { class: cardClass }, [
+            h("span", { class: "preview-credential-kicker" }, value("statusText", "报名成功")),
+            h("strong", { style: titleStyle() }, "行业增长大会"),
+            h("small", "报名号：REG20260618ZE0QJ7")
+          ]);
+        }
+        if (type === "credential-qr") {
+          return h("div", { class: cardClass }, [
+            h("strong", { style: titleStyle() }, title),
+            h("div", { class: "preview-credential-qr" }, Array.from({ length: 25 }).map((_, index) => h("i", { class: index % 3 === 0 || index % 7 === 0 ? "is-dark" : "" }))),
+            h("p", { style: textStyle() }, value("description", "工作人员可扫码完成签到核销。"))
+          ]);
+        }
+        if (type === "credential-conference-info") {
+          return credentialInfoPreview(cardClass, title, [
+            ["时间", "2026-08-18 09:00 - 2026-08-18 17:30"],
+            ["地点", "上海会议中心"],
+            ["票种", "标准票"]
+          ], titleStyle(), textStyle());
+        }
+        if (type === "credential-attendee-info") {
+          return credentialInfoPreview(cardClass, title, [
+            ["姓名", "张三"],
+            ["手机号", "138****8000"],
+            ["公司", "未填写"],
+            ["微信", booleanConfig(props.item, "showWechatUser", true) ? "微信用户 · 头像已同步" : "已隐藏微信用户"]
+          ], titleStyle(), textStyle());
+        }
+        if (type === "credential-payment-info") {
+          return credentialInfoPreview(cardClass, title, [
+            ["支付金额", "¥0.01"],
+            ["支付状态", "支付成功"],
+            ["支付渠道", "微信支付"],
+            ["订单号", "REG20260618ZE0QJ7"]
+          ], titleStyle(), textStyle());
+        }
+        if (type === "credential-form-summary") {
+          return credentialInfoPreview(cardClass, title, [
+            ["姓名", "张三"],
+            ["手机号", "138****8000"],
+            ["公司", value("emptyText", "暂无补充报名字段")]
+          ], titleStyle(), textStyle());
+        }
+        if (type === "credential-checkin-info") {
+          return credentialInfoPreview(cardClass, title, [
+            ["签到状态", "待签到"],
+            ["签到时间", "暂无"]
+          ], titleStyle(), textStyle());
+        }
+        if (type === "credential-actions") {
+          return h("div", { class: [...cardClass, "preview-credential-actions"] }, [
+            h("button", value("checkinText", "去签到")),
+            h("button", value("groupText", "加入会议客户群")),
+            h("button", value("agendaText", "查看议程")),
+            h("button", value("guideText", "参会指南")),
+            h("button", value("contactText", "联系客服")),
+            h("button", value("calendarText", "添加到日历"))
+          ]);
+        }
+      }
       if (type === "speaker-cards") {
         const items = parsedList("speakers");
         return h("div", { class: "preview-section" }, [
@@ -2089,6 +2192,28 @@ const ComponentPreview = defineComponent({
     };
   }
 });
+
+function credentialPreviewTitle(type: string): string {
+  return {
+    "credential-header": "报名成功",
+    "credential-qr": "电子报名凭证",
+    "credential-conference-info": "会议信息",
+    "credential-attendee-info": "参会人信息",
+    "credential-payment-info": "支付信息",
+    "credential-form-summary": "报名表单摘要",
+    "credential-checkin-info": "签到信息",
+    "credential-actions": "操作按钮"
+  }[type] ?? "报名凭证";
+}
+
+function credentialInfoPreview(className: string[], title: string, rows: Array<[string, string]>, titleStyle: Record<string, string | undefined>, textStyle: Record<string, string | undefined>) {
+  return h("div", { class: className }, [
+    h("strong", { style: titleStyle }, title),
+    h("div", { class: "preview-credential-lines" }, rows.map(([label, value]) =>
+      h("span", [h("small", label), h("b", { style: textStyle }, value)])
+    ))
+  ]);
+}
 
 const sampleConferences = [
   {
@@ -3671,6 +3796,101 @@ function splitPreviewLine(value: string): string[] {
   padding: 12px;
   color: #8a4b00;
   background: #fff7ed;
+}
+
+.preview-credential-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #dce3ef;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 7%);
+}
+
+.preview-credential-card.is-highlight {
+  border-color: color-mix(in srgb, var(--preview-primary) 42%, #ffffff);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--preview-primary) 10%, #ffffff), #ffffff);
+}
+
+.preview-credential-card.is-plain {
+  box-shadow: none;
+}
+
+.preview-credential-kicker {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--preview-primary) 12%, #ffffff);
+  color: var(--preview-primary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.preview-credential-card small {
+  color: #637083;
+  font-size: 11px;
+}
+
+.preview-credential-qr {
+  display: grid;
+  grid-template-columns: repeat(5, 14px);
+  gap: 3px;
+  align-self: center;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.preview-credential-qr i {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: #e2e8f0;
+}
+
+.preview-credential-qr i.is-dark {
+  background: #172033;
+}
+
+.preview-credential-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-credential-lines span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 7px;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.preview-credential-lines b {
+  max-width: 60%;
+  overflow: hidden;
+  color: #172033;
+  font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-credential-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.preview-credential-actions button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--preview-primary) 12%, #ffffff);
+  color: var(--preview-primary);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .preview-divider {

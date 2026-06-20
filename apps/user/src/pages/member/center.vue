@@ -20,6 +20,8 @@
       tone="info"
     />
 
+    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+
     <view class="profile-card ui-card">
       <image v-if="user?.wechatAvatarUrl" class="avatar" :src="user.wechatAvatarUrl" mode="aspectFill" />
       <view v-else class="avatar placeholder">{{ displayName.slice(0, 1) }}</view>
@@ -116,10 +118,12 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
+import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
+import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { createMobileAdminSession, getCheckinStaffMe } from "@/services/admin-mobile";
 import { ensureLogin, getStoredUser, type CurrentUser } from "@/services/auth";
 import { getMemberCenter, type CurrentMembership, type MemberBenefitGrant, type MemberLevel } from "@/services/member";
@@ -131,6 +135,7 @@ const user = ref<CurrentUser | null>(getStoredUser());
 const membership = ref<CurrentMembership | null>(null);
 const levels = ref<MemberLevel[]>([]);
 const grants = ref<MemberBenefitGrant[]>([]);
+const cmsPage = ref<PublishedPage | null>(null);
 const purchaseMessage = ref("会员购买支付暂未开放，可联系会务组或等待后台授予。");
 const hasAdminAccess = ref(false);
 const hasStaffCheckinAccess = ref(false);
@@ -150,10 +155,11 @@ async function load() {
   try {
     await ensureLogin();
     user.value = getStoredUser();
-    const data = await getMemberCenter();
+    const [data, page] = await Promise.all([getMemberCenter(), getPublishedPage("member-center")]);
     levels.value = data.levels;
     membership.value = data.membership;
     grants.value = data.grants;
+    cmsPage.value = page;
     purchaseMessage.value = data.purchase.message;
   } catch (err) {
     console.error("[MEMBER_CENTER_LOAD_ERROR]", err);

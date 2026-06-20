@@ -21,6 +21,15 @@
         <text class="safety-note">金额以提交订单时系统计算结果为准，前端 quote 仅用于展示。</text>
       </view>
 
+      <PageRenderer
+        v-if="cmsPage"
+        :components="cmsPage.version.components"
+        :theme="theme"
+        :conference="conference"
+        suppress-registration-cta
+        @register="scrollToForm"
+      />
+
       <FormSection title="选择报名规格" description="可选择多个票种，系统会为每张票生成一份参会人信息。" step="1">
         <view class="sku-list">
           <view
@@ -163,11 +172,13 @@ import ErrorState from "@/components/ui/ErrorState.vue";
 import FixedBottomActionBar from "@/components/ui/FixedBottomActionBar.vue";
 import FormSection from "@/components/ui/FormSection.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
+import PageRenderer from "@/components/PageRenderer.vue";
 import PriceSummary from "@/components/ui/PriceSummary.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
+import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import {
   getConferenceDetail,
   getConferenceForm,
@@ -189,6 +200,7 @@ const conferenceId = ref("");
 const selectedSkuId = ref("");
 const conference = ref<ConferenceDetail | null>(null);
 const form = ref<ConferenceForm | null>(null);
+const cmsPage = ref<PublishedPage | null>(null);
 const quantities = ref<Record<string, number>>({});
 const attendeeForms = ref<AttendeeFormState[]>([]);
 const quote = ref<QuoteResponse | null>(null);
@@ -238,9 +250,14 @@ async function loadPage() {
 
   try {
     await ensureLogin();
-    const [detail, formResponse] = await Promise.all([getConferenceDetail(conferenceId.value), getConferenceForm(conferenceId.value)]);
+    const [detail, formResponse, page] = await Promise.all([
+      getConferenceDetail(conferenceId.value),
+      getConferenceForm(conferenceId.value),
+      getPublishedPage("registration-form")
+    ]);
     conference.value = detail;
     form.value = formResponse;
+    cmsPage.value = page;
 
     if (!selectedSkuId.value && detail.skus[0]) {
       selectedSkuId.value = detail.skus[0].id;
@@ -265,6 +282,10 @@ async function loadPage() {
   } finally {
     loading.value = false;
   }
+}
+
+function scrollToForm() {
+  uni.pageScrollTo({ scrollTop: 420, duration: 200 });
 }
 
 function createEmptyFormData(fields: FormField[]) {

@@ -1,5 +1,10 @@
 <template>
-  <view class="page ui-page">
+  <view class="page ui-page" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <view v-if="showBodyVideo" class="page-bg-overlay" />
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
+    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+
     <view class="form ui-card">
       <text class="title">发票申请</text>
       <text class="hint">当前为人工开票流程，金额由后端按已支付订单计算。</text>
@@ -53,6 +58,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import PageRenderer from "@/components/PageRenderer.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
+import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
+import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { createInvoiceApplication, getMyInvoiceableOrders, getMyInvoiceProfile, getMyInvoices, saveMyInvoiceProfile, type InvoiceableOrder } from "@/services/operations";
 
 const loading = ref(false);
@@ -61,6 +70,8 @@ const invoiceableOrders = ref<Array<InvoiceableOrder & { label: string }>>([]);
 const orderIndex = ref(0);
 const savingProfile = ref(false);
 const saveAsDefault = ref(true);
+const cmsPage = ref<PublishedPage | null>(null);
+const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("invoice");
 const invoiceTypeOptions = [
   { label: "普通发票", value: "GENERAL" },
   { label: "专用发票", value: "SPECIAL" }
@@ -69,12 +80,15 @@ const invoiceTypeIndex = ref(0);
 const form = reactive({ title: "", taxNo: "", invoiceType: "GENERAL", email: "", phone: "", address: "", bankName: "", bankAccount: "" });
 const selectedOrder = computed(() => invoiceableOrders.value[orderIndex.value] ?? null);
 
-onMounted(() => void load());
+onMounted(() => {
+  void refreshTheme();
+  void load();
+});
 
 async function load() {
   loading.value = true;
   try {
-    const [invoiceData, orderData, profileData] = await Promise.all([getMyInvoices(), getMyInvoiceableOrders(), getMyInvoiceProfile()]);
+    const [invoiceData, orderData, profileData, page] = await Promise.all([getMyInvoices(), getMyInvoiceableOrders(), getMyInvoiceProfile(), getPublishedPage("invoice")]);
     invoices.value = invoiceData.items;
     invoiceableOrders.value = orderData.items.map((item) => ({
       ...item,
@@ -82,6 +96,7 @@ async function load() {
     }));
     if (orderIndex.value >= invoiceableOrders.value.length) orderIndex.value = 0;
     if (profileData.item && !form.title) fillForm(profileData.item as unknown as Record<string, unknown>);
+    cmsPage.value = page;
   } finally {
     loading.value = false;
   }
@@ -168,6 +183,7 @@ function formatCent(value: number) {
 
 <style scoped>
 .page {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 20rpx;
@@ -175,10 +191,19 @@ function formatCent(value: number) {
 
 .form,
 .item {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 16rpx;
   padding: 28rpx;
+}
+
+.list-head,
+.empty,
+.page :deep(.cms-page) {
+  position: relative;
+  z-index: 1;
 }
 
 .title,

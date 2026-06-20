@@ -497,11 +497,15 @@ function pagePath(pageKey: string) {
     home: "/pages/index/index",
     "conference-list": "/pages/index/index",
     "conference-detail": "/pages/index/index",
+    "registration-form": "/pages/index/index",
+    "registration-success": "/pages/registrations/my",
     "my-registrations": "/pages/registrations/my",
     cart: "/pages/cart/index",
     "member-center": "/pages/member/center",
     mall: "/pages/mall/index",
-    "mall-detail": "/pages/mall/index"
+    "mall-detail": "/pages/mall/index",
+    "mall-orders": "/pages/mall/orders",
+    invoice: "/pages/invoice/index"
   };
   return builtin[pageKey] ?? `/pages/custom/index?pageKey=${encodeURIComponent(pageKey)}`;
 }
