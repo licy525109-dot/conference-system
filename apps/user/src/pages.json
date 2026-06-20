@@ -7,6 +7,13 @@
       }
     },
     {
+      "path": "pages/splash/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "启动页"
+      }
+    },
+    {
       "path": "pages/conference/detail",
       "style": {
         "navigationBarTitleText": "会议详情"

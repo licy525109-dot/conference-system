@@ -119,8 +119,34 @@
 
       <el-tab-pane label="页面装修" name="page">
         <section class="form-panel">
-          <h3>用户端显示设置</h3>
-          <p class="muted-text">控制会议详情页固定模块显示。报名规格来自票种配置；库存默认只展示“充足/紧张/售罄”，不向用户暴露具体剩余量。</p>
+          <h3>会议详情页（查看详情）固定模块</h3>
+          <p class="muted-text">这里影响用户在会议卡片点击“查看详情”后的页面，不影响点击“立即报名”进入的报名页。默认隐藏“加入客户群”。</p>
+          <el-table :data="conferenceForm.detailPageDisplay.modules" class="detail-module-table" empty-text="暂无模块配置">
+            <el-table-column label="显示" width="74"><template #default="{ row }"><el-switch v-model="row.visible" /></template></el-table-column>
+            <el-table-column prop="label" label="模块" width="130" />
+            <el-table-column label="标题" min-width="170"><template #default="{ row }"><el-input v-model="row.title" /></template></el-table-column>
+            <el-table-column label="内容" min-width="260"><template #default="{ row }"><el-input v-model="row.content" type="textarea" :rows="2" placeholder="可选，留空时使用会议基础信息或页面装修内容" /></template></el-table-column>
+            <el-table-column label="排序" width="110"><template #default="{ row }"><el-input-number v-model="row.sort" :min="0" :max="999" /></template></el-table-column>
+            <el-table-column label="样式" width="140">
+              <template #default="{ row }">
+                <el-select v-model="row.style">
+                  <el-option label="卡片" value="card" />
+                  <el-option label="列表" value="list" />
+                  <el-option label="强调" value="accent" />
+                  <el-option label="紧凑" value="compact" />
+                </el-select>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-form :model="conferenceForm.detailPageDisplay" label-width="140px" class="display-form">
+            <el-form-item label="底部按钮文案"><el-input v-model="conferenceForm.detailPageDisplay.primaryButtonText" placeholder="立即报名" /></el-form-item>
+            <el-form-item label="库存展示"><el-select v-model="conferenceForm.detailPageDisplay.inventoryDisplayMode"><el-option label="显示具体数量" value="EXACT" /><el-option label="仅显示充足/紧张/售罄" value="STATUS" /><el-option label="完全隐藏库存" value="HIDDEN" /></el-select></el-form-item>
+            <el-form-item label="库存紧张阈值"><el-input-number v-model="conferenceForm.detailPageDisplay.lowStockThreshold" :min="1" :max="9999" /></el-form-item>
+          </el-form>
+        </section>
+        <section class="form-panel">
+          <h3>会议报名页（立即报名后）显示设置</h3>
+          <p class="muted-text">这里保留给用户点击“立即报名”后的报名页配置。报名页金额仍以后端 quote / create order 计算为准。</p>
           <el-form :model="conferenceForm.detailDisplay" label-width="140px" class="display-form">
             <el-form-item label="固定模块">
               <el-checkbox-group v-model="conferenceForm.detailDisplay.visibleModules" class="module-grid">
@@ -143,8 +169,8 @@
             <el-form-item label="底部按钮文案"><el-input v-model="conferenceForm.detailDisplay.primaryButtonText" placeholder="立即报名" /></el-form-item>
             <el-form-item label="库存展示"><el-select v-model="conferenceForm.detailDisplay.inventoryDisplayMode"><el-option label="显示具体数量" value="EXACT" /><el-option label="仅显示充足/紧张/售罄" value="STATUS" /><el-option label="完全隐藏库存" value="HIDDEN" /></el-select></el-form-item>
             <el-form-item label="库存紧张阈值"><el-input-number v-model="conferenceForm.detailDisplay.lowStockThreshold" :min="1" :max="9999" /></el-form-item>
-            <el-form-item><el-button type="primary" @click="saveConference">保存显示设置</el-button></el-form-item>
           </el-form>
+          <el-button type="primary" @click="saveConference">保存页面设置</el-button>
         </section>
         <section class="form-panel">
           <h3>会议详情页装修</h3>
@@ -259,6 +285,7 @@ const conferenceForm = reactive({
   },
   groupRegistrationEnabled: true,
   maxTicketsPerOrder: 0,
+  detailPageDisplay: defaultDetailPageDisplay(),
   detailDisplay: defaultDetailDisplay(),
   contentJsonText: "{}",
   styleJsonText: "{}"
@@ -336,6 +363,7 @@ function syncConferenceForm() {
     },
     groupRegistrationEnabled: conference.value.groupRegistrationEnabled,
     maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0,
+    detailPageDisplay: normalizeDetailPageDisplay(contentJson.detailPageDisplay ?? contentJson.detailDisplay),
     detailDisplay: normalizeDetailDisplay(contentJson.detailDisplay),
     contentJsonText: JSON.stringify(conference.value.contentJson ?? {}, null, 2),
     styleJsonText: JSON.stringify(conference.value.styleJson ?? {}, null, 2)
@@ -346,6 +374,7 @@ async function saveConference() {
   if (!conferenceId.value) return;
   const contentJson = {
     ...parseJsonObject(conferenceForm.contentJsonText),
+    detailPageDisplay: normalizeDetailPageDisplay(conferenceForm.detailPageDisplay),
     detailDisplay: normalizeDetailDisplay(conferenceForm.detailDisplay)
   };
   await updateConference(conferenceId.value, {
@@ -533,6 +562,59 @@ function defaultDetailDisplay() {
   };
 }
 
+function defaultDetailPageDisplay() {
+  return {
+    modules: [
+      { key: "conferenceInfo", label: "会议信息", visible: true, title: "会议信息", content: "", sort: 10, style: "card" },
+      { key: "speakers", label: "嘉宾介绍", visible: true, title: "嘉宾介绍", content: "", sort: 20, style: "card" },
+      { key: "schedule", label: "日程安排", visible: true, title: "日程安排", content: "", sort: 30, style: "card" },
+      { key: "location", label: "会议地点", visible: true, title: "会议地点", content: "", sort: 40, style: "card" },
+      { key: "guide", label: "参会指南", visible: true, title: "参会指南", content: "", sort: 50, style: "card" },
+      { key: "assistant", label: "会议助手", visible: true, title: "会议助手", content: "", sort: 60, style: "card" },
+      { key: "skus", label: "报名规格", visible: true, title: "报名规格", content: "", sort: 70, style: "card" },
+      { key: "inventory", label: "库存展示", visible: true, title: "库存展示", content: "", sort: 80, style: "compact" },
+      { key: "customerService", label: "联系客服", visible: false, title: "联系客服", content: "", sort: 90, style: "compact" },
+      { key: "customerGroup", label: "加入客户群", visible: false, title: "加入客户群", content: "", sort: 100, style: "compact" },
+      { key: "calendar", label: "添加到日历", visible: false, title: "添加到日历", content: "", sort: 110, style: "compact" },
+      { key: "registrationButton", label: "立即报名按钮", visible: true, title: "立即报名", content: "", sort: 120, style: "accent" },
+      { key: "shareButton", label: "分享按钮", visible: true, title: "分享会议", content: "", sort: 130, style: "compact" }
+    ],
+    primaryButtonText: "立即报名",
+    inventoryDisplayMode: "STATUS",
+    lowStockThreshold: 10
+  };
+}
+
+function normalizeDetailPageDisplay(value: unknown) {
+  const defaults = defaultDetailPageDisplay();
+  const source = readRecord(value);
+  const sourceModules = Array.isArray(source.modules) ? source.modules : [];
+  const oldVisibleModules = readStringArray(source.visibleModules);
+  const oldVisible = new Set(oldVisibleModules);
+  const modules = defaults.modules
+    .map((defaultModule) => {
+      const raw = sourceModules.find((item) => readRecord(item).key === defaultModule.key);
+      const record = readRecord(raw);
+      const hasOldVisible = oldVisibleModules.length > 0;
+      return {
+        ...defaultModule,
+        visible: typeof record.visible === "boolean" ? record.visible : hasOldVisible ? oldVisible.has(defaultModule.key) || (defaultModule.key === "registrationButton" && oldVisible.has("submitOrder")) : defaultModule.visible,
+        title: typeof record.title === "string" && record.title.trim() ? record.title.trim() : defaultModule.title,
+        content: typeof record.content === "string" ? record.content : defaultModule.content,
+        sort: Number.isFinite(Number(record.sort)) ? Number(record.sort) : defaultModule.sort,
+        style: typeof record.style === "string" && ["card", "list", "accent", "compact"].includes(record.style) ? record.style : defaultModule.style
+      };
+    })
+    .sort((a, b) => a.sort - b.sort);
+  return {
+    ...defaults,
+    modules,
+    primaryButtonText: typeof source.primaryButtonText === "string" && source.primaryButtonText.trim() ? source.primaryButtonText.trim() : defaults.primaryButtonText,
+    inventoryDisplayMode: ["EXACT", "STATUS", "HIDDEN"].includes(String(source.inventoryDisplayMode)) ? String(source.inventoryDisplayMode) : defaults.inventoryDisplayMode,
+    lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : defaults.lowStockThreshold
+  };
+}
+
 function normalizeDetailDisplay(value: unknown) {
   const defaults = defaultDetailDisplay();
   const source = readRecord(value);
@@ -593,5 +675,9 @@ function normalizeDetailDisplay(value: unknown) {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px 14px;
+}
+
+.detail-module-table {
+  margin: 12px 0 18px;
 }
 </style>

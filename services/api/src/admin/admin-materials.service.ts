@@ -167,7 +167,7 @@ export class AdminMaterialsService {
     await this.writeAudit(admin, AuditAction.CREATE, "MaterialAsset", asset.id, "Create material asset", {
       usage: asset.usage
     });
-    return ok(formatAsset(asset));
+    return ok({ ...formatAsset(asset), uploadCheck: uploaded?.check ?? buildMaterialUrlCheck(url) });
   }
 
   async updateAsset(id: string, input: unknown, admin: CurrentAdmin) {
@@ -360,12 +360,35 @@ function saveMaterialFile(file: UploadedMaterialFile, publicOrigin: string) {
   const fileName = `${Date.now()}-${randomBytes(8).toString("hex")}${extension}`;
   const filePath = join(MATERIAL_UPLOAD_DIR, fileName);
   writeFileSync(filePath, file.buffer, { flag: "wx" });
+  const publicBase = normalizePublicOrigin(publicOrigin);
+  const url = `${publicBase}/uploads/materials/${fileName}`;
   return {
     name: stripExtension(file.originalname) || fileName,
-    url: `${publicOrigin.replace(/\/$/, "")}/uploads/materials/${fileName}`,
+    url,
     fileType: file.mimetype ?? inferFileType(fileName),
-    sizeBytes: file.size
+    sizeBytes: file.size,
+    check: {
+      url,
+      localPath: filePath,
+      localExists: existsSync(filePath),
+      staticUrl: `${publicBase}/uploads/`,
+      accessHint: "如果素材 URL 404，请确认 Nginx /uploads/ 指向项目 uploads 目录，且不要使用 /api/uploads 作为素材公网地址。"
+    }
   };
+}
+
+function buildMaterialUrlCheck(url: string) {
+  return {
+    url,
+    localPath: resolveLocalMaterialPath(url),
+    localExists: Boolean(resolveLocalMaterialPath(url) && existsSync(resolveLocalMaterialPath(url)!)),
+    staticUrl: url.includes("/uploads/materials/") ? url.split("/uploads/materials/")[0] + "/uploads/" : null,
+    accessHint: url.includes("/api/uploads") ? "素材 URL 不应包含 /api/uploads，请改用公网 /uploads/materials/ 路径。" : "外部 URL 素材请确认源站允许访问。"
+  };
+}
+
+function normalizePublicOrigin(value: string) {
+  return value.trim().replace(/\/+$/, "").replace(/\/api$/, "");
 }
 
 function deleteLocalMaterialFile(url: string) {

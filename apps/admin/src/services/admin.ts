@@ -13,6 +13,7 @@ import type {
   ApiList,
   ActiveTheme,
   AdminAppUser,
+  CheckinStaffAssignment,
   Conference,
   ComponentPreset,
   CouponCampaign,
@@ -1165,12 +1166,24 @@ export function manualCheckin(input: Record<string, unknown>) {
   return apiRequest<Record<string, unknown>>("/admin/checkins/manual", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function listCheckinLogs(params: { page?: number; pageSize?: number; conferenceId?: string }) {
+export function listCheckinLogs(params: { page?: number; pageSize?: number; conferenceId?: string; method?: string; result?: string; keyword?: string }) {
   return apiRequest<ApiList<Record<string, unknown>>>(`/admin/checkins/records${toQuery(params)}`);
 }
 
-export function getCheckinStats(params: { conferenceId?: string } = {}) {
+export function getCheckinStats(params: { conferenceId?: string; checkInStatus?: string; paymentStatus?: string; skuId?: string; method?: string; keyword?: string } = {}) {
   return apiRequest<Record<string, unknown>>(`/admin/checkins/statistics${toQuery(params)}`);
+}
+
+export function listCheckinStaff(params: { page?: number; pageSize?: number; keyword?: string; conferenceId?: string } = {}) {
+  return apiRequest<ApiList<CheckinStaffAssignment>>(`/admin/checkin-staff${toQuery(params)}`);
+}
+
+export function createCheckinStaff(input: { userId: string; conferenceId?: string; enabled?: boolean; remark?: string }) {
+  return apiRequest<CheckinStaffAssignment>("/admin/checkin-staff", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateCheckinStaff(id: string, input: { enabled?: boolean; remark?: string }) {
+  return apiRequest<CheckinStaffAssignment>(`/admin/checkin-staff/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
 export function listRefunds(params: { page?: number; pageSize?: number; keyword?: string; status?: string; sourceType?: string }) {

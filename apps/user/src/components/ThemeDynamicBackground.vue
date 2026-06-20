@@ -1,5 +1,5 @@
 <template>
-  <view v-if="visible" :class="['theme-dynamic-bg', placementClass]" :style="rootStyle">
+  <view v-if="visible" :class="['theme-dynamic-bg', placementClass, patternClass]" :style="rootStyle">
     <view class="theme-dynamic-bg__base" :style="baseStyle" />
     <view class="theme-dynamic-bg__glow theme-dynamic-bg__glow-a" :style="glowAStyle" />
     <view class="theme-dynamic-bg__glow theme-dynamic-bg__glow-b" :style="glowBStyle" />
@@ -27,9 +27,10 @@ const props = withDefaults(
 const visible = computed(() => props.active && props.theme.backgroundMode === "dynamic-gradient");
 const placementClass = computed(() => (props.placement === "absolute" ? "is-absolute" : "is-fixed"));
 const speed = computed(() => Math.max(6, Math.min(40, Number(props.theme.backgroundDynamicSpeed) || 18)));
-const motionSeconds = computed(() => Math.max(5, Math.round(20 - speed.value * 0.34)));
+const motionSeconds = computed(() => Math.max(4, Math.round(18 - speed.value * 0.28)));
 const density = computed(() => Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40)));
 const angle = computed(() => Math.max(0, Math.min(360, Number(props.theme.backgroundGradientAngle) || 135)));
+const patternClass = computed(() => `pattern-${normalizePattern(props.theme.backgroundDynamicPattern)}`);
 const fromColor = computed(() => normalizeColor(props.theme.backgroundGradientFrom || props.theme.backgroundColor || "#f5f7fb"));
 const toColor = computed(() => normalizeColor(props.theme.backgroundGradientTo || props.theme.secondaryColor || "#3a8f79"));
 const accentColor = computed(() => normalizeColor(props.theme.accentColor || "#b58b47"));
@@ -41,18 +42,19 @@ const rootStyle = computed(() => ({
 
 const baseStyle = computed(() => ({
   background: [
-    `radial-gradient(circle at 14% 12%, ${withAlpha(primaryColor.value, 0.58)} 0, transparent 34%)`,
-    `radial-gradient(circle at 88% 18%, ${withAlpha(toColor.value, 0.52)} 0, transparent 38%)`,
-    `radial-gradient(circle at 22% 82%, ${withAlpha(accentColor.value, 0.36)} 0, transparent 42%)`,
-    `linear-gradient(${angle.value}deg, ${fromColor.value} 0%, ${toColor.value} 56%, ${withAlpha(accentColor.value, 0.56)} 132%)`
+    `radial-gradient(circle at 10% 12%, ${withAlpha(primaryColor.value, 0.72)} 0, transparent 36%)`,
+    `radial-gradient(circle at 90% 14%, ${withAlpha(toColor.value, 0.66)} 0, transparent 42%)`,
+    `radial-gradient(circle at 18% 86%, ${withAlpha(accentColor.value, 0.52)} 0, transparent 46%)`,
+    `radial-gradient(circle at 72% 72%, ${withAlpha(primaryColor.value, 0.36)} 0, transparent 34%)`,
+    `linear-gradient(${angle.value}deg, ${fromColor.value} 0%, ${toColor.value} 58%, ${withAlpha(accentColor.value, 0.64)} 138%)`
   ].join(", "),
-  backgroundSize: "240% 240%",
+  backgroundSize: "320% 320%",
   animation: `themeDynamicBase ${motionSeconds.value}s ease-in-out infinite alternate`
 }));
 
-const glowAStyle = computed(() => glowStyle(primaryColor.value, toColor.value, 0.42, 0.2, 620 + density.value * 5, motionSeconds.value * 0.72, "themeDynamicGlowA"));
-const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.4, 0.18, 590 + density.value * 4.4, motionSeconds.value * 0.84, "themeDynamicGlowB"));
-const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.32, 0.14, 540 + density.value * 4, motionSeconds.value * 0.78, "themeDynamicGlowC"));
+const glowAStyle = computed(() => glowStyle(primaryColor.value, toColor.value, 0.54, 0.26, 680 + density.value * 6, motionSeconds.value * 0.68, "themeDynamicGlowA"));
+const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.5, 0.24, 650 + density.value * 5.2, motionSeconds.value * 0.8, "themeDynamicGlowB"));
+const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.42, 0.2, 610 + density.value * 4.8, motionSeconds.value * 0.74, "themeDynamicGlowC"));
 
 function glowStyle(colorA: string, colorB: string, alphaA: number, alphaB: number, size: number, duration: number, animationName: string): Record<string, string> {
   return {
@@ -66,6 +68,10 @@ function glowStyle(colorA: string, colorB: string, alphaA: number, alphaB: numbe
 function normalizeColor(value: string): string {
   const color = value.trim();
   return color || "#f5f7fb";
+}
+
+function normalizePattern(value: unknown): "flow" | "ripple" | "float" | "zoom" {
+  return value === "ripple" || value === "float" || value === "zoom" ? value : "flow";
 }
 
 function withAlpha(value: string, alpha: number): string {
@@ -118,6 +124,29 @@ function withAlpha(value: string, alpha: number): string {
   position: absolute;
 }
 
+.theme-dynamic-bg.pattern-ripple::after,
+.theme-dynamic-bg.pattern-zoom::after {
+  position: absolute;
+  inset: -20%;
+  content: "";
+  opacity: 0.28;
+}
+
+.theme-dynamic-bg.pattern-ripple::after {
+  background: repeating-radial-gradient(circle at 52% 46%, rgba(255, 255, 255, 0.34) 0 2rpx, rgba(255, 255, 255, 0) 2rpx 34rpx);
+  animation: themeDynamicRipple 8s linear infinite;
+}
+
+.theme-dynamic-bg.pattern-zoom::after {
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 42%);
+  animation: themeDynamicZoom 7s ease-in-out infinite alternate;
+}
+
+.theme-dynamic-bg.pattern-float .theme-dynamic-bg__glow {
+  filter: blur(18rpx);
+  opacity: 0.92;
+}
+
 .theme-dynamic-bg__base {
   top: -24%;
   left: -24%;
@@ -158,37 +187,57 @@ function withAlpha(value: string, alpha: number): string {
 
 @keyframes themeDynamicBase {
   from {
-    transform: translate(-10%, -8%) scale(1);
+    transform: translate(-18%, -16%) scale(1);
   }
   to {
-    transform: translate(12%, 10%) scale(1.14);
+    transform: translate(18%, 16%) scale(1.24);
   }
 }
 
 @keyframes themeDynamicGlowA {
   from {
-    transform: translate(-28%, -18%) scale(0.94);
+    transform: translate(-42%, -30%) scale(0.9);
   }
   to {
-    transform: translate(34%, 30%) scale(1.28);
+    transform: translate(44%, 38%) scale(1.36);
   }
 }
 
 @keyframes themeDynamicGlowB {
   from {
-    transform: translate(26%, -18%) scale(1.14);
+    transform: translate(38%, -28%) scale(1.18);
   }
   to {
-    transform: translate(-34%, 30%) scale(0.9);
+    transform: translate(-44%, 38%) scale(0.86);
   }
 }
 
 @keyframes themeDynamicGlowC {
   from {
-    transform: translate(18%, 26%) scale(0.96);
+    transform: translate(30%, 38%) scale(0.9);
   }
   to {
-    transform: translate(-32%, -32%) scale(1.28);
+    transform: translate(-42%, -42%) scale(1.36);
+  }
+}
+
+@keyframes themeDynamicRipple {
+  from {
+    transform: translate3d(-6%, -4%, 0) scale(0.82) rotate(0deg);
+  }
+  to {
+    transform: translate3d(6%, 5%, 0) scale(1.18) rotate(8deg);
+  }
+}
+
+@keyframes themeDynamicZoom {
+  from {
+    transform: scale(0.7);
+    opacity: 0.2;
+  }
+  to {
+    transform: scale(1.28);
+    opacity: 0.36;
   }
 }
 </style>

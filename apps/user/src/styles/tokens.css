@@ -122,9 +122,7 @@ page {
   left: 0;
   z-index: 0;
   pointer-events: none;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.86)),
-    rgba(245, 247, 251, 0.28);
+  background: rgba(245, 247, 251, var(--cms-video-overlay-opacity, 0.08));
 }
 
 .ui-stack {

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuditAction, PaymentProvider, Prisma, RefundStatus } from "@prisma/client";
 import { isMallMockRefundEnabled, isMallWechatRefundConfigured, resolveMallPaymentRuntime, validateMallNotifyUrl, type MallPaymentRuntimeConfig } from "../mall/mall-payment.config";
@@ -11,6 +12,7 @@ const ORDER_STATUSES = ["PENDING_PAYMENT", "PAID", "SHIPPED", "COMPLETED", "CLOS
 const SHIPMENT_STATUSES = ["PENDING", "SHIPPED", "COMPLETED", "CANCELLED"] as const;
 const AFTER_SALE_TYPES = ["REFUND", "RETURN_REFUND", "EXCHANGE"] as const;
 const AFTER_SALE_STATUSES = ["REQUESTED", "APPROVED", "REJECTED", "PROCESSING", "COMPLETED", "CANCELLED"] as const;
+const DEFAULT_MALL_NOTIFY_URL = "https://guanchaohuiji.com/api/mall/payments/wechat/notify";
 
 @Injectable()
 export class AdminMallService {
@@ -442,26 +444,27 @@ export class AdminMallService {
 
   async updatePaymentConfig(input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
-    const mode = readStatus(readOptionalString(body, "mode") ?? "disabled", ["disabled", "mock", "wechat"] as const, "商城支付模式") ?? "disabled";
-    const notifyUrl = readNullableString(body.notifyUrl);
+    const mode = readMallPaymentModeForAdmin(readOptionalString(body, "mode") ?? "disabled");
+    const notifyUrl = mode === "wechat" ? readNullableString(body.notifyUrl) ?? DEFAULT_MALL_NOTIFY_URL : readNullableString(body.notifyUrl);
     if (mode === "wechat" && notifyUrl) validateMallNotifyUrl(notifyUrl);
+    if (mode === "wechat") assertMallWechatConfigReady(notifyUrl);
     const updated = await this.prisma.mallPaymentConfig.upsert({
       where: { name: "default" },
       update: {
         mode,
         notifyUrl,
-        allowMockPayment: readOptionalBoolean(body, "allowMockPayment") ?? false,
+        allowMockPayment: false,
         remark: readNullableString(body.remark)
       },
       create: {
         name: "default",
         mode,
         notifyUrl,
-        allowMockPayment: readOptionalBoolean(body, "allowMockPayment") ?? false,
+        allowMockPayment: false,
         remark: readNullableString(body.remark)
       }
     });
-    await this.writeAudit(admin, AuditAction.UPDATE, "MallPaymentConfig", updated.id, "Update mall payment config", { mode, allowMockPayment: updated.allowMockPayment });
+    await this.writeAudit(admin, AuditAction.UPDATE, "MallPaymentConfig", updated.id, "Update mall payment config", { mode, notifyUrl });
     return ok(formatPaymentConfig(updated));
   }
 
@@ -648,26 +651,53 @@ function formatRefund(item: Prisma.MallRefundGetPayload<Record<string, never>>) 
 function buildPaymentNotice(status: string, runtime: ReturnType<typeof resolveMallPaymentRuntime>): string | null {
   if (status !== "PENDING_PAYMENT") return null;
   if (runtime.wechatEnabled) return "商城微信支付已开启；支付金额以商城订单应付金额为准。";
-  if (runtime.mockEnabled) return "商城 mock 支付已开启，仅用于测试环境。";
   return "当前商城支付暂未开放；订单已创建，状态为待支付；请联系会务组或等待商城支付开放";
 }
 
 function formatPaymentConfig(config: MallPaymentRuntimeConfig & { id: string; name: string; createdAt: Date; updatedAt: Date; remark: string | null }) {
   const runtime = resolveMallPaymentRuntime(config);
+  const readiness = mallWechatReadiness(config.notifyUrl ?? DEFAULT_MALL_NOTIFY_URL);
   return {
     id: config.id,
     name: config.name,
     mode: runtime.mode,
-    notifyUrl: config.notifyUrl ?? "",
+    notifyUrl: config.notifyUrl ?? DEFAULT_MALL_NOTIFY_URL,
+    fixedNotifyUrl: DEFAULT_MALL_NOTIFY_URL,
     allowMockPayment: Boolean(config.allowMockPayment),
     paymentEnabled: runtime.paymentEnabled,
     wechatEnabled: runtime.wechatEnabled,
     mockEnabled: runtime.mockEnabled,
     unavailableReason: runtime.unavailableReason,
+    readiness,
     remark: config.remark ?? "",
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString()
   };
+}
+
+function readMallPaymentModeForAdmin(value: string): "disabled" | "wechat" {
+  const mode = value.trim().toLowerCase();
+  if (mode === "disabled" || mode === "wechat") return mode;
+  if (mode === "mock") throw new BadRequestException("生产运营后台不开放商城 Mock 支付，请选择关闭或微信支付");
+  throw new BadRequestException("商城支付模式必须是关闭或微信支付");
+}
+
+function assertMallWechatConfigReady(notifyUrl: string | null) {
+  const readiness = mallWechatReadiness(notifyUrl);
+  const missing = readiness.items.filter((item) => !item.ok).map((item) => item.label);
+  if (missing.length > 0) throw new ConflictException(`商城微信支付配置不完整：${missing.join("、")}`);
+}
+
+function mallWechatReadiness(notifyUrl: string | null) {
+  const privateKeyPath = process.env.WECHAT_PAY_PRIVATE_KEY_PATH?.trim() || "";
+  const items = [
+    { key: "mchId", label: "商户号 WECHAT_PAY_MCH_ID", ok: Boolean(process.env.WECHAT_PAY_MCH_ID?.trim()) },
+    { key: "serialNo", label: "商户证书序列号 WECHAT_PAY_MCH_SERIAL_NO", ok: Boolean(process.env.WECHAT_PAY_MCH_SERIAL_NO?.trim()) },
+    { key: "apiV3Key", label: "API v3 Key WECHAT_PAY_API_V3_KEY", ok: Boolean(process.env.WECHAT_PAY_API_V3_KEY?.trim()) },
+    { key: "privateKey", label: "商户私钥路径 WECHAT_PAY_PRIVATE_KEY_PATH", ok: Boolean(privateKeyPath && existsSync(privateKeyPath)) },
+    { key: "notifyUrl", label: "商城回调地址", ok: Boolean(notifyUrl) }
+  ];
+  return { ready: items.every((item) => item.ok), items };
 }
 
 function buildRefundNotice(item: Prisma.MallAfterSaleGetPayload<{ include: typeof mallAfterSaleInclude }>) {

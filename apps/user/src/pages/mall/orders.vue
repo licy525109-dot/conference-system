@@ -49,7 +49,6 @@ import { onMounted, ref } from "vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
-import { PAYMENT_MODE } from "@/config/app";
 import { createMallAfterSale, getMyMallOrders, startMallOrderPayment, type MallOrder } from "@/services/operations";
 import { formatCent } from "@/utils/money";
 
@@ -57,7 +56,7 @@ const loading = ref(false);
 const submittingId = ref("");
 const payingId = ref("");
 const orders = ref<MallOrder[]>([]);
-const payButtonText = PAYMENT_MODE === "mock" ? "测试支付" : "去支付";
+const payButtonText = "去支付";
 
 onMounted(() => void load());
 
@@ -143,7 +142,7 @@ function refundStatusText(value?: string | null) {
 }
 
 function providerText(value?: string | null) {
-  return value ? ({ MOCK: "Mock 测试", WECHAT: "微信支付" }[value] ?? value) : "-";
+  return value ? ({ MOCK: "历史测试记录", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
 </script>
 

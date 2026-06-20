@@ -26,7 +26,16 @@
       <AdminStatCard v-for="item in cards" :key="item.label" :label="item.label" :value="item.value" :tone="item.tone" />
     </div>
 
-    <AdminSectionCard v-if="activeSection === 'payments' || activeSection === 'home'" title="支付流水" subtitle="报名支付和商城支付统一只读查询，不允许后台人工改支付成功。">
+    <AdminSectionCard v-if="activeSection === 'home'" title="财务明细入口" subtitle="概览页只展示核心指标；具体列表请进入独立明细页面。">
+      <div class="finance-entry-grid">
+        <button type="button" v-for="item in financeEntries" :key="item.path" class="finance-entry" @click="goFinance(item.path)">
+          <strong>{{ item.title }}</strong>
+          <span>{{ item.description }}</span>
+        </button>
+      </div>
+    </AdminSectionCard>
+
+    <AdminSectionCard v-if="activeSection === 'payments'" title="支付流水" subtitle="报名支付和商城支付统一只读查询，不允许后台人工改支付成功。">
       <AdminFilterBar>
         <el-input v-model="paymentFilters.keyword" clearable placeholder="订单号 / 商户单号 / 微信单号 / 用户" style="width: 300px" @keyup.enter="loadPayments" />
         <el-select v-model="paymentFilters.sourceType" placeholder="来源" style="width: 140px">
@@ -181,7 +190,7 @@
       <el-pagination class="pager" background layout="prev, pager, next, total" :page-size="billFilters.pageSize" :current-page="billFilters.page" :total="billTotal" @current-change="(page: number) => { billFilters.page = page; void loadBills(); }" />
     </AdminSectionCard>
 
-    <AdminSectionCard v-if="activeSection === 'reconciliation' || activeSection === 'home'" title="财务对账" subtitle="对账只记录差异和核查备注，不自动改订单或支付状态。">
+    <AdminSectionCard v-if="activeSection === 'reconciliation'" title="财务对账" subtitle="对账只记录差异和核查备注，不自动改订单或支付状态。">
       <AdminFilterBar>
         <el-input v-model="reconciliationFilters.keyword" clearable placeholder="订单号 / 商户单号 / 微信单号" style="width: 300px" @keyup.enter="loadReconciliationResults" />
         <el-select v-model="reconciliationFilters.status" placeholder="核查状态" style="width: 140px">
@@ -239,7 +248,7 @@ import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatCard from "../../components/AdminStatCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
-import { currentRoute } from "../../router";
+import { currentRoute, navigateTo } from "../../router";
 import {
   approveInvoice,
   approveRefund,
@@ -332,6 +341,13 @@ const cards = computed(() => {
     { label: "报名数", value: data.registrationCount, tone: "default" as const }
   ];
 });
+const financeEntries = [
+  { title: "支付流水", path: "/finance/payments", description: "报名和商城支付只读明细" },
+  { title: "退款管理", path: "/finance/refunds", description: "退款审批、处理和失败原因" },
+  { title: "发票申请", path: "/finance/invoices", description: "发票审核、驳回和开票记录" },
+  { title: "财务对账", path: "/finance/reconciliation", description: "本地支付与微信账单差异核查" },
+  { title: "微信账单", path: "/finance/wechat-bills", description: "账单创建、导入和下载状态" }
+];
 
 onMounted(() => void load());
 watch(activeSection, () => void load());
@@ -340,11 +356,11 @@ async function load() {
   loading.value = true;
   try {
     overview.value = await getFinanceOverview();
-    if (activeSection.value === "payments" || activeSection.value === "home") await loadPayments();
+    if (activeSection.value === "payments") await loadPayments();
     if (activeSection.value === "refunds") await loadRefunds();
     if (activeSection.value === "invoices") await loadInvoices();
     if (activeSection.value === "wechat-bills") await loadBills();
-    if (activeSection.value === "reconciliation" || activeSection.value === "home") await loadReconciliationResults();
+    if (activeSection.value === "reconciliation") await loadReconciliationResults();
   } finally {
     loading.value = false;
   }
@@ -559,6 +575,10 @@ function statusText(value?: string | null) {
 function providerText(value?: string | null) {
   return value ? ({ MOCK: "Mock 测试", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
+
+function goFinance(path: string) {
+  navigateTo(path);
+}
 </script>
 
 <style scoped>
@@ -574,5 +594,38 @@ function providerText(value?: string | null) {
   gap: 10px;
   margin-bottom: 14px;
   flex-wrap: wrap;
+}
+
+.finance-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.finance-entry {
+  min-height: 104px;
+  padding: 16px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 8px;
+  background: #f8fbff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.finance-entry strong,
+.finance-entry span {
+  display: block;
+}
+
+.finance-entry strong {
+  color: var(--admin-color-text);
+  font-size: 15px;
+}
+
+.finance-entry span {
+  margin-top: 8px;
+  color: var(--admin-color-muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 </style>

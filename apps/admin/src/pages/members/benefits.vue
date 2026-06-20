@@ -2,7 +2,7 @@
   <section class="admin-page">
     <AdminPageHeader
       title="会员权益"
-      eyebrow="会员"
+      eyebrow="用户中心"
       subtitle="配置会员等级权益、用户端展示和自动发放规则；展示型权益不会自动生成领取记录。"
     >
       <AdminFeatureBadge label="发放可追踪" description="自动发放、撤销和发放记录均使用持久化表记录。" tone="success" />

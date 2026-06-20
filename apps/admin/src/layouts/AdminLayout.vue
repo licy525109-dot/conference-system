@@ -88,7 +88,7 @@ const GROUP_META: Record<string, { order: number; badge?: string; className?: st
   通知中心: { order: 40 },
   企微客户群: { order: 50 },
   "AI 知识库": { order: 60 },
-  会员: { order: 70 },
+  用户中心: { order: 70 },
   商城: { order: 80 },
   财务管理: { order: 90 },
   页面装修: { order: 100 },

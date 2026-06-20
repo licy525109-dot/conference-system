@@ -42,13 +42,31 @@
         <el-select v-model="conferenceId" clearable filterable placeholder="统计会议" style="width: 280px" @change="loadCheckin">
           <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
         </el-select>
+        <el-input v-if="section !== 'checkin-verify'" v-model="checkinFilters.keyword" clearable placeholder="姓名 / 手机 / 报名号 / 微信昵称" style="width: 280px" @keyup.enter="loadCheckin" />
+        <el-select v-if="section === 'checkin-stats'" v-model="checkinFilters.checkInStatus" clearable placeholder="签到状态" style="width: 140px" @change="loadCheckin">
+          <el-option label="已签到" value="CHECKED_IN" />
+          <el-option label="未签到" value="PENDING" />
+          <el-option label="无需核销" value="NOT_REQUIRED" />
+        </el-select>
+        <el-select v-if="section === 'checkin-stats'" v-model="checkinFilters.paymentStatus" clearable placeholder="支付状态" style="width: 140px" @change="loadCheckin">
+          <el-option label="已支付" value="PAID" />
+          <el-option label="待支付" value="PENDING" />
+          <el-option label="已关闭" value="CLOSED" />
+        </el-select>
+        <el-select v-model="checkinFilters.method" clearable placeholder="核销方式" style="width: 150px" @change="loadCheckin">
+          <el-option label="客户自助" value="SELF_INPUT" />
+          <el-option label="工作人员扫码" value="QR_SCAN" />
+          <el-option label="后台应急补签" value="ADMIN_MANUAL" />
+        </el-select>
         <template #actions>
           <el-button v-if="section === 'checkin-verify'" type="primary" :disabled="!checkinCredential" @click="verifyCredential">应急补签</el-button>
+          <el-button v-else type="primary" @click="loadCheckin">筛选</el-button>
+          <el-button v-if="section === 'checkin-stats'" :disabled="checkinListRows.length === 0" @click="exportCheckinRows">导出当前名单</el-button>
         </template>
       </AdminFilterBar>
       <el-alert
         class="checkin-guide"
-        title="工作人员扫码入口：小程序 /pages/admin/notifications/index。工作人员需先绑定后台账号，角色需包含 checkin:write 权限；常规现场核销请使用小程序扫码，后台应急补签仅用于异常处理。"
+        title="工作人员扫码入口：小程序个人中心会按后台授权显示“扫码核销”。常规现场核销请使用工作人员小程序扫码，后台应急补签仅用于异常处理。"
         type="info"
         :closable="false"
         show-icon
@@ -63,14 +81,59 @@
         </div>
       </AdminSectionCard>
       <div class="admin-stat-grid">
-        <AdminStatCard label="已报名" :value="checkinRegistered" />
-        <AdminStatCard label="已支付" :value="checkinPaid" />
-        <AdminStatCard class="is-clickable" label="已签到" :value="checkinCheckedIn" tone="success" @click="checkinListTab = 'checkedInList'" />
-        <AdminStatCard class="is-clickable" label="未签到" :value="checkinUnchecked" tone="warning" @click="checkinListTab = 'uncheckedInList'" />
+        <AdminStatCard class="is-clickable" label="已报名" :value="checkinRegistered" @click="selectCheckinList('registeredList')" />
+        <AdminStatCard class="is-clickable" label="已支付" :value="checkinPaid" @click="selectCheckinList('paidList')" />
+        <AdminStatCard class="is-clickable" label="已签到" :value="checkinCheckedIn" tone="success" @click="selectCheckinList('checkedInList')" />
+        <AdminStatCard class="is-clickable" label="未签到" :value="checkinUnchecked" tone="warning" @click="selectCheckinList('uncheckedInList')" />
+        <AdminStatCard class="is-clickable" label="签到失败" :value="checkinFailed" tone="danger" @click="selectCheckinList('failedList')" />
+        <AdminStatCard class="is-clickable" label="重复签到" :value="checkinRepeated" tone="warning" @click="selectCheckinList('repeatedList')" />
         <AdminStatCard label="无需核销" :value="checkinNotRequired" />
       </div>
+      <AdminSectionCard v-if="section === 'checkin-verify'" title="签到工作人员配置" subtitle="从已有微信用户中授权扫码权限，可限定全部会议或单场会议；小程序扫码接口仍会校验该授权。">
+        <div class="staff-config-row">
+          <el-input v-model="staffKeyword" clearable placeholder="搜索微信昵称 / 手机 / openid" style="width: 260px" @keyup.enter="loadStaffUsers" />
+          <el-button @click="loadStaffUsers">搜索用户</el-button>
+          <el-select v-model="staffForm.userId" filterable placeholder="选择工作人员" style="width: 280px">
+            <el-option v-for="user in staffUsers" :key="user.id" :label="staffUserLabel(user)" :value="user.id" />
+          </el-select>
+          <el-select v-model="staffForm.conferenceId" clearable placeholder="可核销会议：全部" style="width: 260px">
+            <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
+          </el-select>
+          <el-input v-model="staffForm.remark" placeholder="备注（选填）" style="width: 220px" />
+          <el-button type="primary" :disabled="!staffForm.userId" @click="grantCheckinStaff">授予扫码权限</el-button>
+        </div>
+        <el-table :data="staffAssignments" empty-text="暂无工作人员授权">
+          <el-table-column label="微信用户" min-width="220">
+            <template #default="{ row }">
+              <div class="wechat-user-cell">
+                <img v-if="row.user?.wechatAvatarUrl" :src="row.user.wechatAvatarUrl" alt="" />
+                <span v-else class="avatar-fallback">{{ staffUserInitial(row.user) }}</span>
+                <div>
+                  <strong>{{ row.user?.wechatNickname || row.user?.nickname || "微信用户" }}</strong>
+                  <small>{{ row.user?.phone || row.user?.openid || row.userId }}</small>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="scopeText" label="核销范围" min-width="180" />
+          <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
+          <el-table-column label="状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="Boolean(row.enabled)" :label="row.enabled ? '已启用' : '已停用'" :tone="row.enabled ? 'success' : 'neutral'" /></template></el-table-column>
+          <el-table-column label="操作" width="120"><template #default="{ row }"><el-button size="small" @click="toggleCheckinStaff(row)">{{ row.enabled ? "停用" : "启用" }}</el-button></template></el-table-column>
+        </el-table>
+      </AdminSectionCard>
       <AdminSectionCard v-if="section !== 'checkin-stats'" title="签到记录" subtitle="展示每一条客户自助、工作人员扫码、后台应急补签和撤销明细。">
         <el-table :data="checkinLogs" empty-text="暂无签到记录">
+          <el-table-column label="微信用户" width="180">
+            <template #default="{ row }">
+              <div class="wechat-user-cell compact">
+                <img v-if="row.wechatAvatarUrl" :src="row.wechatAvatarUrl" alt="" />
+                <span v-else class="avatar-fallback">{{ userInitial(row) }}</span>
+                <div>
+                  <strong>{{ row.wechatNickname || "-" }}</strong>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
           <el-table-column prop="registrationNo" label="报名号" min-width="150" />
           <el-table-column prop="attendeeName" label="参会人" width="120" />
@@ -101,11 +164,26 @@
           </el-table>
         </div>
         <el-tabs v-model="checkinListTab" class="checkin-list-tabs">
+          <el-tab-pane label="已报名名单" name="registeredList" />
+          <el-tab-pane label="已支付名单" name="paidList" />
           <el-tab-pane label="已签到名单" name="checkedInList" />
           <el-tab-pane label="未签到名单" name="uncheckedInList" />
-          <el-tab-pane label="全部已支付报名" name="paidList" />
+          <el-tab-pane label="失败明细" name="failedList" />
+          <el-tab-pane label="重复明细" name="repeatedList" />
         </el-tabs>
-        <el-table :data="checkinListRows" empty-text="暂无名单">
+        <el-table :data="checkinListRows" :empty-text="checkinEmptyText">
+          <el-table-column label="微信用户" width="190">
+            <template #default="{ row }">
+              <div class="wechat-user-cell compact">
+                <img v-if="row.wechatAvatarUrl" :src="row.wechatAvatarUrl" alt="" />
+                <span v-else class="avatar-fallback">{{ userInitial(row) }}</span>
+                <div>
+                  <strong>{{ row.wechatNickname || "-" }}</strong>
+                  <small>{{ row.userPhone || "-" }}</small>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column prop="attendeeName" label="参会人" width="120" />
           <el-table-column prop="phone" label="手机号" width="140" />
           <el-table-column prop="company" label="公司" min-width="140" />
@@ -115,6 +193,8 @@
           <el-table-column prop="checkInStatusText" label="签到状态" width="110" />
           <el-table-column prop="checkedInAt" label="签到时间" width="190" />
           <el-table-column prop="checkInMethodText" label="签到方式" width="140" />
+          <el-table-column prop="operatorName" label="操作人" width="140" />
+          <el-table-column prop="failureReason" label="失败原因" min-width="180" show-overflow-tooltip />
         </el-table>
       </AdminSectionCard>
     </template>
@@ -234,6 +314,7 @@ import { currentRoute } from "../../router";
 import {
   approveInvoice,
   approveRefund,
+  createCheckinStaff,
   createCouponCampaign,
   createWechatBill,
   generateCouponCampaignQr,
@@ -241,6 +322,7 @@ import {
   getInventoryAlertRule,
   getNotificationChannelConfig,
   listCheckinLogs,
+  listCheckinStaff,
   listConferences,
   listCouponCampaigns,
   listCoupons,
@@ -250,13 +332,17 @@ import {
   listPaymentExceptions,
   listReconciliationResults,
   listRefunds,
+  listUsers,
   listWechatBills,
   manualCheckin,
   reconcileWechatBill,
   scanInventoryAlerts,
+  updateCheckinStaff,
   updateInventoryAlertRule,
 } from "../../services/admin";
-import type { Conference, Coupon, FinancePayment } from "../../services/types";
+import type { AdminAppUser, CheckinStaffAssignment, Conference, Coupon, FinancePayment } from "../../services/types";
+
+type CheckinListTab = "registeredList" | "paidList" | "checkedInList" | "uncheckedInList" | "failedList" | "repeatedList";
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -271,7 +357,12 @@ const checkinCredential = ref("");
 const checkinLogs = ref<Record<string, unknown>[]>([]);
 const checkinStats = ref<Record<string, unknown>>({});
 const checkinResult = ref<Record<string, unknown> | null>(null);
-const checkinListTab = ref<"checkedInList" | "uncheckedInList" | "paidList">("checkedInList");
+const checkinListTab = ref<CheckinListTab>("checkedInList");
+const checkinFilters = reactive({ keyword: "", checkInStatus: "", paymentStatus: "", method: "" });
+const staffUsers = ref<AdminAppUser[]>([]);
+const staffAssignments = ref<CheckinStaffAssignment[]>([]);
+const staffKeyword = ref("");
+const staffForm = reactive({ userId: "", conferenceId: "", remark: "" });
 const paymentExceptions = ref<Record<string, unknown>[]>([]);
 const payments = ref<FinancePayment[]>([]);
 const couponCampaigns = ref<Record<string, unknown>[]>([]);
@@ -309,7 +400,20 @@ const checkinPaid = computed(() => toNumber(checkinStats.value.paidCount));
 const checkinCheckedIn = computed(() => toNumber(checkinStats.value.checkedIn));
 const checkinUnchecked = computed(() => toNumber(checkinStats.value.uncheckedIn ?? checkinStats.value.pending));
 const checkinNotRequired = computed(() => toNumber(checkinStats.value.notRequired));
+const checkinFailed = computed(() => toNumber(checkinStats.value.failedCount));
+const checkinRepeated = computed(() => toNumber(checkinStats.value.repeatedCount));
 const checkinListRows = computed(() => asRows(checkinStats.value[checkinListTab.value]));
+const checkinEmptyText = computed(() => {
+  const messages: Record<CheckinListTab, string> = {
+    registeredList: "暂无报名人员",
+    paidList: "暂无已支付人员",
+    checkedInList: "暂无已签到人员",
+    uncheckedInList: "暂无未签到人员",
+    failedList: "暂无签到失败记录",
+    repeatedList: "暂无重复签到记录"
+  };
+  return checkinStats.value.emptyReason && checkinListRows.value.length === 0 ? `${messages[checkinListTab.value]}：${String(checkinStats.value.emptyReason)}` : messages[checkinListTab.value];
+});
 
 onMounted(() => void load());
 watch(() => currentRoute.value.path, () => void load());
@@ -362,8 +466,18 @@ async function scanInventory() {
 }
 
 async function loadCheckin() {
-  checkinStats.value = await getCheckinStats({ conferenceId: conferenceId.value || undefined });
-  checkinLogs.value = (await listCheckinLogs({ page: 1, pageSize: 100, conferenceId: conferenceId.value || undefined })).items;
+  const params = {
+    conferenceId: conferenceId.value || undefined,
+    keyword: checkinFilters.keyword || undefined,
+    checkInStatus: checkinFilters.checkInStatus || undefined,
+    paymentStatus: checkinFilters.paymentStatus || undefined,
+    method: checkinFilters.method || undefined
+  };
+  checkinStats.value = await getCheckinStats(params);
+  checkinLogs.value = (await listCheckinLogs({ page: 1, pageSize: 100, ...params })).items;
+  if (section.value === "checkin-verify") {
+    await Promise.all([loadStaffUsers(), loadStaffAssignments()]);
+  }
 }
 
 async function verifyCredential() {
@@ -371,6 +485,55 @@ async function verifyCredential() {
   checkinCredential.value = "";
   await loadCheckin();
   ElMessage.success(String(checkinResult.value.message || "处理完成"));
+}
+
+function selectCheckinList(tab: CheckinListTab) {
+  checkinListTab.value = tab;
+}
+
+async function loadStaffUsers() {
+  staffUsers.value = (await listUsers({ page: 1, pageSize: 50, keyword: staffKeyword.value })).items;
+}
+
+async function loadStaffAssignments() {
+  staffAssignments.value = (await listCheckinStaff({ page: 1, pageSize: 100, conferenceId: conferenceId.value || undefined })).items;
+}
+
+async function grantCheckinStaff() {
+  await createCheckinStaff({
+    userId: staffForm.userId,
+    conferenceId: staffForm.conferenceId || undefined,
+    remark: staffForm.remark || undefined
+  });
+  Object.assign(staffForm, { userId: "", conferenceId: "", remark: "" });
+  await loadStaffAssignments();
+  ElMessage.success("已授予扫码核销权限");
+}
+
+async function toggleCheckinStaff(row: CheckinStaffAssignment) {
+  await updateCheckinStaff(row.id, { enabled: !row.enabled });
+  await loadStaffAssignments();
+  ElMessage.success(row.enabled ? "已停用工作人员权限" : "已启用工作人员权限");
+}
+
+function exportCheckinRows() {
+  const headers = ["微信昵称", "用户手机", "参会人", "手机号", "公司", "票种", "报名号", "支付状态", "签到状态", "签到时间", "签到方式", "操作人", "失败原因"];
+  const rows = checkinListRows.value.map((row) => [
+    row.wechatNickname,
+    row.userPhone,
+    row.attendeeName,
+    row.phone,
+    row.company,
+    row.skuName,
+    row.registrationNo,
+    row.paymentStatusText,
+    row.checkInStatusText,
+    row.checkedInAt,
+    row.checkInMethodText,
+    row.operatorName,
+    row.failureReason
+  ]);
+  downloadCsv(`checkin-${checkinListTab.value}.csv`, [headers, ...rows]);
 }
 
 async function loadPaymentExceptions() {
@@ -476,6 +639,29 @@ function providerText(value: unknown) {
 function paymentStatusText(value: unknown) {
   return ({ SUCCESS: "成功", PENDING: "待支付", FAILED: "失败", CLOSED: "已关闭" } as Record<string, string>)[String(value || "")] ?? String(value || "-");
 }
+
+function staffUserLabel(user: AdminAppUser) {
+  return [user.wechatNickname || user.nickname || "微信用户", user.phone || user.openid || user.id].filter(Boolean).join(" / ");
+}
+
+function staffUserInitial(user: AdminAppUser | undefined) {
+  return String(user?.wechatNickname || user?.nickname || "微").slice(0, 1);
+}
+
+function userInitial(row: Record<string, unknown>) {
+  return String(row.wechatNickname || row.attendeeName || "微").slice(0, 1);
+}
+
+function downloadCsv(filename: string, rows: unknown[][]) {
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 </script>
 
 <style scoped>
@@ -520,5 +706,53 @@ function paymentStatusText(value: unknown) {
 
 .checkin-guide {
   margin-bottom: 14px;
+}
+
+.staff-config-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.wechat-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wechat-user-cell img,
+.avatar-fallback {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #edf4ff;
+  color: var(--admin-color-primary);
+  font-size: 13px;
+  font-weight: 800;
+  object-fit: cover;
+}
+
+.wechat-user-cell.compact img,
+.wechat-user-cell.compact .avatar-fallback {
+  width: 28px;
+  height: 28px;
+}
+
+.wechat-user-cell strong,
+.wechat-user-cell small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wechat-user-cell small {
+  color: var(--admin-color-muted);
+  font-size: 12px;
 }
 </style>

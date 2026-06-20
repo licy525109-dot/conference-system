@@ -33,6 +33,23 @@ export interface MobileAdminSession {
   binding: MobileAdminBinding;
 }
 
+export interface CheckinStaffAssignment {
+  id: string;
+  conferenceId: string | null;
+  enabled: boolean;
+  scopeText: string;
+  conference?: { id: string; title: string } | null;
+}
+
+export interface CheckinStaffMe {
+  userId: string;
+  enabled: boolean;
+  canScan: boolean;
+  permissions: string[];
+  scopeText: string;
+  assignments: CheckinStaffAssignment[];
+}
+
 export interface ApiList<T> {
   items: T[];
   total: number;
@@ -160,6 +177,29 @@ export function scanCheckinCredential(qrPayload: string) {
     attendeeName: string;
     checkedInAt: string | null;
   }>("/checkin/scan", "POST", { qrPayload });
+}
+
+export async function getCheckinStaffMe() {
+  await ensureLogin();
+  return request<CheckinStaffMe>("/checkin/staff-me", {
+    method: "GET",
+    auth: true
+  });
+}
+
+export async function scanCheckinCredentialAsStaff(qrPayload: string) {
+  await ensureLogin();
+  return request<{
+    status: string;
+    message: string;
+    registrationNo: string;
+    attendeeName: string;
+    checkedInAt: string | null;
+  }>("/checkin/staff-scan", {
+    method: "POST",
+    data: { qrPayload },
+    auth: true
+  });
 }
 
 function setMobileAdminSession(session: MobileAdminSession): void {

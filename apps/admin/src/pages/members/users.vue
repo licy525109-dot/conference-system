@@ -2,7 +2,7 @@
   <section class="admin-page">
     <AdminPageHeader
       title="会员管理"
-      eyebrow="会员"
+      eyebrow="用户中心"
       subtitle="按用户、等级、状态和到期时间管理会员；购买支付暂未开放，会员开通以后台授予、续期和调整为准。"
     >
       <AdminFeatureBadge label="已可运营" description="授予、续期、停用、调级和权益自动发放均写审计日志。" tone="success" />

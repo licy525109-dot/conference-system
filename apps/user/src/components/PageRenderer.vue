@@ -12,6 +12,7 @@
         v-if="showHeaderVideo && index === 0"
         class="cms-header__video"
         :src="String(props.theme.backgroundVideoUrl)"
+        :poster="String(props.theme.backgroundVideoPosterUrl || '')"
         autoplay
         loop
         muted
@@ -20,9 +21,6 @@
         object-fit="cover"
         :controls="false"
       />
-      <!-- #ifdef MP-WEIXIN -->
-      <view v-if="showHeaderVideo && index === 0" class="cms-video-mini-notice">小程序端背景视频可能受自动播放限制</view>
-      <!-- #endif -->
       <view v-if="component.type === 'hero'" :class="heroClass(component)" :style="heroStyle(component)">
         <image
           v-if="stringConfig(component, 'imageUrl')"
@@ -1385,17 +1383,6 @@ function readErrorText(error: unknown, fallback: string): string {
   z-index: 0;
   width: 100%;
   height: 100%;
-}
-
-.cms-video-mini-notice {
-  position: relative;
-  z-index: 2;
-  margin: 16rpx var(--cms-space-page-x) 0;
-  padding: 12rpx 16rpx;
-  border-radius: var(--cms-radius-md);
-  background: rgba(17, 24, 39, 0.68);
-  color: #ffffff;
-  font-size: 22rpx;
 }
 
 .cms-hero,
