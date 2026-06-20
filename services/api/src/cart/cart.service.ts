@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
-import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled } from "../mall/mall-payment.config";
+import { resolveMallPaymentRuntime } from "../mall/mall-payment.config";
 import { PrismaService } from "../prisma.service";
 import { RegistrationService } from "../registration/registration.service";
 
@@ -267,14 +267,19 @@ export class CartService {
       await tx.cartItem.deleteMany({ where: { id: { in: itemIds }, userId: currentUser.id } });
       return created;
     });
+    const paymentRuntime = resolveMallPaymentRuntime(await this.getMallPaymentConfig());
     return ok({
       id: order.id,
       orderNo: order.orderNo,
       status: order.status,
       payableAmountCent: order.payableAmountCent,
-      paymentEnabled: isMallWechatPaymentEnabled() || isMallMockPaymentEnabled(),
-      paymentNotice: buildMallPaymentNotice()
+      paymentEnabled: paymentRuntime.paymentEnabled,
+      paymentNotice: buildMallPaymentNotice(paymentRuntime)
     });
+  }
+
+  private async getMallPaymentConfig() {
+    return this.prisma.mallPaymentConfig?.findUnique({ where: { name: "default" } }) ?? null;
   }
 }
 
@@ -282,9 +287,9 @@ function ok<T>(data: T) {
   return { code: "OK" as const, message: "ok" as const, data };
 }
 
-function buildMallPaymentNotice(): string {
-  if (isMallWechatPaymentEnabled()) return "订单已创建，请前往我的商城订单完成微信支付。";
-  if (isMallMockPaymentEnabled()) return "订单已创建，可前往我的商城订单使用测试支付。";
+function buildMallPaymentNotice(runtime: ReturnType<typeof resolveMallPaymentRuntime>): string {
+  if (runtime.wechatEnabled) return "订单已创建，请前往我的商城订单完成微信支付。";
+  if (runtime.mockEnabled) return "订单已创建，可前往我的商城订单使用测试支付。";
   return "当前商城支付暂未开放；订单已创建，状态为待支付；请联系会务组或等待商城支付开放";
 }
 

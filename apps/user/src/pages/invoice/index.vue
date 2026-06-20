@@ -3,10 +3,16 @@
     <view class="form ui-card">
       <text class="title">发票申请</text>
       <text class="hint">当前为人工开票流程，金额由后端按已支付订单计算。</text>
-      <picker :range="sourceOptions" range-key="label" :value="sourceIndex" @change="onSourceChange">
-        <view class="field picker">{{ sourceOptions[sourceIndex].label }}</view>
+      <picker :range="invoiceableOrders" range-key="label" :value="orderIndex" @change="onOrderChange">
+        <view class="field picker">{{ selectedOrder ? selectedOrder.label : "请选择可开票订单" }}</view>
       </picker>
-      <input v-model="form.orderNo" class="field" :placeholder="sourceOptions[sourceIndex].placeholder" />
+      <view v-if="selectedOrder" class="order-card">
+        <text class="muted">{{ selectedOrder.sourceText }} · {{ selectedOrder.orderNo }}</text>
+        <text class="muted">{{ selectedOrder.title }}</text>
+        <text class="muted">支付金额 ¥{{ formatCent(selectedOrder.paidAmountCent) }} · 可开票 ¥{{ formatCent(selectedOrder.availableAmountCent) }}</text>
+        <text class="muted">支付时间 {{ selectedOrder.paidAt || "-" }}</text>
+      </view>
+      <text v-else class="hint">只展示你本人已支付且仍有可开票额度的报名订单和商城订单。</text>
       <input v-model="form.title" class="field" placeholder="发票抬头" />
       <input v-model="form.taxNo" class="field" placeholder="税号（选填）" />
       <input v-model="form.email" class="field" placeholder="接收邮箱（选填）" />
@@ -34,42 +40,49 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
-import { createInvoiceApplication, getMyInvoices } from "@/services/operations";
+import { computed, onMounted, reactive, ref } from "vue";
+import { createInvoiceApplication, getMyInvoiceableOrders, getMyInvoices, type InvoiceableOrder } from "@/services/operations";
 
 const loading = ref(false);
 const invoices = ref<Array<Record<string, unknown>>>([]);
-const sourceOptions = [
-  { label: "报名订单", value: "REGISTRATION", placeholder: "报名订单号" },
-  { label: "商城订单", value: "MALL", placeholder: "商城订单号" }
-];
-const sourceIndex = ref(0);
-const form = reactive({ orderNo: "", title: "", taxNo: "", email: "", phone: "" });
+const invoiceableOrders = ref<Array<InvoiceableOrder & { label: string }>>([]);
+const orderIndex = ref(0);
+const form = reactive({ title: "", taxNo: "", email: "", phone: "" });
+const selectedOrder = computed(() => invoiceableOrders.value[orderIndex.value] ?? null);
 
 onMounted(() => void load());
 
 async function load() {
   loading.value = true;
   try {
-    invoices.value = (await getMyInvoices()).items;
+    const [invoiceData, orderData] = await Promise.all([getMyInvoices(), getMyInvoiceableOrders()]);
+    invoices.value = invoiceData.items;
+    invoiceableOrders.value = orderData.items.map((item) => ({
+      ...item,
+      label: `${item.sourceText}｜${item.title}｜可开票 ¥${formatCent(item.availableAmountCent)}`
+    }));
+    if (orderIndex.value >= invoiceableOrders.value.length) orderIndex.value = 0;
   } finally {
     loading.value = false;
   }
 }
 
-function onSourceChange(event: { detail: { value: number } }) {
-  sourceIndex.value = Number(event.detail.value || 0);
+function onOrderChange(event: { detail: { value: number } }) {
+  orderIndex.value = Number(event.detail.value || 0);
 }
 
 async function submit() {
-  if (!form.orderNo.trim() || !form.title.trim()) {
-    uni.showToast({ title: "请填写订单号和抬头", icon: "none" });
+  if (!selectedOrder.value) {
+    uni.showToast({ title: "请选择可开票订单", icon: "none" });
+    return;
+  }
+  if (!form.title.trim()) {
+    uni.showToast({ title: "请填写发票抬头", icon: "none" });
     return;
   }
   loading.value = true;
   try {
-    await createInvoiceApplication({ ...form, sourceType: sourceOptions[sourceIndex.value].value as "REGISTRATION" | "MALL" });
-    form.orderNo = "";
+    await createInvoiceApplication({ ...form, sourceType: selectedOrder.value.sourceType, orderNo: selectedOrder.value.orderNo });
     form.title = "";
     form.taxNo = "";
     form.email = "";
@@ -136,6 +149,16 @@ function formatCent(value: number) {
   border-radius: var(--ui-radius-md);
   background: #fff;
   font-size: 26rpx;
+}
+
+.order-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding: 18rpx;
+  border: 1rpx solid var(--ui-color-border);
+  border-radius: var(--ui-radius-md);
+  background: rgb(255 255 255 / 92%);
 }
 
 .picker {

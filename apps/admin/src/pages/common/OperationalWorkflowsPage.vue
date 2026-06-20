@@ -46,6 +46,13 @@
           <el-button v-if="section === 'checkin-verify'" type="primary" :disabled="!checkinCredential" @click="verifyCredential">应急补签</el-button>
         </template>
       </AdminFilterBar>
+      <el-alert
+        class="checkin-guide"
+        title="工作人员扫码入口：小程序 /pages/admin/notifications/index。工作人员需先绑定后台账号，角色需包含 checkin:write 权限；常规现场核销请使用小程序扫码，后台应急补签仅用于异常处理。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
       <AdminSectionCard v-if="section === 'checkin-verify'" title="后台应急补签" subtitle="仅用于现场异常处理。常规签到请使用客户自助签到或工作人员小程序扫码。">
         <el-alert title="后台补签会写入审计日志；重复签到不会重复计数，会返回首次签到时间。" type="warning" :closable="false" show-icon />
         <div v-if="checkinResult" class="result-card">
@@ -58,8 +65,8 @@
       <div class="admin-stat-grid">
         <AdminStatCard label="已报名" :value="checkinRegistered" />
         <AdminStatCard label="已支付" :value="checkinPaid" />
-        <AdminStatCard label="已签到" :value="checkinCheckedIn" tone="success" />
-        <AdminStatCard label="未签到" :value="checkinUnchecked" tone="warning" />
+        <AdminStatCard class="is-clickable" label="已签到" :value="checkinCheckedIn" tone="success" @click="checkinListTab = 'checkedInList'" />
+        <AdminStatCard class="is-clickable" label="未签到" :value="checkinUnchecked" tone="warning" @click="checkinListTab = 'uncheckedInList'" />
         <AdminStatCard label="无需核销" :value="checkinNotRequired" />
       </div>
       <AdminSectionCard v-if="section !== 'checkin-stats'" title="签到记录" subtitle="展示每一条客户自助、工作人员扫码、后台应急补签和撤销明细。">
@@ -68,10 +75,10 @@
           <el-table-column prop="registrationNo" label="报名号" min-width="150" />
           <el-table-column prop="attendeeName" label="参会人" width="120" />
           <el-table-column prop="phone" label="手机号" width="140" />
-          <el-table-column prop="method" label="核销方式" width="140" />
-          <el-table-column prop="result" label="结果" width="110" />
-          <el-table-column prop="beforeStatus" label="核销前" width="110" />
-          <el-table-column prop="afterStatus" label="核销后" width="110" />
+          <el-table-column prop="method" label="核销方式" width="140"><template #default="{ row }">{{ checkinMethodText(row.method) }}</template></el-table-column>
+          <el-table-column prop="result" label="结果" width="110"><template #default="{ row }">{{ resultText(row.result) }}</template></el-table-column>
+          <el-table-column prop="beforeStatus" label="核销前" width="110"><template #default="{ row }">{{ checkinStatusText(row.beforeStatus) }}</template></el-table-column>
+          <el-table-column prop="afterStatus" label="核销后" width="110"><template #default="{ row }">{{ checkinStatusText(row.afterStatus) }}</template></el-table-column>
           <el-table-column prop="operatorName" label="操作人" width="140" />
           <el-table-column prop="failureReason" label="失败原因" min-width="150" />
           <el-table-column prop="createdAt" label="时间" width="190" />
@@ -85,7 +92,7 @@
             <el-table-column prop="checkedIn" label="已签到" width="100" />
           </el-table>
           <el-table :data="asRows(checkinStats.byMethod)" empty-text="暂无方式统计">
-            <el-table-column prop="key" label="方式" min-width="160" />
+            <el-table-column prop="key" label="方式" min-width="160"><template #default="{ row }">{{ checkinMethodText(row.key) }}</template></el-table-column>
             <el-table-column prop="count" label="次数" width="100" />
           </el-table>
           <el-table :data="asRows(checkinStats.byHour)" empty-text="暂无时间段统计">
@@ -93,6 +100,22 @@
             <el-table-column prop="count" label="次数" width="100" />
           </el-table>
         </div>
+        <el-tabs v-model="checkinListTab" class="checkin-list-tabs">
+          <el-tab-pane label="已签到名单" name="checkedInList" />
+          <el-tab-pane label="未签到名单" name="uncheckedInList" />
+          <el-tab-pane label="全部已支付报名" name="paidList" />
+        </el-tabs>
+        <el-table :data="checkinListRows" empty-text="暂无名单">
+          <el-table-column prop="attendeeName" label="参会人" width="120" />
+          <el-table-column prop="phone" label="手机号" width="140" />
+          <el-table-column prop="company" label="公司" min-width="140" />
+          <el-table-column prop="skuName" label="票种" min-width="140" />
+          <el-table-column prop="registrationNo" label="报名号" min-width="150" />
+          <el-table-column prop="paymentStatusText" label="支付状态" width="110" />
+          <el-table-column prop="checkInStatusText" label="签到状态" width="110" />
+          <el-table-column prop="checkedInAt" label="签到时间" width="190" />
+          <el-table-column prop="checkInMethodText" label="签到方式" width="140" />
+        </el-table>
       </AdminSectionCard>
     </template>
 
@@ -124,8 +147,8 @@
         <el-table :data="payments" empty-text="暂无支付记录">
           <el-table-column prop="orderNo" label="订单号" min-width="160" />
           <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
-          <el-table-column prop="provider" label="渠道" width="110" />
-          <el-table-column prop="status" label="状态" width="120" />
+          <el-table-column prop="provider" label="渠道" width="110"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
+          <el-table-column prop="status" label="状态" width="120"><template #default="{ row }">{{ paymentStatusText(row.status) }}</template></el-table-column>
           <el-table-column label="金额" width="120"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
           <el-table-column prop="transactionId" label="交易号" min-width="180" />
           <el-table-column prop="paidAt" label="支付时间" width="190" />
@@ -248,6 +271,7 @@ const checkinCredential = ref("");
 const checkinLogs = ref<Record<string, unknown>[]>([]);
 const checkinStats = ref<Record<string, unknown>>({});
 const checkinResult = ref<Record<string, unknown> | null>(null);
+const checkinListTab = ref<"checkedInList" | "uncheckedInList" | "paidList">("checkedInList");
 const paymentExceptions = ref<Record<string, unknown>[]>([]);
 const payments = ref<FinancePayment[]>([]);
 const couponCampaigns = ref<Record<string, unknown>[]>([]);
@@ -285,6 +309,7 @@ const checkinPaid = computed(() => toNumber(checkinStats.value.paidCount));
 const checkinCheckedIn = computed(() => toNumber(checkinStats.value.checkedIn));
 const checkinUnchecked = computed(() => toNumber(checkinStats.value.uncheckedIn ?? checkinStats.value.pending));
 const checkinNotRequired = computed(() => toNumber(checkinStats.value.notRequired));
+const checkinListRows = computed(() => asRows(checkinStats.value[checkinListTab.value]));
 
 onMounted(() => void load());
 watch(() => currentRoute.value.path, () => void load());
@@ -431,6 +456,26 @@ function exceptionText(value: unknown) {
 function couponNames(value: unknown) {
   return asRows(value).map((item) => item.name || item.code).filter(Boolean).join("，") || "-";
 }
+
+function checkinMethodText(value: unknown) {
+  return ({ SELF_INPUT: "客户自助", QR_SCAN: "工作人员扫码", ADMIN_MANUAL: "后台应急补签", REVOKE: "撤销核销", VERIFY: "扫码核销" } as Record<string, string>)[String(value || "")] ?? String(value || "-");
+}
+
+function checkinStatusText(value: unknown) {
+  return ({ CHECKED_IN: "已签到", PENDING: "未签到", NOT_REQUIRED: "无需核销", CANCELLED: "已取消" } as Record<string, string>)[String(value || "")] ?? String(value || "-");
+}
+
+function resultText(value: unknown) {
+  return ({ SUCCESS: "成功", FAILED: "失败", SKIPPED: "已跳过" } as Record<string, string>)[String(value || "")] ?? String(value || "-");
+}
+
+function providerText(value: unknown) {
+  return ({ MOCK: "Mock 测试", WECHAT: "微信支付" } as Record<string, string>)[String(value || "")] ?? String(value || "-");
+}
+
+function paymentStatusText(value: unknown) {
+  return ({ SUCCESS: "成功", PENDING: "待支付", FAILED: "失败", CLOSED: "已关闭" } as Record<string, string>)[String(value || "")] ?? String(value || "-");
+}
 </script>
 
 <style scoped>
@@ -463,5 +508,17 @@ function couponNames(value: unknown) {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+.is-clickable {
+  cursor: pointer;
+}
+
+.checkin-list-tabs {
+  margin-top: 16px;
+}
+
+.checkin-guide {
+  margin-bottom: 14px;
 }
 </style>

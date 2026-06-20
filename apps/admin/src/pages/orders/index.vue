@@ -124,7 +124,7 @@
         </el-table>
         <h3>支付记录</h3>
         <el-table :data="detail.payments" empty-text="暂无支付">
-          <el-table-column prop="provider" label="渠道" width="100" />
+          <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
           <el-table-column label="状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
           <el-table-column prop="outTradeNo" label="商户单号" min-width="180" />
           <el-table-column prop="transactionId" label="微信交易号" min-width="180" />
@@ -312,6 +312,10 @@ function canCloseOrder(row: AdminOrder) {
 
 function exceptionText(row: AdminOrder) {
   return row.paymentExceptions?.map((item) => item.message).join("；") || "订单状态需关注";
+}
+
+function providerText(value?: string | null) {
+  return value ? ({ MOCK: "Mock 测试", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
 
 function readReviewNote(value: Record<string, unknown> | null) {

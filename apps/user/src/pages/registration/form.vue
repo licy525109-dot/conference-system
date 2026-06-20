@@ -1,9 +1,7 @@
 <template>
   <view class="page ui-page" :style="pageStyle">
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
-    <!-- #ifdef MP-WEIXIN -->
-    <view v-if="showBodyVideo" class="mp-video-notice">小程序端背景视频可能受自动播放限制，请以页面内容为准。</view>
-    <!-- #endif -->
+    <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <LoadingState v-if="loading" title="加载报名信息中" description="正在读取票种、价格和报名字段。" />
     <ErrorState
@@ -33,7 +31,7 @@
             <view class="sku-main">
               <text class="sku-name">{{ sku.name }}</text>
               <text class="sku-desc">{{ sku.description || "标准报名规格" }}</text>
-              <text class="sku-stock">剩余 {{ Math.max(sku.stock - sku.soldCount, 0) }} / {{ sku.stock }}</text>
+              <text v-if="stockDisplayMode !== 'HIDDEN'" class="sku-stock">{{ stockLabel(sku) }}</text>
             </view>
             <view class="sku-side">
               <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
@@ -177,7 +175,8 @@ import {
   type ConferenceDetail,
   type ConferenceForm,
   type FormField,
-  type FormOption
+  type FormOption,
+  type RegistrationSku
 } from "@/services/conference";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { addRegistrationCartItem } from "@/services/cart";
@@ -215,6 +214,8 @@ const selectedAmountCent = computed(() =>
 );
 const totalTickets = computed(() => selectedItems.value.reduce((sum, item) => sum + item.quantity, 0));
 const payableAmountCent = computed(() => quote.value?.payableAmountCent ?? selectedAmountCent.value);
+const displaySettings = computed(() => normalizeDetailDisplay(conference.value?.contentJson));
+const stockDisplayMode = computed(() => displaySettings.value.inventoryDisplayMode);
 const attendeeSectionDescription = computed(() =>
   totalTickets.value > 0 ? `共 ${totalTickets.value} 位参会人，请填写真实有效信息。` : "选择报名票数后自动生成表单。"
 );
@@ -312,6 +313,13 @@ async function changeSkuQuantity(skuId: string, delta: number) {
 
 function skuQuantity(skuId: string): number {
   return quantities.value[skuId] ?? 0;
+}
+
+function stockLabel(sku: RegistrationSku): string {
+  const remaining = Math.max(0, sku.stock - sku.soldCount);
+  if (remaining <= 0) return "已售罄";
+  if (stockDisplayMode.value === "EXACT") return `剩余 ${remaining} / ${sku.stock}`;
+  return remaining <= displaySettings.value.lowStockThreshold ? "库存紧张" : "名额充足";
 }
 
 async function loadQuote() {
@@ -606,6 +614,20 @@ function readEventValue(event: unknown): unknown {
   }
 
   return undefined;
+}
+
+function normalizeDetailDisplay(value: unknown) {
+  const content = readRecord(value);
+  const source = readRecord(content.detailDisplay);
+  const mode = String(source.inventoryDisplayMode || "STATUS").toUpperCase();
+  return {
+    inventoryDisplayMode: mode === "EXACT" || mode === "HIDDEN" ? mode : "STATUS",
+    lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : 10
+  };
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 interface AttendeeFormState {

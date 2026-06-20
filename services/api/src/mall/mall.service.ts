@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
-import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled, readMallPaymentMode } from "./mall-payment.config";
+import { resolveMallPaymentRuntime, type MallPaymentRuntimeConfig } from "./mall-payment.config";
 
 const FORBIDDEN_AMOUNT_FIELDS = new Set(["originAmountCent", "discountAmountCent", "payableAmountCent", "paidAmountCent", "amountCent", "totalAmountCent", "priceCent"]);
 
@@ -151,7 +151,7 @@ export class MallService {
       return created;
     });
 
-    return ok(formatOrder(order));
+    return ok(formatOrder(order, await this.getPaymentConfig()));
   }
 
   async myOrders(currentUser: CurrentUser | undefined) {
@@ -161,14 +161,19 @@ export class MallService {
       orderBy: { createdAt: "desc" },
       include: mallOrderInclude
     });
-    return ok({ items: items.map(formatOrder) });
+    const paymentConfig = await this.getPaymentConfig();
+    return ok({ items: items.map((item) => formatOrder(item, paymentConfig)) });
   }
 
   async myOrder(id: string, currentUser: CurrentUser | undefined) {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
     const item = await this.prisma.mallOrder.findFirst({ where: { id, userId: currentUser.id }, include: mallOrderInclude });
     if (!item) throw new NotFoundException("商城订单不存在");
-    return ok(formatOrder(item));
+    return ok(formatOrder(item, await this.getPaymentConfig()));
+  }
+
+  private async getPaymentConfig(): Promise<MallPaymentRuntimeConfig | null> {
+    return this.prisma.mallPaymentConfig?.findUnique({ where: { name: "default" } }) ?? null;
   }
 }
 
@@ -211,7 +216,8 @@ function formatProduct(item: {
   };
 }
 
-function formatOrder(item: Prisma.MallOrderGetPayload<{ include: typeof mallOrderInclude }>) {
+function formatOrder(item: Prisma.MallOrderGetPayload<{ include: typeof mallOrderInclude }>, paymentConfig?: MallPaymentRuntimeConfig | null) {
+  const paymentRuntime = resolveMallPaymentRuntime(paymentConfig);
   return {
     ...item,
     paidAt: item.paidAt?.toISOString() ?? null,
@@ -235,24 +241,19 @@ function formatOrder(item: Prisma.MallOrderGetPayload<{ include: typeof mallOrde
     })),
     payments: item.payments.map(formatPayment),
     refunds: item.refunds.map(formatRefund),
-    paymentMode: readMallPaymentMode(),
-    paymentUnavailableReason: paymentUnavailableReason(),
-    paymentEnabled: item.status === "PENDING_PAYMENT" && (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()),
-    paymentNotice: buildPaymentNotice(item.status)
+    paymentMode: paymentRuntime.mode,
+    paymentConfigSource: paymentRuntime.source,
+    paymentUnavailableReason: paymentRuntime.unavailableReason,
+    paymentEnabled: item.status === "PENDING_PAYMENT" && paymentRuntime.paymentEnabled,
+    paymentNotice: buildPaymentNotice(item.status, paymentRuntime)
   };
 }
 
-function buildPaymentNotice(status: string): string | null {
+function buildPaymentNotice(status: string, runtime: ReturnType<typeof resolveMallPaymentRuntime>): string | null {
   if (status !== "PENDING_PAYMENT") return null;
-  if (isMallWechatPaymentEnabled()) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
-  if (isMallMockPaymentEnabled()) return "当前为 mock 支付模式，可使用测试支付完成商城订单。";
+  if (runtime.wechatEnabled) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
+  if (runtime.mockEnabled) return "当前为 mock 支付模式，可使用测试支付完成商城订单。";
   return "当前商城支付暂未开放；订单已创建，状态为待支付；请联系会务组或等待商城支付开放";
-}
-
-function paymentUnavailableReason(): string | null {
-  if (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()) return null;
-  if (readMallPaymentMode() === "wechat") return "WECHAT_PAY_MALL_NOTIFY_URL 未配置，商城微信支付不可用。";
-  return "MALL_PAYMENT_MODE 未开启商城支付，生产默认保持 disabled。";
 }
 
 function formatPayment(item: Prisma.MallPaymentGetPayload<Record<string, never>>) {

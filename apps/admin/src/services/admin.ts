@@ -895,6 +895,14 @@ export function listMallOrders(params: { page?: number; pageSize?: number; keywo
   return apiRequest<ApiList<MallOrder>>(`/admin/mall/orders${toQuery(params)}`);
 }
 
+export function getMallPaymentConfig() {
+  return apiRequest<Record<string, unknown>>("/admin/mall/payment-config");
+}
+
+export function updateMallPaymentConfig(input: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>("/admin/mall/payment-config", { method: "PATCH", body: JSON.stringify(input) });
+}
+
 export function getMallOrderOptions(params: { keyword?: string } = {}) {
   return apiRequest<{ items: MallOrder[] }>(`/admin/mall/orders/options${toQuery(params)}`);
 }
@@ -1015,6 +1023,10 @@ export function updateWecomConfig(input: Record<string, unknown>) {
 
 export function testWecomAccessToken() {
   return apiRequest<Record<string, unknown>>("/admin/wecom/config/test-token", { method: "POST" });
+}
+
+export function testWecomGroupRobot() {
+  return apiRequest<Record<string, unknown>>("/admin/wecom/config/test-group-robot", { method: "POST" });
 }
 
 export function checkWecomPermissions() {

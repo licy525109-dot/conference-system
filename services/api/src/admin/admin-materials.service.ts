@@ -14,7 +14,11 @@ export interface UploadedMaterialFile {
 }
 
 const MATERIAL_UPLOAD_DIR = join(process.cwd(), "uploads", "materials");
-const MAX_MATERIAL_SIZE_BYTES = 10 * 1024 * 1024;
+const MB = 1024 * 1024;
+const MAX_IMAGE_SIZE_BYTES = 2 * MB;
+const MAX_VIDEO_SIZE_BYTES = 20 * MB;
+const MAX_FILE_SIZE_BYTES = 20 * MB;
+const MAX_FONT_SIZE_BYTES = 5 * MB;
 const ALLOWED_MATERIAL_TYPES = new Map([
   ["image/jpeg", ".jpg"],
   ["image/png", ".png"],
@@ -22,6 +26,15 @@ const ALLOWED_MATERIAL_TYPES = new Map([
   ["image/gif", ".gif"],
   ["image/svg+xml", ".svg"],
   ["video/mp4", ".mp4"],
+  ["application/pdf", ".pdf"],
+  ["text/plain", ".txt"],
+  ["text/markdown", ".md"],
+  ["application/msword", ".doc"],
+  ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"],
+  ["application/vnd.ms-excel", ".xls"],
+  ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"],
+  ["application/vnd.ms-powerpoint", ".ppt"],
+  ["application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"],
   ["font/ttf", ".ttf"],
   ["font/otf", ".otf"],
   ["font/woff", ".woff"],
@@ -31,6 +44,29 @@ const ALLOWED_MATERIAL_TYPES = new Map([
   ["application/font-woff", ".woff"],
   ["application/font-woff2", ".woff2"],
   ["application/vnd.ms-fontobject", ".eot"]
+]);
+const ALLOWED_EXTENSION_TYPES = new Map<string, string[]>([
+  [".jpg", ["image/jpeg"]],
+  [".jpeg", ["image/jpeg"]],
+  [".png", ["image/png"]],
+  [".webp", ["image/webp"]],
+  [".gif", ["image/gif"]],
+  [".svg", ["image/svg+xml"]],
+  [".mp4", ["video/mp4"]],
+  [".pdf", ["application/pdf"]],
+  [".txt", ["text/plain"]],
+  [".md", ["text/markdown", "text/plain"]],
+  [".doc", ["application/msword"]],
+  [".docx", ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]],
+  [".xls", ["application/vnd.ms-excel"]],
+  [".xlsx", ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]],
+  [".ppt", ["application/vnd.ms-powerpoint"]],
+  [".pptx", ["application/vnd.openxmlformats-officedocument.presentationml.presentation"]],
+  [".ttf", ["font/ttf", "application/x-font-ttf"]],
+  [".otf", ["font/otf", "application/x-font-otf"]],
+  [".woff", ["font/woff", "application/font-woff"]],
+  [".woff2", ["font/woff2", "application/font-woff2"]],
+  [".eot", ["application/vnd.ms-fontobject"]]
 ]);
 
 @Injectable()
@@ -314,8 +350,9 @@ function formatAsset(asset: Prisma.MaterialAssetGetPayload<{ select: typeof asse
 }
 
 function saveMaterialFile(file: UploadedMaterialFile, publicOrigin: string) {
-  if (file.size > MAX_MATERIAL_SIZE_BYTES) {
-    throw new BadRequestException("素材文件不能超过 10MB");
+  const maxSize = maxMaterialSize(file);
+  if (file.size > maxSize.bytes) {
+    throw new BadRequestException(`${maxSize.label}文件过大，不能超过 ${maxSize.text}`);
   }
 
   const extension = readAllowedExtension(file);
@@ -366,18 +403,39 @@ function referenceItem(type: string, id: string, name?: string | null) {
 }
 
 function readAllowedExtension(file: UploadedMaterialFile): string {
+  const extension = extname(file.originalname ?? "").toLowerCase();
+  if (extension && !ALLOWED_EXTENSION_TYPES.has(extension)) {
+    throw new BadRequestException("格式不支持。仅支持 jpg/png/webp/gif/svg/mp4/pdf/doc/docx/xls/xlsx/ppt/pptx/txt/md/ttf/otf/woff/woff2 素材，不能上传可执行文件");
+  }
+  if (file.mimetype && !ALLOWED_MATERIAL_TYPES.has(file.mimetype)) {
+    throw new BadRequestException(`格式不支持：${file.mimetype}。请上传图片、MP4、PDF、Office、TXT/MD 或字体文件`);
+  }
+  if (file.mimetype && extension) {
+    const compatibleTypes = ALLOWED_EXTENSION_TYPES.get(extension) ?? [];
+    if (!compatibleTypes.includes(file.mimetype)) {
+      throw new BadRequestException("文件扩展名与 MIME 类型不一致，请确认素材格式后重新上传");
+    }
+  }
+  if (extension) {
+    return extension;
+  }
   if (file.mimetype && ALLOWED_MATERIAL_TYPES.has(file.mimetype)) {
     return ALLOWED_MATERIAL_TYPES.get(file.mimetype)!;
   }
-  const extension = extname(file.originalname ?? "").toLowerCase();
-  if ([...ALLOWED_MATERIAL_TYPES.values()].includes(extension)) {
-    return extension;
-  }
-  throw new BadRequestException("仅支持 jpg/png/webp/gif/svg/mp4/ttf/otf/woff/woff2 素材");
+  throw new BadRequestException("格式不支持。仅支持 jpg/png/webp/gif/svg/mp4/pdf/doc/docx/xls/xlsx/ppt/pptx/txt/md/ttf/otf/woff/woff2 素材");
 }
 
 function inferFileType(url: string): string {
   const extension = extname(url).toLowerCase();
+  if (extension === ".pdf") return "application/pdf";
+  if (extension === ".txt") return "text/plain";
+  if (extension === ".md") return "text/markdown";
+  if (extension === ".doc") return "application/msword";
+  if (extension === ".docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (extension === ".xls") return "application/vnd.ms-excel";
+  if (extension === ".xlsx") return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (extension === ".ppt") return "application/vnd.ms-powerpoint";
+  if (extension === ".pptx") return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
   if (extension === ".ttf") {
     return "font/ttf";
   }
@@ -406,6 +464,15 @@ function inferFileType(url: string): string {
     return "image/gif";
   }
   return "image/jpeg";
+}
+
+function maxMaterialSize(file: UploadedMaterialFile): { bytes: number; text: string; label: string } {
+  const extension = extname(file.originalname ?? "").toLowerCase();
+  const type = file.mimetype ?? "";
+  if (type.startsWith("video/") || extension === ".mp4") return { bytes: MAX_VIDEO_SIZE_BYTES, text: "20MB", label: "视频素材" };
+  if (type.startsWith("font/") || [".ttf", ".otf", ".woff", ".woff2", ".eot"].includes(extension)) return { bytes: MAX_FONT_SIZE_BYTES, text: "5MB", label: "字体素材" };
+  if (type.startsWith("image/") || [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"].includes(extension)) return { bytes: MAX_IMAGE_SIZE_BYTES, text: "2MB", label: "图片素材" };
+  return { bytes: MAX_FILE_SIZE_BYTES, text: "20MB", label: "文件素材" };
 }
 
 function stripExtension(value: string | undefined): string | null {

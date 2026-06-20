@@ -93,6 +93,7 @@ export const routes: AdminRoute[] = [
   { path: "/mall/categories", title: "商品分类", menuTitle: "商品分类", group: "商城", description: "商城商品分类、排序和展示入口。", permission: "mall:view", component: MallWorkflowsPage },
   { path: "/mall/skus", title: "SKU 库存", menuTitle: "SKU 库存", group: "商城", description: "SKU 库存、锁定库存和库存流水入口。", permission: "mall:view", component: MallWorkflowsPage },
   { path: "/mall/orders", title: "商城订单", menuTitle: "商城订单", group: "商城", description: "商城订单查询，不与会议报名订单混用", permission: "mall:order", component: MallOrdersPage },
+  { path: "/mall/payment-config", title: "商城支付配置", menuTitle: "支付配置", group: "商城", description: "商城支付模式、微信支付回调地址和测试支付开关。", permission: "mall:view", component: MallOrdersPage },
   { path: "/mall/fulfillment", title: "发货核销", menuTitle: "发货核销", group: "商城", description: "商城发货、到店核销和履约日志入口。", permission: "mall:shipment", component: MallWorkflowsPage },
   { path: "/mall/aftersales", title: "商城售后", menuTitle: "商城售后", group: "商城", description: "售后申请、处理记录和退款联动入口。", permission: "mall:aftersale", component: MallWorkflowsPage },
   { path: "/finance/payments", title: "支付流水", menuTitle: "支付流水", group: "财务管理", description: "报名支付和商城支付统一只读查询。", permission: "finance:view", component: FinancePage },

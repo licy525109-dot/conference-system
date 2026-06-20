@@ -7,10 +7,40 @@
     >
       <template #actions>
         <el-button :loading="loading" @click="load">刷新</el-button>
+        <el-button @click="navigateTo('/mall/payment-config')">支付配置</el-button>
         <el-button @click="navigateTo('/mall/fulfillment')">发货核销</el-button>
         <el-button @click="navigateTo('/mall/aftersales')">商城售后</el-button>
       </template>
     </AdminPageHeader>
+
+    <section class="table-panel payment-config-panel">
+      <div class="panel-heading">
+        <div>
+          <h3>商城支付配置</h3>
+          <p>商城支付独立于会议报名支付，生产默认关闭。开启微信支付时必须配置商城专用回调地址。</p>
+        </div>
+        <el-tag :type="paymentConfig.paymentEnabled ? 'success' : 'warning'">{{ paymentConfig.paymentEnabled ? "可支付" : "未开放" }}</el-tag>
+      </div>
+      <el-form :model="paymentConfigForm" inline class="payment-config-form">
+        <el-form-item label="支付模式">
+          <el-radio-group v-model="paymentConfigForm.mode">
+            <el-radio-button label="disabled">关闭</el-radio-button>
+            <el-radio-button label="mock">Mock 测试</el-radio-button>
+            <el-radio-button label="wechat">微信支付</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="商城回调地址">
+          <el-input v-model="paymentConfigForm.notifyUrl" placeholder="https://.../api/mall/payments/wechat/notify" style="width: 360px" />
+        </el-form-item>
+        <el-form-item label="允许测试支付">
+          <el-switch v-model="paymentConfigForm.allowMockPayment" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="paymentConfigSaving" @click="savePaymentConfig">保存支付配置</el-button>
+        </el-form-item>
+      </el-form>
+      <el-alert v-if="paymentConfig.unavailableReason" type="warning" :closable="false" show-icon :title="String(paymentConfig.unavailableReason)" />
+    </section>
 
     <AdminFilterBar>
       <el-input v-model="keyword" clearable placeholder="订单号 / 收件人 / 手机" style="width: 260px" @keyup.enter="load" />
@@ -98,7 +128,7 @@
           <h3>支付记录</h3>
           <el-table :data="detail.payments || []" size="small" empty-text="暂无支付记录">
             <el-table-column prop="status" label="状态" width="100"><template #default="{ row }">{{ paymentStatusText(row.status) }}</template></el-table-column>
-            <el-table-column prop="provider" label="Provider" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
+            <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
             <el-table-column prop="outTradeNo" label="支付单号" min-width="180" show-overflow-tooltip />
             <el-table-column prop="transactionId" label="交易号" min-width="160" show-overflow-tooltip />
             <el-table-column label="金额" width="100"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
@@ -137,7 +167,7 @@
           <h3>退款记录</h3>
           <el-table :data="detail.refunds || []" size="small" empty-text="暂无退款">
             <el-table-column prop="status" label="状态" width="110"><template #default="{ row }">{{ refundStatusText(row.status) }}</template></el-table-column>
-            <el-table-column prop="provider" label="Provider" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
+            <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
             <el-table-column prop="refundNo" label="退款单号" min-width="150" show-overflow-tooltip />
             <el-table-column prop="outRefundNo" label="商户退款单号" min-width="180" show-overflow-tooltip />
             <el-table-column label="金额" width="100"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
@@ -169,7 +199,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
-import { closeMallOrder, getMallOrder, listMallOrders, shipMallOrder, verifyMallOrder } from "../../services/admin";
+import { closeMallOrder, getMallOrder, getMallPaymentConfig, listMallOrders, shipMallOrder, updateMallPaymentConfig, verifyMallOrder } from "../../services/admin";
 import type { MallOrder } from "../../services/types";
 import { navigateTo } from "../../router";
 
@@ -185,8 +215,32 @@ const detailVisible = ref(false);
 const shipVisible = ref(false);
 const shipOrderId = ref("");
 const shipForm = reactive({ company: "", trackingNo: "", pickupCode: "", remark: "" });
+const paymentConfig = ref<Record<string, unknown>>({});
+const paymentConfigSaving = ref(false);
+const paymentConfigForm = reactive({ mode: "disabled", notifyUrl: "", allowMockPayment: false, remark: "" });
 
-onMounted(() => void load());
+onMounted(() => void Promise.all([loadPaymentConfig(), load()]));
+
+async function loadPaymentConfig() {
+  paymentConfig.value = await getMallPaymentConfig();
+  Object.assign(paymentConfigForm, {
+    mode: String(paymentConfig.value.mode || "disabled"),
+    notifyUrl: String(paymentConfig.value.notifyUrl || ""),
+    allowMockPayment: Boolean(paymentConfig.value.allowMockPayment),
+    remark: String(paymentConfig.value.remark || "")
+  });
+}
+
+async function savePaymentConfig() {
+  paymentConfigSaving.value = true;
+  try {
+    paymentConfig.value = await updateMallPaymentConfig({ ...paymentConfigForm });
+    await load();
+    ElMessage.success("商城支付配置已保存");
+  } finally {
+    paymentConfigSaving.value = false;
+  }
+}
 
 async function load() {
   loading.value = true;
@@ -263,11 +317,11 @@ function fulfillmentText(value?: string | null) {
 }
 
 function productTypeText(value?: string | null) {
-  return { PHYSICAL: "实体", VIRTUAL: "虚拟", SERVICE: "服务" }[value || "PHYSICAL"] ?? value ?? "-";
+  return { PHYSICAL: "实物商品", VIRTUAL: "虚拟商品", SERVICE: "服务类商品" }[value || "PHYSICAL"] ?? value ?? "-";
 }
 
 function paymentModeText(value?: string | null) {
-  return { disabled: "支付关闭", mock: "mock 支付", wechat: "微信支付" }[value || "disabled"] ?? value ?? "-";
+  return { disabled: "支付关闭", mock: "Mock 测试", wechat: "微信支付" }[value || "disabled"] ?? value ?? "-";
 }
 
 function shipmentStatusText(value: string) {
@@ -291,11 +345,39 @@ function refundStatusText(value?: string | null) {
 }
 
 function providerText(value?: string | null) {
-  return value ? ({ MOCK: "mock", WECHAT: "微信" }[value] ?? value) : "-";
+  return value ? ({ MOCK: "Mock 测试", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
 </script>
 
 <style scoped>
+.payment-config-panel {
+  margin-bottom: 16px;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.panel-heading h3 {
+  margin: 0 0 6px;
+}
+
+.panel-heading p {
+  margin: 0;
+  color: var(--admin-color-text-muted, #64748b);
+  font-size: 13px;
+}
+
+.payment-config-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .pagination-row {
   display: flex;
   justify-content: flex-end;

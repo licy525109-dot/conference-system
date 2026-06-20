@@ -10,6 +10,18 @@ import { RequireAdminPermissions } from "./require-permissions.decorator";
 export class AdminMallController {
   constructor(private readonly mallService: AdminMallService) {}
 
+  @Get("payment-config")
+  @RequireAdminPermissions("mall:view")
+  getPaymentConfig() {
+    return this.mallService.getPaymentConfig();
+  }
+
+  @Patch("payment-config")
+  @RequireAdminPermissions("mall:write")
+  updatePaymentConfig(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.mallService.updatePaymentConfig(body, request.currentAdmin!);
+  }
+
   @Get("categories")
   @RequireAdminPermissions("mall:view")
   listCategories(@Query() query: Record<string, unknown>) {

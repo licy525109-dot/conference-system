@@ -741,6 +741,7 @@ export interface ThemeConfig {
   backgroundVideoUrl?: string;
   backgroundDynamicDensity?: number;
   backgroundDynamicSpeed?: number;
+  backgroundGradientAngle?: number;
   backgroundBottomFilter?: boolean;
   backgroundApplyTo?: string;
   themeApplyMode?: string;
@@ -1227,6 +1228,7 @@ export interface MallOrder {
   latestRefund?: MallRefund | null;
   productTypes?: string[];
   paymentMode?: string;
+  paymentConfigSource?: string;
   paymentEnabled?: boolean;
   paymentUnavailableReason?: string | null;
   paymentNotice?: string;

@@ -3,7 +3,7 @@ import { CouponClaimStatus, InvoiceStatus, Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { decryptSecret } from "../wecom/wecom.crypto";
-import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled } from "../mall/mall-payment.config";
+import { resolveMallPaymentRuntime, type MallPaymentRuntimeConfig } from "../mall/mall-payment.config";
 
 @Injectable()
 export class PublicOperationsService {
@@ -231,6 +231,54 @@ export class PublicOperationsService {
     return ok({ items: items.map(formatDateFields) });
   }
 
+  async myInvoiceableOrders(currentUser: CurrentUser | undefined) {
+    if (!currentUser) throw new UnauthorizedException("Bearer token is required");
+    const [registrationOrders, mallOrders, invoices] = await this.prisma.$transaction([
+      this.prisma.order.findMany({
+        where: { userId: currentUser.id, status: "PAID" },
+        orderBy: { paidAt: "desc" },
+        take: 100,
+        include: { conference: { select: { title: true } } }
+      }),
+      this.prisma.mallOrder.findMany({
+        where: { userId: currentUser.id, status: { in: ["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "REFUNDED"] } },
+        orderBy: { paidAt: "desc" },
+        take: 100,
+        include: { items: { take: 2 } }
+      }),
+      this.prisma.invoiceApplication.findMany({
+        where: { userId: currentUser.id, status: { in: [InvoiceStatus.REQUESTED, InvoiceStatus.APPROVED, InvoiceStatus.ISSUED] } }
+      })
+    ]);
+    const invoiceAmountByKey = new Map<string, number>();
+    for (const item of invoices) {
+      const key = `${item.sourceType}:${item.orderNo}`;
+      invoiceAmountByKey.set(key, (invoiceAmountByKey.get(key) ?? 0) + item.amountCent);
+    }
+    const items = [
+      ...registrationOrders.map((order) => formatInvoiceableOrder({
+        sourceType: "REGISTRATION",
+        orderNo: order.orderNo,
+        title: order.conference.title,
+        paidAmountCent: order.paidAmountCent ?? order.payableAmountCent,
+        paidAt: order.paidAt,
+        status: order.status,
+        invoiceAppliedAmountCent: invoiceAmountByKey.get(`REGISTRATION:${order.orderNo}`) ?? 0
+      })),
+      ...mallOrders.map((order) => formatInvoiceableOrder({
+        sourceType: "MALL",
+        orderNo: order.orderNo,
+        title: order.items.map((item) => item.productTitle).join("、") || "商城订单",
+        paidAmountCent: order.paidAmountCent ?? order.payableAmountCent,
+        paidAt: order.paidAt,
+        status: order.status,
+        invoiceAppliedAmountCent: invoiceAmountByKey.get(`MALL:${order.orderNo}`) ?? 0
+      }))
+    ].filter((item) => item.availableAmountCent > 0);
+    items.sort((a, b) => Date.parse(b.paidAt || "1970-01-01") - Date.parse(a.paidAt || "1970-01-01"));
+    return ok({ items });
+  }
+
   async myRefunds(currentUser: CurrentUser | undefined) {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
     const [registrationRefunds, mallRefunds] = await this.prisma.$transaction([
@@ -262,8 +310,9 @@ export class PublicOperationsService {
       take: 100,
       include: { items: true, shipments: true, afterSales: { include: { refunds: true } }, payments: true, refunds: true }
     });
+    const paymentConfig = await this.getMallPaymentConfig();
     return ok({
-      items: items.map(formatMallOrder)
+      items: items.map((item) => formatMallOrder(item, paymentConfig))
     });
   }
 
@@ -274,7 +323,7 @@ export class PublicOperationsService {
       include: { items: true, shipments: true, afterSales: { include: { refunds: true } }, payments: true, refunds: true }
     });
     if (!item) throw new NotFoundException("商城订单不存在");
-    return ok(formatMallOrder(item));
+    return ok(formatMallOrder(item, await this.getMallPaymentConfig()));
   }
 
   async createMallAfterSale(input: unknown, currentUser: CurrentUser | undefined) {
@@ -314,6 +363,10 @@ export class PublicOperationsService {
       update: {},
       create: { name: "default", enabled: isEnabled("AI_KB_ENABLED"), provider: process.env.AI_PROVIDER || "LOCAL_FALLBACK", model: process.env.AI_MODEL || "local-keyword" }
     });
+  }
+
+  private async getMallPaymentConfig(): Promise<MallPaymentRuntimeConfig | null> {
+    return this.prisma.mallPaymentConfig?.findUnique({ where: { name: "default" } }) ?? null;
   }
 
   private async writeAiLog(input: {
@@ -466,7 +519,8 @@ function formatMallOrder(item: {
   items: Array<Record<string, unknown>>;
   shipments: Array<Record<string, unknown>>;
   afterSales: Array<Record<string, unknown>>;
-} & Record<string, unknown>) {
+} & Record<string, unknown>, paymentConfig?: MallPaymentRuntimeConfig | null) {
+  const runtime = resolveMallPaymentRuntime(paymentConfig);
   return {
     ...formatDateFields(item),
     items: item.items.map(formatDateFields),
@@ -477,14 +531,34 @@ function formatMallOrder(item: {
     })),
     payments: Array.isArray(item.payments) ? item.payments.map(formatDateFields) : [],
     refunds: Array.isArray(item.refunds) ? item.refunds.map(formatDateFields) : [],
-    paymentEnabled: item.status === "PENDING_PAYMENT" && (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()),
-    paymentNotice: buildMallPaymentNotice(String(item.status))
+    paymentMode: runtime.mode,
+    paymentConfigSource: runtime.source,
+    paymentEnabled: item.status === "PENDING_PAYMENT" && runtime.paymentEnabled,
+    paymentUnavailableReason: runtime.unavailableReason,
+    paymentNotice: buildMallPaymentNotice(String(item.status), runtime)
   };
 }
 
-function buildMallPaymentNotice(status: string): string | null {
+function buildMallPaymentNotice(status: string, runtime: ReturnType<typeof resolveMallPaymentRuntime>): string | null {
   if (status !== "PENDING_PAYMENT") return null;
-  if (isMallWechatPaymentEnabled()) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
-  if (isMallMockPaymentEnabled()) return "当前为 mock 支付模式，可使用测试支付完成商城订单。";
+  if (runtime.wechatEnabled) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
+  if (runtime.mockEnabled) return "当前为 mock 支付模式，可使用测试支付完成商城订单。";
   return "商城支付未启用，订单保持待支付状态，不会伪造支付成功。";
+}
+
+function formatInvoiceableOrder(input: {
+  sourceType: "REGISTRATION" | "MALL";
+  orderNo: string;
+  title: string;
+  paidAmountCent: number;
+  paidAt: Date | null;
+  status: string;
+  invoiceAppliedAmountCent: number;
+}) {
+  return {
+    ...input,
+    paidAt: input.paidAt?.toISOString() ?? null,
+    availableAmountCent: Math.max(0, input.paidAmountCent - input.invoiceAppliedAmountCent),
+    sourceText: input.sourceType === "MALL" ? "商城订单" : "报名订单"
+  };
 }

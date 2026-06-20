@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuditAction, PaymentProvider, Prisma, RefundStatus } from "@prisma/client";
-import { isMallMockPaymentEnabled, isMallMockRefundEnabled, isMallWechatPaymentEnabled, isMallWechatRefundConfigured, readMallPaymentMode } from "../mall/mall-payment.config";
+import { isMallMockRefundEnabled, isMallWechatRefundConfigured, resolveMallPaymentRuntime, validateMallNotifyUrl, type MallPaymentRuntimeConfig } from "../mall/mall-payment.config";
 import { PrismaService } from "../prisma.service";
 import { CurrentAdmin } from "./current-admin";
 
@@ -234,7 +234,8 @@ export class AdminMallService {
       this.prisma.mallOrder.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: pageSize, include: mallOrderInclude }),
       this.prisma.mallOrder.count({ where })
     ]);
-    return ok({ items: items.map(formatOrder), total, page, pageSize });
+    const paymentConfig = await this.getPaymentRuntimeConfig();
+    return ok({ items: items.map((item) => formatOrder(item, paymentConfig)), total, page, pageSize });
   }
 
   async orderOptions(query: Record<string, unknown> = {}) {
@@ -247,26 +248,27 @@ export class AdminMallService {
       take: 50,
       include: mallOrderInclude
     });
-    return ok({ items: items.map(formatOrder) });
+    const paymentConfig = await this.getPaymentRuntimeConfig();
+    return ok({ items: items.map((item) => formatOrder(item, paymentConfig)) });
   }
 
   async getOrder(id: string) {
     const order = await this.prisma.mallOrder.findUnique({ where: { id }, include: mallOrderInclude });
     if (!order) throw new NotFoundException("Mall order not found");
-    return ok(formatOrder(order));
+    return ok(formatOrder(order, await this.getPaymentRuntimeConfig()));
   }
 
   async closeOrder(id: string, admin: CurrentAdmin) {
     const order = await this.prisma.mallOrder.findUnique({ where: { id }, include: { items: true } });
     if (!order) throw new NotFoundException("Mall order not found");
-    if (order.status === "CLOSED") return ok(formatOrder(await this.getOrderEntity(id)));
+    if (order.status === "CLOSED") return ok(formatOrder(await this.getOrderEntity(id), await this.getPaymentRuntimeConfig()));
     if (order.status !== "PENDING_PAYMENT") throw new ConflictException("仅待支付商城订单可关闭");
     await this.prisma.$transaction(async (tx) => {
       for (const item of order.items) await releaseLockedStock(tx, item.skuId, item.quantity, order.id, "ORDER_CLOSE", "关闭待支付商城订单释放库存");
       await tx.mallOrder.update({ where: { id }, data: { status: "CLOSED" } });
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "MallOrder", id, "Close mall order", { orderNo: order.orderNo });
-    return ok(formatOrder(await this.getOrderEntity(id)));
+    return ok(formatOrder(await this.getOrderEntity(id), await this.getPaymentRuntimeConfig()));
   }
 
   async shipOrder(id: string, input: unknown, admin: CurrentAdmin) {
@@ -277,7 +279,7 @@ export class AdminMallService {
     const shipment = await this.prisma.mallShipment.findFirst({ where: { orderId: id, status: "SHIPPED" }, orderBy: { shippedAt: "desc" } });
     if (!shipment) throw new ConflictException("订单暂无可完成的发货记录");
     await this.updateShipment(shipment.id, { status: "COMPLETED" }, admin);
-    return ok(formatOrder(await this.getOrderEntity(id)));
+    return ok(formatOrder(await this.getOrderEntity(id), await this.getPaymentRuntimeConfig()));
   }
 
   async listShipments(query: Record<string, unknown>) {
@@ -429,7 +431,38 @@ export class AdminMallService {
 
   async exportOrders() {
     const items = await this.prisma.mallOrder.findMany({ orderBy: { createdAt: "desc" }, take: 5000, include: mallOrderInclude });
-    return ok({ items: items.map(formatOrder), truncated: items.length >= 5000 });
+    const paymentConfig = await this.getPaymentRuntimeConfig();
+    return ok({ items: items.map((item) => formatOrder(item, paymentConfig)), truncated: items.length >= 5000 });
+  }
+
+  async getPaymentConfig() {
+    const config = await this.getOrCreatePaymentConfig();
+    return ok(formatPaymentConfig(config));
+  }
+
+  async updatePaymentConfig(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const mode = readStatus(readOptionalString(body, "mode") ?? "disabled", ["disabled", "mock", "wechat"] as const, "商城支付模式") ?? "disabled";
+    const notifyUrl = readNullableString(body.notifyUrl);
+    if (mode === "wechat" && notifyUrl) validateMallNotifyUrl(notifyUrl);
+    const updated = await this.prisma.mallPaymentConfig.upsert({
+      where: { name: "default" },
+      update: {
+        mode,
+        notifyUrl,
+        allowMockPayment: readOptionalBoolean(body, "allowMockPayment") ?? false,
+        remark: readNullableString(body.remark)
+      },
+      create: {
+        name: "default",
+        mode,
+        notifyUrl,
+        allowMockPayment: readOptionalBoolean(body, "allowMockPayment") ?? false,
+        remark: readNullableString(body.remark)
+      }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "MallPaymentConfig", updated.id, "Update mall payment config", { mode, allowMockPayment: updated.allowMockPayment });
+    return ok(formatPaymentConfig(updated));
   }
 
   private async createSkuWithProductId(productId: string, input: unknown, admin: CurrentAdmin) {
@@ -455,6 +488,18 @@ export class AdminMallService {
 
   private async getOrderEntity(id: string) {
     return this.prisma.mallOrder.findUniqueOrThrow({ where: { id }, include: mallOrderInclude });
+  }
+
+  private async getPaymentRuntimeConfig(): Promise<MallPaymentRuntimeConfig | null> {
+    return this.prisma.mallPaymentConfig?.findUnique({ where: { name: "default" } }) ?? null;
+  }
+
+  private async getOrCreatePaymentConfig() {
+    return this.prisma.mallPaymentConfig.upsert({
+      where: { name: "default" },
+      update: {},
+      create: { name: "default", mode: "disabled", allowMockPayment: false }
+    });
   }
 
   private async writeAudit(admin: CurrentAdmin, action: AuditAction, entityType: string, entityId: string, summary: string, metadataJson?: Prisma.InputJsonObject) {
@@ -514,7 +559,8 @@ function formatSkuWithProduct(item: Prisma.ProductSkuGetPayload<{ include: { pro
   return { ...formatSku(item), productTitle: item.product.title };
 }
 
-function formatOrder(item: MallOrderWithInclude) {
+function formatOrder(item: MallOrderWithInclude, paymentConfig?: MallPaymentRuntimeConfig | null) {
+  const paymentRuntime = resolveMallPaymentRuntime(paymentConfig);
   return {
     ...item,
     paidAt: item.paidAt?.toISOString() ?? null,
@@ -529,10 +575,11 @@ function formatOrder(item: MallOrderWithInclude) {
     latestPayment: item.payments[0] ? formatPayment(item.payments[0]) : null,
     latestRefund: item.refunds[0] ? formatRefund(item.refunds[0]) : null,
     productTypes: Array.from(new Set(item.items.map((orderItem) => orderItem.productType))),
-    paymentMode: readMallPaymentMode(),
-    paymentEnabled: item.status === "PENDING_PAYMENT" && (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()),
-    paymentUnavailableReason: paymentUnavailableReason(),
-    paymentNotice: buildPaymentNotice(item.status)
+    paymentMode: paymentRuntime.mode,
+    paymentConfigSource: paymentRuntime.source,
+    paymentEnabled: item.status === "PENDING_PAYMENT" && paymentRuntime.paymentEnabled,
+    paymentUnavailableReason: paymentRuntime.unavailableReason,
+    paymentNotice: buildPaymentNotice(item.status, paymentRuntime)
   };
 }
 
@@ -598,17 +645,29 @@ function formatRefund(item: Prisma.MallRefundGetPayload<Record<string, never>>) 
   };
 }
 
-function buildPaymentNotice(status: string): string | null {
+function buildPaymentNotice(status: string, runtime: ReturnType<typeof resolveMallPaymentRuntime>): string | null {
   if (status !== "PENDING_PAYMENT") return null;
-  if (isMallWechatPaymentEnabled()) return "商城微信支付已开启；支付金额以商城订单应付金额为准。";
-  if (isMallMockPaymentEnabled()) return "商城 mock 支付已开启，仅用于测试环境。";
+  if (runtime.wechatEnabled) return "商城微信支付已开启；支付金额以商城订单应付金额为准。";
+  if (runtime.mockEnabled) return "商城 mock 支付已开启，仅用于测试环境。";
   return "当前商城支付暂未开放；订单已创建，状态为待支付；请联系会务组或等待商城支付开放";
 }
 
-function paymentUnavailableReason(): string | null {
-  if (isMallWechatPaymentEnabled() || isMallMockPaymentEnabled()) return null;
-  if (readMallPaymentMode() === "wechat") return "WECHAT_PAY_MALL_NOTIFY_URL 未配置，商城微信支付不可用。";
-  return "MALL_PAYMENT_MODE 未开启商城支付，生产默认 disabled。";
+function formatPaymentConfig(config: MallPaymentRuntimeConfig & { id: string; name: string; createdAt: Date; updatedAt: Date; remark: string | null }) {
+  const runtime = resolveMallPaymentRuntime(config);
+  return {
+    id: config.id,
+    name: config.name,
+    mode: runtime.mode,
+    notifyUrl: config.notifyUrl ?? "",
+    allowMockPayment: Boolean(config.allowMockPayment),
+    paymentEnabled: runtime.paymentEnabled,
+    wechatEnabled: runtime.wechatEnabled,
+    mockEnabled: runtime.mockEnabled,
+    unavailableReason: runtime.unavailableReason,
+    remark: config.remark ?? "",
+    createdAt: config.createdAt.toISOString(),
+    updatedAt: config.updatedAt.toISOString()
+  };
 }
 
 function buildRefundNotice(item: Prisma.MallAfterSaleGetPayload<{ include: typeof mallAfterSaleInclude }>) {

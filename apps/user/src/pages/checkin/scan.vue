@@ -7,7 +7,9 @@
     </view>
 
     <view class="ui-card action-card">
-      <button class="ui-button-primary" :loading="loading" @click="scan">扫码核销</button>
+      <text class="account-line">{{ admin ? `当前账号：${admin.displayName || admin.username}` : "未绑定后台账号" }}</text>
+      <text class="permission-line">{{ admin ? (hasCheckinWrite ? "权限状态：可扫码签到" : "权限状态：缺少 checkin:write") : "请先绑定后台账号后使用扫码签到" }}</text>
+      <button class="ui-button-primary" :loading="loading" :disabled="!canScan" @click="scan">扫码核销</button>
       <button class="ui-button-secondary" @click="openAdminBind">绑定管理员账号</button>
       <text v-if="error" class="error">{{ error }}</text>
     </view>
@@ -22,20 +24,41 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
-import { ensureMobileAdminSession, scanCheckinCredential } from "@/services/admin-mobile";
+import { computed, onMounted, ref } from "vue";
+import { createMobileAdminSession, getStoredMobileAdmin, scanCheckinCredential, type MobileAdminUser } from "@/services/admin-mobile";
 import { formatDateTime } from "@/utils/date";
 
 const loading = ref(false);
 const error = ref("");
+const admin = ref<MobileAdminUser | null>(getStoredMobileAdmin());
 const result = ref<Awaited<ReturnType<typeof scanCheckinCredential>> | null>(null);
+const hasCheckinWrite = computed(() => Boolean(admin.value?.permissions?.includes("*") || admin.value?.permissions?.includes("checkin:write")));
+const canScan = computed(() => Boolean(admin.value && hasCheckinWrite.value));
+
+onMounted(() => void refreshAdminSession());
+
+async function refreshAdminSession() {
+  try {
+    const session = await createMobileAdminSession();
+    admin.value = session.admin;
+  } catch {
+    admin.value = getStoredMobileAdmin();
+  }
+}
 
 async function scan() {
+  if (!admin.value) {
+    error.value = "请先绑定后台账号";
+    return;
+  }
+  if (!hasCheckinWrite.value) {
+    error.value = "当前后台账号暂无 checkin:write 权限，请联系管理员授权";
+    return;
+  }
   loading.value = true;
   error.value = "";
   result.value = null;
   try {
-    await ensureMobileAdminSession();
     const qrPayload = await scanQrCode();
     result.value = await scanCheckinCredential(qrPayload);
     uni.showToast({ title: result.value.message, icon: "success" });
@@ -108,6 +131,13 @@ function openAdminBind() {
   display: flex;
   flex-direction: column;
   gap: 16rpx;
+}
+
+.account-line,
+.permission-line {
+  color: var(--ui-color-muted);
+  font-size: 25rpx;
+  line-height: 1.5;
 }
 
 .error {

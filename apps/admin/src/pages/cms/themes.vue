@@ -152,6 +152,7 @@
             </el-form-item>
             <el-form-item v-if="form.backgroundMode === 'dynamic-gradient'" label="动态密度"><el-slider v-model="form.backgroundDynamicDensity" :min="10" :max="100" /></el-form-item>
             <el-form-item v-if="form.backgroundMode === 'dynamic-gradient'" label="变化速度"><el-slider v-model="form.backgroundDynamicSpeed" :min="6" :max="40" /></el-form-item>
+            <el-form-item v-if="form.backgroundMode === 'dynamic-gradient'" label="渐变角度"><el-slider v-model="form.backgroundGradientAngle" :min="0" :max="360" /></el-form-item>
             <el-form-item label="底部过滤"><el-switch v-model="form.backgroundBottomFilter" active-text="开启" inactive-text="关闭" /></el-form-item>
             <el-form-item label="应用位置">
               <el-radio-group v-model="form.backgroundApplyTo">
@@ -285,6 +286,7 @@ const DEFAULT_THEME: ThemeConfig = {
   backgroundVideoUrl: "",
   backgroundDynamicDensity: 40,
   backgroundDynamicSpeed: 18,
+  backgroundGradientAngle: 135,
   backgroundBottomFilter: true,
   backgroundApplyTo: "body",
   themeApplyMode: "all",
@@ -550,8 +552,9 @@ function dynamicGradient(config: ThemeConfig): string {
   const to = config.backgroundGradientTo || config.secondaryColor;
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
   const scale = Math.max(28, Math.round(density / 1.45));
+  const angle = Math.max(0, Math.min(360, Number(config.backgroundGradientAngle) || 135));
   const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(245,247,246,0.58)), ";
-  return `${overlay}radial-gradient(circle at 10% 14%, ${hexAlpha(config.primaryColor, 0.56)} 0, transparent ${scale}%), radial-gradient(circle at 88% 18%, ${hexAlpha(config.secondaryColor, 0.5)} 0, transparent ${scale + 14}%), radial-gradient(circle at 46% 80%, ${hexAlpha(config.accentColor, 0.42)} 0, transparent ${scale + 20}%), radial-gradient(circle at 68% 42%, ${hexAlpha(config.primaryColor, 0.28)} 0, transparent ${scale + 10}%), linear-gradient(135deg, ${from} 0%, ${to} 60%, ${hexAlpha(config.accentColor, 0.28)} 142%)`;
+  return `${overlay}radial-gradient(circle at 10% 14%, ${hexAlpha(config.primaryColor, 0.62)} 0, transparent ${scale}%), radial-gradient(circle at 88% 18%, ${hexAlpha(config.secondaryColor, 0.56)} 0, transparent ${scale + 14}%), radial-gradient(circle at 46% 80%, ${hexAlpha(config.accentColor, 0.48)} 0, transparent ${scale + 20}%), radial-gradient(circle at 68% 42%, ${hexAlpha(config.primaryColor, 0.34)} 0, transparent ${scale + 10}%), linear-gradient(${angle}deg, ${from} 0%, ${to} 60%, ${hexAlpha(config.accentColor, 0.34)} 142%)`;
 }
 
 async function validateBackgroundBeforeSave(): Promise<string | null> {
@@ -971,19 +974,19 @@ function hexAlpha(value: string | undefined, alpha: number): string {
 
 @keyframes themePreviewMove {
   from {
-    background-position: 0% 0%;
+    background-position: 0% 8%;
   }
   to {
-    background-position: 100% 70%;
+    background-position: 100% 92%;
   }
 }
 
 @keyframes themePreviewFloat {
   from {
-    transform: translate3d(-3%, -2%, 0) scale(1);
+    transform: translate3d(-9%, -7%, 0) scale(0.96);
   }
   to {
-    transform: translate3d(4%, 3%, 0) scale(1.08);
+    transform: translate3d(11%, 9%, 0) scale(1.18);
   }
 }
 

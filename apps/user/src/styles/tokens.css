@@ -114,16 +114,17 @@ page {
   pointer-events: none;
 }
 
-.mp-video-notice {
-  position: relative;
-  z-index: 2;
-  margin: 20rpx 24rpx 0;
-  padding: 14rpx 18rpx;
-  border-radius: var(--ui-radius-md);
-  background: rgba(17, 24, 39, 0.68);
-  color: #ffffff;
-  font-size: 22rpx;
-  line-height: 1.45;
+.page-bg-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.86)),
+    rgba(245, 247, 251, 0.28);
 }
 
 .ui-stack {
@@ -135,8 +136,9 @@ page {
 .ui-card {
   border: 1px solid var(--ui-color-border);
   border-radius: var(--cms-radius-lg);
-  background: var(--ui-color-surface);
+  background: var(--cms-surface-elevated, rgba(255, 255, 255, 0.96));
   box-shadow: var(--ui-shadow-card);
+  backdrop-filter: blur(18rpx);
 }
 
 .ui-button-primary,

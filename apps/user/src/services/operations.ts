@@ -84,6 +84,23 @@ export async function getMyInvoices() {
   return request<{ items: Array<Record<string, unknown>> }>("/my/invoices");
 }
 
+export interface InvoiceableOrder {
+  sourceType: "REGISTRATION" | "MALL";
+  sourceText: string;
+  orderNo: string;
+  title: string;
+  paidAmountCent: number;
+  invoiceAppliedAmountCent: number;
+  availableAmountCent: number;
+  paidAt: string | null;
+  status: string;
+}
+
+export async function getMyInvoiceableOrders() {
+  await ensureLogin();
+  return request<{ items: InvoiceableOrder[] }>("/my/invoiceable-orders");
+}
+
 export async function getMyRefunds() {
   await ensureLogin();
   return request<{ items: FinanceRefund[] }>("/my/refunds");

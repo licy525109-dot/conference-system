@@ -29,6 +29,7 @@ const placementClass = computed(() => (props.placement === "absolute" ? "is-abso
 const speed = computed(() => Math.max(6, Math.min(40, Number(props.theme.backgroundDynamicSpeed) || 18)));
 const motionSeconds = computed(() => Math.max(5, Math.round(20 - speed.value * 0.34)));
 const density = computed(() => Math.max(10, Math.min(100, Number(props.theme.backgroundDynamicDensity) || 40)));
+const angle = computed(() => Math.max(0, Math.min(360, Number(props.theme.backgroundGradientAngle) || 135)));
 const fromColor = computed(() => normalizeColor(props.theme.backgroundGradientFrom || props.theme.backgroundColor || "#f5f7fb"));
 const toColor = computed(() => normalizeColor(props.theme.backgroundGradientTo || props.theme.secondaryColor || "#3a8f79"));
 const accentColor = computed(() => normalizeColor(props.theme.accentColor || "#b58b47"));
@@ -43,15 +44,15 @@ const baseStyle = computed(() => ({
     `radial-gradient(circle at 14% 12%, ${withAlpha(primaryColor.value, 0.58)} 0, transparent 34%)`,
     `radial-gradient(circle at 88% 18%, ${withAlpha(toColor.value, 0.52)} 0, transparent 38%)`,
     `radial-gradient(circle at 22% 82%, ${withAlpha(accentColor.value, 0.36)} 0, transparent 42%)`,
-    `linear-gradient(132deg, ${fromColor.value} 0%, ${toColor.value} 56%, ${withAlpha(accentColor.value, 0.5)} 132%)`
+    `linear-gradient(${angle.value}deg, ${fromColor.value} 0%, ${toColor.value} 56%, ${withAlpha(accentColor.value, 0.56)} 132%)`
   ].join(", "),
-  backgroundSize: "190% 190%",
+  backgroundSize: "240% 240%",
   animation: `themeDynamicBase ${motionSeconds.value}s ease-in-out infinite alternate`
 }));
 
-const glowAStyle = computed(() => glowStyle(primaryColor.value, toColor.value, 0.34, 0.16, 560 + density.value * 4, motionSeconds.value * 0.78, "themeDynamicGlowA"));
-const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.32, 0.16, 520 + density.value * 3.6, motionSeconds.value * 0.9, "themeDynamicGlowB"));
-const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.24, 0.1, 460 + density.value * 3.4, motionSeconds.value * 0.84, "themeDynamicGlowC"));
+const glowAStyle = computed(() => glowStyle(primaryColor.value, toColor.value, 0.42, 0.2, 620 + density.value * 5, motionSeconds.value * 0.72, "themeDynamicGlowA"));
+const glowBStyle = computed(() => glowStyle(toColor.value, accentColor.value, 0.4, 0.18, 590 + density.value * 4.4, motionSeconds.value * 0.84, "themeDynamicGlowB"));
+const glowCStyle = computed(() => glowStyle(accentColor.value, fromColor.value, 0.32, 0.14, 540 + density.value * 4, motionSeconds.value * 0.78, "themeDynamicGlowC"));
 
 function glowStyle(colorA: string, colorB: string, alphaA: number, alphaB: number, size: number, duration: number, animationName: string): Record<string, string> {
   return {
@@ -157,37 +158,37 @@ function withAlpha(value: string, alpha: number): string {
 
 @keyframes themeDynamicBase {
   from {
-    transform: translate(-5%, -4%) scale(1);
+    transform: translate(-10%, -8%) scale(1);
   }
   to {
-    transform: translate(6%, 5%) scale(1.08);
+    transform: translate(12%, 10%) scale(1.14);
   }
 }
 
 @keyframes themeDynamicGlowA {
   from {
-    transform: translate(-18%, -12%) scale(1);
+    transform: translate(-28%, -18%) scale(0.94);
   }
   to {
-    transform: translate(26%, 22%) scale(1.2);
+    transform: translate(34%, 30%) scale(1.28);
   }
 }
 
 @keyframes themeDynamicGlowB {
   from {
-    transform: translate(18%, -12%) scale(1.08);
+    transform: translate(26%, -18%) scale(1.14);
   }
   to {
-    transform: translate(-24%, 24%) scale(0.94);
+    transform: translate(-34%, 30%) scale(0.9);
   }
 }
 
 @keyframes themeDynamicGlowC {
   from {
-    transform: translate(12%, 18%) scale(1);
+    transform: translate(18%, 26%) scale(0.96);
   }
   to {
-    transform: translate(-24%, -24%) scale(1.2);
+    transform: translate(-32%, -32%) scale(1.28);
   }
 }
 </style>

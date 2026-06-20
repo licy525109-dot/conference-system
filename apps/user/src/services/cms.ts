@@ -62,6 +62,7 @@ export interface ThemeConfig {
   backgroundVideoUrl?: string;
   backgroundDynamicDensity?: number;
   backgroundDynamicSpeed?: number;
+  backgroundGradientAngle?: number;
   backgroundBottomFilter?: boolean;
   backgroundApplyTo?: string;
   themeApplyMode?: string;
@@ -107,6 +108,7 @@ export const DEFAULT_THEME: ThemeConfig = {
   backgroundVideoUrl: "",
   backgroundDynamicDensity: 40,
   backgroundDynamicSpeed: 30,
+  backgroundGradientAngle: 135,
   backgroundBottomFilter: true,
   backgroundApplyTo: "body",
   themeApplyMode: "all",

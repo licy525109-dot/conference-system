@@ -78,7 +78,7 @@ describe("AdminOperationsService AI knowledge workflows", () => {
     const created = await service.createKnowledgeDocument("conference-a", { title: "坏 PDF", sourceType: "PDF", fileBase64: Buffer.from("not-a-pdf").toString("base64"), status: "ACTIVE" }, currentAdmin);
 
     const data = created.data as Record<string, unknown>;
-    assert.equal(data.status, "DISABLED");
+    assert.equal(data.status, "FAILED");
     assert.equal(documents[0]?.sourceType, "PDF");
     assert.match(documents[0]?.lastError ?? "", /PDF/);
     assert.equal(chunks.length, 0);

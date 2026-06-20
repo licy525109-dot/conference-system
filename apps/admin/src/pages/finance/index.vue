@@ -52,7 +52,7 @@
         <el-table-column label="来源" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.sourceType" :label="sourceText(row.sourceType)" /></template></el-table-column>
         <el-table-column prop="orderNo" label="订单号" min-width="160" />
         <el-table-column prop="businessTitle" label="业务摘要" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="provider" label="渠道" width="100" />
+        <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
         <el-table-column label="支付状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="statusText(row.status)" /></template></el-table-column>
         <el-table-column label="实付金额" width="110"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
         <el-table-column label="计入实收" width="110">
@@ -101,7 +101,7 @@
         <el-table-column prop="businessTitle" label="业务摘要" min-width="160" show-overflow-tooltip />
         <el-table-column label="金额" width="110"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
         <el-table-column label="状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="statusText(row.status)" /></template></el-table-column>
-        <el-table-column prop="provider" label="渠道" width="100" />
+        <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
         <el-table-column prop="failedReason" label="失败 / 处理说明" min-width="220" show-overflow-tooltip />
         <el-table-column prop="createdAt" label="申请时间" width="190" />
         <el-table-column label="操作" width="170" fixed="right">
@@ -554,6 +554,10 @@ function statusText(value?: string | null) {
     TIME_MISMATCH: "时间不一致",
     DUPLICATE: "重复记录"
   }[value] ?? value;
+}
+
+function providerText(value?: string | null) {
+  return value ? ({ MOCK: "Mock 测试", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
 </script>
 
