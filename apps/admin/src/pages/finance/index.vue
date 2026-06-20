@@ -86,6 +86,24 @@
         show-icon
         title="退款金额上限由后端按订单实付金额减已成功退款计算；审批通过后，微信退款未配置时只进入处理中，不会标记成功。"
       />
+      <div v-if="refundConfig" class="refund-config-grid">
+        <article class="refund-config-card">
+          <strong>报名退款</strong>
+          <span>{{ refundConfig.registration.enabled ? "允许申请" : "未启用" }} · {{ refundConfig.registration.wechatRefundEnabled ? "微信真实退款已配置" : "微信真实退款未配置" }}</span>
+          <small>{{ refundConfig.registration.description }}</small>
+          <button type="button" @click="copyText(refundConfig.registration.callbackUrl)">复制报名退款回调地址</button>
+        </article>
+        <article class="refund-config-card">
+          <strong>商城退款</strong>
+          <span>{{ refundConfig.mall.enabled ? "允许申请" : "未启用" }} · {{ refundConfig.mall.wechatRefundEnabled ? "微信真实退款已配置" : "微信真实退款未配置" }}</span>
+          <small>{{ refundConfig.mall.description }}</small>
+          <button type="button" @click="copyText(refundConfig.mall.callbackUrl)">复制商城退款回调地址</button>
+        </article>
+        <article class="refund-config-card refund-config-card--steps">
+          <strong>配置步骤</strong>
+          <small v-for="step in refundConfig.steps" :key="step">{{ step }}</small>
+        </article>
+      </div>
       <AdminFilterBar>
         <el-input v-model="refundFilters.keyword" clearable placeholder="订单号 / 退款号 / 商户退款号" style="width: 300px" @keyup.enter="loadRefunds" />
         <el-select v-model="refundFilters.sourceType" placeholder="来源" style="width: 140px">
@@ -121,10 +139,12 @@
         <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
         <el-table-column prop="refundNotice" label="处理说明" min-width="260" show-overflow-tooltip />
         <el-table-column prop="createdAt" label="申请时间" width="190" />
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === 'REQUESTED'" size="small" type="primary" @click="approveRefundRow(row.id)">通过</el-button>
+            <el-button v-if="row.status === 'REQUESTED'" size="small" type="primary" @click="approveRefundRow(row)">审核通过</el-button>
+            <el-button v-if="row.status === 'APPROVED' || row.status === 'PROCESSING'" size="small" @click="queryRefundRow(row.id)">查询结果</el-button>
             <el-button v-if="row.status === 'REQUESTED' || row.status === 'APPROVED'" size="small" @click="rejectRefundRow(row.id)">驳回</el-button>
+            <el-button size="small" @click="openRefundDetail(row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -250,6 +270,22 @@
         <el-button type="primary" @click="submitIssueInvoice">确认开票</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="refundDetail.visible" title="退款详情" width="720px">
+      <el-descriptions v-if="refundDetail.row" :column="2" border>
+        <el-descriptions-item label="来源">{{ sourceText(refundDetail.row.sourceType) }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ statusText(refundDetail.row.status) }}</el-descriptions-item>
+        <el-descriptions-item label="退款号">{{ refundDetail.row.refundNo }}</el-descriptions-item>
+        <el-descriptions-item label="商户退款号">{{ refundDetail.row.outRefundNo || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="订单号">{{ refundDetail.row.orderNo || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="金额">¥{{ formatCent(refundDetail.row.amountCent) }}</el-descriptions-item>
+        <el-descriptions-item label="渠道">{{ providerText(refundDetail.row.provider) }}</el-descriptions-item>
+        <el-descriptions-item label="微信退款单号">{{ refundDetail.row.providerRefundId || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="申请原因" :span="2">{{ refundDetail.row.reason || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="失败/处理说明" :span="2">{{ refundDetail.row.failedReason || refundDetail.row.refundNotice || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="驳回原因" :span="2">{{ refundDetail.row.rejectReason || "-" }}</el-descriptions-item>
+      </el-descriptions>
+    </el-dialog>
   </section>
 </template>
 
@@ -271,6 +307,7 @@ import {
   createWechatBill,
   downloadWechatBill,
   getFinanceOverview,
+  getRefundConfig,
   importWechatBill,
   listFinancePayments,
   listInvoices,
@@ -279,11 +316,12 @@ import {
   listWechatBills,
   markInvoiceIssued,
   markReconciliationReviewed,
+  queryRefund,
   reconcileWechatBill,
   rejectInvoice,
   rejectRefund
 } from "../../services/admin";
-import type { FinanceInvoice, FinanceOverview, FinancePayment, FinanceRefund, ReconciliationResult, WechatBill } from "../../services/types";
+import type { FinanceInvoice, FinanceOverview, FinancePayment, FinanceRefund, FinanceRefundConfig, ReconciliationResult, WechatBill } from "../../services/types";
 
 const overview = ref<FinanceOverview | null>(null);
 const loading = ref(false);
@@ -294,6 +332,7 @@ const billsLoading = ref(false);
 const reconciliationLoading = ref(false);
 const payments = ref<FinancePayment[]>([]);
 const refunds = ref<FinanceRefund[]>([]);
+const refundConfig = ref<FinanceRefundConfig | null>(null);
 const invoices = ref<FinanceInvoice[]>([]);
 const bills = ref<WechatBill[]>([]);
 const reconciliationResults = ref<ReconciliationResult[]>([]);
@@ -313,6 +352,7 @@ const reconciliationFilters = reactive({ page: 1, pageSize: 20, keyword: "", sta
 const refundForm = reactive({ sourceType: "REGISTRATION", orderNo: "", amountYuan: 0, reason: "" });
 const billForm = reactive({ billDate: new Date().toISOString().slice(0, 10), billType: "TRADE" });
 const issueDialog = reactive({ visible: false, id: "", issuedInvoiceNo: "", invoiceLink: "", remark: "" });
+const refundDetail = reactive<{ visible: boolean; row: FinanceRefund | null }>({ visible: false, row: null });
 
 const refundStatuses = ["REQUESTED", "APPROVED", "PROCESSING", "SUCCESS", "FAILED", "REJECTED"];
 const invoiceStatuses = ["REQUESTED", "APPROVED", "ISSUED", "REJECTED"];
@@ -394,9 +434,10 @@ async function loadPayments() {
 async function loadRefunds() {
   refundsLoading.value = true;
   try {
-    const data = await listRefunds(refundFilters);
+    const [data, config] = await Promise.all([listRefunds(refundFilters), getRefundConfig()]);
     refunds.value = data.items;
     refundTotal.value = data.total;
+    refundConfig.value = config;
   } finally {
     refundsLoading.value = false;
   }
@@ -457,11 +498,25 @@ async function createRefundRequest() {
   await loadRefunds();
 }
 
-async function approveRefundRow(id: string) {
-  await ElMessageBox.confirm("确认通过退款？mock 退款会立即成功，微信退款未配置时只进入处理中。", "确认退款", { type: "warning" });
-  await approveRefund(id);
-  ElMessage.success("退款已处理");
+async function approveRefundRow(row: FinanceRefund) {
+  await ElMessageBox.confirm(refundApproveConfirmText(row), "审核通过退款", { type: "warning" });
+  const next = await approveRefund(row.id);
+  if (next.status === "SUCCESS") ElMessage.success("退款已完成");
+  else ElMessage.warning(next.refundNotice || next.failedReason || "退款已进入处理中，请等待回调或线下处理");
   await loadRefunds();
+}
+
+async function queryRefundRow(id: string) {
+  const row = await queryRefund(id);
+  refundDetail.row = row;
+  refundDetail.visible = true;
+  ElMessage.info(row.refundNotice || row.failedReason || "已刷新当前退款记录");
+  await loadRefunds();
+}
+
+function openRefundDetail(row: FinanceRefund) {
+  refundDetail.row = row;
+  refundDetail.visible = true;
 }
 
 async function rejectRefundRow(id: string) {
@@ -597,6 +652,22 @@ function providerText(value?: string | null) {
 function goFinance(path: string) {
   navigateTo(path);
 }
+
+function refundApproveConfirmText(row: FinanceRefund) {
+  const config = row.sourceType === "MALL" ? refundConfig.value?.mall : refundConfig.value?.registration;
+  if (config?.mockEnabled) return "当前启用 mock 退款，审核通过后会立即标记退款成功，仅用于测试环境。";
+  if (config?.wechatRefundEnabled) return "确认审核通过并进入微信退款处理？系统会等待微信退款回调或查询结果，成功前不会改为已到账。";
+  return "当前未配置微信真实退款。审核通过后只会进入处理中/待线下处理，不会自动打款，也不会显示退款成功。";
+}
+
+async function copyText(value: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    ElMessage.success("已复制回调地址");
+  } catch {
+    ElMessage.warning(value);
+  }
+}
 </script>
 
 <style scoped>
@@ -616,6 +687,57 @@ function goFinance(path: string) {
   gap: 10px;
   margin-bottom: 14px;
   flex-wrap: wrap;
+}
+
+.refund-config-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.refund-config-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.refund-config-card strong,
+.refund-config-card span,
+.refund-config-card small {
+  display: block;
+}
+
+.refund-config-card strong {
+  color: var(--admin-color-text);
+}
+
+.refund-config-card span {
+  color: var(--admin-color-primary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.refund-config-card small {
+  color: var(--admin-color-muted);
+  line-height: 1.5;
+}
+
+.refund-config-card button {
+  justify-self: start;
+  min-height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--admin-color-primary);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.refund-config-card--steps {
+  background: #fffaf0;
 }
 
 .finance-entry-grid {

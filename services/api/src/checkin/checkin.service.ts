@@ -252,8 +252,8 @@ export class CheckinService {
         skip,
         take: pageSize,
         include: {
-          registration: { select: { registrationNo: true, attendeeName: true, phone: true, formDataJson: true, conference: { select: { title: true } }, user: { select: userPublicSelect } } },
-          attendee: { select: { name: true, phone: true, formDataJson: true } },
+          registration: { select: { registrationNo: true, attendeeName: true, phone: true, status: true, formDataJson: true, order: { select: { status: true, paidAt: true } }, conference: { select: { title: true } }, user: { select: userPublicSelect } } },
+          attendee: { select: { name: true, phone: true, company: true, formDataJson: true, checkInStatus: true, checkedInAt: true, sku: { select: { name: true } } } },
           operator: { select: { username: true, displayName: true } }
         }
       }),
@@ -269,7 +269,18 @@ export class CheckinService {
         registrationNo: item.registration.registrationNo,
         attendeeName: item.attendee.name || item.registration.attendeeName,
         phone: item.attendee.phone || item.registration.phone,
+        company: item.attendee.company ?? readValue(readObject(item.attendee.formDataJson), "company") ?? readValue(readObject(item.registration.formDataJson), "company"),
+        skuName: item.attendee.sku.name,
+        paymentStatus: item.registration.order.status,
+        paymentStatusText: orderStatusText(item.registration.order.status),
+        registrationStatus: item.registration.status,
+        checkInStatus: item.attendee.checkInStatus,
+        checkInStatusText: checkInStatusShortText(item.attendee.checkInStatus),
+        checkedInAt: item.attendee.checkedInAt?.toISOString() ?? null,
+        paidAt: item.registration.order.paidAt?.toISOString() ?? null,
         method: item.method ?? actionToMethod(item.action),
+        checkInMethod: item.method ?? actionToMethod(item.action),
+        checkInMethodText: checkinMethodText(item.method ?? actionToMethod(item.action)),
         action: item.action,
         result: item.result ?? "SUCCESS",
         beforeStatus: item.beforeStatus,
@@ -307,10 +318,7 @@ export class CheckinService {
         { registration: { user: { wechatNickname: { contains: keyword, mode: "insensitive" } } } }
       ] } : {})
     };
-    const registrationWhere: Prisma.RegistrationWhereInput = conferenceId ? { conferenceId } : {};
-    const [registeredCount, paidCount, attendees, logs] = await this.prisma.$transaction([
-      this.prisma.registration.count({ where: registrationWhere }),
-      this.prisma.registration.count({ where: { ...registrationWhere, order: { status: OrderStatus.PAID } } }),
+    const [attendees, logs] = await this.prisma.$transaction([
       this.prisma.registrationAttendee.findMany({ where: attendeeWhere, include: checkinStatsAttendeeInclude }),
       this.prisma.checkinLog.findMany({
         where: {
@@ -321,34 +329,32 @@ export class CheckinService {
         orderBy: { createdAt: "asc" }
       })
     ]);
-    const checkedIn = attendees.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN).length;
-    const pending = attendees.filter((item) => item.checkInStatus === CheckInStatus.PENDING).length;
-    const notRequired = attendees.filter((item) => item.checkInStatus === CheckInStatus.NOT_REQUIRED).length;
-    const total = attendees.length;
     const latestSuccessLogByAttendee = new Map<string, CheckinStatsLog>();
     for (const log of logs) {
       if (log.afterStatus === CheckInStatus.CHECKED_IN) {
         latestSuccessLogByAttendee.set(log.attendeeId, log);
       }
     }
-    const paidAttendees = attendees.filter((item) => item.registration.order?.status === OrderStatus.PAID);
-    const attendeeRows = paidAttendees.map((item) => formatCheckinAttendeeRow(item, latestSuccessLogByAttendee.get(item.id) ?? null));
-    const checkedInList = attendeeRows.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN);
-    const uncheckedInList = attendeeRows.filter((item) => item.checkInStatus !== CheckInStatus.CHECKED_IN);
+    const registeredList = attendees.map((item) => formatCheckinAttendeeRow(item, latestSuccessLogByAttendee.get(item.id) ?? null));
+    const paidList = registeredList.filter((item) => item.paymentStatus === OrderStatus.PAID);
+    const checkedInList = paidList.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN);
+    const uncheckedInList = paidList.filter((item) => item.checkInStatus === CheckInStatus.PENDING);
+    const notRequiredList = registeredList.filter((item) => item.checkInStatus === CheckInStatus.NOT_REQUIRED || item.checkInRequired === false);
     const failedList = logs.filter((log) => log.result === "FAILED").map(formatCheckinLogRow);
     const repeatedList = logs.filter((log) => log.failureReason === "DUPLICATE_CHECKIN" || log.result === "DUPLICATE").map(formatCheckinLogRow);
+    const total = registeredList.length;
 
     return ok({
-      registeredCount,
-      paidCount,
+      registeredCount: registeredList.length,
+      paidCount: paidList.length,
       total,
-      checkedIn,
-      pending,
-      notRequired,
-      uncheckedIn: Math.max(0, paidCount - checkedIn),
+      checkedIn: checkedInList.length,
+      pending: uncheckedInList.length,
+      notRequired: notRequiredList.length,
+      uncheckedIn: uncheckedInList.length,
       failedCount: failedList.length,
       repeatedCount: repeatedList.length,
-      checkInRate: paidCount > 0 ? Number((checkedIn / paidCount).toFixed(4)) : 0,
+      checkInRate: paidList.length > 0 ? Number((checkedInList.length / paidList.length).toFixed(4)) : 0,
       bySku: aggregateBy(attendees, (item) => item.sku.name, (rows) => ({
         total: rows.length,
         checkedIn: rows.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN).length
@@ -357,8 +363,9 @@ export class CheckinService {
       byHour: aggregateBy(logs.filter((log) => log.afterStatus === CheckInStatus.CHECKED_IN), (log) => log.createdAt.toISOString().slice(0, 13) + ":00:00.000Z", (rows) => ({ count: rows.length })),
       checkedInList,
       uncheckedInList,
-      paidList: attendeeRows,
-      registeredList: attendees.map((item) => formatCheckinAttendeeRow(item, latestSuccessLogByAttendee.get(item.id) ?? null)),
+      notRequiredList,
+      paidList,
+      registeredList,
       failedList,
       repeatedList,
       emptyReason: conferenceId && total === 0 ? "当前会议未开启签到或暂无报名人员" : "当前筛选条件无结果"
@@ -728,6 +735,7 @@ function formatCheckinAttendeeRow(
     registrationStatus: item.registration.status,
     checkInStatus: item.checkInStatus,
     checkInStatusText: checkInStatusShortText(item.checkInStatus),
+    checkInRequired: item.registration.conference.checkInEnabled && item.checkInStatus !== CheckInStatus.NOT_REQUIRED,
     checkedInAt: item.checkedInAt?.toISOString() ?? null,
     checkInMethod: method,
     checkInMethodText: method ? checkinMethodText(method) : "-",
@@ -753,6 +761,9 @@ function formatCheckinLogRow(log: CheckinStatsLog) {
     phone: log.attendee.phone || log.registration.phone,
     company: log.attendee.company,
     skuName: log.attendee.sku.name,
+    paymentStatus: log.registration.order.status,
+    paymentStatusText: orderStatusText(log.registration.order.status),
+    registrationStatus: log.registration.status,
     checkInMethod: method,
     checkInMethodText: checkinMethodText(method),
     checkInStatus: log.afterStatus,
@@ -921,7 +932,7 @@ const checkinStatsAttendeeInclude = {
       formDataJson: true,
       user: { select: userPublicSelect },
       order: { select: { status: true, paidAt: true } },
-      conference: { select: { title: true } }
+      conference: { select: { title: true, checkInEnabled: true } }
     }
   }
 } satisfies Prisma.RegistrationAttendeeInclude;
@@ -932,7 +943,9 @@ const checkinStatsLogInclude = {
       registrationNo: true,
       attendeeName: true,
       phone: true,
+      status: true,
       formDataJson: true,
+      order: { select: { status: true } },
       user: { select: userPublicSelect },
       conference: { select: { title: true } }
     }

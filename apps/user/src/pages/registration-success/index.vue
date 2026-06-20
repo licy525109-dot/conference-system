@@ -8,7 +8,7 @@
     <view v-else-if="credential" class="credential">
       <view class="success-band">
         <text class="success-kicker">报名成功</text>
-        <text class="success-title">{{ credential.conference.name }}</text>
+        <text class="success-title">{{ displayText(credential.conference.name) }}</text>
         <text class="success-no">报名号：{{ credential.registrationNo }}</text>
         <view class="credential-status-row">
           <text>支付状态：{{ paymentStatusText(credential.payment.status) }}</text>
@@ -31,22 +31,36 @@
       <view class="section">
         <text class="section-title">会议信息</text>
         <InfoLine label="时间" :value="`${formatDateTime(credential.conference.startTime)} - ${formatDateTime(credential.conference.endTime)}`" />
-        <InfoLine label="地点" :value="credential.conference.venue || '会议地点待公布'" />
-        <InfoLine label="票种" :value="credential.ticket.name" />
+        <InfoLine label="地点" :value="displayText(credential.conference.venue)" />
+        <InfoLine label="地址" :value="displayText(credential.conference.address)" />
+        <InfoLine label="票种" :value="displayText(credential.ticket.name)" />
       </view>
 
       <view class="section">
         <text class="section-title">参会人</text>
-        <InfoLine label="姓名" :value="credential.attendee.name" />
-        <InfoLine label="手机号" :value="credential.attendee.mobileMasked || '-'" />
-        <InfoLine v-if="credential.attendee.company" label="公司" :value="credential.attendee.company" />
-        <InfoLine v-if="credential.attendee.title" label="职位" :value="credential.attendee.title" />
+        <InfoLine label="姓名" :value="displayText(credential.attendee.name)" />
+        <InfoLine label="手机号" :value="displayText(credential.attendee.mobileMasked)" />
+        <InfoLine label="公司" :value="displayText(credential.attendee.company)" />
+        <InfoLine label="职位" :value="displayText(credential.attendee.title)" />
+      </view>
+
+      <view class="section">
+        <text class="section-title">微信用户</text>
+        <view class="wechat-user">
+          <image v-if="credential.user.avatarUrl" class="wechat-avatar" :src="credential.user.avatarUrl" mode="aspectFill" />
+          <view v-else class="wechat-avatar wechat-avatar--empty">{{ displayText(credential.user.nickname).slice(0, 1) }}</view>
+          <view class="wechat-user__copy">
+            <text>{{ displayText(credential.user.nickname) }}</text>
+            <text>{{ displayText(credential.user.phoneMasked) }}</text>
+          </view>
+        </view>
       </view>
 
       <view class="section">
         <text class="section-title">支付信息</text>
         <InfoLine label="支付金额" :value="`¥${formatCent(credential.payment.paidAmountCent)}`" highlight />
         <InfoLine label="支付状态" :value="paymentStatusText(credential.payment.status)" />
+        <InfoLine label="支付渠道" :value="providerText(credential.payment.provider)" />
         <InfoLine label="报名状态" :value="registrationStatusText(credential.status)" />
         <InfoLine label="签到状态" :value="checkinStatusText(credential.checkIn.status)" />
         <InfoLine v-if="credential.checkIn.checkedInAt" label="签到时间" :value="formatDateTime(credential.checkIn.checkedInAt)" />
@@ -166,6 +180,15 @@ function registrationStatusText(value: string) {
 
 function checkinStatusText(value: string) {
   return ({ NOT_REQUIRED: "无需签到核销", PENDING: "待签到", CHECKED_IN: "已签到", CANCELLED: "已取消" } as Record<string, string>)[value] ?? value;
+}
+
+function providerText(value: string | null | undefined) {
+  if (!value) return "未填写";
+  return ({ WECHAT: "微信支付", MOCK: "Mock 测试" } as Record<string, string>)[value] ?? value;
+}
+
+function displayText(value: string | null | undefined) {
+  return typeof value === "string" && value.trim() ? value.trim() : "未填写";
 }
 </script>
 
@@ -318,5 +341,42 @@ function checkinStatusText(value: string) {
 
 .action {
   width: 100%;
+}
+
+.wechat-user {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding-top: 14rpx;
+  border-top: 1px solid var(--ui-color-border);
+}
+
+.wechat-avatar {
+  display: grid;
+  place-items: center;
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
+  background: var(--ui-color-primary-soft);
+  color: var(--ui-color-primary);
+  font-size: 30rpx;
+  font-weight: 900;
+}
+
+.wechat-user__copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6rpx;
+  color: var(--ui-color-text);
+  font-size: 25rpx;
+  font-weight: 800;
+}
+
+.wechat-user__copy text + text {
+  color: var(--ui-color-muted);
+  font-size: 23rpx;
+  font-weight: 600;
 }
 </style>

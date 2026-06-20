@@ -64,12 +64,29 @@
       </el-main>
     </el-container>
     <el-drawer v-model="menuSettingsVisible" title="菜单顺序配置" size="420px">
-      <p class="menu-settings-hint">仅调整当前浏览器后台菜单展示顺序，不隐藏任何系统入口；系统管理和菜单配置入口始终保留。</p>
+      <p class="menu-settings-hint">支持当前浏览器的一级、二级菜单排序和显示控制；系统管理入口始终显示，防止无法恢复配置。保存后立即生效。</p>
       <div class="menu-order-list">
         <div v-for="group in configurableGroups" :key="group.name" class="menu-order-item">
           <span>{{ group.name }}</span>
           <el-input-number v-model="menuGroupOrder[group.name]" :min="0" :max="999" :step="10" controls-position="right" />
         </div>
+      </div>
+      <el-divider>二级菜单</el-divider>
+      <div class="menu-route-order-list">
+        <section v-for="group in configurableRouteGroups" :key="group.name" class="menu-route-group">
+          <strong>{{ group.name }}</strong>
+          <div v-for="item in group.items" :key="item.path" class="menu-route-order-item">
+            <el-switch
+              :model-value="isRouteConfigVisible(item)"
+              :disabled="isLockedRoute(item)"
+              active-text="显示"
+              inactive-text="隐藏"
+              @update:model-value="setRouteVisibility(item, Boolean($event))"
+            />
+            <span>{{ item.menuTitle }}</span>
+            <el-input-number v-model="menuRouteOrder[item.path]" :min="0" :max="999" :step="10" controls-position="right" />
+          </div>
+        </section>
       </div>
       <template #footer>
         <el-button @click="resetMenuOrder">恢复默认顺序</el-button>
@@ -94,6 +111,8 @@ const expandedGroups = ref<Set<string>>(new Set([currentRoute.value.group]));
 const menuSettingsVisible = ref(false);
 const menuScrollbar = ref<{ setScrollTop?: (value: number) => void } | null>(null);
 const menuGroupOrder = reactive<Record<string, number>>(loadMenuOrder());
+const menuRouteOrder = reactive<Record<string, number>>(loadMenuRouteOrder());
+const menuRouteVisibility = reactive<Record<string, boolean>>(loadMenuRouteVisibility());
 
 const brandMarkText = computed(() => brandTitle.value.trim().slice(0, 1) || "会");
 
@@ -112,14 +131,14 @@ const GROUP_META: Record<string, { order: number; badge?: string; className?: st
   系统管理: { order: 110 }
 };
 
-const menuRoutes = computed(() => routes.filter((route) => !route.hidden && hasPermission(route.permission)));
+const menuRoutes = computed(() => routes.filter((route) => !route.hidden && hasPermission(route.permission) && isRouteVisible(route)));
 const currentGroupQuickRoutes = computed(() =>
   menuRoutes.value.filter((route) => route.group === currentRoute.value.group).slice(0, 6)
 );
 const menuGroups = computed(() => {
   const groups = new Map<string, AdminRoute[]>();
   for (const route of menuRoutes.value) {
-    groups.set(route.group, [...(groups.get(route.group) ?? []), route]);
+    groups.set(route.group, sortRoutes([...(groups.get(route.group) ?? []), route]));
   }
   return Array.from(groups.entries())
     .map(([name, items]) => ({
@@ -136,6 +155,19 @@ const configurableGroups = computed(() =>
     .map((name) => ({ name, order: typeof menuGroupOrder[name] === "number" ? menuGroupOrder[name] : GROUP_META[name]?.order ?? 999 }))
     .sort((a, b) => a.order - b.order)
 );
+const configurableRouteGroups = computed(() => {
+  const groups = new Map<string, AdminRoute[]>();
+  for (const route of routes.filter((route) => !route.hidden && hasPermission(route.permission))) {
+    groups.set(route.group, sortRoutes([...(groups.get(route.group) ?? []), route]));
+  }
+  return Array.from(groups.entries())
+    .map(([name, items]) => ({
+      name,
+      items,
+      order: typeof menuGroupOrder[name] === "number" ? menuGroupOrder[name] : GROUP_META[name]?.order ?? 999
+    }))
+    .sort((a, b) => a.order - b.order);
+});
 const filteredMenuGroups = computed(() => {
   const keyword = menuSearch.value.trim().toLowerCase();
   if (!keyword) return menuGroups.value;
@@ -224,14 +256,44 @@ function loadMenuOrder(): Record<string, number> {
   return {};
 }
 
+function loadMenuRouteOrder(): Record<string, number> {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem("admin-menu-route-order") || "{}") as unknown;
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+      return Object.fromEntries(Object.entries(saved).filter(([, value]) => typeof value === "number")) as Record<string, number>;
+    }
+  } catch {
+    // Use router order.
+  }
+  return {};
+}
+
+function loadMenuRouteVisibility(): Record<string, boolean> {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem("admin-menu-route-visibility") || "{}") as unknown;
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+      return Object.fromEntries(Object.entries(saved).filter(([, value]) => typeof value === "boolean")) as Record<string, boolean>;
+    }
+  } catch {
+    // Show every route by default.
+  }
+  return {};
+}
+
 function saveMenuOrder() {
   window.localStorage.setItem("admin-menu-group-order", JSON.stringify(menuGroupOrder));
+  window.localStorage.setItem("admin-menu-route-order", JSON.stringify(menuRouteOrder));
+  window.localStorage.setItem("admin-menu-route-visibility", JSON.stringify(menuRouteVisibility));
   menuSettingsVisible.value = false;
 }
 
 function resetMenuOrder() {
   for (const key of Object.keys(menuGroupOrder)) delete menuGroupOrder[key];
+  for (const key of Object.keys(menuRouteOrder)) delete menuRouteOrder[key];
+  for (const key of Object.keys(menuRouteVisibility)) delete menuRouteVisibility[key];
   window.localStorage.removeItem("admin-menu-group-order");
+  window.localStorage.removeItem("admin-menu-route-order");
+  window.localStorage.removeItem("admin-menu-route-visibility");
 }
 
 function saveMenuScroll(event: { scrollTop?: number }) {
@@ -248,5 +310,33 @@ function restoreMenuScroll() {
 
 function scrollActiveMenuIntoView() {
   document.querySelector(".admin-menu .el-menu-item.is-active")?.scrollIntoView({ block: "nearest" });
+}
+
+function sortRoutes(items: AdminRoute[]): AdminRoute[] {
+  return [...items].sort((a, b) => routeOrder(a) - routeOrder(b));
+}
+
+function routeOrder(route: AdminRoute): number {
+  return typeof menuRouteOrder[route.path] === "number" ? menuRouteOrder[route.path] : routes.findIndex((item) => item.path === route.path) * 10;
+}
+
+function isLockedRoute(route: AdminRoute): boolean {
+  return route.group === "系统管理";
+}
+
+function isRouteConfigVisible(route: AdminRoute): boolean {
+  return isLockedRoute(route) ? true : menuRouteVisibility[route.path] !== false;
+}
+
+function isRouteVisible(route: AdminRoute): boolean {
+  return currentRoute.value.path === route.path || isRouteConfigVisible(route);
+}
+
+function setRouteVisibility(route: AdminRoute, visible: boolean) {
+  if (isLockedRoute(route)) {
+    menuRouteVisibility[route.path] = true;
+    return;
+  }
+  menuRouteVisibility[route.path] = visible;
 }
 </script>

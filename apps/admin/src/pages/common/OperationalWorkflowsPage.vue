@@ -65,6 +65,7 @@
         </template>
       </AdminFilterBar>
       <el-alert
+        v-if="section === 'checkin-verify'"
         class="checkin-guide"
         title="工作人员扫码入口：小程序个人中心会按后台授权显示“扫码核销”。常规现场核销请使用工作人员小程序扫码，后台应急补签仅用于异常处理。"
         type="info"
@@ -80,14 +81,14 @@
           <span>签到时间：{{ checkinResult.checkedInAt || "-" }}</span>
         </div>
       </AdminSectionCard>
-      <div class="admin-stat-grid">
+      <div v-if="section === 'checkin-stats'" class="admin-stat-grid">
         <AdminStatCard class="is-clickable" label="已报名" :value="checkinRegistered" @click="openCheckinDetailList('registeredList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('registeredList')">查看详情</button></AdminStatCard>
         <AdminStatCard class="is-clickable" label="已支付" :value="checkinPaid" @click="openCheckinDetailList('paidList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('paidList')">查看详情</button></AdminStatCard>
         <AdminStatCard class="is-clickable" label="已签到" :value="checkinCheckedIn" tone="success" @click="openCheckinDetailList('checkedInList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('checkedInList')">查看详情</button></AdminStatCard>
         <AdminStatCard class="is-clickable" label="未签到" :value="checkinUnchecked" tone="warning" @click="openCheckinDetailList('uncheckedInList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('uncheckedInList')">查看详情</button></AdminStatCard>
+        <AdminStatCard class="is-clickable" label="无需核销" :value="checkinNotRequired" @click="openCheckinDetailList('notRequiredList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('notRequiredList')">查看详情</button></AdminStatCard>
         <AdminStatCard class="is-clickable" label="签到失败" :value="checkinFailed" tone="danger" @click="openCheckinDetailList('failedList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('failedList')">查看详情</button></AdminStatCard>
         <AdminStatCard class="is-clickable" label="重复签到" :value="checkinRepeated" tone="warning" @click="openCheckinDetailList('repeatedList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('repeatedList')">查看详情</button></AdminStatCard>
-        <AdminStatCard label="无需核销" :value="checkinNotRequired" />
       </div>
       <AdminSectionCard v-if="section === 'checkin-verify'" title="签到工作人员配置" subtitle="从已有微信用户中授权扫码权限，可限定全部会议或单场会议；小程序扫码接口仍会校验该授权。">
         <div class="staff-config-row">
@@ -121,7 +122,7 @@
           <el-table-column label="操作" width="120"><template #default="{ row }"><el-button size="small" @click="toggleCheckinStaff(row)">{{ row.enabled ? "停用" : "启用" }}</el-button></template></el-table-column>
         </el-table>
       </AdminSectionCard>
-      <AdminSectionCard v-if="section !== 'checkin-stats'" title="签到记录" subtitle="展示每一条客户自助、工作人员扫码、后台应急补签和撤销明细。">
+      <AdminSectionCard v-if="section === 'checkin-logs'" title="签到记录" subtitle="展示每一条客户自助、工作人员扫码、后台应急补签和撤销明细。">
         <el-table :data="checkinLogs" empty-text="暂无签到记录">
           <el-table-column label="微信用户" width="180">
             <template #default="{ row }">
@@ -169,6 +170,7 @@
           <el-tab-pane label="已支付名单" name="paidList" />
           <el-tab-pane label="已签到名单" name="checkedInList" />
           <el-tab-pane label="未签到名单" name="uncheckedInList" />
+          <el-tab-pane label="无需核销名单" name="notRequiredList" />
           <el-tab-pane label="失败明细" name="failedList" />
           <el-tab-pane label="重复明细" name="repeatedList" />
         </el-tabs>
@@ -397,7 +399,7 @@ import {
 } from "../../services/admin";
 import type { AdminAppUser, CheckinStaffAssignment, Conference, Coupon, FinancePayment } from "../../services/types";
 
-type CheckinListTab = "registeredList" | "paidList" | "checkedInList" | "uncheckedInList" | "failedList" | "repeatedList";
+type CheckinListTab = "registeredList" | "paidList" | "checkedInList" | "uncheckedInList" | "notRequiredList" | "failedList" | "repeatedList";
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -467,6 +469,7 @@ const checkinListTitle = computed(() => ({
   paidList: "已支付名单",
   checkedInList: "已签到名单",
   uncheckedInList: "未签到名单",
+  notRequiredList: "无需核销名单",
   failedList: "签到失败明细",
   repeatedList: "重复签到明细"
 })[checkinListTab.value]);
@@ -476,6 +479,7 @@ const checkinEmptyText = computed(() => {
     paidList: "暂无已支付人员",
     checkedInList: "暂无已签到人员",
     uncheckedInList: "暂无未签到人员",
+    notRequiredList: "暂无无需核销人员",
     failedList: "暂无签到失败记录",
     repeatedList: "暂无重复签到记录"
   };

@@ -120,6 +120,31 @@ describe("CheckinService QR scan and admin manual check-in", () => {
     assert.equal(data.checkedInList[0]?.attendeeName, "李四");
     assert.equal(data.uncheckedInList.length, 0);
   });
+
+  it("keeps statistics card counts aligned with detail lists including not-required rows", async () => {
+    const service = new CheckinService(createPrismaMock({ checkInEnabled: false, attendeeStatus: CheckInStatus.NOT_REQUIRED }));
+
+    const stats = await service.statistics({ conferenceId: "conference-1" });
+    const data = stats.data as {
+      registeredCount: number;
+      paidCount: number;
+      checkedIn: number;
+      uncheckedIn: number;
+      notRequired: number;
+      registeredList: unknown[];
+      paidList: unknown[];
+      checkedInList: unknown[];
+      uncheckedInList: unknown[];
+      notRequiredList: unknown[];
+    };
+
+    assert.equal(data.registeredCount, data.registeredList.length);
+    assert.equal(data.paidCount, data.paidList.length);
+    assert.equal(data.checkedIn, data.checkedInList.length);
+    assert.equal(data.uncheckedIn, data.uncheckedInList.length);
+    assert.equal(data.notRequired, data.notRequiredList.length);
+    assert.equal(data.notRequiredList.length, 1);
+  });
 });
 
 function selfPayload(overrides: Record<string, string> = {}) {

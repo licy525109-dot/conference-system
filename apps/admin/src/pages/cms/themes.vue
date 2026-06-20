@@ -18,6 +18,8 @@
         </div>
 
         <el-form :model="form" label-width="112px" class="theme-form">
+          <el-collapse v-model="expandedThemeSections" class="theme-collapse">
+          <el-collapse-item title="页面模块" name="page-modules">
           <section class="form-section">
             <div class="section-head">
               <strong>应用页面</strong>
@@ -39,7 +41,9 @@
               </div>
             </el-form-item>
           </section>
+          </el-collapse-item>
 
+          <el-collapse-item title="主题色 / 按钮 / 卡片" name="colors">
           <section class="form-section">
             <div class="section-head">
               <strong>基础色彩</strong>
@@ -94,7 +98,9 @@
               </el-select>
             </el-form-item>
           </section>
+          </el-collapse-item>
 
+          <el-collapse-item title="品牌信息" name="brand">
           <section class="form-section">
             <div class="section-head">
               <strong>后台品牌</strong>
@@ -118,7 +124,9 @@
               </div>
             </el-form-item>
           </section>
+          </el-collapse-item>
 
+          <el-collapse-item title="背景设置" name="background">
           <section class="form-section">
             <div class="section-head">
               <strong>背景效果</strong>
@@ -189,7 +197,9 @@
               </el-radio-group>
             </el-form-item>
           </section>
+          </el-collapse-item>
 
+          <el-collapse-item title="视频 / 开屏设置" name="splash">
           <section class="form-section">
             <div class="section-head">
               <strong>启动视频</strong>
@@ -242,6 +252,8 @@
               </el-select>
             </el-form-item>
           </section>
+          </el-collapse-item>
+          </el-collapse>
         </el-form>
       </div>
 
@@ -249,26 +261,14 @@
         <div class="preview-head">
           <div>
             <div class="panel-title">实时预览</div>
-            <p class="page-subtitle">切换页面查看当前主题是否命中，以及背景、卡片、按钮的实际效果。</p>
+            <p class="page-subtitle">实际小程序预览效果：背景、卡片、按钮和应用范围都在手机页面内部展示。</p>
           </div>
           <el-radio-group v-model="previewPageKey" size="small">
             <el-radio-button v-for="page in previewPageOptions" :key="page.value" :label="page.value">{{ page.label }}</el-radio-button>
           </el-radio-group>
         </div>
 
-        <div class="preview-stage" :class="{ 'is-dynamic-bg': form.backgroundMode === 'dynamic-gradient' }" :style="previewStageStyle">
-          <video
-            v-if="form.backgroundMode === 'video' && form.backgroundVideoUrl"
-            class="preview-video"
-            :src="form.backgroundVideoUrl"
-            :poster="form.backgroundVideoPosterUrl"
-            autoplay
-            muted
-            loop
-            playsinline
-            webkit-playsinline
-          />
-          <div v-if="form.backgroundMode === 'video' && form.backgroundVideoUrl" class="preview-video-overlay" :style="{ opacity: previewVideoOverlayOpacity }" />
+        <div class="preview-stage" :style="previewStageStyle">
           <div class="preview-phone">
             <div class="preview-phone__status">
               <span>9:41</span>
@@ -276,7 +276,19 @@
             </div>
             <div class="preview-phone__screen">
               <div class="preview-nav">{{ previewPageLabel }}</div>
-              <div class="preview-body">
+              <div class="preview-body" :class="{ 'is-dynamic-bg': previewApplied && form.backgroundMode === 'dynamic-gradient' }" :style="previewBodyStyle">
+                <video
+                  v-if="previewApplied && form.backgroundMode === 'video' && form.backgroundVideoUrl"
+                  class="preview-video"
+                  :src="form.backgroundVideoUrl"
+                  :poster="form.backgroundVideoPosterUrl"
+                  autoplay
+                  muted
+                  loop
+                  playsinline
+                  webkit-playsinline
+                />
+                <div v-if="previewApplied && form.backgroundMode === 'video' && form.backgroundVideoUrl" class="preview-video-overlay" :style="{ opacity: previewVideoOverlayOpacity }" />
                 <section class="preview-hero" :style="previewHeroStyle">
                   <div class="preview-hero__copy">
                     <span>{{ previewPageLabel }}</span>
@@ -493,6 +505,7 @@ const materialKeyword = ref("");
 const materialAssets = ref<MaterialAsset[]>([]);
 const materialTarget = ref<{ key: keyof ThemeConfig; kind: "image" | "video" } | null>(null);
 const previewPageKey = ref("home");
+const expandedThemeSections = ref(["page-modules", "colors", "brand", "background", "splash"]);
 
 const pageOptions = computed(() =>
   pages.value.map((page) => ({
@@ -519,11 +532,14 @@ const previewStageStyle = computed(() => ({
   "--theme-radius": `${form.radius}px`,
   "--theme-title": `${form.titleFontSize}px`,
   "--theme-shadow": shadowValue(form.shadow),
+  animationDuration: `${dynamicMotionSeconds.value}s`
+}));
+const previewBodyStyle = computed(() => ({
   background: previewApplied.value ? previewBackground.value : "#f5f7fb",
   animationDuration: `${dynamicMotionSeconds.value}s`,
-  backgroundImage: form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? `url("${form.backgroundVideoPosterUrl}")` : undefined,
-  backgroundPosition: form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "center" : undefined,
-  backgroundSize: form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "cover" : `${dynamicSize.value}% ${dynamicSize.value}%`
+  backgroundImage: previewApplied.value && form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? `url("${form.backgroundVideoPosterUrl}")` : undefined,
+  backgroundPosition: previewApplied.value && form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "center" : undefined,
+  backgroundSize: previewApplied.value && form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "cover" : `${dynamicSize.value}% ${dynamicSize.value}%`
 }));
 const previewHeroStyle = computed(() => {
   if (!previewApplied.value) return {};
@@ -767,10 +783,40 @@ function hexAlpha(value: string | undefined, alpha: number): string {
   gap: 18px;
 }
 
-.form-section {
-  padding: 18px;
+.theme-collapse {
+  display: grid;
+  gap: 12px;
+  border: 0;
+}
+
+.theme-collapse :deep(.el-collapse-item) {
+  overflow: hidden;
   border: 1px solid var(--admin-color-border);
   border-radius: 14px;
+  background: #ffffff;
+}
+
+.theme-collapse :deep(.el-collapse-item__header) {
+  height: auto;
+  min-height: 52px;
+  padding: 0 16px;
+  border-bottom-color: var(--admin-color-border);
+  color: var(--admin-color-text);
+  font-weight: 900;
+}
+
+.theme-collapse :deep(.el-collapse-item__wrap) {
+  border-bottom: 0;
+}
+
+.theme-collapse :deep(.el-collapse-item__content) {
+  padding: 0;
+}
+
+.form-section {
+  padding: 18px;
+  border: 0;
+  border-radius: 0;
   background: #ffffff;
 }
 
@@ -865,14 +911,14 @@ function hexAlpha(value: string | undefined, alpha: number): string {
   overflow: hidden;
   border-radius: 24px;
   padding: 24px;
-  background: var(--theme-bg);
+  background: #eef3f8;
 }
 
-.preview-stage.is-dynamic-bg {
+.preview-body.is-dynamic-bg {
   animation: themePreviewMove 18s ease-in-out infinite alternate;
 }
 
-.preview-stage.is-dynamic-bg::before {
+.preview-body.is-dynamic-bg::before {
   content: "";
   position: absolute;
   inset: -18%;
@@ -888,6 +934,7 @@ function hexAlpha(value: string | undefined, alpha: number): string {
 .preview-video {
   position: absolute;
   inset: 0;
+  z-index: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -935,15 +982,19 @@ function hexAlpha(value: string | undefined, alpha: number): string {
 }
 
 .preview-body {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 18px;
   background: #f5f7fb;
+  overflow: hidden;
 }
 
 .preview-hero,
 .preview-card {
+  position: relative;
+  z-index: 1;
   border-radius: 22px;
 }
 

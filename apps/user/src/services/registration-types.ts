@@ -33,19 +33,26 @@ export interface RegistrationCredential {
     status: "NOT_REQUIRED" | "PENDING" | "CHECKED_IN" | "CANCELLED" | string;
     checkedInAt: string | null;
   };
+  user: {
+    id: string | null;
+    nickname: string;
+    avatarUrl: string | null;
+    phoneMasked: string;
+  };
   conference: {
     id: string;
     name: string;
     startTime: string;
     endTime: string;
-    venue?: string | null;
-    address?: string;
+    venue: string;
+    address: string;
   };
   attendee: {
     name: string;
+    mobile: string;
     mobileMasked: string;
-    company?: string;
-    title?: string;
+    company: string;
+    title: string;
   };
   ticket: {
     id: string;
@@ -54,11 +61,14 @@ export interface RegistrationCredential {
   };
   payment: {
     paidAmountCent: number;
+    payableAmountCent?: number;
     paidAt: string | null;
     status: string;
+    provider?: string | null;
   };
   order: {
     orderNo: string;
+    status?: string;
   };
   formSummary: Array<{
     label: string;

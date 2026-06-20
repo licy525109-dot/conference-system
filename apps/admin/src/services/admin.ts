@@ -30,6 +30,7 @@ import type {
   FinanceInvoice,
   FinanceOverview,
   FinancePayment,
+  FinanceRefundConfig,
   FinanceRefund,
   FormField,
   MaterialAsset,
@@ -1194,12 +1195,20 @@ export function listRefunds(params: { page?: number; pageSize?: number; keyword?
   return apiRequest<ApiList<FinanceRefund>>(`/admin/finance/refunds${toQuery(params)}`);
 }
 
+export function getRefundConfig() {
+  return apiRequest<FinanceRefundConfig>("/admin/finance/refund-config");
+}
+
 export function createRefund(input: Record<string, unknown>) {
   return apiRequest<FinanceRefund>("/admin/finance/refunds", { method: "POST", body: JSON.stringify(input) });
 }
 
 export function approveRefund(id: string) {
   return apiRequest<FinanceRefund>(`/admin/finance/refunds/${encodeURIComponent(id)}/approve`, { method: "POST" });
+}
+
+export function queryRefund(id: string) {
+  return apiRequest<FinanceRefund>(`/admin/finance/refunds/${encodeURIComponent(id)}/query`, { method: "POST" });
 }
 
 export function rejectRefund(id: string, reason: string) {

@@ -204,6 +204,15 @@ const credentialRegistrationSelect = {
       }
     }
   },
+  user: {
+    select: {
+      id: true,
+      nickname: true,
+      wechatNickname: true,
+      wechatAvatarUrl: true,
+      phone: true
+    }
+  },
   attendees: {
     orderBy: [{ createdAt: "asc" }],
     take: 1,
@@ -225,7 +234,10 @@ function formatCredential(registration: Prisma.RegistrationGetPayload<{ select: 
   const attendeeFormData = readObject(attendee?.formDataJson);
   const mergedFormData = { ...formData, ...attendeeFormData };
   const links = readCredentialLinks(registration.conference.page?.contentJson);
-  const paidAt = registration.order.paidAt ?? registration.order.payments[0]?.paidAt ?? registration.confirmedAt;
+  const payment = registration.order.payments[0] ?? null;
+  const paidAt = registration.order.paidAt ?? payment?.paidAt ?? registration.confirmedAt;
+  const attendeePhone = attendee?.phone ?? registration.phone;
+  const attendeeName = attendee?.name ?? registration.attendeeName;
 
   return {
     registrationId: registration.id,
@@ -237,19 +249,26 @@ function formatCredential(registration: Prisma.RegistrationGetPayload<{ select: 
       status: attendee?.checkInStatus ?? "NOT_REQUIRED",
       checkedInAt: attendee?.checkedInAt?.toISOString() ?? null
     },
+    user: {
+      id: registration.user?.id ?? null,
+      nickname: valueOrPlaceholder(registration.user?.wechatNickname ?? registration.user?.nickname),
+      avatarUrl: registration.user?.wechatAvatarUrl ?? null,
+      phoneMasked: maskMobile(registration.user?.phone)
+    },
     conference: {
       id: registration.conference.id,
-      name: registration.conference.title,
+      name: valueOrPlaceholder(registration.conference.title),
       startTime: registration.conference.startsAt.toISOString(),
       endTime: registration.conference.endsAt.toISOString(),
-      venue: registration.conference.location,
-      address: readString(mergedFormData, ["address", "venueAddress"])
+      venue: valueOrPlaceholder(registration.conference.location),
+      address: valueOrPlaceholder(readString(mergedFormData, ["address", "venueAddress"]))
     },
     attendee: {
-      name: attendee?.name ?? registration.attendeeName,
-      mobileMasked: maskMobile(attendee?.phone ?? registration.phone),
-      company: attendee?.company ?? readString(mergedFormData, ["company", "单位", "公司"]),
-      title: attendee?.title ?? readString(mergedFormData, ["title", "position", "职位"])
+      name: valueOrPlaceholder(attendeeName),
+      mobile: valueOrPlaceholder(attendeePhone),
+      mobileMasked: valueOrPlaceholder(maskMobile(attendeePhone)),
+      company: valueOrPlaceholder(attendee?.company ?? readString(mergedFormData, ["company", "单位", "公司"])),
+      title: valueOrPlaceholder(attendee?.title ?? readString(mergedFormData, ["title", "position", "职位"]))
     },
     ticket: {
       id: registration.sku.id,
@@ -257,12 +276,15 @@ function formatCredential(registration: Prisma.RegistrationGetPayload<{ select: 
       priceCent: registration.sku.priceCent
     },
     payment: {
-      paidAmountCent: registration.order.paidAmountCent ?? registration.paidAmountCent,
+      paidAmountCent: payment?.amountCent ?? registration.order.paidAmountCent ?? registration.paidAmountCent,
+      payableAmountCent: registration.order.payableAmountCent,
       paidAt: paidAt?.toISOString() ?? null,
-      status: registration.order.payments[0]?.status ?? registration.order.status
+      status: payment?.status ?? registration.order.status,
+      provider: payment?.provider ?? null
     },
     order: {
-      orderNo: registration.order.orderNo
+      orderNo: registration.order.orderNo,
+      status: registration.order.status
     },
     formSummary: summarizeFormData(mergedFormData),
     links
@@ -280,8 +302,12 @@ function summarizeFormData(input: Record<string, unknown>) {
     .slice(0, 12)
     .map(([key, value]) => ({
       label: key,
-      value: Array.isArray(value) ? value.join("、") : String(value)
+      value: valueOrPlaceholder(Array.isArray(value) ? value.join("、") : String(value))
     }));
+}
+
+function valueOrPlaceholder(value: string | null | undefined): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "未填写";
 }
 
 function readCredentialLinks(value: Prisma.JsonValue | null | undefined) {

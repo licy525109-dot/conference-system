@@ -67,6 +67,19 @@ describe("AdminFinanceService production workflows", () => {
     assert.equal(prisma.orders[0]?.status, OrderStatus.PAID);
   });
 
+  it("exposes refund runtime config without treating missing WeChat refund as success", async () => {
+    process.env.REFUND_ENABLED = "true";
+    const service = new AdminFinanceService(createFinancePrismaMock());
+
+    const result = await service.refundConfig();
+
+    assert.equal(result.data.registration.enabled, true);
+    assert.equal(result.data.registration.wechatRefundEnabled, false);
+    assert.match(result.data.registration.callbackUrl, /\/payments\/wechat\/refund-notify$/);
+    assert.equal(result.data.mall.wechatRefundEnabled, false);
+    assert.ok(result.data.steps.some((step) => step.includes("不会显示退款成功")));
+  });
+
   it("mock registration refund can complete and update fully refunded order", async () => {
     process.env.REFUND_ENABLED = "true";
     process.env.REFUND_MODE = "mock";
