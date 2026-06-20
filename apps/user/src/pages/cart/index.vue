@@ -19,6 +19,8 @@
       tone="info"
     />
 
+    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+
     <LoadingState v-if="loading" title="加载购物车中" description="正在同步会议报名项和商品项。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="loadCart" @secondary="goHome" />
     <EmptyState
@@ -117,10 +119,12 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
+import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
+import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import {
   checkoutProductCart,
@@ -142,6 +146,7 @@ const error = ref("");
 const removingId = ref("");
 const checkoutId = ref("");
 const receiver = ref({ name: "", phone: "", address: "" });
+const cmsPage = ref<PublishedPage | null>(null);
 const isEmpty = computed(() => registrationItems.value.length === 0 && productItems.value.length === 0);
 const hasPhysicalProduct = computed(() => productItems.value.some((item) => !["VIRTUAL", "SERVICE"].includes(String(item.sku.product.productType || "PHYSICAL"))));
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("cart");
@@ -156,9 +161,10 @@ async function loadCart() {
   error.value = "";
   try {
     await ensureLogin();
-    const data = await getCart();
+    const [data, page] = await Promise.all([getCart(), getPublishedPage("cart")]);
     registrationItems.value = data.registrationItems;
     productItems.value = data.productItems;
+    cmsPage.value = page;
   } catch (err) {
     console.error("[CART_LOAD_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {

@@ -43,7 +43,15 @@ export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportDef
   "membership-benefits": { label: "会员权益卡", status: "supported", description: "用户端支持会员权益展示和会员中心入口" },
   "user-profile-card": { label: "用户资料卡", status: "supported", description: "用户端支持登录资料和未登录引导" },
   "my-order-list": { label: "我的订单列表", status: "supported", description: "用户端支持报名和商城订单入口" },
-  "mall-product-grid": { label: "商城商品宫格", status: "supported", description: "用户端支持真实商品展示和详情跳转" }
+  "mall-product-grid": { label: "商城商品宫格", status: "supported", description: "用户端支持真实商品展示和详情跳转" },
+  "credential-header": { label: "凭证头部", status: "supported", description: "报名凭证页支持报名状态、会议名称和报名号展示" },
+  "credential-qr": { label: "二维码卡片", status: "supported", description: "报名凭证页支持真实二维码展示" },
+  "credential-conference-info": { label: "凭证会议信息", status: "supported", description: "报名凭证页支持会议时间、地点和票种展示" },
+  "credential-attendee-info": { label: "凭证参会人信息", status: "supported", description: "报名凭证页支持参会人和微信用户信息展示" },
+  "credential-payment-info": { label: "凭证支付信息", status: "supported", description: "报名凭证页支持支付信息展示" },
+  "credential-form-summary": { label: "凭证表单摘要", status: "supported", description: "报名凭证页支持报名字段摘要展示" },
+  "credential-checkin-info": { label: "凭证签到信息", status: "supported", description: "报名凭证页支持签到状态展示" },
+  "credential-actions": { label: "凭证操作按钮区", status: "supported", description: "报名凭证页支持签到和常用操作入口" }
 };
 
 const RENDERABLE_STATUSES: CmsComponentSupportStatus[] = ["supported", "basic"];

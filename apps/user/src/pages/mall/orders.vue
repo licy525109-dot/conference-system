@@ -1,5 +1,10 @@
 <template>
-  <view class="page ui-page">
+  <view class="page ui-page" :style="pageStyle">
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <view v-if="showBodyVideo" class="page-bg-overlay" />
+    <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
+    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+
     <view class="topbar ui-card">
       <text class="title">我的商城订单</text>
       <text class="subtitle">商城订单与会议报名订单分开管理。待支付订单完成支付后才会进入发货和售后流程。</text>
@@ -80,7 +85,11 @@
 import { onMounted, ref } from "vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
+import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
+import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
+import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
+import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { createMallAfterSale, getMyMallOrders, startMallOrderPayment, uploadMallAfterSaleAttachment, type MallOrder } from "@/services/operations";
 import { formatCent } from "@/utils/money";
 
@@ -89,6 +98,8 @@ const submittingId = ref("");
 const payingId = ref("");
 const orders = ref<MallOrder[]>([]);
 const payButtonText = "去支付";
+const cmsPage = ref<PublishedPage | null>(null);
+const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("mall-orders");
 const uploading = ref(false);
 const afterSaleVisible = ref(false);
 const afterSaleOrder = ref<MallOrder | null>(null);
@@ -100,12 +111,17 @@ const afterSaleTypeOptions = [
 const afterSaleTypeIndex = ref(0);
 const afterSaleForm = ref({ type: "REFUND", reason: "", note: "", attachments: [] as string[] });
 
-onMounted(() => void load());
+onMounted(() => {
+  void refreshTheme();
+  void load();
+});
 
 async function load() {
   loading.value = true;
   try {
-    orders.value = (await getMyMallOrders()).items;
+    const [orderData, page] = await Promise.all([getMyMallOrders(), getPublishedPage("mall-orders")]);
+    orders.value = orderData.items;
+    cmsPage.value = page;
   } finally {
     loading.value = false;
   }
@@ -251,6 +267,7 @@ function providerText(value?: string | null) {
 
 <style scoped>
 .page {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 20rpx;
@@ -258,7 +275,14 @@ function providerText(value?: string | null) {
 
 .topbar,
 .order {
+  position: relative;
+  z-index: 1;
   padding: 28rpx;
+}
+
+.page :deep(.cms-page) {
+  position: relative;
+  z-index: 1;
 }
 
 .order {

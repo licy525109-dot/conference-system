@@ -276,7 +276,11 @@
             </div>
             <div class="preview-phone__screen">
               <div class="preview-nav">{{ previewPageLabel }}</div>
-              <div class="preview-body" :class="{ 'is-dynamic-bg': previewApplied && form.backgroundMode === 'dynamic-gradient' }" :style="previewBodyStyle">
+              <div class="preview-body" :style="previewBodyStyle">
+                <ThemeDynamicBackgroundPreview
+                  v-if="previewApplied && form.backgroundMode === 'dynamic-gradient' && form.backgroundApplyTo !== 'header'"
+                  :theme="form"
+                />
                 <video
                   v-if="previewApplied && form.backgroundMode === 'video' && form.backgroundVideoUrl"
                   class="preview-video"
@@ -290,6 +294,10 @@
                 />
                 <div v-if="previewApplied && form.backgroundMode === 'video' && form.backgroundVideoUrl" class="preview-video-overlay" :style="{ opacity: previewVideoOverlayOpacity }" />
                 <section class="preview-hero" :style="previewHeroStyle">
+                  <ThemeDynamicBackgroundPreview
+                    v-if="previewApplied && form.backgroundMode === 'dynamic-gradient' && form.backgroundApplyTo === 'header'"
+                    :theme="form"
+                  />
                   <div class="preview-hero__copy">
                     <span>{{ previewPageLabel }}</span>
                     <strong>{{ previewHeroTitle }}</strong>
@@ -347,6 +355,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
+import ThemeDynamicBackgroundPreview from "../../components/ThemeDynamicBackgroundPreview.vue";
 import { getTheme, listMaterials, listPages, updateTheme } from "../../services/admin";
 import type { MaterialAsset, PageTemplate, ThemeConfig } from "../../services/types";
 
@@ -531,22 +540,19 @@ const previewStageStyle = computed(() => ({
   "--theme-card": form.cardBackground,
   "--theme-radius": `${form.radius}px`,
   "--theme-title": `${form.titleFontSize}px`,
-  "--theme-shadow": shadowValue(form.shadow),
-  animationDuration: `${dynamicMotionSeconds.value}s`
+  "--theme-shadow": shadowValue(form.shadow)
 }));
 const previewBodyStyle = computed(() => ({
-  background: previewApplied.value ? previewBackground.value : "#f5f7fb",
-  animationDuration: `${dynamicMotionSeconds.value}s`,
+  background: previewApplied.value && form.backgroundMode === "dynamic-gradient" ? form.backgroundColor : previewApplied.value ? previewBackground.value : "#f5f7fb",
   backgroundImage: previewApplied.value && form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? `url("${form.backgroundVideoPosterUrl}")` : undefined,
   backgroundPosition: previewApplied.value && form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "center" : undefined,
-  backgroundSize: previewApplied.value && form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "cover" : `${dynamicSize.value}% ${dynamicSize.value}%`
+  backgroundSize: previewApplied.value && form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "cover" : "cover"
 }));
 const previewHeroStyle = computed(() => {
   if (!previewApplied.value) return {};
   if (form.backgroundApplyTo === "header") {
     return {
-      background: previewBackground.value,
-      backgroundSize: `${dynamicSize.value}% ${dynamicSize.value}%`
+      background: form.backgroundMode === "dynamic-gradient" ? form.backgroundColor : previewBackground.value
     };
   }
   return {};
@@ -557,15 +563,13 @@ const previewBackground = computed(() => {
     return `${overlay}url("${form.backgroundImageUrl}") center / cover`;
   }
   if (form.backgroundMode === "dynamic-gradient") {
-    return dynamicGradient(form);
+    return form.backgroundColor;
   }
   if (form.backgroundMode === "gradient") {
     return `linear-gradient(135deg, ${form.backgroundGradientFrom}, ${form.backgroundGradientTo})`;
   }
   return form.backgroundColor;
 });
-const dynamicSize = computed(() => Math.max(150, 440 - (Number(form.backgroundDynamicDensity) || 40) * 2.4));
-const dynamicMotionSeconds = computed(() => Math.max(4, Math.round(18 - Math.max(6, Math.min(40, Number(form.backgroundDynamicSpeed) || 30)) * 0.28)));
 const previewHeroTitle = computed(() => {
   if (previewPageKey.value === "conference-detail") return "峰会详情与报名安排";
   if (previewPageKey.value === "my-registrations") return "我的报名与状态查看";
@@ -664,25 +668,6 @@ function shadowValue(value: string | undefined): string {
   return "0 10px 28px rgba(15, 23, 42, 0.1)";
 }
 
-function dynamicGradient(config: ThemeConfig): string {
-  const from = config.backgroundGradientFrom || config.backgroundColor;
-  const to = config.backgroundGradientTo || config.secondaryColor;
-  const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 40));
-  const scale = Math.max(28, Math.round(density / 1.45));
-  const angle = Math.max(0, Math.min(360, Number(config.backgroundGradientAngle) || 135));
-  const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(245,247,246,0.58)), ";
-  const pattern = String(config.backgroundDynamicPattern || "flow");
-  const patternLayer =
-    pattern === "ripple"
-      ? `repeating-radial-gradient(circle at 50% 54%, ${hexAlpha(config.primaryColor, 0.12)} 0 2%, transparent 2% 8%), `
-      : pattern === "float"
-        ? `radial-gradient(circle at 32% 42%, ${hexAlpha(config.secondaryColor, 0.22)} 0, transparent ${scale + 34}%), `
-        : pattern === "zoom"
-          ? `radial-gradient(circle at 50% 50%, ${hexAlpha(config.accentColor, 0.26)} 0, transparent ${scale + 48}%), `
-          : "";
-  return `${overlay}${patternLayer}radial-gradient(circle at 10% 14%, ${hexAlpha(config.primaryColor, 0.62)} 0, transparent ${scale}%), radial-gradient(circle at 88% 18%, ${hexAlpha(config.secondaryColor, 0.56)} 0, transparent ${scale + 14}%), radial-gradient(circle at 46% 80%, ${hexAlpha(config.accentColor, 0.48)} 0, transparent ${scale + 20}%), radial-gradient(circle at 68% 42%, ${hexAlpha(config.primaryColor, 0.34)} 0, transparent ${scale + 10}%), linear-gradient(${angle}deg, ${from} 0%, ${to} 60%, ${hexAlpha(config.accentColor, 0.34)} 142%)`;
-}
-
 async function validateBackgroundBeforeSave(): Promise<string | null> {
   if (form.backgroundMode === "video") {
     const url = String(form.backgroundVideoUrl || "").trim();
@@ -723,15 +708,6 @@ function resolveVideoOverlayOpacity(config: ThemeConfig): number {
   return 0.08;
 }
 
-function hexAlpha(value: string | undefined, alpha: number): string {
-  const color = String(value || "#315d7d").trim();
-  if (/^rgba?\(/i.test(color)) return color;
-  if (!/^#[0-9a-f]{6}$/i.test(color)) return `rgba(49, 93, 125, ${alpha})`;
-  const r = parseInt(color.slice(1, 3), 16);
-  const g = parseInt(color.slice(3, 5), 16);
-  const b = parseInt(color.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
 </script>
 
 <style scoped>
@@ -914,23 +890,6 @@ function hexAlpha(value: string | undefined, alpha: number): string {
   background: #eef3f8;
 }
 
-.preview-body.is-dynamic-bg {
-  animation: themePreviewMove 18s ease-in-out infinite alternate;
-}
-
-.preview-body.is-dynamic-bg::before {
-  content: "";
-  position: absolute;
-  inset: -18%;
-  z-index: 0;
-  background:
-    radial-gradient(circle at 20% 30%, color-mix(in srgb, var(--theme-primary) 42%, transparent), transparent 18%),
-    radial-gradient(circle at 80% 20%, color-mix(in srgb, var(--theme-secondary) 34%, transparent), transparent 22%),
-    radial-gradient(circle at 55% 82%, color-mix(in srgb, var(--theme-accent) 30%, transparent), transparent 24%);
-  filter: blur(10px);
-  animation: themePreviewFloat 9s ease-in-out infinite alternate;
-}
-
 .preview-video {
   position: absolute;
   inset: 0;
@@ -1004,9 +963,16 @@ function hexAlpha(value: string | undefined, alpha: number): string {
   justify-content: space-between;
   gap: 16px;
   padding: 20px;
+  overflow: hidden;
   background: linear-gradient(135deg, var(--theme-primary), var(--theme-secondary));
   color: #ffffff;
   box-shadow: var(--theme-shadow);
+}
+
+.preview-hero__copy,
+.preview-primary-button {
+  position: relative;
+  z-index: 1;
 }
 
 .preview-hero__copy span,
@@ -1165,24 +1131,6 @@ function hexAlpha(value: string | undefined, alpha: number): string {
 .material-card small {
   display: block;
   margin-top: 6px;
-}
-
-@keyframes themePreviewMove {
-  from {
-    background-position: 0% 8%;
-  }
-  to {
-    background-position: 100% 92%;
-  }
-}
-
-@keyframes themePreviewFloat {
-  from {
-    transform: translate3d(-9%, -7%, 0) scale(0.96);
-  }
-  to {
-    transform: translate3d(11%, 9%, 0) scale(1.18);
-  }
 }
 
 @media (max-width: 1280px) {

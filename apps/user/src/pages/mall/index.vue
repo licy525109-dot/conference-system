@@ -19,6 +19,8 @@
       tone="info"
     />
 
+    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+
     <view class="toolbar ui-card">
       <input v-model="keyword" class="search" placeholder="搜索商品" @confirm="loadProducts" />
       <button class="ui-button-primary ui-button-compact" @click="loadProducts">查询</button>
@@ -67,9 +69,11 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
+import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
+import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { getProductCategories, getProducts, type Product, type ProductCategory } from "@/services/mall";
 import { goHome } from "@/utils/navigation";
 
@@ -79,11 +83,11 @@ const keyword = ref("");
 const categoryId = ref("");
 const loading = ref(false);
 const error = ref("");
+const cmsPage = ref<PublishedPage | null>(null);
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("mall");
 
 onMounted(async () => {
-  await refreshTheme();
-  await Promise.all([loadCategories(), loadProducts()]);
+  await Promise.all([refreshTheme(), loadCmsPage(), loadCategories(), loadProducts()]);
 });
 
 onLoad((query) => {
@@ -93,6 +97,10 @@ onLoad((query) => {
 
 async function loadCategories() {
   categories.value = (await getProductCategories()).items;
+}
+
+async function loadCmsPage() {
+  cmsPage.value = await getPublishedPage("mall");
 }
 
 async function loadProducts() {

@@ -28,6 +28,7 @@ export const DEFAULT_THEME_CONFIG = {
   backgroundDynamicDensity: 40,
   backgroundDynamicSpeed: 30,
   backgroundDynamicPattern: "flow",
+  backgroundGradientAngle: 135,
   backgroundBottomFilter: true,
   splashEnabled: false,
   splashVideoUrl: "",
@@ -159,6 +160,21 @@ export const ENABLED_COMPONENT_PRESETS = [
   preset("user-profile-card", "用户资料卡", "用户中心", "展示用户资料入口", { title: "我的资料", description: "登录后查看头像、昵称、手机号和会员状态。" }),
   preset("my-order-list", "我的订单列表", "用户中心", "展示报名和商城订单入口", { title: "我的订单" }),
   preset("mall-product-grid", "商城商品宫格", "商城", "展示商城商品入口", { title: "商城商品", items: ["会议资料包", "会务周边"] }),
+  preset("credential-header", "凭证头部", "报名凭证", "展示报名状态、会议名称和报名号", { title: "报名成功", statusText: "报名成功" }),
+  preset("credential-qr", "二维码卡片", "报名凭证", "展示电子报名凭证二维码", { title: "电子报名凭证", description: "工作人员可扫码完成签到核销。" }),
+  preset("credential-conference-info", "凭证会议信息", "报名凭证", "展示会议时间、地点和票种", { title: "会议信息" }),
+  preset("credential-attendee-info", "凭证参会人信息", "报名凭证", "展示参会人和微信用户信息", { title: "参会人信息", showWechatUser: true }),
+  preset("credential-payment-info", "凭证支付信息", "报名凭证", "展示支付金额、状态、渠道和订单号", { title: "支付信息" }),
+  preset("credential-form-summary", "凭证表单摘要", "报名凭证", "展示报名表单字段摘要", { title: "报名表单摘要", emptyText: "暂无补充报名字段" }),
+  preset("credential-checkin-info", "凭证签到信息", "报名凭证", "展示签到状态和签到时间", { title: "签到信息" }),
+  preset("credential-actions", "凭证操作按钮区", "报名凭证", "展示签到、客户群、议程、指南、客服和日历按钮", {
+    checkinText: "去签到",
+    groupText: "加入会议客户群",
+    agendaText: "查看议程",
+    guideText: "参会指南",
+    contactText: "联系客服",
+    calendarText: "添加到日历"
+  }),
   preset("title", "标题栏", "基础展示", "分区标题", { text: "标题" }),
   preset("divider", "分割线", "基础展示", "内容分割", { style: "solid" }),
   preset("spacer", "留白", "基础展示", "页面留白", { height: 24 })
@@ -196,6 +212,79 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
     return [
       { id: "hero-default", type: "hero", enabled: true, config: { imageUrl: "", imageMode: "scaleToFill", height: 430, showContent: true, showOverlay: true } },
       { id: "registration-button-default", type: "registration-button", enabled: true, config: { text: "立即报名" } }
+    ];
+  }
+
+  if (pageKey === "registration-form") {
+    return [
+      { id: "registration-form-title", type: "title", enabled: true, config: { text: "填写报名信息" } },
+      { id: "registration-form-steps", type: "process-steps", enabled: true, config: { title: "报名流程", items: ["选择报名规格", "填写参会人信息", "确认优惠和金额", "提交订单并完成支付"] } }
+    ];
+  }
+
+  if (pageKey === "registration-success") {
+    return [
+      { id: "credential-header-default", type: "credential-header", enabled: true, config: { title: "报名成功", statusText: "报名成功" } },
+      { id: "credential-qr-default", type: "credential-qr", enabled: true, config: { title: "电子报名凭证", description: "工作人员可扫码完成签到核销。" } },
+      { id: "credential-conference-default", type: "credential-conference-info", enabled: true, config: { title: "会议信息" } },
+      { id: "credential-attendee-default", type: "credential-attendee-info", enabled: true, config: { title: "参会人信息", showWechatUser: true } },
+      { id: "credential-payment-default", type: "credential-payment-info", enabled: true, config: { title: "支付信息" } },
+      { id: "credential-form-default", type: "credential-form-summary", enabled: true, config: { title: "报名表单摘要", emptyText: "暂无补充报名字段" } },
+      { id: "credential-checkin-default", type: "credential-checkin-info", enabled: true, config: { title: "签到信息" } },
+      {
+        id: "credential-actions-default",
+        type: "credential-actions",
+        enabled: true,
+        config: {
+          checkinText: "去签到",
+          groupText: "加入会议客户群",
+          agendaText: "查看议程",
+          guideText: "参会指南",
+          contactText: "联系客服",
+          calendarText: "添加到日历"
+        }
+      }
+    ];
+  }
+
+  if (pageKey === "member-center") {
+    return [
+      { id: "member-benefits-default", type: "membership-benefits", enabled: true, config: { title: "会员权益", items: ["会员专属权益", "会员价规则以后台配置为准"] } },
+      { id: "member-orders-default", type: "my-order-list", enabled: true, config: { title: "常用入口", orderType: "both" } }
+    ];
+  }
+
+  if (pageKey === "cart") {
+    return [
+      { id: "cart-title-default", type: "title", enabled: true, config: { text: "确认商品与报名项" } },
+      { id: "cart-notice-default", type: "notice", enabled: true, config: { text: "会议报名和商城订单均由后端重新计算金额。" } }
+    ];
+  }
+
+  if (pageKey === "mall") {
+    return [
+      { id: "mall-product-grid-default", type: "mall-product-grid", enabled: true, config: { title: "精选商品", limit: 6, buttonText: "查看更多商品" } }
+    ];
+  }
+
+  if (pageKey === "mall-detail") {
+    return [
+      { id: "mall-detail-title-default", type: "title", enabled: true, config: { text: "商品说明" } },
+      { id: "mall-detail-notice-default", type: "notice", enabled: true, config: { text: "商品金额以后端 SKU 价格和库存校验为准。" } }
+    ];
+  }
+
+  if (pageKey === "invoice") {
+    return [
+      { id: "invoice-title-default", type: "title", enabled: true, config: { text: "发票申请说明" } },
+      { id: "invoice-steps-default", type: "process-steps", enabled: true, config: { title: "开票流程", items: ["选择可开票订单", "填写发票抬头", "提交后台审核", "开票后查看链接或编号"] } }
+    ];
+  }
+
+  if (pageKey === "mall-orders") {
+    return [
+      { id: "aftersale-title-default", type: "title", enabled: true, config: { text: "商城订单与售后" } },
+      { id: "aftersale-steps-default", type: "process-steps", enabled: true, config: { title: "售后申请流程", items: ["选择已支付商城订单", "填写售后原因", "上传凭证图片", "等待后台处理"] } }
     ];
   }
 

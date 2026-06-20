@@ -6,7 +6,12 @@
     <LoadingState v-if="loading" title="加载报名凭证中" description="正在同步报名、订单和支付信息。" />
     <ErrorState v-else-if="error" title="凭证加载失败" :message="error" primary-text="重新加载" secondary-text="我的报名" @retry="loadCredential" @secondary="goMyRegistrations" />
     <view v-else-if="credential" class="credential">
-      <view class="success-band">
+      <view
+        v-for="component in credentialComponents"
+        :key="component.id"
+        :class="credentialBlockClass(component)"
+      >
+        <template v-if="component.type === 'credential-header'">
         <text class="success-kicker">报名成功</text>
         <text class="success-title">{{ displayText(credential.conference.name) }}</text>
         <text class="success-no">报名号：{{ credential.registrationNo }}</text>
@@ -15,78 +20,80 @@
           <text>报名状态：{{ registrationStatusText(credential.status) }}</text>
           <text>签到状态：{{ checkinStatusText(credential.checkIn.status) }}</text>
         </view>
-      </view>
+        </template>
 
-      <view class="qr-panel">
+        <template v-else-if="component.type === 'credential-qr'">
         <QrCodeMatrix :value="credential.qrPayload" label="电子报名凭证二维码" />
         <view class="qr-copy">
-          <text class="qr-title">电子报名凭证</text>
-          <text class="qr-desc">请妥善保存报名凭证，工作人员可扫码完成签到核销。二维码不包含手机号、姓名等个人信息。</text>
+          <text class="qr-title">{{ componentTitle(component, "电子报名凭证") }}</text>
+          <text class="qr-desc">{{ stringConfig(component, "description") || "请妥善保存报名凭证，工作人员可扫码完成签到核销。二维码不包含手机号、姓名等个人信息。" }}</text>
           <text class="qr-code">报名号：{{ credential.credentialCode }}</text>
         </view>
-      </view>
+        </template>
 
-      <AiAssistantEntry :conference-id="credential.conference.id" />
+        <AiAssistantEntry v-else-if="component.type === 'credential-ai-entry'" :conference-id="credential.conference.id" />
 
-      <view class="section">
-        <text class="section-title">会议信息</text>
+        <template v-else-if="component.type === 'credential-conference-info'">
+        <text class="section-title">{{ componentTitle(component, "会议信息") }}</text>
         <InfoLine label="时间" :value="`${formatDateTime(credential.conference.startTime)} - ${formatDateTime(credential.conference.endTime)}`" />
         <InfoLine label="地点" :value="displayText(credential.conference.venue)" />
         <InfoLine label="地址" :value="displayText(credential.conference.address)" />
         <InfoLine label="票种" :value="displayText(credential.ticket.name)" />
-      </view>
+        </template>
 
-      <view class="section">
-        <text class="section-title">参会人</text>
+        <template v-else-if="component.type === 'credential-attendee-info'">
+        <text class="section-title">{{ componentTitle(component, "参会人信息") }}</text>
         <InfoLine label="姓名" :value="displayText(credential.attendee.name)" />
         <InfoLine label="手机号" :value="displayText(credential.attendee.mobileMasked)" />
         <InfoLine label="公司" :value="displayText(credential.attendee.company)" />
         <InfoLine label="职位" :value="displayText(credential.attendee.title)" />
-      </view>
-
-      <view class="section">
-        <text class="section-title">微信用户</text>
-        <view class="wechat-user">
-          <image v-if="credential.user.avatarUrl" class="wechat-avatar" :src="credential.user.avatarUrl" mode="aspectFill" />
-          <view v-else class="wechat-avatar wechat-avatar--empty">{{ displayText(credential.user.nickname).slice(0, 1) }}</view>
-          <view class="wechat-user__copy">
-            <text>{{ displayText(credential.user.nickname) }}</text>
-            <text>{{ displayText(credential.user.phoneMasked) }}</text>
+          <view v-if="booleanConfig(component, 'showWechatUser', true)" class="wechat-user">
+            <image v-if="credential.user.avatarUrl" class="wechat-avatar" :src="credential.user.avatarUrl" mode="aspectFill" />
+            <view v-else class="wechat-avatar wechat-avatar--empty">{{ displayText(credential.user.nickname).slice(0, 1) }}</view>
+            <view class="wechat-user__copy">
+              <text>{{ displayText(credential.user.nickname) }}</text>
+              <text>{{ displayText(credential.user.phoneMasked) }}</text>
+            </view>
           </view>
-        </view>
-      </view>
+        </template>
 
-      <view class="section">
-        <text class="section-title">支付信息</text>
+        <template v-else-if="component.type === 'credential-payment-info'">
+        <text class="section-title">{{ componentTitle(component, "支付信息") }}</text>
         <InfoLine label="支付金额" :value="`¥${formatCent(credential.payment.paidAmountCent)}`" highlight />
         <InfoLine label="支付状态" :value="paymentStatusText(credential.payment.status)" />
         <InfoLine label="支付渠道" :value="providerText(credential.payment.provider)" />
         <InfoLine label="报名状态" :value="registrationStatusText(credential.status)" />
-        <InfoLine label="签到状态" :value="checkinStatusText(credential.checkIn.status)" />
-        <InfoLine v-if="credential.checkIn.checkedInAt" label="签到时间" :value="formatDateTime(credential.checkIn.checkedInAt)" />
         <InfoLine label="订单号" :value="credential.order.orderNo" />
         <InfoLine label="支付时间" :value="formatDateTime(credential.payment.paidAt) || '-'" />
-      </view>
+        </template>
 
-      <view v-if="credential.formSummary.length > 0" class="section">
-        <text class="section-title">报名表单摘要</text>
+        <template v-else-if="component.type === 'credential-form-summary'">
+        <text class="section-title">{{ componentTitle(component, "报名表单摘要") }}</text>
         <InfoLine v-for="item in credential.formSummary" :key="item.label" :label="item.label" :value="item.value" />
-      </view>
+          <text v-if="credential.formSummary.length === 0" class="empty-copy">{{ stringConfig(component, "emptyText") || "暂无补充报名字段" }}</text>
+        </template>
 
-      <view class="actions">
-        <button class="ui-button-primary action" @click="goCheckin">去签到</button>
-        <button v-if="credential.links.groupJoinUrl" class="ui-button-secondary action" @click="openLink(credential.links.groupJoinUrl, '会议客户群暂未配置')">加入会议客户群</button>
-        <button class="ui-button-secondary action" @click="openLink(credential.links.agendaUrl, '会议议程暂未配置')">查看议程</button>
-        <button class="ui-button-secondary action" @click="openLink(credential.links.guideUrl, '参会指南暂未配置')">参会指南</button>
-        <button class="ui-button-secondary action" @click="openLink(credential.links.contactUrl, '客服入口暂未配置')">联系客服</button>
-        <button class="ui-button-secondary action" @click="calendarTodo">添加到日历</button>
+        <template v-else-if="component.type === 'credential-checkin-info'">
+        <text class="section-title">{{ componentTitle(component, "签到信息") }}</text>
+        <InfoLine label="签到状态" :value="checkinStatusText(credential.checkIn.status)" highlight />
+        <InfoLine label="签到时间" :value="credential.checkIn.checkedInAt ? formatDateTime(credential.checkIn.checkedInAt) : '暂无'" />
+        </template>
+
+        <template v-else-if="component.type === 'credential-actions'">
+        <button class="ui-button-primary action" @click="goCheckin">{{ stringConfig(component, "checkinText") || "去签到" }}</button>
+        <button v-if="credential.links.groupJoinUrl" class="ui-button-secondary action" @click="openLink(credential.links.groupJoinUrl, '会议客户群暂未配置')">{{ stringConfig(component, "groupText") || "加入会议客户群" }}</button>
+        <button class="ui-button-secondary action" @click="openLink(credential.links.agendaUrl, '会议议程暂未配置')">{{ stringConfig(component, "agendaText") || "查看议程" }}</button>
+        <button class="ui-button-secondary action" @click="openLink(credential.links.guideUrl, '参会指南暂未配置')">{{ stringConfig(component, "guideText") || "参会指南" }}</button>
+        <button class="ui-button-secondary action" @click="openLink(credential.links.contactUrl, '客服入口暂未配置')">{{ stringConfig(component, "contactText") || "联系客服" }}</button>
+        <button class="ui-button-secondary action" @click="calendarTodo">{{ stringConfig(component, "calendarText") || "添加到日历" }}</button>
+        </template>
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { defineComponent, h, ref } from "vue";
+import { computed, defineComponent, h, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
 import AiAssistantEntry from "@/components/AiAssistantEntry.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
@@ -95,6 +102,7 @@ import QrCodeMatrix from "@/components/QrCodeMatrix.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
+import { applyPageTitle, getPublishedPage, type CmsComponent, type PublishedPage } from "@/services/cms";
 import { getOrderRegistrationCredential, getRegistrationCredential } from "@/services/registration";
 import type { RegistrationCredential } from "@/services/registration-types";
 import { formatDateTime } from "@/utils/date";
@@ -117,9 +125,27 @@ const InfoLine = defineComponent({
 const registrationId = ref("");
 const orderNo = ref("");
 const credential = ref<RegistrationCredential | null>(null);
+const cmsPage = ref<PublishedPage | null>(null);
 const loading = ref(false);
 const error = ref("");
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("registration-success");
+
+const FALLBACK_CREDENTIAL_COMPONENTS: CmsComponent[] = [
+  { id: "credential-header-default", type: "credential-header", enabled: true, sortOrder: 0, config: { title: "报名成功", statusText: "报名成功" } },
+  { id: "credential-qr-default", type: "credential-qr", enabled: true, sortOrder: 10, config: { title: "电子报名凭证", description: "请妥善保存报名凭证，工作人员可扫码完成签到核销。二维码不包含手机号、姓名等个人信息。" } },
+  { id: "credential-conference-default", type: "credential-conference-info", enabled: true, sortOrder: 20, config: { title: "会议信息" } },
+  { id: "credential-attendee-default", type: "credential-attendee-info", enabled: true, sortOrder: 30, config: { title: "参会人信息", showWechatUser: true } },
+  { id: "credential-payment-default", type: "credential-payment-info", enabled: true, sortOrder: 40, config: { title: "支付信息" } },
+  { id: "credential-form-default", type: "credential-form-summary", enabled: true, sortOrder: 50, config: { title: "报名表单摘要", emptyText: "暂无补充报名字段" } },
+  { id: "credential-checkin-default", type: "credential-checkin-info", enabled: true, sortOrder: 60, config: { title: "签到信息" } },
+  { id: "credential-actions-default", type: "credential-actions", enabled: true, sortOrder: 70, config: { checkinText: "去签到", groupText: "加入会议客户群", agendaText: "查看议程", guideText: "参会指南", contactText: "联系客服", calendarText: "添加到日历" } }
+];
+
+const credentialComponents = computed(() => {
+  const published = cmsPage.value?.version.components.filter((item) => item.type.startsWith("credential-")) ?? [];
+  const source = published.length > 0 ? published : FALLBACK_CREDENTIAL_COMPONENTS;
+  return source.filter((item) => item.enabled).sort((a, b) => a.sortOrder - b.sortOrder);
+});
 
 onLoad((query) => {
   registrationId.value = String(query?.registrationId || "");
@@ -133,9 +159,15 @@ async function loadCredential() {
   error.value = "";
   try {
     await ensureLogin();
-    credential.value = registrationId.value
-      ? await getRegistrationCredential(registrationId.value)
-      : await getOrderRegistrationCredential(orderNo.value);
+    const [credentialData, page] = await Promise.all([
+      registrationId.value
+        ? getRegistrationCredential(registrationId.value)
+        : getOrderRegistrationCredential(orderNo.value),
+      getPublishedPage("registration-success")
+    ]);
+    credential.value = credentialData;
+    cmsPage.value = page;
+    applyPageTitle(page, "报名凭证");
   } catch (err) {
     console.error("[REGISTRATION_CREDENTIAL_LOAD_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
@@ -190,6 +222,29 @@ function providerText(value: string | null | undefined) {
 function displayText(value: string | null | undefined) {
   return typeof value === "string" && value.trim() ? value.trim() : "未填写";
 }
+
+function stringConfig(component: CmsComponent, key: string): string {
+  const value = component.config?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function booleanConfig(component: CmsComponent, key: string, fallback = false): boolean {
+  const value = component.config?.[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function componentTitle(component: CmsComponent, fallback: string): string {
+  return stringConfig(component, "title") || fallback;
+}
+
+function credentialBlockClass(component: CmsComponent) {
+  const style = stringConfig(component, "cardStyle") || "standard";
+  const base = [`is-${style}`];
+  if (component.type === "credential-header") return ["success-band", ...base];
+  if (component.type === "credential-qr") return ["qr-panel", ...base];
+  if (component.type === "credential-actions") return ["actions", ...base];
+  return ["section", ...base];
+}
 </script>
 
 <style scoped>
@@ -215,6 +270,19 @@ function displayText(value: string | null | undefined) {
   border-radius: var(--ui-radius);
   background: var(--ui-color-surface);
   box-shadow: var(--ui-shadow-card);
+}
+
+.success-band.is-highlight,
+.qr-panel.is-highlight,
+.section.is-highlight {
+  border-color: var(--ui-color-primary);
+  background: linear-gradient(135deg, var(--ui-color-primary-soft), var(--ui-color-surface));
+}
+
+.success-band.is-plain,
+.qr-panel.is-plain,
+.section.is-plain {
+  box-shadow: none;
 }
 
 .success-band {
@@ -339,8 +407,21 @@ function displayText(value: string | null | undefined) {
   gap: 16rpx;
 }
 
+.actions.is-highlight {
+  padding: 20rpx;
+  border: 1px solid var(--ui-color-primary);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-primary-soft);
+}
+
 .action {
   width: 100%;
+}
+
+.empty-copy {
+  color: var(--ui-color-muted);
+  font-size: 25rpx;
+  line-height: 1.6;
 }
 
 .wechat-user {
