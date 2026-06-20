@@ -93,9 +93,12 @@ function withAlpha(value: string, alpha: number): string {
 
 <style scoped>
 .theme-dynamic-bg-preview {
-  position: absolute;
-  inset: 0;
+  position: sticky;
+  top: 0;
   z-index: 0;
+  width: 100%;
+  min-height: 620px;
+  margin-bottom: -620px;
   overflow: hidden;
   pointer-events: none;
 }

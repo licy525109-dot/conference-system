@@ -275,6 +275,60 @@
           </el-form>
         </section>
 
+        <section v-if="showBusinessDisplayEditor" class="data-panel cms-panel inspector-panel">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">固定业务模块</div>
+              <p class="page-subtitle">控制小程序真实业务页的固定信息区，配置会随当前通用模板或指定会议页一起发布。</p>
+            </div>
+          </div>
+          <el-alert
+            class="business-display-alert"
+            type="info"
+            :closable="false"
+            show-icon
+            title="业务数据仍来自会议、票种和报名接口"
+            description="这里负责显示隐藏、标题文案、按钮文案和库存展示方式；会议名称、时间、地点、价格、库存和报名状态仍以真实业务数据为准。"
+          />
+          <el-form label-position="top" class="business-display-form">
+            <el-form-item label="底部报名按钮文案">
+              <el-input v-model="businessDisplay.primaryButtonText" placeholder="立即报名" />
+            </el-form-item>
+            <el-form-item label="库存展示方式">
+              <el-select v-model="businessDisplay.inventoryDisplayMode">
+                <el-option label="显示库存状态" value="STATUS" />
+                <el-option label="显示精确库存" value="EXACT" />
+                <el-option label="隐藏库存" value="HIDDEN" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="库存紧张阈值">
+              <el-input-number v-model="businessDisplay.lowStockThreshold" :min="1" :max="999" />
+            </el-form-item>
+            <el-form-item label="会议助手">
+              <el-select v-model="businessDisplay.assistantMode">
+                <el-option label="显示 AI 会议助手" value="ai" />
+                <el-option label="隐藏会议助手" value="hidden" />
+              </el-select>
+            </el-form-item>
+            <div class="business-module-list">
+              <div v-for="module in businessDisplay.modules" :key="module.key" class="business-module-card">
+                <div class="business-module-card__head">
+                  <strong>{{ businessModuleLabel(module.key) }}</strong>
+                  <el-switch v-model="module.visible" active-text="显示" inactive-text="隐藏" />
+                </div>
+                <el-input v-model="module.title" size="small" placeholder="模块标题" />
+                <el-input
+                  v-if="businessModuleAllowsContent(module.key)"
+                  v-model="module.content"
+                  type="textarea"
+                  :rows="2"
+                  placeholder="模块说明或按钮文案，可留空使用真实数据兜底"
+                />
+              </div>
+            </div>
+          </el-form>
+        </section>
+
         <section class="data-panel cms-panel inspector-panel">
           <div class="library-head">
             <div>
@@ -590,6 +644,23 @@ interface PageMetaForm {
   shareImageUrl: string;
 }
 
+interface BusinessDisplayModule {
+  key: string;
+  title: string;
+  content: string;
+  visible: boolean;
+  sort: number;
+  style: string;
+}
+
+interface BusinessDisplayForm {
+  modules: BusinessDisplayModule[];
+  assistantMode: string;
+  primaryButtonText: string;
+  inventoryDisplayMode: "EXACT" | "STATUS" | "HIDDEN";
+  lowStockThreshold: number;
+}
+
 interface CmsComponentSupportMeta {
   label: string;
   status: CmsComponentSupportStatus;
@@ -603,6 +674,7 @@ interface BusinessPreviewContextModel {
   subtitle: string;
   rows: Array<{ label: string; value: string }>;
   notice: string;
+  modules?: BusinessDisplayModule[];
   cta?: string;
 }
 
@@ -686,6 +758,22 @@ const DEFAULT_PREVIEW_THEME: ThemeConfig = {
   themeApplyMode: "all",
   themeApplyPageKeys: []
 };
+
+const DEFAULT_BUSINESS_MODULES: BusinessDisplayModule[] = [
+  { key: "conferenceInfo", title: "会议信息", content: "", visible: true, sort: 10, style: "card" },
+  { key: "assistant", title: "会议助手", content: "", visible: true, sort: 20, style: "card" },
+  { key: "speakers", title: "嘉宾介绍", content: "", visible: true, sort: 30, style: "card" },
+  { key: "schedule", title: "日程安排", content: "", visible: true, sort: 40, style: "card" },
+  { key: "location", title: "会议地点", content: "", visible: true, sort: 50, style: "card" },
+  { key: "skus", title: "报名规格", content: "", visible: true, sort: 60, style: "card" },
+  { key: "inventory", title: "库存展示", content: "", visible: true, sort: 70, style: "compact" },
+  { key: "guide", title: "参会指南", content: "", visible: true, sort: 80, style: "card" },
+  { key: "customerService", title: "联系客服", content: "", visible: false, sort: 90, style: "compact" },
+  { key: "customerGroup", title: "加入客户群", content: "", visible: false, sort: 100, style: "compact" },
+  { key: "calendar", title: "添加到日历", content: "", visible: false, sort: 110, style: "compact" },
+  { key: "registrationButton", title: "立即报名", content: "", visible: true, sort: 120, style: "accent" },
+  { key: "shareButton", title: "分享会议", content: "分享给微信好友", visible: true, sort: 130, style: "compact" }
+];
 
 const pages = ref<PageTemplate[]>([]);
 const libraryTemplates = ref<PageLibraryTemplate[]>([]);
@@ -775,6 +863,7 @@ const materialEmptyText = computed(() => {
 const expandedComponentIds = ref<string[]>([]);
 const expandedConfigGroupIds = reactive<Record<string, string[]>>({});
 const pageMeta = reactive<PageMetaForm>({ pageTitle: "", shareTitle: "", shareDescription: "", shareImageUrl: "" });
+const businessDisplay = reactive<BusinessDisplayForm>(defaultBusinessDisplay());
 
 const presetGroups = computed(() => {
   const groups = new Map<string, ComponentPreset[]>();
@@ -829,6 +918,19 @@ const previewContextConferences = computed(() => {
   return previewConferences.value;
 });
 const selectedPageContextText = computed(() => (selectedPage.value ? pageContextText(selectedPage.value) : "未选择页面"));
+const showBusinessDisplayEditor = computed(() => {
+  const page = selectedPage.value;
+  return Boolean(page && (page.pageKey === "conference-detail" || ["CONFERENCE_DETAIL", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_DETAIL_PAGE"].includes(page.pageType)));
+});
+const previewBusinessModules = computed(() =>
+  businessDisplay.modules
+    .map((module) => ({
+      ...module,
+      visible: module.key === "assistant" && businessDisplay.assistantMode === "hidden" ? false : module.visible
+    }))
+    .filter((module) => module.visible)
+    .sort((a, b) => a.sort - b.sort)
+);
 const previewContextHint = computed(() => {
   const page = selectedPage.value;
   if (!page) return "";
@@ -865,7 +967,8 @@ const businessPreviewContext = computed<BusinessPreviewContextModel | null>(() =
         { label: "报名状态", value: "由会议报名时间和票种库存实时计算" }
       ],
       notice: "小程序真实页会先展示会议固定信息和底部报名按钮，再展示当前 CMS 组件。",
-      cta: "立即报名"
+      modules: previewBusinessModules.value,
+      cta: businessDisplay.primaryButtonText || "立即报名"
     };
   }
 
@@ -1355,6 +1458,9 @@ function previewBodyBackground(theme: ThemeConfig): string {
     return `${overlay}url("${theme.backgroundImageUrl}") center top / cover no-repeat`;
   }
   if (theme.backgroundMode === "gradient" || theme.backgroundMode === "dynamic-gradient") {
+    if (theme.backgroundMode === "dynamic-gradient") {
+      return theme.backgroundColor || DEFAULT_PREVIEW_THEME.backgroundColor;
+    }
     return `linear-gradient(180deg, ${theme.backgroundGradientFrom || theme.backgroundColor || DEFAULT_PREVIEW_THEME.backgroundColor}, ${theme.backgroundGradientTo || theme.secondaryColor || DEFAULT_PREVIEW_THEME.secondaryColor})`;
   }
   if (theme.backgroundMode === "video" && theme.backgroundVideoPosterUrl) {
@@ -1438,6 +1544,7 @@ function applyPageMeta(themeJson: Record<string, unknown> | null | undefined, fa
   pageMeta.shareTitle = meta.shareTitle || fallbackTitle || "";
   pageMeta.shareDescription = meta.shareDescription || "";
   pageMeta.shareImageUrl = meta.shareImageUrl || "";
+  applyBusinessDisplay(themeJson);
 }
 
 function readPageMeta(themeJson: Record<string, unknown> | null | undefined): PageMetaForm {
@@ -1459,8 +1566,92 @@ function nextThemeJson(): Record<string, unknown> {
       shareTitle: pageMeta.shareTitle.trim(),
       shareDescription: pageMeta.shareDescription.trim(),
       shareImageUrl: pageMeta.shareImageUrl.trim()
+    },
+    businessDisplay: {
+      ...readRecord(version.value?.themeJson?.businessDisplay),
+      conferenceDetail: serializeBusinessDisplay()
     }
   };
+}
+
+function defaultBusinessDisplay(): BusinessDisplayForm {
+  return {
+    modules: DEFAULT_BUSINESS_MODULES.map((module) => ({ ...module })),
+    assistantMode: "ai",
+    primaryButtonText: "立即报名",
+    inventoryDisplayMode: "STATUS",
+    lowStockThreshold: 10
+  };
+}
+
+function applyBusinessDisplay(themeJson: Record<string, unknown> | null | undefined) {
+  const next = readBusinessDisplay(themeJson);
+  businessDisplay.modules = next.modules;
+  businessDisplay.assistantMode = next.assistantMode;
+  businessDisplay.primaryButtonText = next.primaryButtonText;
+  businessDisplay.inventoryDisplayMode = next.inventoryDisplayMode;
+  businessDisplay.lowStockThreshold = next.lowStockThreshold;
+}
+
+function readBusinessDisplay(themeJson: Record<string, unknown> | null | undefined): BusinessDisplayForm {
+  const businessDisplaySource = readRecord(themeJson?.businessDisplay);
+  const source = readRecord(businessDisplaySource.conferenceDetail ?? themeJson?.detailDisplay);
+  const mode = String(source.inventoryDisplayMode || "STATUS").toUpperCase();
+  const rawModules = Array.isArray(source.modules) ? source.modules : [];
+  const oldVisibleModules = Array.isArray(source.visibleModules) ? source.visibleModules.filter((item): item is string => typeof item === "string") : [];
+  const oldVisible = new Set(oldVisibleModules);
+  const modules = DEFAULT_BUSINESS_MODULES.map((module) => {
+    const configured = readRecord(rawModules.find((item) => readRecord(item).key === module.key));
+    const hasOldVisible = oldVisibleModules.length > 0;
+    return {
+      ...module,
+      title: readString(configured.title) || module.title,
+      content: readString(configured.content),
+      visible: typeof configured.visible === "boolean" ? configured.visible : hasOldVisible ? oldVisible.has(module.key) : module.visible,
+      sort: Number.isFinite(Number(configured.sort)) ? Number(configured.sort) : module.sort,
+      style: readString(configured.style) || module.style
+    };
+  }).sort((a, b) => a.sort - b.sort);
+  return {
+    modules,
+    assistantMode: readString(source.assistantMode) || "ai",
+    primaryButtonText: readString(source.primaryButtonText) || "立即报名",
+    inventoryDisplayMode: mode === "EXACT" || mode === "HIDDEN" ? mode : "STATUS",
+    lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : 10
+  };
+}
+
+function serializeBusinessDisplay(): Record<string, unknown> {
+  return {
+    modules: businessDisplay.modules.map((module, index) => ({
+      key: module.key,
+      title: module.title.trim() || businessModuleLabel(module.key),
+      content: module.content.trim(),
+      visible: module.visible,
+      sort: index * 10 + 10,
+      style: module.style || "card"
+    })),
+    assistantMode: businessDisplay.assistantMode || "ai",
+    primaryButtonText: businessDisplay.primaryButtonText.trim() || "立即报名",
+    inventoryDisplayMode: businessDisplay.inventoryDisplayMode,
+    lowStockThreshold: Math.max(1, Number(businessDisplay.lowStockThreshold) || 10)
+  };
+}
+
+function businessModuleLabel(key: string): string {
+  return DEFAULT_BUSINESS_MODULES.find((module) => module.key === key)?.title || key;
+}
+
+function businessModuleAllowsContent(key: string): boolean {
+  return ["speakers", "schedule", "location", "customerService", "customerGroup", "calendar", "shareButton"].includes(key);
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function templateComponentNames(template: PageLibraryTemplate): string[] {
@@ -2198,23 +2389,64 @@ const BusinessPreviewContext = defineComponent({
     context: { type: Object as () => BusinessPreviewContextModel, required: true }
   },
   setup(props) {
+    const isVisible = (key: string) => props.context.modules?.some((module) => module.key === key && module.visible) ?? true;
+    const moduleTitle = (key: string, fallback: string) => props.context.modules?.find((module) => module.key === key)?.title || fallback;
+    const moduleContent = (key: string, fallback: string) => props.context.modules?.find((module) => module.key === key)?.content || fallback;
+    const textModules = () =>
+      (props.context.modules ?? [])
+        .filter((module) => ["speakers", "schedule", "location", "customerService", "customerGroup", "calendar", "shareButton"].includes(module.key) && module.visible)
+        .map((module) =>
+          h("div", { key: module.key, class: "business-preview__module" }, [
+            h("strong", module.title || businessModuleLabel(module.key)),
+            h("p", module.content || businessModuleFallback(module.key))
+          ])
+        );
     return () =>
       h("div", { class: ["business-preview", `is-${props.context.kind}`] }, [
-        h("span", { class: "business-preview__label" }, props.context.label),
-        h("strong", props.context.title),
-        h("p", props.context.subtitle),
-        h(
-          "div",
-          { class: "business-preview__rows" },
-          props.context.rows.map((row) =>
-            h("span", { key: row.label }, [h("small", row.label), h("b", row.value)])
-          )
-        ),
-        h("em", props.context.notice),
-        props.context.cta ? h("button", props.context.cta) : null
+        isVisible("conferenceInfo")
+          ? h("div", { class: "business-preview__hero" }, [
+              h("span", { class: "business-preview__label" }, props.context.label),
+              h("strong", props.context.title),
+              h("p", props.context.subtitle),
+              h(
+                "div",
+                { class: "business-preview__rows" },
+                props.context.rows.map((row) =>
+                  h("span", { key: row.label }, [h("small", row.label), h("b", row.value)])
+                )
+              )
+            ])
+          : null,
+        isVisible("assistant") ? h("div", { class: "business-preview__assistant" }, "会议助手") : null,
+        ...textModules(),
+        isVisible("skus")
+          ? h("div", { class: "business-preview__module" }, [
+              h("strong", moduleTitle("skus", "报名规格")),
+              h("p", "票种、价格和库存来自当前会议真实配置，提交订单时后端重新计价。"),
+              isVisible("inventory") ? h("span", { class: "business-preview__stock" }, `库存展示：${businessDisplay.inventoryDisplayMode}`) : null
+            ])
+          : null,
+        isVisible("guide")
+          ? h("div", { class: "business-preview__module is-guide" }, [
+              h("strong", moduleTitle("guide", "参会指南")),
+              h("p", props.context.notice)
+            ])
+          : null,
+        props.context.cta && isVisible("registrationButton") ? h("button", moduleContent("registrationButton", props.context.cta)) : null
       ]);
   }
 });
+
+function businessModuleFallback(key: string): string {
+  if (key === "location") return "会议地点优先展示真实会议地址。";
+  if (key === "customerService") return "可在会议配置中维护客服入口。";
+  if (key === "customerGroup") return "可绑定企业微信客户群入口。";
+  if (key === "calendar") return "用户可根据会议时间添加个人日程。";
+  if (key === "shareButton") return "分享给微信好友。";
+  if (key === "speakers") return "嘉宾介绍由主办方维护，请以现场安排为准。";
+  if (key === "schedule") return "日程安排由主办方维护，请以现场通知为准。";
+  return "";
+}
 
 const ComponentPreview = defineComponent({
   name: "ComponentPreview",
@@ -3273,7 +3505,8 @@ function splitPreviewLine(value: string): string[] {
   overflow: auto;
   background: var(--preview-page-bg);
   background-repeat: no-repeat;
-  background-size: 100% 100%;
+  background-size: cover;
+  background-attachment: local;
   box-sizing: border-box;
 }
 
@@ -3281,7 +3514,7 @@ function splitPreviewLine(value: string): string[] {
   position: relative;
   z-index: 1;
   min-height: 560px;
-  padding: 8px 0 14px;
+  padding: 8px 0 86px;
   box-sizing: border-box;
 }
 
@@ -4352,11 +4585,19 @@ function splitPreviewLine(value: string): string[] {
   flex-direction: column;
   gap: 10px;
   margin: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #172033;
+}
+
+.business-preview__hero,
+.business-preview__module,
+.business-preview__assistant {
   padding: 16px;
   border: 1px solid rgb(255 255 255 / 70%);
   border-radius: calc(var(--preview-radius) + 10px);
   background: rgb(255 255 255 / 92%);
-  color: #172033;
   box-shadow: 0 12px 30px rgb(15 23 42 / 10%);
 }
 
@@ -4371,6 +4612,7 @@ function splitPreviewLine(value: string): string[] {
 }
 
 .business-preview strong {
+  display: block;
   color: #172033;
   font-size: 21px;
   line-height: 1.25;
@@ -4388,6 +4630,7 @@ function splitPreviewLine(value: string): string[] {
 .business-preview__rows {
   display: grid;
   gap: 7px;
+  margin-top: 10px;
   padding: 10px;
   border-radius: var(--preview-radius);
   background: #f6f8fb;
@@ -4421,6 +4664,72 @@ function splitPreviewLine(value: string): string[] {
   background: linear-gradient(135deg, var(--preview-primary), var(--preview-secondary));
   color: #ffffff;
   font-weight: 800;
+}
+
+.business-preview__assistant {
+  padding: 10px 14px;
+  text-align: center;
+  color: var(--preview-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.business-preview__module strong {
+  margin-bottom: 6px;
+  font-size: 15px;
+}
+
+.business-preview__module.is-guide {
+  border-style: dashed;
+}
+
+.business-preview__stock {
+  display: inline-flex;
+  margin-top: 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--preview-primary) 12%, #ffffff);
+  color: var(--preview-primary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.business-display-alert {
+  margin-bottom: 12px;
+}
+
+.business-display-form {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.business-module-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.business-module-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgb(218 226 238 / 94%);
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.business-module-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.business-module-card__head strong {
+  color: #172033;
+  font-size: 13px;
 }
 
 .preview-block.is-selected {

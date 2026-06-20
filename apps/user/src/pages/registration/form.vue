@@ -226,7 +226,7 @@ const selectedAmountCent = computed(() =>
 );
 const totalTickets = computed(() => selectedItems.value.reduce((sum, item) => sum + item.quantity, 0));
 const payableAmountCent = computed(() => quote.value?.payableAmountCent ?? selectedAmountCent.value);
-const displaySettings = computed(() => normalizeDetailDisplay(conference.value?.contentJson));
+const displaySettings = computed(() => normalizeDetailDisplay(conference.value?.contentJson, readCmsBusinessDisplay(cmsPage.value)));
 const stockDisplayMode = computed(() => displaySettings.value.inventoryDisplayMode);
 const attendeeSectionDescription = computed(() =>
   totalTickets.value > 0 ? `共 ${totalTickets.value} 位参会人，请填写真实有效信息。` : "选择报名票数后自动生成表单。"
@@ -637,14 +637,23 @@ function readEventValue(event: unknown): unknown {
   return undefined;
 }
 
-function normalizeDetailDisplay(value: unknown) {
+function normalizeDetailDisplay(value: unknown, cmsDisplay: Record<string, unknown> = {}) {
   const content = readRecord(value);
-  const source = readRecord(content.detailDisplay);
+  const source = {
+    ...readRecord(content.detailDisplay),
+    ...cmsDisplay
+  };
   const mode = String(source.inventoryDisplayMode || "STATUS").toUpperCase();
   return {
     inventoryDisplayMode: mode === "EXACT" || mode === "HIDDEN" ? mode : "STATUS",
     lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : 10
   };
+}
+
+function readCmsBusinessDisplay(page: PublishedPage | null): Record<string, unknown> {
+  const themeJson = readRecord(page?.version.themeJson);
+  const businessDisplay = readRecord(themeJson.businessDisplay);
+  return readRecord(businessDisplay.conferenceDetail ?? themeJson.detailDisplay);
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

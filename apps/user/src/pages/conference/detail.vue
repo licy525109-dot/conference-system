@@ -130,7 +130,7 @@ const pageClass = computed(() => ["page", "ui-page"]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
 const showBodyDynamicBackground = computed(() => theme.value.backgroundMode === "dynamic-gradient" && theme.value.backgroundApplyTo !== "header");
 
-const displaySettings = computed(() => normalizeDetailDisplay(conference.value?.contentJson));
+const displaySettings = computed(() => normalizeDetailDisplay(conference.value?.contentJson, readCmsBusinessDisplay(cmsPage.value)));
 const stockDisplayMode = computed(() => displaySettings.value.inventoryDisplayMode);
 const showAssistant = computed(() => isModuleVisible("assistant") && displaySettings.value.assistantMode === "ai");
 const showRegistrationAction = computed(() => isModuleVisible("registrationButton") || isModuleVisible("submitOrder"));
@@ -262,7 +262,7 @@ function toContentText(value: unknown): string {
   return "";
 }
 
-function normalizeDetailDisplay(value: unknown) {
+function normalizeDetailDisplay(value: unknown, cmsDisplay: Record<string, unknown> = {}) {
   const defaults = {
     modules: defaultDetailModules(),
     visibleModules: ["conferenceInfo", "assistant", "skus", "inventory", "registrationButton", "guide"],
@@ -274,7 +274,10 @@ function normalizeDetailDisplay(value: unknown) {
     lowStockThreshold: 10
   };
   const content = readRecord(value);
-  const source = readRecord(content.detailPageDisplay ?? content.detailDisplay);
+  const source = {
+    ...readRecord(content.detailPageDisplay ?? content.detailDisplay),
+    ...cmsDisplay
+  };
   const modules = normalizeDetailModules(source);
   const visibleModules = Array.isArray(source.visibleModules) ? source.visibleModules.filter((item): item is string => typeof item === "string") : defaults.visibleModules;
   const mode = String(source.inventoryDisplayMode || defaults.inventoryDisplayMode).toUpperCase();
@@ -289,6 +292,12 @@ function normalizeDetailDisplay(value: unknown) {
     inventoryDisplayMode: mode === "EXACT" || mode === "HIDDEN" ? mode : "STATUS",
     lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : defaults.lowStockThreshold
   };
+}
+
+function readCmsBusinessDisplay(page: PublishedPage | null): Record<string, unknown> {
+  const themeJson = readRecord(page?.version.themeJson);
+  const businessDisplay = readRecord(themeJson.businessDisplay);
+  return readRecord(businessDisplay.conferenceDetail ?? themeJson.detailDisplay);
 }
 
 function defaultDetailModules() {
