@@ -10,6 +10,11 @@
         <text class="success-kicker">报名成功</text>
         <text class="success-title">{{ credential.conference.name }}</text>
         <text class="success-no">报名号：{{ credential.registrationNo }}</text>
+        <view class="credential-status-row">
+          <text>支付状态：{{ paymentStatusText(credential.payment.status) }}</text>
+          <text>报名状态：{{ registrationStatusText(credential.status) }}</text>
+          <text>签到状态：{{ checkinStatusText(credential.checkIn.status) }}</text>
+        </view>
       </view>
 
       <view class="qr-panel">
@@ -41,6 +46,10 @@
       <view class="section">
         <text class="section-title">支付信息</text>
         <InfoLine label="支付金额" :value="`¥${formatCent(credential.payment.paidAmountCent)}`" highlight />
+        <InfoLine label="支付状态" :value="paymentStatusText(credential.payment.status)" />
+        <InfoLine label="报名状态" :value="registrationStatusText(credential.status)" />
+        <InfoLine label="签到状态" :value="checkinStatusText(credential.checkIn.status)" />
+        <InfoLine v-if="credential.checkIn.checkedInAt" label="签到时间" :value="formatDateTime(credential.checkIn.checkedInAt)" />
         <InfoLine label="订单号" :value="credential.order.orderNo" />
         <InfoLine label="支付时间" :value="formatDateTime(credential.payment.paidAt) || '-'" />
       </view>
@@ -146,17 +155,34 @@ function goCheckin() {
 function goMyRegistrations() {
   uni.navigateTo({ url: "/pages/registrations/my" });
 }
+
+function paymentStatusText(value: string) {
+  return ({ SUCCESS: "支付成功", PAID: "已支付", PENDING: "待支付", FAILED: "支付失败" } as Record<string, string>)[value] ?? value;
+}
+
+function registrationStatusText(value: string) {
+  return ({ CONFIRMED: "已确认", PENDING: "待确认", CANCELLED: "已取消", REFUNDED: "已退款" } as Record<string, string>)[value] ?? value;
+}
+
+function checkinStatusText(value: string) {
+  return ({ NOT_REQUIRED: "无需签到核销", PENDING: "待签到", CHECKED_IN: "已签到", CANCELLED: "已取消" } as Record<string, string>)[value] ?? value;
+}
 </script>
 
 <style scoped>
 .page {
+  position: relative;
+  min-height: 100vh;
   padding-bottom: 72rpx;
 }
 
 .credential {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 20rpx;
+  padding: 24rpx;
 }
 
 .success-band,
@@ -189,10 +215,34 @@ function goMyRegistrations() {
   line-height: 1.25;
 }
 
+.credential-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.credential-status-row text {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: var(--ui-color-primary-soft);
+  color: var(--ui-color-primary);
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
 .qr-panel {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 24rpx;
   padding: 28rpx;
+}
+
+.qr-panel :deep(.qr-shell) {
+  width: 320rpx;
+  height: 320rpx;
+  border-radius: 18rpx;
 }
 
 .qr-code {
@@ -202,8 +252,9 @@ function goMyRegistrations() {
 }
 
 .qr-copy {
-  flex: 1;
+  width: 100%;
   min-width: 0;
+  text-align: center;
 }
 
 .qr-title,

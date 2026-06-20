@@ -1,9 +1,20 @@
+import { randomBytes } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { CouponClaimStatus, InvoiceStatus, Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { decryptSecret } from "../wecom/wecom.crypto";
 import { resolveMallPaymentRuntime, type MallPaymentRuntimeConfig } from "../mall/mall-payment.config";
+
+const UPLOADS_ROOT = resolve(process.env.UPLOADS_DIR || join(inferProjectRoot(process.cwd()), "uploads"));
+const AFTERSALE_UPLOAD_DIR = join(UPLOADS_ROOT, "aftersales");
+const AFTERSALE_IMAGE_TYPES: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp"
+};
 
 @Injectable()
 export class PublicOperationsService {
@@ -205,23 +216,46 @@ export class PublicOperationsService {
     });
     const issuedOrPendingAmountCent = existing.reduce((sum, item) => sum + item.amountCent, 0);
     if (issuedOrPendingAmountCent >= paidAmountCent) throw new ConflictException("该订单已存在发票申请或已完成开票");
-    const item = await this.prisma.invoiceApplication.create({
-      data: {
-        invoiceNo: generateCode("INV"),
-        sourceType,
-        orderNo,
-        orderId: sourceType === "REGISTRATION" ? order.id : null,
-        userId: currentUser.id,
-        title: readRequiredString(body, "title"),
-        taxNo: readNullableString(body.taxNo),
-        invoiceType: readOptionalString(body.invoiceType) ?? "GENERAL",
-        email: readNullableString(body.email),
-        phone: readNullableString(body.phone),
-        amountCent: paidAmountCent - issuedOrPendingAmountCent,
-        remark: readNullableString(body.remark),
-        status: InvoiceStatus.REQUESTED
-      }
+    const profileData = readInvoiceProfileData(body);
+    const item = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.invoiceApplication.create({
+        data: {
+          invoiceNo: generateCode("INV"),
+          sourceType,
+          orderNo,
+          orderId: sourceType === "REGISTRATION" ? order.id : null,
+          userId: currentUser.id,
+          title: profileData.title,
+          taxNo: profileData.taxNo,
+          invoiceType: profileData.invoiceType,
+          email: profileData.email,
+          phone: profileData.phone,
+          address: profileData.address,
+          bankName: profileData.bankName,
+          bankAccount: profileData.bankAccount,
+          amountCent: paidAmountCent - issuedOrPendingAmountCent,
+          remark: readNullableString(body.remark),
+          status: InvoiceStatus.REQUESTED
+        }
+      });
+      if (readBooleanDefault(body.saveAsDefault, true)) await upsertDefaultInvoiceProfile(tx, currentUser.id, profileData);
+      return created;
     });
+    return ok(formatDateFields(item));
+  }
+
+  async myInvoiceProfile(currentUser: CurrentUser | undefined) {
+    if (!currentUser) throw new UnauthorizedException("Bearer token is required");
+    const item = await this.prisma.invoiceProfile.findFirst({
+      where: { userId: currentUser.id, isDefault: true },
+      orderBy: { updatedAt: "desc" }
+    });
+    return ok({ item: item ? formatDateFields(item) : null });
+  }
+
+  async saveInvoiceProfile(input: unknown, currentUser: CurrentUser | undefined) {
+    if (!currentUser) throw new UnauthorizedException("Bearer token is required");
+    const item = await this.prisma.$transaction((tx) => upsertDefaultInvoiceProfile(tx, currentUser.id, readInvoiceProfileData(readObject(input))));
     return ok(formatDateFields(item));
   }
 
@@ -295,11 +329,22 @@ export class PublicOperationsService {
       })
     ]);
     const items: Array<Record<string, unknown>> = [
-      ...registrationRefunds.map((item) => ({ ...formatDateFields(item), sourceType: "REGISTRATION", orderNo: item.orderNo })),
-      ...mallRefunds.map((item) => ({ ...formatDateFields(item), sourceType: "MALL", orderNo: item.order.orderNo, afterSaleStatus: item.afterSale?.status ?? null }))
+      ...registrationRefunds.map((item) => ({ ...formatDateFields(item), sourceType: "REGISTRATION", orderNo: item.orderNo, refundNotice: item.failedReason ?? publicRefundNotice(String(item.status)) })),
+      ...mallRefunds.map((item) => ({ ...formatDateFields(item), sourceType: "MALL", orderNo: item.order.orderNo, afterSaleStatus: item.afterSale?.status ?? null, refundNotice: item.failedReason ?? publicRefundNotice(String(item.status)) }))
     ];
     items.sort((a, b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt)));
     return ok({ items });
+  }
+
+  async uploadAfterSaleAttachment(file: { buffer: Buffer; originalname?: string; mimetype?: string; size: number } | undefined, publicOrigin: string) {
+    if (!file) throw new BadRequestException("售后凭证图片不能为空");
+    const extension = AFTERSALE_IMAGE_TYPES[file.mimetype || ""];
+    if (!extension) throw new BadRequestException("售后凭证仅支持 JPG/PNG/WebP 图片");
+    if (file.size > 2 * 1024 * 1024) throw new BadRequestException("售后凭证图片单张不能超过 2MB");
+    mkdirSync(AFTERSALE_UPLOAD_DIR, { recursive: true });
+    const fileName = `${Date.now()}-${randomBytes(8).toString("hex")}${extension}`;
+    writeFileSync(join(AFTERSALE_UPLOAD_DIR, fileName), file.buffer, { flag: "wx" });
+    return ok({ url: `${publicOrigin.replace(/\/$/, "")}/uploads/aftersales/${fileName}` });
   }
 
   async myMallOrders(currentUser: CurrentUser | undefined) {
@@ -331,6 +376,8 @@ export class PublicOperationsService {
     const body = readObject(input);
     const orderId = readRequiredString(body, "orderId");
     const type = readMallAfterSaleType(body.type);
+    const reason = readRequiredString(body, "reason");
+    const attachments = readAttachmentUrls(body.attachments ?? body.attachmentUrls);
     const order = await this.prisma.mallOrder.findFirst({
       where: { id: orderId, userId: currentUser.id },
       include: { afterSales: true }
@@ -344,8 +391,9 @@ export class PublicOperationsService {
           orderId,
           type,
           status: "REQUESTED",
-          reason: readNullableString(body.reason),
-          note: readNullableString(body.note)
+          reason,
+          note: readNullableString(body.note),
+          attachmentsJson: attachments
         }
       });
       await tx.mallOrder.update({ where: { id: orderId }, data: { status: "REFUNDING" } });
@@ -416,6 +464,11 @@ function isEnabled(name: string): boolean {
   return process.env[name] === "true";
 }
 
+function inferProjectRoot(cwd: string): string {
+  if (cwd.endsWith("/services/api")) return resolve(cwd, "../..");
+  return cwd;
+}
+
 function readObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new BadRequestException("请求体格式不正确");
   return value as Record<string, unknown>;
@@ -433,6 +486,41 @@ function readNullableString(value: unknown): string | null {
 
 function readOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readBooleanDefault(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function readInvoiceProfileData(body: Record<string, unknown>) {
+  return {
+    title: readRequiredString(body, "title"),
+    taxNo: readNullableString(body.taxNo),
+    invoiceType: readOptionalString(body.invoiceType) ?? "GENERAL",
+    email: readNullableString(body.email),
+    phone: readNullableString(body.phone),
+    address: readNullableString(body.address),
+    bankName: readNullableString(body.bankName),
+    bankAccount: readNullableString(body.bankAccount)
+  };
+}
+
+async function upsertDefaultInvoiceProfile(tx: Prisma.TransactionClient, userId: string, data: ReturnType<typeof readInvoiceProfileData>) {
+  const current = await tx.invoiceProfile.findFirst({ where: { userId, isDefault: true }, orderBy: { updatedAt: "desc" } });
+  if (current) return tx.invoiceProfile.update({ where: { id: current.id }, data: { ...data, isDefault: true } });
+  return tx.invoiceProfile.create({ data: { userId, ...data, isDefault: true } });
+}
+
+function readAttachmentUrls(value: unknown): string[] {
+  if (typeof value === "undefined" || value === null || value === "") return [];
+  const list = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\n|,/) : null;
+  if (!list) throw new BadRequestException("售后凭证图片格式不正确");
+  const urls = list.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+  if (urls.length > 6) throw new BadRequestException("售后凭证图片最多上传 6 张");
+  for (const url of urls) {
+    if (!/^https?:\/\//.test(url) && !url.startsWith("/uploads/")) throw new BadRequestException("售后凭证图片必须是有效图片 URL");
+  }
+  return urls;
 }
 
 function normalizeFinanceSourceType(value: unknown): "REGISTRATION" | "MALL" {
@@ -513,6 +601,15 @@ function formatDateFields(item: Record<string, unknown>): Record<string, unknown
     if (value instanceof Date) output[key] = value.toISOString();
   }
   return output;
+}
+
+function publicRefundNotice(status: string): string {
+  if (status === "REQUESTED") return "退款申请已提交，等待后台审核。";
+  if (status === "PROCESSING") return "退款处理中，微信退款以回调确认到账；未配置微信退款时需线下处理。";
+  if (status === "SUCCESS") return "退款已完成。";
+  if (status === "REJECTED") return "退款申请已驳回。";
+  if (status === "FAILED") return "退款处理失败，请联系会务人员。";
+  return "";
 }
 
 function formatMallOrder(item: {

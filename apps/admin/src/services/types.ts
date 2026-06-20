@@ -607,6 +607,10 @@ export interface MaterialAsset {
     localPath?: string | null;
     localExists?: boolean;
     staticUrl?: string | null;
+    publicStatus?: number | null;
+    publicReachable?: boolean | null;
+    publicMime?: string | null;
+    checkedAt?: string | null;
     accessHint: string;
   };
 }
@@ -764,6 +768,9 @@ export interface ThemeConfig {
   splashAllowSkip?: boolean;
   splashSkipText?: string;
   splashFrequency?: string;
+  splashShowBottomText?: boolean;
+  splashBottomText?: string;
+  splashBottomTextStyle?: string;
   themeApplyMode?: string;
   themeApplyPageKeys?: string[];
   [key: string]: string | number | boolean | string[] | null | undefined;
@@ -1040,6 +1047,8 @@ export interface FinanceRefund {
   userName?: string | null;
   userPhone?: string | null;
   afterSaleStatus?: string | null;
+  maxRefundableAmountCent?: number | null;
+  refundNotice?: string | null;
 }
 
 export interface FinanceInvoice {
@@ -1053,6 +1062,9 @@ export interface FinanceInvoice {
   amountCent: number;
   email: string | null;
   phone: string | null;
+  address?: string | null;
+  bankName?: string | null;
+  bankAccount?: string | null;
   status: string;
   rejectReason: string | null;
   issuedInvoiceNo: string | null;
@@ -1195,6 +1207,7 @@ export interface MallAfterSale {
   status: string;
   reason: string | null;
   note: string | null;
+  attachmentsJson?: string[] | null;
   handledAt: string | null;
   createdAt: string;
   updatedAt: string;

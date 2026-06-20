@@ -36,8 +36,40 @@
         <button v-if="order.status === 'PENDING_PAYMENT'" class="ui-button-primary ui-button-compact" :disabled="payingId === order.id || order.paymentEnabled === false" @click="payOrder(order)">
           {{ payingId === order.id ? "确认中..." : order.paymentEnabled === false ? "支付暂未开放" : payButtonText }}
         </button>
-        <button v-if="canRequestAfterSale(order)" class="ui-button-secondary ui-button-compact" :disabled="submittingId === order.id" @click="requestAfterSale(order)">
-          {{ submittingId === order.id ? "提交中..." : "申请售后" }}
+        <button v-if="canRequestAfterSale(order)" class="ui-button-secondary ui-button-compact" :disabled="submittingId === order.id" @click="openAfterSale(order)">
+          申请售后
+        </button>
+      </view>
+    </view>
+
+    <view v-if="afterSaleVisible" class="sheet-mask" @click="closeAfterSale">
+      <view class="sheet ui-card" @click.stop>
+        <view class="sheet-head">
+          <view>
+            <text class="title">申请售后</text>
+            <text class="muted">{{ afterSaleOrder?.orderNo }}</text>
+          </view>
+          <button class="ui-button-secondary ui-button-compact" @click="closeAfterSale">关闭</button>
+        </view>
+        <picker :range="afterSaleTypeOptions" range-key="label" :value="afterSaleTypeIndex" @change="onAfterSaleTypeChange">
+          <view class="field picker">售后类型：{{ afterSaleTypeOptions[afterSaleTypeIndex]?.label }}</view>
+        </picker>
+        <textarea v-model="afterSaleForm.reason" class="field textarea" maxlength="200" placeholder="请填写售后原因（必填）" />
+        <textarea v-model="afterSaleForm.note" class="field textarea small" maxlength="200" placeholder="补充说明（选填）" />
+        <view class="upload-head">
+          <text class="muted">凭证图片（最多 6 张，JPG/PNG/WebP，单张不超过 2MB）</text>
+          <button class="ui-button-secondary ui-button-compact" :disabled="uploading || afterSaleForm.attachments.length >= 6" @click="chooseAfterSaleImages">
+            {{ uploading ? "上传中..." : "添加图片" }}
+          </button>
+        </view>
+        <view v-if="afterSaleForm.attachments.length" class="image-list">
+          <view v-for="(url, index) in afterSaleForm.attachments" :key="url" class="image-item">
+            <image :src="url" mode="aspectFill" />
+            <text @click="removeAfterSaleImage(index)">移除</text>
+          </view>
+        </view>
+        <button class="ui-button-primary" :loading="!!submittingId" @click="submitAfterSale">
+          {{ submittingId ? "提交中..." : "提交售后申请" }}
         </button>
       </view>
     </view>
@@ -49,7 +81,7 @@ import { onMounted, ref } from "vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
-import { createMallAfterSale, getMyMallOrders, startMallOrderPayment, type MallOrder } from "@/services/operations";
+import { createMallAfterSale, getMyMallOrders, startMallOrderPayment, uploadMallAfterSaleAttachment, type MallOrder } from "@/services/operations";
 import { formatCent } from "@/utils/money";
 
 const loading = ref(false);
@@ -57,6 +89,16 @@ const submittingId = ref("");
 const payingId = ref("");
 const orders = ref<MallOrder[]>([]);
 const payButtonText = "去支付";
+const uploading = ref(false);
+const afterSaleVisible = ref(false);
+const afterSaleOrder = ref<MallOrder | null>(null);
+const afterSaleTypeOptions = [
+  { label: "仅退款", value: "REFUND" },
+  { label: "退货退款", value: "RETURN_REFUND" },
+  { label: "换货", value: "EXCHANGE" }
+];
+const afterSaleTypeIndex = ref(0);
+const afterSaleForm = ref({ type: "REFUND", reason: "", note: "", attachments: [] as string[] });
 
 onMounted(() => void load());
 
@@ -96,10 +138,71 @@ async function payOrder(order: MallOrder) {
   }
 }
 
-async function requestAfterSale(order: MallOrder) {
+function openAfterSale(order: MallOrder) {
+  afterSaleOrder.value = order;
+  afterSaleForm.value = { type: "REFUND", reason: "", note: "", attachments: [] };
+  afterSaleTypeIndex.value = 0;
+  afterSaleVisible.value = true;
+}
+
+function closeAfterSale() {
+  if (submittingId.value || uploading.value) return;
+  afterSaleVisible.value = false;
+  afterSaleOrder.value = null;
+}
+
+function onAfterSaleTypeChange(event: { detail: { value: number } }) {
+  afterSaleTypeIndex.value = Number(event.detail.value || 0);
+  afterSaleForm.value.type = afterSaleTypeOptions[afterSaleTypeIndex.value]?.value || "REFUND";
+}
+
+function chooseAfterSaleImages() {
+  const remaining = 6 - afterSaleForm.value.attachments.length;
+  if (remaining <= 0) return;
+  uni.chooseImage({
+    count: remaining,
+    sizeType: ["compressed"],
+    success: (res) => void uploadAfterSaleImages(Array.isArray(res.tempFilePaths) ? res.tempFilePaths : [res.tempFilePaths].filter(Boolean) as string[])
+  });
+}
+
+async function uploadAfterSaleImages(paths: string[]) {
+  uploading.value = true;
+  try {
+    for (const path of paths.slice(0, 6 - afterSaleForm.value.attachments.length)) {
+      const url = await uploadMallAfterSaleAttachment(path);
+      afterSaleForm.value.attachments.push(url);
+    }
+  } catch (err) {
+    console.error("[MALL_AFTERSALE_UPLOAD_ERROR]", err);
+    uni.showToast({ title: err instanceof Error ? err.message : "凭证上传失败", icon: "none" });
+  } finally {
+    uploading.value = false;
+  }
+}
+
+function removeAfterSaleImage(index: number) {
+  afterSaleForm.value.attachments.splice(index, 1);
+}
+
+async function submitAfterSale() {
+  const order = afterSaleOrder.value;
+  if (!order) return;
+  if (!afterSaleForm.value.reason.trim()) {
+    uni.showToast({ title: "请填写售后原因", icon: "none" });
+    return;
+  }
   submittingId.value = order.id;
   try {
-    await createMallAfterSale({ orderId: order.id, type: "REFUND", reason: "用户在小程序端申请售后" });
+    await createMallAfterSale({
+      orderId: order.id,
+      type: afterSaleForm.value.type,
+      reason: afterSaleForm.value.reason.trim(),
+      note: afterSaleForm.value.note.trim(),
+      attachments: afterSaleForm.value.attachments
+    });
+    afterSaleVisible.value = false;
+    afterSaleOrder.value = null;
     uni.showToast({ title: "售后已提交", icon: "success" });
     await load();
   } catch (err) {
@@ -210,5 +313,83 @@ function providerText(value?: string | null) {
   display: flex;
   flex-direction: column;
   gap: 6rpx;
+}
+
+.sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(15 23 42 / 45%);
+}
+
+.sheet {
+  width: 100%;
+  max-height: 84vh;
+  overflow-y: auto;
+  padding: 28rpx;
+  border-radius: 28rpx 28rpx 0 0;
+}
+
+.sheet-head,
+.upload-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.field {
+  width: 100%;
+  min-height: 82rpx;
+  box-sizing: border-box;
+  margin-bottom: 16rpx;
+  padding: 18rpx 22rpx;
+  border: 1rpx solid var(--ui-color-border);
+  border-radius: var(--ui-radius-md);
+  background: #fff;
+  color: var(--ui-color-text);
+  font-size: 26rpx;
+}
+
+.textarea {
+  min-height: 150rpx;
+}
+
+.textarea.small {
+  min-height: 110rpx;
+}
+
+.image-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14rpx;
+  margin-bottom: 20rpx;
+}
+
+.image-item {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--ui-radius-md);
+  background: #f1f5f9;
+}
+
+.image-item image {
+  width: 100%;
+  height: 100%;
+}
+
+.image-item text {
+  position: absolute;
+  right: 8rpx;
+  bottom: 8rpx;
+  padding: 4rpx 10rpx;
+  border-radius: 999rpx;
+  background: rgb(15 23 42 / 72%);
+  color: #fff;
+  font-size: 22rpx;
 }
 </style>

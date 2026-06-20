@@ -18,6 +18,7 @@
       <text v-if="refund.reason" class="muted">原因：{{ refund.reason }}</text>
       <text v-if="refund.rejectReason" class="warning">驳回原因：{{ refund.rejectReason }}</text>
       <text v-if="refund.failedReason" class="warning">处理说明：{{ refund.failedReason }}</text>
+      <text v-else-if="refund.refundNotice" class="muted">处理说明：{{ refund.refundNotice }}</text>
       <text class="muted">申请时间：{{ formatDate(refund.createdAt || refund.requestedAt) }}</text>
     </view>
     <view v-if="!loading && refunds.length === 0" class="ui-card empty">暂无退款记录</view>

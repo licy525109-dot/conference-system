@@ -15,8 +15,19 @@
       <text v-else class="hint">只展示你本人已支付且仍有可开票额度的报名订单和商城订单。</text>
       <input v-model="form.title" class="field" placeholder="发票抬头" />
       <input v-model="form.taxNo" class="field" placeholder="税号（选填）" />
+      <picker :range="invoiceTypeOptions" range-key="label" :value="invoiceTypeIndex" @change="onInvoiceTypeChange">
+        <view class="field picker">发票类型：{{ invoiceTypeOptions[invoiceTypeIndex]?.label || "普通发票" }}</view>
+      </picker>
       <input v-model="form.email" class="field" placeholder="接收邮箱（选填）" />
       <input v-model="form.phone" class="field" placeholder="接收手机号（选填）" />
+      <input v-model="form.address" class="field" placeholder="注册地址（选填）" />
+      <input v-model="form.bankName" class="field" placeholder="开户银行（选填）" />
+      <input v-model="form.bankAccount" class="field" placeholder="银行账号（选填）" />
+      <view class="save-row">
+        <text>保存为常用发票信息</text>
+        <switch :checked="saveAsDefault" @change="onSaveDefaultChange" />
+      </view>
+      <button class="ui-button-secondary" :loading="savingProfile" @click="saveProfile">仅保存常用信息</button>
       <button class="ui-button-primary" :loading="loading" @click="submit">提交申请</button>
     </view>
 
@@ -31,6 +42,7 @@
       </view>
       <text class="muted">{{ sourceText(String(invoice.sourceType || "REGISTRATION")) }} · {{ invoice.orderNo }}</text>
       <text class="muted">{{ invoice.title }} · ¥{{ formatCent(Number(invoice.amountCent || 0)) }}</text>
+      <text v-if="invoice.email || invoice.phone" class="muted">接收：{{ invoice.email || "-" }} {{ invoice.phone || "" }}</text>
       <text v-if="invoice.rejectReason" class="warning">驳回原因：{{ invoice.rejectReason }}</text>
       <text v-if="invoice.issuedInvoiceNo" class="muted">开票号：{{ invoice.issuedInvoiceNo }}</text>
       <text v-if="invoice.invoiceLink" class="link" @click="copyLink(String(invoice.invoiceLink))">复制发票链接</text>
@@ -41,13 +53,20 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { createInvoiceApplication, getMyInvoiceableOrders, getMyInvoices, type InvoiceableOrder } from "@/services/operations";
+import { createInvoiceApplication, getMyInvoiceableOrders, getMyInvoiceProfile, getMyInvoices, saveMyInvoiceProfile, type InvoiceableOrder } from "@/services/operations";
 
 const loading = ref(false);
 const invoices = ref<Array<Record<string, unknown>>>([]);
 const invoiceableOrders = ref<Array<InvoiceableOrder & { label: string }>>([]);
 const orderIndex = ref(0);
-const form = reactive({ title: "", taxNo: "", email: "", phone: "" });
+const savingProfile = ref(false);
+const saveAsDefault = ref(true);
+const invoiceTypeOptions = [
+  { label: "普通发票", value: "GENERAL" },
+  { label: "专用发票", value: "SPECIAL" }
+];
+const invoiceTypeIndex = ref(0);
+const form = reactive({ title: "", taxNo: "", invoiceType: "GENERAL", email: "", phone: "", address: "", bankName: "", bankAccount: "" });
 const selectedOrder = computed(() => invoiceableOrders.value[orderIndex.value] ?? null);
 
 onMounted(() => void load());
@@ -55,13 +74,14 @@ onMounted(() => void load());
 async function load() {
   loading.value = true;
   try {
-    const [invoiceData, orderData] = await Promise.all([getMyInvoices(), getMyInvoiceableOrders()]);
+    const [invoiceData, orderData, profileData] = await Promise.all([getMyInvoices(), getMyInvoiceableOrders(), getMyInvoiceProfile()]);
     invoices.value = invoiceData.items;
     invoiceableOrders.value = orderData.items.map((item) => ({
       ...item,
       label: `${item.sourceText}｜${item.title}｜可开票 ¥${formatCent(item.availableAmountCent)}`
     }));
     if (orderIndex.value >= invoiceableOrders.value.length) orderIndex.value = 0;
+    if (profileData.item && !form.title) fillForm(profileData.item as unknown as Record<string, unknown>);
   } finally {
     loading.value = false;
   }
@@ -69,6 +89,15 @@ async function load() {
 
 function onOrderChange(event: { detail: { value: number } }) {
   orderIndex.value = Number(event.detail.value || 0);
+}
+
+function onInvoiceTypeChange(event: { detail: { value: number } }) {
+  invoiceTypeIndex.value = Number(event.detail.value || 0);
+  form.invoiceType = invoiceTypeOptions[invoiceTypeIndex.value]?.value || "GENERAL";
+}
+
+function onSaveDefaultChange(event: Event) {
+  saveAsDefault.value = Boolean((event as unknown as { detail?: { value?: boolean } }).detail?.value);
 }
 
 async function submit() {
@@ -82,11 +111,7 @@ async function submit() {
   }
   loading.value = true;
   try {
-    await createInvoiceApplication({ ...form, sourceType: selectedOrder.value.sourceType, orderNo: selectedOrder.value.orderNo });
-    form.title = "";
-    form.taxNo = "";
-    form.email = "";
-    form.phone = "";
+    await createInvoiceApplication({ ...form, saveAsDefault: saveAsDefault.value, sourceType: selectedOrder.value.sourceType, orderNo: selectedOrder.value.orderNo });
     await load();
     uni.showToast({ title: "已提交", icon: "success" });
   } catch (err) {
@@ -94,6 +119,34 @@ async function submit() {
   } finally {
     loading.value = false;
   }
+}
+
+async function saveProfile() {
+  if (!form.title.trim()) {
+    uni.showToast({ title: "请填写发票抬头", icon: "none" });
+    return;
+  }
+  savingProfile.value = true;
+  try {
+    await saveMyInvoiceProfile({ ...form, title: form.title.trim() });
+    uni.showToast({ title: "已保存", icon: "success" });
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : "保存失败", icon: "none" });
+  } finally {
+    savingProfile.value = false;
+  }
+}
+
+function fillForm(profile: Record<string, unknown>) {
+  form.title = String(profile.title || "");
+  form.taxNo = String(profile.taxNo || "");
+  form.invoiceType = String(profile.invoiceType || "GENERAL");
+  form.email = String(profile.email || "");
+  form.phone = String(profile.phone || "");
+  form.address = String(profile.address || "");
+  form.bankName = String(profile.bankName || "");
+  form.bankAccount = String(profile.bankAccount || "");
+  invoiceTypeIndex.value = Math.max(0, invoiceTypeOptions.findIndex((item) => item.value === form.invoiceType));
 }
 
 function copyLink(value: string) {
@@ -167,11 +220,18 @@ function formatCent(value: number) {
 }
 
 .list-head,
-.row {
+.row,
+.save-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
+}
+
+.save-row {
+  min-height: 72rpx;
+  color: var(--ui-color-text);
+  font-size: 26rpx;
 }
 
 .status {

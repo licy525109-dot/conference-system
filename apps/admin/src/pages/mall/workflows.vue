@@ -140,6 +140,16 @@
           </template>
         </el-table-column>
         <el-table-column prop="reason" label="原因" min-width="220" show-overflow-tooltip />
+        <el-table-column label="凭证" min-width="180">
+          <template #default="{ row }">
+            <div v-if="afterSaleAttachments(row).length" class="attachment-links">
+              <el-link v-for="(url, index) in afterSaleAttachments(row)" :key="url" type="primary" :href="url" target="_blank">
+                图片{{ index + 1 }}
+              </el-link>
+            </div>
+            <span v-else class="muted-text">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="note" label="处理备注" min-width="220" show-overflow-tooltip />
         <el-table-column prop="createdAt" label="申请时间" width="180" />
         <el-table-column label="操作" width="330" fixed="right">
@@ -223,7 +233,10 @@
             <el-option label="换货" value="EXCHANGE" />
           </el-select>
         </el-form-item>
-        <el-form-item label="原因"><el-input v-model="afterSaleForm.reason" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="原因"><el-input v-model="afterSaleForm.reason" type="textarea" :rows="3" placeholder="售后原因（必填）" /></el-form-item>
+        <el-form-item label="凭证 URL">
+          <el-input v-model="afterSaleForm.attachmentUrls" type="textarea" :rows="3" placeholder="每行一张图片 URL，最多 6 张；用户端上传凭证会自动生成 URL" />
+        </el-form-item>
         <el-form-item label="备注"><el-input v-model="afterSaleForm.note" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="afterSaleVisible = false">取消</el-button><el-button type="primary" @click="saveAfterSale">保存</el-button></template>
@@ -327,7 +340,7 @@ const afterSaleVisible = ref(false);
 const categoryForm = reactive({ id: "", name: "", code: "", description: "", enabled: true, sortOrder: 0 });
 const skuForm = reactive({ id: "", productId: "", name: "", priceYuan: 0, stock: 0, status: "ACTIVE" });
 const shipmentForm = reactive({ id: "", orderId: "", company: "", trackingNo: "", pickupCode: "", remark: "", status: "SHIPPED" });
-const afterSaleForm = reactive({ orderId: "", type: "REFUND", reason: "", note: "" });
+const afterSaleForm = reactive({ orderId: "", type: "REFUND", reason: "", note: "", attachmentUrls: "" });
 
 onMounted(async () => {
   await loadOptions();
@@ -466,12 +479,22 @@ async function completeShipment(id: string) {
 }
 
 function openAfterSale() {
-  Object.assign(afterSaleForm, { orderId: orderId.value, type: "REFUND", reason: "", note: "" });
+  Object.assign(afterSaleForm, { orderId: orderId.value, type: "REFUND", reason: "", note: "", attachmentUrls: "" });
   afterSaleVisible.value = true;
 }
 
 async function saveAfterSale() {
-  await createMallAfterSale({ ...afterSaleForm, reason: afterSaleForm.reason || null, note: afterSaleForm.note || null });
+  if (!afterSaleForm.reason.trim()) {
+    ElMessage.warning("请填写售后原因");
+    return;
+  }
+  await createMallAfterSale({
+    orderId: afterSaleForm.orderId,
+    type: afterSaleForm.type,
+    reason: afterSaleForm.reason.trim(),
+    note: afterSaleForm.note || null,
+    attachments: afterSaleForm.attachmentUrls.split(/\n|,/).map((item) => item.trim()).filter(Boolean)
+  });
   afterSaleVisible.value = false;
   await load();
   ElMessage.success("售后记录已创建");
@@ -520,6 +543,10 @@ function refundStatusText(value?: string | null) {
 function providerText(value?: string | null) {
   return value ? ({ MOCK: "Mock 测试", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
+
+function afterSaleAttachments(row: { attachmentsJson?: unknown }) {
+  return Array.isArray(row.attachmentsJson) ? row.attachmentsJson.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
 </script>
 
 <style scoped>
@@ -531,5 +558,11 @@ function providerText(value?: string | null) {
 
 .dialog-form {
   margin-top: 16px;
+}
+
+.attachment-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 </style>

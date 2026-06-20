@@ -47,8 +47,9 @@
           <template #default="{ row }">
             <img v-if="row.fileType.startsWith('image/')" class="image-preview" :src="row.url" alt="" />
             <span v-else-if="row.fileType.startsWith('font/')" class="font-preview">字体</span>
-            <video v-else-if="row.fileType.startsWith('video/')" class="image-preview" :src="row.url" muted controls />
+            <video v-else-if="row.fileType.startsWith('video/')" class="image-preview" :src="row.url" muted controls @error="markPreviewError(row)" />
             <span v-else class="font-preview">文件</span>
+            <div v-if="previewErrors[row.id]" class="preview-error">无法播放</div>
           </template>
         </el-table-column>
         <el-table-column label="素材" min-width="180">
@@ -59,11 +60,25 @@
         </el-table-column>
         <el-table-column label="分类" width="140"><template #default="{ row }">{{ row.category?.name || "-" }}</template></el-table-column>
         <el-table-column prop="usage" label="使用位置" width="160" />
+        <el-table-column label="文件" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.uploadCheck?.localExists ? 'success' : 'warning'" size="small">
+              {{ row.uploadCheck?.localExists ? "已存在" : row.uploadCheck?.localPath ? "未找到" : "外部 URL" }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="URL 可访问" width="150">
+          <template #default="{ row }">
+            <el-tag :type="urlTagType(row)" size="small">{{ urlStatusText(row) }}</el-tag>
+            <div v-if="row.uploadCheck?.publicMime" class="diagnose-mime">{{ row.uploadCheck.publicMime }}</div>
+          </template>
+        </el-table-column>
         <el-table-column prop="url" label="URL" min-width="240" show-overflow-tooltip />
         <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" width="350">
           <template #default="{ row }">
             <el-button size="small" @click="copyUrl(row.url)">复制 URL</el-button>
+            <el-button size="small" :loading="diagnosingId === row.id" @click="diagnose(row)">诊断</el-button>
             <el-button size="small" @click="openEdit(row)">编辑</el-button>
             <el-button size="small" type="warning" :disabled="!row.enabled" @click="disable(row.id)">停用</el-button>
             <el-button size="small" type="danger" @click="hardDelete(row)">彻底删除</el-button>
@@ -162,7 +177,7 @@ import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import { materialSpecs, materialSpecText, materialUsageSpecMap, validateMaterialFile } from "../../constants/materialSpecs";
-import { createMaterial, createMaterialCategory, disableMaterial, hardDeleteMaterial, listMaterialCategories, listMaterials, updateMaterial } from "../../services/admin";
+import { createMaterial, createMaterialCategory, diagnoseMaterial, disableMaterial, hardDeleteMaterial, listMaterialCategories, listMaterials, updateMaterial } from "../../services/admin";
 import type { MaterialAsset, MaterialCategory } from "../../services/types";
 
 const categories = ref<MaterialCategory[]>([]);
@@ -179,6 +194,8 @@ const saving = ref(false);
 const editSaving = ref(false);
 const categorySaving = ref(false);
 const uploadProgress = ref(0);
+const diagnosingId = ref("");
+const previewErrors = ref<Record<string, boolean>>({});
 const form = reactive({ name: "", categoryId: "", usage: "home_banner", url: "", remark: "", file: undefined as File | undefined });
 const editForm = reactive({ id: "", name: "", categoryId: "", usage: "", url: "", remark: "", enabled: true });
 const categoryForm = reactive({ name: "", code: "", description: "" });
@@ -388,6 +405,40 @@ async function copyUrl(url: string) {
   ElMessage.success("URL 已复制");
 }
 
+async function diagnose(row: MaterialAsset) {
+  diagnosingId.value = row.id;
+  try {
+    const asset = await diagnoseMaterial(row.id);
+    const index = assets.value.findIndex((item) => item.id === row.id);
+    if (index >= 0) assets.value[index] = { ...assets.value[index], uploadCheck: asset.uploadCheck };
+    await ElMessageBox.alert(uploadDiagnostic(asset) || "诊断完成", "素材诊断结果", {
+      confirmButtonText: "知道了",
+      type: asset.uploadCheck?.publicReachable === false ? "warning" : "success"
+    });
+  } finally {
+    diagnosingId.value = "";
+  }
+}
+
+function markPreviewError(row: MaterialAsset) {
+  previewErrors.value = { ...previewErrors.value, [row.id]: true };
+}
+
+function urlStatusText(row: MaterialAsset): string {
+  const check = row.uploadCheck;
+  if (!check) return "未检测";
+  if (check.publicReachable === true) return check.publicStatus ? `${check.publicStatus}` : "可访问";
+  if (check.publicReachable === false) return check.publicStatus ? `${check.publicStatus}` : "不可访问";
+  return "未检测";
+}
+
+function urlTagType(row: MaterialAsset): "success" | "warning" | "danger" | "info" {
+  const reachable = row.uploadCheck?.publicReachable;
+  if (reachable === true) return "success";
+  if (reachable === false) return "danger";
+  return "info";
+}
+
 function validateMaterialForm(): string {
   if (!form.name.trim()) return "请填写素材名称";
   if (!form.usage.trim()) return "请填写使用位置，例如 home_banner、conference_cover 或 page_font";
@@ -444,5 +495,13 @@ async function showError(title: string, message: string) {
   color: #64748b;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.preview-error,
+.diagnose-mime {
+  margin-top: 4px;
+  color: #b45309;
+  font-size: 12px;
+  line-height: 1.35;
 }
 </style>

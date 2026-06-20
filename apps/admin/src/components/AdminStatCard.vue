@@ -3,6 +3,7 @@
     <span class="admin-stat-card__label">{{ label }}</span>
     <strong class="admin-stat-card__value">{{ value }}</strong>
     <span v-if="note" class="admin-stat-card__note">{{ note }}</span>
+    <slot />
   </article>
 </template>
 

@@ -17,12 +17,12 @@
     />
     <view class="splash-shade" />
     <view class="splash-top">
-      <text class="splash-title">会议报名</text>
+      <view />
       <button v-if="allowSkip" class="splash-skip" @click="finish">{{ skipText }} {{ countdown }}s</button>
       <text v-else class="splash-countdown">{{ countdown }}s</text>
     </view>
-    <view class="splash-bottom">
-      <text>欢迎进入会务小程序</text>
+    <view v-if="showBottomText" class="splash-bottom" :class="`is-${bottomTextStyle}`">
+      <text>{{ bottomText }}</text>
     </view>
   </view>
 </template>
@@ -44,6 +44,12 @@ const videoUrl = computed(() => String(theme.value.splashVideoUrl || ""));
 const posterUrl = computed(() => String(theme.value.splashPosterUrl || ""));
 const allowSkip = computed(() => theme.value.splashAllowSkip !== false);
 const skipText = computed(() => String(theme.value.splashSkipText || "跳过"));
+const showBottomText = computed(() => theme.value.splashShowBottomText !== false && Boolean(bottomText.value));
+const bottomText = computed(() => String(theme.value.splashBottomText || "欢迎进入会务小程序"));
+const bottomTextStyle = computed(() => {
+  const value = String(theme.value.splashBottomTextStyle || "light");
+  return value === "dark" || value === "pill" ? value : "light";
+});
 
 onLoad((query) => {
   redirectUrl.value = normalizeRedirect(query?.redirect);
@@ -60,10 +66,11 @@ async function loadSplash(): Promise<void> {
   } catch {
     theme.value = { ...DEFAULT_THEME };
   }
-  if (!theme.value.splashEnabled || (!videoUrl.value && !posterUrl.value)) {
+  if (!shouldShowSplash(theme.value)) {
     finish();
     return;
   }
+  markSplashShown(theme.value);
   countdown.value = clampSeconds(theme.value.splashCountdownSeconds);
   startCountdown();
 }
@@ -124,6 +131,41 @@ function normalizeRedirect(value: unknown): string {
   const raw = typeof value === "string" ? decodeURIComponent(value) : "/pages/index/index";
   return raw.startsWith("/pages/") ? raw : "/pages/index/index";
 }
+
+function shouldShowSplash(value: ThemeConfig): boolean {
+  if (!value.splashEnabled) return false;
+  if (!String(value.splashVideoUrl || "") && !String(value.splashPosterUrl || "")) return false;
+  const frequency = String(value.splashFrequency || "daily");
+  if (frequency === "every_time") return true;
+  return uni.getStorageSync(splashStorageKey(value, frequency)) !== splashStorageValue(frequency);
+}
+
+function markSplashShown(value: ThemeConfig): void {
+  const frequency = String(value.splashFrequency || "daily");
+  if (frequency === "every_time") return;
+  uni.setStorageSync(splashStorageKey(value, frequency), splashStorageValue(frequency));
+}
+
+function splashStorageKey(value: ThemeConfig, frequency: string): string {
+  if (frequency === "version") {
+    return `conference:splash:version:${hashStorageSeed([value.splashVideoUrl, value.splashPosterUrl, value.splashCountdownSeconds, value.splashSkipText, value.splashBottomText].map((item) => String(item || "")).join("|"))}`;
+  }
+  return "conference:splash:daily";
+}
+
+function splashStorageValue(frequency: string): string {
+  if (frequency === "version") return "shown";
+  const now = new Date();
+  return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+}
+
+function hashStorageSeed(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return String(hash);
+}
 </script>
 
 <style scoped>
@@ -161,12 +203,6 @@ function normalizeRedirect(value: unknown): string {
   padding: calc(52rpx + env(safe-area-inset-top)) 32rpx 0;
 }
 
-.splash-title {
-  font-size: 34rpx;
-  font-weight: 800;
-  letter-spacing: 0;
-}
-
 .splash-skip {
   min-width: 132rpx;
   min-height: 56rpx;
@@ -196,5 +232,17 @@ function normalizeRedirect(value: unknown): string {
   font-size: 28rpx;
   font-weight: 700;
   text-shadow: 0 4rpx 18rpx rgba(0, 0, 0, 0.22);
+}
+
+.splash-bottom.is-dark {
+  color: #111827;
+  text-shadow: 0 4rpx 18rpx rgba(255, 255, 255, 0.36);
+}
+
+.splash-bottom.is-pill text {
+  display: inline-flex;
+  padding: 16rpx 26rpx;
+  border-radius: 999rpx;
+  background: rgba(15, 23, 42, 0.42);
 }
 </style>

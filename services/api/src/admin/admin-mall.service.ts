@@ -384,8 +384,9 @@ export class AdminMallService {
           orderId,
           type: readStatus(readRequiredString(body, "type"), AFTER_SALE_TYPES, "售后类型") ?? "REFUND",
           status: "REQUESTED",
-          reason: readNullableString(body.reason),
-          note: readNullableString(body.note)
+          reason: readRequiredString(body, "reason"),
+          note: readNullableString(body.note),
+          attachmentsJson: readAttachmentUrls(body.attachments ?? body.attachmentUrls)
         },
         include: mallAfterSaleInclude
       });
@@ -407,8 +408,9 @@ export class AdminMallService {
         where: { id },
         data: {
           ...(status ? { status, handledAt: ["APPROVED", "REJECTED", "COMPLETED", "CANCELLED"].includes(status) ? new Date() : undefined } : {}),
-          ...(typeof body.reason !== "undefined" ? { reason: readNullableString(body.reason) } : {}),
-          ...(typeof body.note !== "undefined" ? { note: readNullableString(body.note) } : {})
+          ...(typeof body.reason !== "undefined" ? { reason: readRequiredString(body, "reason") } : {}),
+          ...(typeof body.note !== "undefined" ? { note: readNullableString(body.note) } : {}),
+          ...(typeof body.attachments !== "undefined" || typeof body.attachmentUrls !== "undefined" ? { attachmentsJson: readAttachmentUrls(body.attachments ?? body.attachmentUrls) } : {})
         },
         include: mallAfterSaleInclude
       });
@@ -911,6 +913,16 @@ function readOptionalStringArray(value: unknown): string[] | undefined {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
   if (typeof value === "string") return value.split(/\n|,/).map((item) => item.trim()).filter(Boolean);
   throw new BadRequestException("图片列表格式不正确");
+}
+
+function readAttachmentUrls(value: unknown): string[] {
+  if (typeof value === "undefined" || value === null || value === "") return [];
+  const urls = readOptionalStringArray(value) ?? [];
+  if (urls.length > 6) throw new BadRequestException("售后凭证图片最多 6 张");
+  for (const url of urls) {
+    if (!/^https?:\/\//.test(url) && !url.startsWith("/uploads/")) throw new BadRequestException("售后凭证图片必须是有效 URL");
+  }
+  return urls;
 }
 
 function readProductImageInputs(body: Record<string, unknown>): ProductImageInput[] | undefined {

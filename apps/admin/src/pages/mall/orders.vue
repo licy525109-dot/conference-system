@@ -176,6 +176,16 @@
             <el-table-column prop="type" label="类型" width="120"><template #default="{ row }">{{ afterSaleTypeText(row.type) }}</template></el-table-column>
             <el-table-column prop="status" label="状态" width="120"><template #default="{ row }">{{ afterSaleStatusText(row.status) }}</template></el-table-column>
             <el-table-column prop="reason" label="原因" min-width="180" show-overflow-tooltip />
+            <el-table-column label="凭证" min-width="180">
+              <template #default="{ row }">
+                <div v-if="afterSaleAttachments(row).length" class="attachment-links">
+                  <el-link v-for="(url, index) in afterSaleAttachments(row)" :key="url" type="primary" :href="url" target="_blank">
+                    图片{{ index + 1 }}
+                  </el-link>
+                </div>
+                <span v-else class="muted-text">-</span>
+              </template>
+            </el-table-column>
           </el-table>
         </section>
         <section class="detail-section">
@@ -380,6 +390,10 @@ function refundStatusText(value?: string | null) {
 function providerText(value?: string | null) {
   return value ? ({ MOCK: "历史测试记录", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
+
+function afterSaleAttachments(row: { attachmentsJson?: unknown }) {
+  return Array.isArray(row.attachmentsJson) ? row.attachmentsJson.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
 </script>
 
 <style scoped>
@@ -469,5 +483,11 @@ function providerText(value?: string | null) {
 
 .dialog-form {
   margin-top: 16px;
+}
+
+.attachment-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 </style>

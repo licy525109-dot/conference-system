@@ -251,9 +251,9 @@ export class AdminFinanceService {
       ...(keyword ? { OR: [{ refundNo: { contains: keyword, mode: "insensitive" } }, { outRefundNo: { contains: keyword, mode: "insensitive" } }, { order: { orderNo: { contains: keyword, mode: "insensitive" } } }, { providerRefundId: { contains: keyword, mode: "insensitive" } }] } : {})
     };
     const [registrationItems, registrationTotal, mallItems, mallTotal] = await this.prisma.$transaction([
-      sourceType === "MALL" ? this.prisma.refund.findMany({ where: { id: "__never__" }, take: 0 }) : this.prisma.refund.findMany({ where: registrationWhere, orderBy: { createdAt: "desc" }, take, include: { order: { include: { conference: true, user: true } }, user: true } }),
+      sourceType === "MALL" ? this.prisma.refund.findMany({ where: { id: "__never__" }, take: 0 }) : this.prisma.refund.findMany({ where: registrationWhere, orderBy: { createdAt: "desc" }, take, include: { order: { include: { conference: true, user: true, refunds: true } }, user: true } }),
       sourceType === "MALL" ? this.prisma.refund.count({ where: { id: "__never__" } }) : this.prisma.refund.count({ where: registrationWhere }),
-      sourceType === "REGISTRATION" ? this.prisma.mallRefund.findMany({ where: { id: "__never__" }, take: 0 }) : this.prisma.mallRefund.findMany({ where: mallWhere, orderBy: { createdAt: "desc" }, take, include: { order: { include: { user: true, items: { take: 3 } } }, afterSale: true } }),
+      sourceType === "REGISTRATION" ? this.prisma.mallRefund.findMany({ where: { id: "__never__" }, take: 0 }) : this.prisma.mallRefund.findMany({ where: mallWhere, orderBy: { createdAt: "desc" }, take, include: { order: { include: { user: true, items: { take: 3 }, refunds: true } }, afterSale: true } }),
       sourceType === "REGISTRATION" ? this.prisma.mallRefund.count({ where: { id: "__never__" } }) : this.prisma.mallRefund.count({ where: mallWhere })
     ]);
     const rows: Array<Record<string, any>> = [
@@ -540,7 +540,7 @@ export class AdminFinanceService {
         orderId: order.id,
         userId: order.userId,
         amountCent,
-        reason: readNullableString(body.reason),
+        reason: readRequiredString(body, "reason"),
         status: RefundStatus.REQUESTED
       }
     });
@@ -568,7 +568,7 @@ export class AdminFinanceService {
           mallOrderId: order.id,
           afterSaleId,
           amountCent,
-          reason: readNullableString(body.reason),
+        reason: readRequiredString(body, "reason"),
           status: RefundStatus.REQUESTED
         }
       });
@@ -773,6 +773,7 @@ function isActualRevenuePayment(payment: { provider: PaymentProvider; status: Pa
 }
 
 function formatRegistrationRefund(refund: any) {
+  const paidAmountCent = refund.order ? refund.order.paidAmountCent ?? refund.order.payableAmountCent : null;
   return {
     ...formatDateFields(refund),
     sourceType: "REGISTRATION",
@@ -780,11 +781,14 @@ function formatRegistrationRefund(refund: any) {
     businessTitle: refund.order?.conference?.title ?? "会议报名",
     userName: refund.user?.wechatNickname || refund.user?.nickname || refund.order?.attendeeName || null,
     userPhone: refund.user?.phone || refund.order?.phone || null,
-    failedReason: refund.failedReason ?? null
+    failedReason: refund.failedReason ?? null,
+    maxRefundableAmountCent: typeof paidAmountCent === "number" && Array.isArray(refund.order?.refunds) ? refundableAmount(paidAmountCent, refund.order.refunds.filter((item: any) => item.id !== refund.id)) : null,
+    refundNotice: refund.failedReason ?? refundStatusNotice("REGISTRATION", refund.status, refund.provider)
   };
 }
 
 function formatMallRefund(refund: any) {
+  const paidAmountCent = refund.order ? refund.order.paidAmountCent ?? refund.order.payableAmountCent : null;
   return {
     ...formatDateFields(refund),
     sourceType: "MALL",
@@ -792,8 +796,19 @@ function formatMallRefund(refund: any) {
     businessTitle: refund.order?.items?.map((item: any) => item.productTitle).filter(Boolean).join(" / ") || "商城订单",
     userName: refund.order?.user?.wechatNickname || refund.order?.user?.nickname || refund.order?.receiverName || null,
     userPhone: refund.order?.user?.phone || refund.order?.receiverPhone || null,
-    afterSaleStatus: refund.afterSale?.status ?? null
+    afterSaleStatus: refund.afterSale?.status ?? null,
+    maxRefundableAmountCent: typeof paidAmountCent === "number" && Array.isArray(refund.order?.refunds) ? refundableAmount(paidAmountCent, refund.order.refunds.filter((item: any) => item.id !== refund.id)) : null,
+    refundNotice: refund.failedReason ?? refundStatusNotice("MALL", refund.status, refund.provider)
   };
+}
+
+function refundStatusNotice(sourceType: "REGISTRATION" | "MALL", status: RefundStatus, provider: PaymentProvider | null) {
+  if (status === RefundStatus.SUCCESS) return "退款已完成，净收入会扣减该金额。";
+  if (status === RefundStatus.REJECTED) return "退款已驳回，不会影响订单实收。";
+  if (status === RefundStatus.FAILED) return "退款失败，请检查失败原因后重新处理。";
+  if (status === RefundStatus.PROCESSING && provider === PaymentProvider.WECHAT) return `${sourceType === "MALL" ? "商城" : "报名"}微信退款处理中，需等待微信退款回调确认到账。`;
+  if (status === RefundStatus.PROCESSING) return "微信退款未配置，系统不会伪造退款成功，请线下处理或补齐微信退款配置。";
+  return "退款待后台审批，审批后才进入退款处理。";
 }
 
 function formatInvoice(item: any) {

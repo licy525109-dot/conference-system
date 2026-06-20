@@ -81,12 +81,12 @@
         </div>
       </AdminSectionCard>
       <div class="admin-stat-grid">
-        <AdminStatCard class="is-clickable" label="已报名" :value="checkinRegistered" @click="selectCheckinList('registeredList')" />
-        <AdminStatCard class="is-clickable" label="已支付" :value="checkinPaid" @click="selectCheckinList('paidList')" />
-        <AdminStatCard class="is-clickable" label="已签到" :value="checkinCheckedIn" tone="success" @click="selectCheckinList('checkedInList')" />
-        <AdminStatCard class="is-clickable" label="未签到" :value="checkinUnchecked" tone="warning" @click="selectCheckinList('uncheckedInList')" />
-        <AdminStatCard class="is-clickable" label="签到失败" :value="checkinFailed" tone="danger" @click="selectCheckinList('failedList')" />
-        <AdminStatCard class="is-clickable" label="重复签到" :value="checkinRepeated" tone="warning" @click="selectCheckinList('repeatedList')" />
+        <AdminStatCard class="is-clickable" label="已报名" :value="checkinRegistered" @click="openCheckinDetailList('registeredList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('registeredList')">查看详情</button></AdminStatCard>
+        <AdminStatCard class="is-clickable" label="已支付" :value="checkinPaid" @click="openCheckinDetailList('paidList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('paidList')">查看详情</button></AdminStatCard>
+        <AdminStatCard class="is-clickable" label="已签到" :value="checkinCheckedIn" tone="success" @click="openCheckinDetailList('checkedInList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('checkedInList')">查看详情</button></AdminStatCard>
+        <AdminStatCard class="is-clickable" label="未签到" :value="checkinUnchecked" tone="warning" @click="openCheckinDetailList('uncheckedInList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('uncheckedInList')">查看详情</button></AdminStatCard>
+        <AdminStatCard class="is-clickable" label="签到失败" :value="checkinFailed" tone="danger" @click="openCheckinDetailList('failedList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('failedList')">查看详情</button></AdminStatCard>
+        <AdminStatCard class="is-clickable" label="重复签到" :value="checkinRepeated" tone="warning" @click="openCheckinDetailList('repeatedList')"><button class="stat-card-action" type="button" @click.stop="openCheckinDetailList('repeatedList')">查看详情</button></AdminStatCard>
         <AdminStatCard label="无需核销" :value="checkinNotRequired" />
       </div>
       <AdminSectionCard v-if="section === 'checkin-verify'" title="签到工作人员配置" subtitle="从已有微信用户中授权扫码权限，可限定全部会议或单场会议；小程序扫码接口仍会校验该授权。">
@@ -145,6 +145,7 @@
           <el-table-column prop="operatorName" label="操作人" width="140" />
           <el-table-column prop="failureReason" label="失败原因" min-width="150" />
           <el-table-column prop="createdAt" label="时间" width="190" />
+          <el-table-column label="操作" width="100" fixed="right"><template #default="{ row }"><el-button size="small" @click="openCheckinDetail(row)">详情</el-button></template></el-table-column>
         </el-table>
       </AdminSectionCard>
       <AdminSectionCard v-else title="签到统计" subtitle="按票种、核销方式和时间段聚合，避免与签到记录页重复。">
@@ -195,8 +196,62 @@
           <el-table-column prop="checkInMethodText" label="签到方式" width="140" />
           <el-table-column prop="operatorName" label="操作人" width="140" />
           <el-table-column prop="failureReason" label="失败原因" min-width="180" show-overflow-tooltip />
+          <el-table-column label="操作" width="100" fixed="right"><template #default="{ row }"><el-button size="small" @click="openCheckinDetail(row)">详情</el-button></template></el-table-column>
         </el-table>
       </AdminSectionCard>
+      <el-dialog v-model="checkinListDialogVisible" :title="checkinListTitle" width="1100px">
+        <div class="dialog-toolbar">
+          <el-button :disabled="checkinDetailRows.length === 0" @click="exportRows(checkinListTitle, checkinDetailRows)">导出当前详情</el-button>
+        </div>
+        <el-table :data="checkinDetailRows" :empty-text="checkinEmptyText" max-height="520">
+          <el-table-column prop="attendeeName" label="参会人" width="120" />
+          <el-table-column prop="phone" label="手机号" width="140" />
+          <el-table-column prop="company" label="公司" min-width="140" />
+          <el-table-column prop="registrationNo" label="报名号" min-width="150" />
+          <el-table-column prop="paymentStatusText" label="支付状态" width="110" />
+          <el-table-column prop="checkInStatusText" label="签到状态" width="110" />
+          <el-table-column prop="checkedInAt" label="签到时间" width="190" />
+          <el-table-column prop="checkInMethodText" label="签到方式" width="140" />
+          <el-table-column prop="operatorName" label="操作人" width="140" />
+          <el-table-column prop="failureReason" label="失败原因" min-width="180" show-overflow-tooltip />
+          <el-table-column label="操作" width="100" fixed="right"><template #default="{ row }"><el-button size="small" @click="openCheckinDetail(row)">详情</el-button></template></el-table-column>
+        </el-table>
+      </el-dialog>
+      <el-dialog v-model="checkinDetailVisible" title="签到详情" width="760px">
+        <div v-if="checkinDetail" class="checkin-detail">
+          <div class="wechat-user-cell detail-user">
+            <img v-if="String(checkinDetail.wechatAvatarUrl || '')" :src="String(checkinDetail.wechatAvatarUrl)" alt="" />
+            <span v-else class="avatar-fallback">{{ userInitial(checkinDetail) }}</span>
+            <div>
+              <strong>{{ checkinDetail.wechatNickname || "微信用户" }}</strong>
+              <small>{{ checkinDetail.userPhone || "-" }}</small>
+            </div>
+          </div>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="会议">{{ checkinDetail.conferenceTitle || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="报名号">{{ checkinDetail.registrationNo || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="参会人">{{ checkinDetail.attendeeName || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="手机号">{{ checkinDetail.phone || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="公司">{{ checkinDetail.company || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="票种">{{ checkinDetail.skuName || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="支付状态">{{ checkinDetail.paymentStatusText || paymentStatusText(checkinDetail.paymentStatus) }}</el-descriptions-item>
+            <el-descriptions-item label="报名状态">{{ checkinDetail.registrationStatus || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="签到状态">{{ checkinDetail.checkInStatusText || checkinStatusText(checkinDetail.checkInStatus) }}</el-descriptions-item>
+            <el-descriptions-item label="签到时间">{{ checkinDetail.checkedInAt || checkinDetail.createdAt || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="签到方式">{{ checkinDetail.checkInMethodText || checkinMethodText(checkinDetail.method) }}</el-descriptions-item>
+            <el-descriptions-item label="操作人">{{ checkinDetail.operatorName || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="失败原因" :span="2">{{ checkinDetail.failureReason || "-" }}</el-descriptions-item>
+          </el-descriptions>
+          <div class="form-summary">
+            <strong>报名表单摘要</strong>
+            <el-empty v-if="formSummaryRows(checkinDetail).length === 0" description="暂无表单摘要" />
+            <el-table v-else :data="formSummaryRows(checkinDetail)" size="small">
+              <el-table-column prop="label" label="字段" width="180" />
+              <el-table-column prop="value" label="内容" min-width="220" show-overflow-tooltip />
+            </el-table>
+          </div>
+        </div>
+      </el-dialog>
     </template>
 
     <template v-else-if="section === 'payment-exceptions'">
@@ -359,6 +414,9 @@ const checkinStats = ref<Record<string, unknown>>({});
 const checkinResult = ref<Record<string, unknown> | null>(null);
 const checkinListTab = ref<CheckinListTab>("checkedInList");
 const checkinFilters = reactive({ keyword: "", checkInStatus: "", paymentStatus: "", method: "" });
+const checkinListDialogVisible = ref(false);
+const checkinDetailVisible = ref(false);
+const checkinDetail = ref<Record<string, unknown> | null>(null);
 const staffUsers = ref<AdminAppUser[]>([]);
 const staffAssignments = ref<CheckinStaffAssignment[]>([]);
 const staffKeyword = ref("");
@@ -403,6 +461,15 @@ const checkinNotRequired = computed(() => toNumber(checkinStats.value.notRequire
 const checkinFailed = computed(() => toNumber(checkinStats.value.failedCount));
 const checkinRepeated = computed(() => toNumber(checkinStats.value.repeatedCount));
 const checkinListRows = computed(() => asRows(checkinStats.value[checkinListTab.value]));
+const checkinDetailRows = computed(() => asRows(checkinStats.value[checkinListTab.value]));
+const checkinListTitle = computed(() => ({
+  registeredList: "已报名名单",
+  paidList: "已支付名单",
+  checkedInList: "已签到名单",
+  uncheckedInList: "未签到名单",
+  failedList: "签到失败明细",
+  repeatedList: "重复签到明细"
+})[checkinListTab.value]);
 const checkinEmptyText = computed(() => {
   const messages: Record<CheckinListTab, string> = {
     registeredList: "暂无报名人员",
@@ -491,6 +558,16 @@ function selectCheckinList(tab: CheckinListTab) {
   checkinListTab.value = tab;
 }
 
+function openCheckinDetailList(tab: CheckinListTab) {
+  checkinListTab.value = tab;
+  checkinListDialogVisible.value = true;
+}
+
+function openCheckinDetail(row: Record<string, unknown>) {
+  checkinDetail.value = row;
+  checkinDetailVisible.value = true;
+}
+
 async function loadStaffUsers() {
   staffUsers.value = (await listUsers({ page: 1, pageSize: 50, keyword: staffKeyword.value })).items;
 }
@@ -534,6 +611,26 @@ function exportCheckinRows() {
     row.failureReason
   ]);
   downloadCsv(`checkin-${checkinListTab.value}.csv`, [headers, ...rows]);
+}
+
+function exportRows(title: string, sourceRows: Record<string, unknown>[]) {
+  const headers = ["微信昵称", "用户手机", "参会人", "手机号", "公司", "票种", "报名号", "支付状态", "签到状态", "签到时间", "签到方式", "操作人", "失败原因"];
+  const rows = sourceRows.map((row) => [
+    row.wechatNickname,
+    row.userPhone,
+    row.attendeeName,
+    row.phone,
+    row.company,
+    row.skuName,
+    row.registrationNo,
+    row.paymentStatusText,
+    row.checkInStatusText,
+    row.checkedInAt || row.createdAt,
+    row.checkInMethodText || checkinMethodText(row.method),
+    row.operatorName,
+    row.failureReason
+  ]);
+  downloadCsv(`${title}.csv`, [headers, ...rows]);
 }
 
 async function loadPaymentExceptions() {
@@ -652,6 +749,10 @@ function userInitial(row: Record<string, unknown>) {
   return String(row.wechatNickname || row.attendeeName || "微").slice(0, 1);
 }
 
+function formSummaryRows(row: Record<string, unknown>) {
+  return asRows(row.formSummary);
+}
+
 function downloadCsv(filename: string, rows: unknown[][]) {
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
@@ -714,6 +815,40 @@ function downloadCsv(filename: string, rows: unknown[][]) {
   gap: 10px;
   margin-bottom: 14px;
   flex-wrap: wrap;
+}
+
+.dialog-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.checkin-detail {
+  display: grid;
+  gap: 16px;
+}
+
+.detail-user {
+  padding: 12px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: var(--admin-radius);
+  background: #f8fbff;
+}
+
+.form-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.stat-card-action {
+  margin-top: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--admin-color-primary);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .wechat-user-cell {

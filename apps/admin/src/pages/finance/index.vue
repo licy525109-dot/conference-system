@@ -79,6 +79,13 @@
     </AdminSectionCard>
 
     <AdminSectionCard v-if="activeSection === 'refunds'" title="退款管理" subtitle="报名退款与商城退款统一审核，微信未配置时进入处理中并记录原因，不会伪造到账。">
+      <el-alert
+        class="section-alert"
+        type="info"
+        :closable="false"
+        show-icon
+        title="退款金额上限由后端按订单实付金额减已成功退款计算；审批通过后，微信退款未配置时只进入处理中，不会标记成功。"
+      />
       <AdminFilterBar>
         <el-input v-model="refundFilters.keyword" clearable placeholder="订单号 / 退款号 / 商户退款号" style="width: 300px" @keyup.enter="loadRefunds" />
         <el-select v-model="refundFilters.sourceType" placeholder="来源" style="width: 140px">
@@ -100,7 +107,7 @@
         </el-select>
         <el-input v-model="refundForm.orderNo" placeholder="已支付订单号" style="width: 220px" />
         <el-input-number v-model="refundForm.amountYuan" :min="0" :precision="2" placeholder="退款金额" />
-        <el-input v-model="refundForm.reason" placeholder="退款原因" style="width: 260px" />
+        <el-input v-model="refundForm.reason" placeholder="退款原因（必填）" style="width: 260px" />
         <el-button type="primary" @click="createRefundRequest">创建退款申请</el-button>
       </div>
       <el-table v-loading="refundsLoading" :data="refunds" empty-text="暂无退款记录">
@@ -109,9 +116,10 @@
         <el-table-column prop="orderNo" label="订单号" min-width="160" />
         <el-table-column prop="businessTitle" label="业务摘要" min-width="160" show-overflow-tooltip />
         <el-table-column label="金额" width="110"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
+        <el-table-column label="可退上限" width="110"><template #default="{ row }">{{ row.maxRefundableAmountCent === null || typeof row.maxRefundableAmountCent === 'undefined' ? '-' : `¥${formatCent(row.maxRefundableAmountCent)}` }}</template></el-table-column>
         <el-table-column label="状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="statusText(row.status)" /></template></el-table-column>
         <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
-        <el-table-column prop="failedReason" label="失败 / 处理说明" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="refundNotice" label="处理说明" min-width="260" show-overflow-tooltip />
         <el-table-column prop="createdAt" label="申请时间" width="190" />
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
@@ -144,6 +152,12 @@
         <el-table-column prop="orderNo" label="订单号" min-width="160" />
         <el-table-column prop="title" label="抬头" min-width="180" show-overflow-tooltip />
         <el-table-column prop="taxNo" label="税号" min-width="160" show-overflow-tooltip />
+        <el-table-column label="接收方式" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ [row.email, row.phone].filter(Boolean).join(" / ") || "-" }}</template>
+        </el-table-column>
+        <el-table-column label="开户地址" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">{{ [row.address, row.bankName, row.bankAccount].filter(Boolean).join(" / ") || "-" }}</template>
+        </el-table-column>
         <el-table-column label="金额" width="110"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
         <el-table-column label="状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="statusText(row.status)" /></template></el-table-column>
         <el-table-column prop="issuedInvoiceNo" label="开票号" min-width="150" />
@@ -426,6 +440,10 @@ async function createRefundRequest() {
     ElMessage.warning("请填写订单号");
     return;
   }
+  if (!refundForm.reason.trim()) {
+    ElMessage.warning("请填写退款原因");
+    return;
+  }
   await createRefund({
     sourceType: refundForm.sourceType,
     orderNo: refundForm.orderNo.trim(),
@@ -582,6 +600,10 @@ function goFinance(path: string) {
 </script>
 
 <style scoped>
+.section-alert {
+  margin-bottom: 14px;
+}
+
 .pager {
   justify-content: flex-end;
   margin-top: 16px;

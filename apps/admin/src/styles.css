@@ -108,6 +108,9 @@ body {
 }
 
 .admin-menu-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
   padding: 0 14px 10px;
 }
 
@@ -251,6 +254,33 @@ body {
   margin: 18px 20px;
   color: rgb(255 255 255 / 48%);
   font-size: 12px;
+}
+
+.menu-settings-hint {
+  margin: 0 0 16px;
+  color: var(--admin-color-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.menu-order-list {
+  display: grid;
+  gap: 10px;
+}
+
+.menu-order-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.menu-order-item span {
+  font-weight: 700;
 }
 
 .admin-header {

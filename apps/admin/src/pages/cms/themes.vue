@@ -228,6 +228,19 @@
             <el-form-item v-if="form.splashEnabled && form.splashAllowSkip" label="跳过文案">
               <el-input v-model="form.splashSkipText" placeholder="跳过" />
             </el-form-item>
+            <el-form-item v-if="form.splashEnabled" label="底部文案">
+              <el-switch v-model="form.splashShowBottomText" active-text="显示" inactive-text="隐藏" />
+            </el-form-item>
+            <el-form-item v-if="form.splashEnabled && form.splashShowBottomText" label="文案内容">
+              <el-input v-model="form.splashBottomText" placeholder="欢迎进入会务小程序" />
+            </el-form-item>
+            <el-form-item v-if="form.splashEnabled && form.splashShowBottomText" label="文案样式">
+              <el-select v-model="form.splashBottomTextStyle">
+                <el-option label="亮色居中" value="light" />
+                <el-option label="暗色居中" value="dark" />
+                <el-option label="胶囊底色" value="pill" />
+              </el-select>
+            </el-form-item>
           </section>
         </el-form>
       </div>
@@ -358,7 +371,7 @@ const DEFAULT_THEME: ThemeConfig = {
   backgroundVideoOverlayMode: "light",
   backgroundVideoOverlayOpacity: 0.08,
   backgroundDynamicDensity: 40,
-  backgroundDynamicSpeed: 18,
+  backgroundDynamicSpeed: 30,
   backgroundDynamicPattern: "flow",
   backgroundGradientAngle: 135,
   backgroundBottomFilter: true,
@@ -371,7 +384,10 @@ const DEFAULT_THEME: ThemeConfig = {
   splashCountdownSeconds: 5,
   splashAllowSkip: true,
   splashSkipText: "跳过",
-  splashFrequency: "daily"
+  splashFrequency: "daily",
+  splashShowBottomText: true,
+  splashBottomText: "欢迎进入会务小程序",
+  splashBottomTextStyle: "light"
 };
 
 const palettePresets: PalettePreset[] = [
@@ -504,7 +520,7 @@ const previewStageStyle = computed(() => ({
   "--theme-title": `${form.titleFontSize}px`,
   "--theme-shadow": shadowValue(form.shadow),
   background: previewApplied.value ? previewBackground.value : "#f5f7fb",
-  animationDuration: `${Math.max(6, Number(form.backgroundDynamicSpeed) || 18)}s`,
+  animationDuration: `${dynamicMotionSeconds.value}s`,
   backgroundImage: form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? `url("${form.backgroundVideoPosterUrl}")` : undefined,
   backgroundPosition: form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "center" : undefined,
   backgroundSize: form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "cover" : `${dynamicSize.value}% ${dynamicSize.value}%`
@@ -533,6 +549,7 @@ const previewBackground = computed(() => {
   return form.backgroundColor;
 });
 const dynamicSize = computed(() => Math.max(150, 440 - (Number(form.backgroundDynamicDensity) || 40) * 2.4));
+const dynamicMotionSeconds = computed(() => Math.max(4, Math.round(18 - Math.max(6, Math.min(40, Number(form.backgroundDynamicSpeed) || 30)) * 0.28)));
 const previewHeroTitle = computed(() => {
   if (previewPageKey.value === "conference-detail") return "峰会详情与报名安排";
   if (previewPageKey.value === "my-registrations") return "我的报名与状态查看";

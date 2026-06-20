@@ -9,9 +9,10 @@
           <span>{{ brandSubtitle }}</span>
         </div>
       </div>
-      <el-scrollbar class="admin-menu-scroll">
+      <el-scrollbar ref="menuScrollbar" class="admin-menu-scroll" @scroll="saveMenuScroll">
         <div class="admin-menu-tools">
           <el-input v-model="menuSearch" size="small" clearable placeholder="搜索菜单" />
+          <el-button size="small" @click="menuSettingsVisible = true">菜单配置</el-button>
         </div>
         <el-menu :default-active="currentRoute.path" class="admin-menu" @select="handleSelect">
           <div v-for="group in filteredMenuGroups" :key="group.name" class="menu-group" :class="group.className">
@@ -62,11 +63,24 @@
         <component :is="currentRoute.component" v-else />
       </el-main>
     </el-container>
+    <el-drawer v-model="menuSettingsVisible" title="菜单顺序配置" size="420px">
+      <p class="menu-settings-hint">仅调整当前浏览器后台菜单展示顺序，不隐藏任何系统入口；系统管理和菜单配置入口始终保留。</p>
+      <div class="menu-order-list">
+        <div v-for="group in configurableGroups" :key="group.name" class="menu-order-item">
+          <span>{{ group.name }}</span>
+          <el-input-number v-model="menuGroupOrder[group.name]" :min="0" :max="999" :step="10" controls-position="right" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="resetMenuOrder">恢复默认顺序</el-button>
+        <el-button type="primary" @click="saveMenuOrder">保存</el-button>
+      </template>
+    </el-drawer>
   </el-container>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { currentRoute, navigateTo, routes, type AdminRoute } from "../router";
 import { getTheme } from "../services/admin";
 import { useAdminSession } from "../stores/admin-session";
@@ -77,6 +91,9 @@ const brandSubtitle = ref("报名、支付与页面配置中心");
 const brandLogoUrl = ref("");
 const menuSearch = ref("");
 const expandedGroups = ref<Set<string>>(new Set([currentRoute.value.group]));
+const menuSettingsVisible = ref(false);
+const menuScrollbar = ref<{ setScrollTop?: (value: number) => void } | null>(null);
+const menuGroupOrder = reactive<Record<string, number>>(loadMenuOrder());
 
 const brandMarkText = computed(() => brandTitle.value.trim().slice(0, 1) || "会");
 
@@ -110,10 +127,15 @@ const menuGroups = computed(() => {
       items,
       badge: GROUP_META[name]?.badge,
       className: GROUP_META[name]?.className ?? "",
-      order: GROUP_META[name]?.order ?? 999
+      order: typeof menuGroupOrder[name] === "number" ? menuGroupOrder[name] : GROUP_META[name]?.order ?? 999
     }))
     .sort((a, b) => a.order - b.order);
 });
+const configurableGroups = computed(() =>
+  Array.from(new Set([...Object.keys(GROUP_META), ...menuGroups.value.map((group) => group.name)]))
+    .map((name) => ({ name, order: typeof menuGroupOrder[name] === "number" ? menuGroupOrder[name] : GROUP_META[name]?.order ?? 999 }))
+    .sort((a, b) => a.order - b.order)
+);
 const filteredMenuGroups = computed(() => {
   const keyword = menuSearch.value.trim().toLowerCase();
   if (!keyword) return menuGroups.value;
@@ -128,6 +150,7 @@ const filteredMenuGroups = computed(() => {
 onMounted(async () => {
   restoreExpandedGroups();
   expandCurrentGroup();
+  restoreMenuScroll();
   try {
     const theme = await getTheme();
     const config = theme.config as Record<string, unknown>;
@@ -140,6 +163,7 @@ onMounted(async () => {
 });
 
 watch(() => currentRoute.value.group, expandCurrentGroup);
+watch(() => currentRoute.value.path, () => nextTick(scrollActiveMenuIntoView));
 watch(expandedGroups, persistExpandedGroups, { deep: true });
 
 function handleSelect(path: string) {
@@ -186,5 +210,43 @@ function persistExpandedGroups() {
 
 function routeMatchesSearch(route: AdminRoute, group: string, keyword: string): boolean {
   return [group, route.title, route.menuTitle, route.description, route.badge].some((value) => String(value || "").toLowerCase().includes(keyword));
+}
+
+function loadMenuOrder(): Record<string, number> {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem("admin-menu-group-order") || "{}") as unknown;
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+      return Object.fromEntries(Object.entries(saved).filter(([, value]) => typeof value === "number")) as Record<string, number>;
+    }
+  } catch {
+    // Use default group metadata.
+  }
+  return {};
+}
+
+function saveMenuOrder() {
+  window.localStorage.setItem("admin-menu-group-order", JSON.stringify(menuGroupOrder));
+  menuSettingsVisible.value = false;
+}
+
+function resetMenuOrder() {
+  for (const key of Object.keys(menuGroupOrder)) delete menuGroupOrder[key];
+  window.localStorage.removeItem("admin-menu-group-order");
+}
+
+function saveMenuScroll(event: { scrollTop?: number }) {
+  window.localStorage.setItem("admin-menu-scroll-top", String(event.scrollTop ?? 0));
+}
+
+function restoreMenuScroll() {
+  const saved = Number(window.localStorage.getItem("admin-menu-scroll-top") || 0);
+  nextTick(() => {
+    menuScrollbar.value?.setScrollTop?.(Number.isFinite(saved) ? saved : 0);
+    scrollActiveMenuIntoView();
+  });
+}
+
+function scrollActiveMenuIntoView() {
+  document.querySelector(".admin-menu .el-menu-item.is-active")?.scrollIntoView({ block: "nearest" });
 }
 </script>

@@ -1,16 +1,16 @@
 {
   "pages": [
     {
-      "path": "pages/index/index",
-      "style": {
-        "navigationBarTitleText": "会议报名"
-      }
-    },
-    {
       "path": "pages/splash/index",
       "style": {
         "navigationStyle": "custom",
         "navigationBarTitleText": "启动页"
+      }
+    },
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "会议报名"
       }
     },
     {

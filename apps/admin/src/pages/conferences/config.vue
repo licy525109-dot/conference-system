@@ -119,63 +119,15 @@
 
       <el-tab-pane label="页面装修" name="page">
         <section class="form-panel">
-          <h3>会议详情页（查看详情）固定模块</h3>
-          <p class="muted-text">这里影响用户在会议卡片点击“查看详情”后的页面，不影响点击“立即报名”进入的报名页。默认隐藏“加入客户群”。</p>
-          <el-table :data="conferenceForm.detailPageDisplay.modules" class="detail-module-table" empty-text="暂无模块配置">
-            <el-table-column label="显示" width="74"><template #default="{ row }"><el-switch v-model="row.visible" /></template></el-table-column>
-            <el-table-column prop="label" label="模块" width="130" />
-            <el-table-column label="标题" min-width="170"><template #default="{ row }"><el-input v-model="row.title" /></template></el-table-column>
-            <el-table-column label="内容" min-width="260"><template #default="{ row }"><el-input v-model="row.content" type="textarea" :rows="2" placeholder="可选，留空时使用会议基础信息或页面装修内容" /></template></el-table-column>
-            <el-table-column label="排序" width="110"><template #default="{ row }"><el-input-number v-model="row.sort" :min="0" :max="999" /></template></el-table-column>
-            <el-table-column label="样式" width="140">
-              <template #default="{ row }">
-                <el-select v-model="row.style">
-                  <el-option label="卡片" value="card" />
-                  <el-option label="列表" value="list" />
-                  <el-option label="强调" value="accent" />
-                  <el-option label="紧凑" value="compact" />
-                </el-select>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-form :model="conferenceForm.detailPageDisplay" label-width="140px" class="display-form">
-            <el-form-item label="底部按钮文案"><el-input v-model="conferenceForm.detailPageDisplay.primaryButtonText" placeholder="立即报名" /></el-form-item>
-            <el-form-item label="库存展示"><el-select v-model="conferenceForm.detailPageDisplay.inventoryDisplayMode"><el-option label="显示具体数量" value="EXACT" /><el-option label="仅显示充足/紧张/售罄" value="STATUS" /><el-option label="完全隐藏库存" value="HIDDEN" /></el-select></el-form-item>
-            <el-form-item label="库存紧张阈值"><el-input-number v-model="conferenceForm.detailPageDisplay.lowStockThreshold" :min="1" :max="9999" /></el-form-item>
-          </el-form>
-        </section>
-        <section class="form-panel">
-          <h3>会议报名页（立即报名后）显示设置</h3>
-          <p class="muted-text">这里保留给用户点击“立即报名”后的报名页配置。报名页金额仍以后端 quote / create order 计算为准。</p>
-          <el-form :model="conferenceForm.detailDisplay" label-width="140px" class="display-form">
-            <el-form-item label="固定模块">
-              <el-checkbox-group v-model="conferenceForm.detailDisplay.visibleModules" class="module-grid">
-                <el-checkbox label="conferenceInfo">会议信息</el-checkbox>
-                <el-checkbox label="assistant">会议助手</el-checkbox>
-                <el-checkbox label="skus">报名规格</el-checkbox>
-                <el-checkbox label="coupon">优惠码</el-checkbox>
-                <el-checkbox label="inventory">库存展示</el-checkbox>
-                <el-checkbox label="cart">加入购物车</el-checkbox>
-                <el-checkbox label="submitOrder">提交订单</el-checkbox>
-                <el-checkbox label="guide">参会指南</el-checkbox>
-                <el-checkbox label="customerService">联系客服</el-checkbox>
-                <el-checkbox label="customerGroup">加入客户群</el-checkbox>
-                <el-checkbox label="calendar">添加到日历</el-checkbox>
-              </el-checkbox-group>
-            </el-form-item>
-            <el-form-item label="会议助手入口"><el-select v-model="conferenceForm.detailDisplay.assistantMode"><el-option label="隐藏" value="hidden" /><el-option label="AI 助手" value="ai" /><el-option label="客服链接" value="customer_service" /><el-option label="自定义页面" value="custom_page" /></el-select></el-form-item>
-            <el-form-item label="报名规格标题"><el-input v-model="conferenceForm.detailDisplay.skusTitle" placeholder="报名规格" /></el-form-item>
-            <el-form-item label="详情标题"><el-input v-model="conferenceForm.detailDisplay.guideTitle" placeholder="会议详情" /></el-form-item>
-            <el-form-item label="底部按钮文案"><el-input v-model="conferenceForm.detailDisplay.primaryButtonText" placeholder="立即报名" /></el-form-item>
-            <el-form-item label="库存展示"><el-select v-model="conferenceForm.detailDisplay.inventoryDisplayMode"><el-option label="显示具体数量" value="EXACT" /><el-option label="仅显示充足/紧张/售罄" value="STATUS" /><el-option label="完全隐藏库存" value="HIDDEN" /></el-select></el-form-item>
-            <el-form-item label="库存紧张阈值"><el-input-number v-model="conferenceForm.detailDisplay.lowStockThreshold" :min="1" :max="9999" /></el-form-item>
-          </el-form>
-          <el-button type="primary" @click="saveConference">保存页面设置</el-button>
-        </section>
-        <section class="form-panel">
-          <h3>会议详情页装修</h3>
-          <p class="muted-text">进入小程序页面装修，编辑并发布会议详情页组件。会议详情页仍保留当前固定页面作为接口失败兜底。</p>
-          <el-button type="primary" @click="openPageBuilder">打开页面装修</el-button>
+          <h3>页面装修集中配置</h3>
+          <p class="muted-text">会议详情、报名页、订单页、凭证页、会员中心和商城详情的固定业务模块统一在「页面装修」中查看接入状态和预览效果。会议配置页只维护会议、票种、报名字段和签到规则。</p>
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="会议详情页已接入页面装修模板；报名页金额仍以后端 quote/create order 重新计算，当前不在会议配置页直接编辑装修模块。"
+          />
+          <el-button type="primary" class="page-builder-button" @click="openPageBuilder">打开页面装修</el-button>
         </section>
       </el-tab-pane>
 
@@ -669,6 +621,10 @@ function normalizeDetailDisplay(value: unknown) {
 
 .display-form {
   margin-top: 12px;
+}
+
+.page-builder-button {
+  margin-top: 14px;
 }
 
 .module-grid {

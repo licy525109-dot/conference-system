@@ -78,6 +78,9 @@ export interface ThemeConfig {
   splashAllowSkip?: boolean;
   splashSkipText?: string;
   splashFrequency?: string;
+  splashShowBottomText?: boolean;
+  splashBottomText?: string;
+  splashBottomTextStyle?: string;
   [key: string]: string | number | boolean | string[] | null | undefined;
 }
 
@@ -134,7 +137,10 @@ export const DEFAULT_THEME: ThemeConfig = {
   splashCountdownSeconds: 5,
   splashAllowSkip: true,
   splashSkipText: "跳过",
-  splashFrequency: "daily"
+  splashFrequency: "daily",
+  splashShowBottomText: true,
+  splashBottomText: "欢迎进入会务小程序",
+  splashBottomTextStyle: "light"
 };
 
 export async function getPublishedPage(pageKey: string, params: { conferenceId?: string; productId?: string } = {}): Promise<PublishedPage | null> {
