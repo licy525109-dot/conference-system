@@ -13,7 +13,8 @@ export interface UploadedMaterialFile {
   size: number;
 }
 
-const MATERIAL_UPLOAD_DIR = join(process.cwd(), "uploads", "materials");
+const UPLOADS_ROOT = resolve(process.env.UPLOADS_DIR || join(inferProjectRoot(process.cwd()), "uploads"));
+const MATERIAL_UPLOAD_DIR = join(UPLOADS_ROOT, "materials");
 const MB = 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 2 * MB;
 const MAX_VIDEO_SIZE_BYTES = 20 * MB;
@@ -135,7 +136,7 @@ export class AdminMaterialsService {
     ]);
 
     return ok({
-      items: items.map(formatAsset),
+      items: items.map((item) => ({ ...formatAsset(item), uploadCheck: buildMaterialUrlCheck(item.url) })),
       total,
       page: readOptionalInt(query, "page") ?? 1,
       pageSize: readOptionalInt(query, "pageSize") ?? 50
@@ -167,7 +168,14 @@ export class AdminMaterialsService {
     await this.writeAudit(admin, AuditAction.CREATE, "MaterialAsset", asset.id, "Create material asset", {
       usage: asset.usage
     });
-    return ok({ ...formatAsset(asset), uploadCheck: uploaded?.check ?? buildMaterialUrlCheck(url) });
+    const uploadCheck = await diagnoseMaterialUrl(url);
+    return ok({ ...formatAsset(asset), uploadCheck });
+  }
+
+  async diagnoseAsset(id: string) {
+    const asset = await this.prisma.materialAsset.findUnique({ where: { id }, select: assetSelect });
+    if (!asset) throw new NotFoundException("Material asset not found");
+    return ok({ ...formatAsset(asset), uploadCheck: await diagnoseMaterialUrl(asset.url) });
   }
 
   async updateAsset(id: string, input: unknown, admin: CurrentAdmin) {
@@ -378,13 +386,71 @@ function saveMaterialFile(file: UploadedMaterialFile, publicOrigin: string) {
 }
 
 function buildMaterialUrlCheck(url: string) {
+  const localPath = resolveLocalMaterialPath(url);
+  const hasApiUploads = url.includes("/api/uploads");
   return {
     url,
-    localPath: resolveLocalMaterialPath(url),
-    localExists: Boolean(resolveLocalMaterialPath(url) && existsSync(resolveLocalMaterialPath(url)!)),
+    localPath,
+    localExists: Boolean(localPath && existsSync(localPath)),
     staticUrl: url.includes("/uploads/materials/") ? url.split("/uploads/materials/")[0] + "/uploads/" : null,
-    accessHint: url.includes("/api/uploads") ? "素材 URL 不应包含 /api/uploads，请改用公网 /uploads/materials/ 路径。" : "外部 URL 素材请确认源站允许访问。"
+    publicStatus: null as number | null,
+    publicReachable: null as boolean | null,
+    publicMime: null as string | null,
+    checkedAt: null as string | null,
+    accessHint: hasApiUploads
+      ? "素材 URL 不应包含 /api/uploads，请改用公网 /uploads/materials/ 路径。"
+      : localPath
+        ? "本地文件检测已完成；点击诊断可检查公网 URL 是否返回 200/206 以及 MIME 是否正确。"
+        : "外部 URL 素材请确认源站允许访问。"
   };
+}
+
+async function diagnoseMaterialUrl(url: string) {
+  const base = buildMaterialUrlCheck(url);
+  const checkedAt = new Date().toISOString();
+  if (url.includes("/api/uploads")) {
+    return {
+      ...base,
+      checkedAt,
+      publicReachable: false,
+      accessHint: "素材 URL 错误：不能使用 /api/uploads。请确保返回 https://guanchaohuiji.com/uploads/materials/xxx。"
+    };
+  }
+  try {
+    const response = await fetchWithTimeout(url, { method: "HEAD", headers: { Range: "bytes=0-1" } }, 3000);
+    const status = response.status;
+    const mime = response.headers.get("content-type");
+    const reachable = status === 200 || status === 206 || status === 301 || status === 302 || status === 403;
+    return {
+      ...base,
+      checkedAt,
+      publicStatus: status,
+      publicReachable: reachable,
+      publicMime: mime,
+      accessHint: reachable
+        ? status === 403
+          ? "公网 /uploads/ 返回 403 表示目录存在但禁止目录浏览；具体素材 URL 如返回 200/206 即可使用。"
+          : "公网 URL 可访问。视频素材应返回 video/mp4 或可被浏览器识别的 MIME。"
+        : `公网 URL 不可访问 (${status})，请检查 Nginx /uploads/ 是否映射到 ${UPLOADS_ROOT}。`
+    };
+  } catch (error) {
+    return {
+      ...base,
+      checkedAt,
+      publicReachable: false,
+      accessHint: `公网 URL 检查失败：${error instanceof Error ? error.message : "网络异常"}。请检查 Nginx /uploads/ 静态目录映射。`
+    };
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function normalizePublicOrigin(value: string) {
@@ -414,6 +480,11 @@ function resolveLocalMaterialPath(url: string): string | null {
   const filePath = resolve(MATERIAL_UPLOAD_DIR, fileName);
   const root = resolve(MATERIAL_UPLOAD_DIR);
   return filePath.startsWith(`${root}/`) ? filePath : null;
+}
+
+function inferProjectRoot(cwd: string): string {
+  const normalized = resolve(cwd);
+  return normalized.endsWith("/services/api") ? resolve(normalized, "../..") : normalized;
 }
 
 function jsonMentionsMaterial(value: unknown, asset: { id: string; url: string }): boolean {

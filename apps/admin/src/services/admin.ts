@@ -489,6 +489,10 @@ export function listMaterials(params: {
   return apiRequest<ApiList<MaterialAsset>>(`/admin/materials${toQuery(params)}`);
 }
 
+export function diagnoseMaterial(id: string) {
+  return apiRequest<MaterialAsset>(`/admin/materials/${encodeURIComponent(id)}/diagnose`);
+}
+
 export function createMaterial(input: {
   name: string;
   usage: string;

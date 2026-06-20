@@ -54,9 +54,9 @@ describe("AdminFinanceService production workflows", () => {
     const prisma = createFinancePrismaMock({ seededRefunds: false });
     const service = new AdminFinanceService(prisma);
 
-    await assert.rejects(() => service.createRefund({ sourceType: "REGISTRATION", orderNo: "ORDER001", amountCent: 11000 }, admin), BadRequestException);
+    await assert.rejects(() => service.createRefund({ sourceType: "REGISTRATION", orderNo: "ORDER001", amountCent: 11000, reason: "金额超限测试" }, admin), BadRequestException);
 
-    const created = await service.createRefund({ sourceType: "REGISTRATION", orderNo: "ORDER001", amountCent: 5000 }, admin);
+    const created = await service.createRefund({ sourceType: "REGISTRATION", orderNo: "ORDER001", amountCent: 5000, reason: "用户申请退款" }, admin);
     const createdData = created.data as any;
     const approved = await service.approveRefund(createdData.id, admin);
     const approvedData = approved.data as any;
@@ -73,7 +73,7 @@ describe("AdminFinanceService production workflows", () => {
     const prisma = createFinancePrismaMock({ seededRefunds: false });
     const service = new AdminFinanceService(prisma);
 
-    const created = await service.createRefund({ sourceType: "REGISTRATION", orderNo: "ORDER001", amountCent: 10000 }, admin);
+    const created = await service.createRefund({ sourceType: "REGISTRATION", orderNo: "ORDER001", amountCent: 10000, reason: "全额退款测试" }, admin);
     const createdData = created.data as any;
     const approved = await service.approveRefund(createdData.id, admin);
     const approvedData = approved.data as any;
@@ -216,6 +216,7 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
   const refunds: any[] = options.seededRefunds === false ? [] : [{ id: "old-refund-1", refundNo: "RFOLD", orderNo: "ORDER001", userId: "user-1", amountCent: options.revenueProbe ? 1 : 1000, provider: options.revenueProbe ? PaymentProvider.WECHAT : PaymentProvider.MOCK, status: RefundStatus.SUCCESS, createdAt: now, updatedAt: now, requestedAt: now }];
   const mallRefunds: any[] = options.seededRefunds === false ? [] : [{ id: "old-mall-refund-1", refundNo: "MRFOLD", outRefundNo: "MALL_REFUND_SHOP001", mallOrderId: "mall-order-1", order: mallOrders[0], amountCent: 1000, status: RefundStatus.SUCCESS, createdAt: now, updatedAt: now, requestedAt: now }];
   const invoices: any[] = [];
+  const invoiceProfiles: any[] = [];
   const auditLogs: any[] = [];
   orders[0]!.refunds = refunds;
   mallOrders[0]!.refunds = mallRefunds;
@@ -313,6 +314,20 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
         const invoice = { id: `invoice-${invoices.length + 1}`, createdAt: now, updatedAt: now, issuedAt: null, rejectReason: null, issuedInvoiceNo: null, invoiceLink: null, ...data };
         invoices.push(invoice);
         return invoice;
+      }
+    },
+    invoiceProfile: {
+      findFirst: async ({ where }: any = {}) => invoiceProfiles.find((item) => item.userId === where.userId && item.isDefault === where.isDefault) ?? null,
+      create: async ({ data }: any) => {
+        const profile = { id: `invoice-profile-${invoiceProfiles.length + 1}`, createdAt: now, updatedAt: now, ...data };
+        invoiceProfiles.push(profile);
+        return profile;
+      },
+      update: async ({ where, data }: any) => {
+        const profile = invoiceProfiles.find((item) => item.id === where.id);
+        if (!profile) throw new Error("invoice profile not found");
+        Object.assign(profile, data, { updatedAt: now });
+        return profile;
       }
     },
     auditLog: {

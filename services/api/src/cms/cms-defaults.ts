@@ -36,6 +36,9 @@ export const DEFAULT_THEME_CONFIG = {
   splashAllowSkip: true,
   splashSkipText: "跳过",
   splashFrequency: "daily",
+  splashShowBottomText: true,
+  splashBottomText: "欢迎进入会务小程序",
+  splashBottomTextStyle: "light",
   backgroundApplyTo: "body",
   themeApplyMode: "all",
   themeApplyPageKeys: [] as string[]

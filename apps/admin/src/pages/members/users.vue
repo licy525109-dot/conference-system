@@ -1,39 +1,88 @@
 <template>
   <section class="admin-page">
     <AdminPageHeader
-      title="会员管理"
+      :title="isUserList ? '用户列表' : '会员管理'"
       eyebrow="用户中心"
-      subtitle="按用户、等级、状态和到期时间管理会员；购买支付暂未开放，会员开通以后台授予、续期和调整为准。"
+      :subtitle="isUserList ? '展示全部微信用户、手机号、会员状态、注册和活跃时间；会员运营请进入会员管理。' : '只展示会员记录，按等级、状态和到期时间管理；购买支付暂未开放，会员开通以后台授予、续期和调整为准。'"
     >
-      <AdminFeatureBadge label="已可运营" description="授予、续期、停用、调级和权益自动发放均写审计日志。" tone="success" />
-      <AdminFeatureBadge label="购买支付未开放" description="本轮不接会员购买真实支付，也不创建会员支付订单。" tone="neutral" />
+      <AdminFeatureBadge v-if="isUserList" label="全部用户" description="用户列表不等同会员管理，非会员用户也会展示。" tone="success" />
+      <AdminFeatureBadge v-else label="已可运营" description="授予、续期、停用、调级和权益自动发放均写审计日志。" tone="success" />
+      <AdminFeatureBadge v-if="!isUserList" label="购买支付未开放" description="本轮不接会员购买真实支付，也不创建会员支付订单。" tone="neutral" />
       <template #actions>
-        <el-button type="primary" @click="openGrant">授予会员</el-button>
+        <el-button v-if="!isUserList" type="primary" @click="openGrant">授予会员</el-button>
       </template>
     </AdminPageHeader>
 
     <AdminFilterBar>
-      <el-input v-model="keyword" clearable placeholder="昵称 / 手机 / 等级" style="width: 240px" @keyup.enter="loadMemberships" />
-      <el-select v-model="levelId" clearable placeholder="会员等级" style="width: 180px">
+      <el-input v-if="isUserList" v-model="userKeyword" clearable placeholder="微信昵称 / 手机号 / openid" style="width: 280px" @keyup.enter="loadUsers" />
+      <el-input v-else v-model="keyword" clearable placeholder="昵称 / 手机 / 等级" style="width: 240px" @keyup.enter="loadMemberships" />
+      <el-select v-if="!isUserList" v-model="levelId" clearable placeholder="会员等级" style="width: 180px">
         <el-option v-for="item in levels" :key="item.id" :label="item.name" :value="item.id" />
       </el-select>
-      <el-select v-model="status" clearable placeholder="会员状态" style="width: 150px">
+      <el-select v-if="!isUserList" v-model="status" clearable placeholder="会员状态" style="width: 150px">
         <el-option label="有效" value="ACTIVE" />
         <el-option label="已过期" value="EXPIRED" />
         <el-option label="已停用" value="DISABLED" />
         <el-option label="已取消" value="CANCELLED" />
       </el-select>
       <template #actions>
-        <el-button :loading="loading" type="primary" @click="loadMemberships">查询</el-button>
+        <el-button v-if="isUserList" :loading="userLoading" type="primary" @click="loadUsers">查询用户</el-button>
+        <el-button v-else :loading="loading" type="primary" @click="loadMemberships">查询会员</el-button>
       </template>
     </AdminFilterBar>
 
-    <section class="table-panel">
+    <section v-if="isUserList" class="table-panel">
+      <el-table v-loading="userLoading" :data="users" empty-text="暂无用户">
+        <el-table-column label="用户" min-width="240">
+          <template #default="{ row }">
+            <div class="user-cell">
+              <img v-if="row.wechatAvatarUrl" :src="row.wechatAvatarUrl" alt="" />
+              <span v-else class="avatar-fallback">{{ userInitial(row) }}</span>
+              <div>
+                <strong>{{ userName(row) }}</strong>
+                <div class="muted-text">{{ row.phone || "未绑定手机号" }}</div>
+              </div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="会员" width="150">
+          <template #default="{ row }">
+            <el-tag :type="row.memberships?.length ? 'success' : 'info'">{{ row.memberships?.length ? "会员" : "非会员" }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="当前等级" min-width="160">
+          <template #default="{ row }">
+            <span v-if="row.memberships?.length">{{ row.memberships[0].level.name }}</span>
+            <span v-else class="muted-text">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="openid / unionid" min-width="180"><template #default="{ row }">{{ row.openid || "-" }}</template></el-table-column>
+        <el-table-column label="用户来源" width="120"><template #default>微信小程序</template></el-table-column>
+        <el-table-column label="标签" width="120"><template #default><span class="muted-text">未配置</span></template></el-table-column>
+        <el-table-column label="注册时间" width="150"><template #default="{ row }">{{ formatDate(row.createdAt) }}</template></el-table-column>
+        <el-table-column label="最近活跃" width="150"><template #default="{ row }">{{ formatDate(row.lastActiveAt) }}</template></el-table-column>
+        <el-table-column label="操作" width="260" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" @click="openUserDetail(row)">查看详情</el-button>
+            <el-button size="small" @click="openGrant(row.id)">授予会员</el-button>
+            <el-button size="small" @click="goUserOrders">查看订单</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </section>
+
+    <section v-else class="table-panel">
       <el-table v-loading="loading" :data="memberships" empty-text="暂无会员记录">
         <el-table-column label="用户" min-width="210">
           <template #default="{ row }">
-            <strong>{{ userName(row.user) }}</strong>
-            <div class="muted-text">{{ row.user.phone || row.user.openid || row.userId }}</div>
+            <div class="user-cell">
+              <img v-if="row.user.wechatAvatarUrl" :src="row.user.wechatAvatarUrl" alt="" />
+              <span v-else class="avatar-fallback">{{ userInitial(row.user) }}</span>
+              <div>
+                <strong>{{ userName(row.user) }}</strong>
+                <div class="muted-text">{{ row.user.phone || row.user.openid || row.userId }}</div>
+              </div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="等级" min-width="160">
@@ -55,6 +104,9 @@
         <el-table-column label="权益" width="100">
           <template #default="{ row }">{{ row.benefitGrants?.length || 0 }}</template>
         </el-table-column>
+        <el-table-column label="会员价" width="120">
+          <template #default="{ row }">{{ row.level.pricingEnabled ? "可命中" : "未启用" }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openRenew(row)">续期</el-button>
@@ -66,7 +118,7 @@
       </el-table>
     </section>
 
-    <AdminSectionCard title="用户选择器" subtitle="授予会员时请通过用户搜索选择，不手输用户 ID。">
+    <AdminSectionCard v-if="!isUserList" title="用户选择器" subtitle="授予会员时请通过用户搜索选择，不手输用户 ID。">
       <AdminFilterBar>
         <el-input v-model="userKeyword" clearable placeholder="昵称 / 手机 / openid" style="width: 280px" @keyup.enter="loadUsers" />
         <template #actions><el-button :loading="userLoading" @click="loadUsers">搜索用户</el-button></template>
@@ -90,6 +142,20 @@
         </el-table-column>
       </el-table>
     </AdminSectionCard>
+
+    <el-dialog v-model="userDetailVisible" title="用户详情" width="680px">
+      <el-descriptions v-if="selectedUser" :column="2" border>
+        <el-descriptions-item label="微信昵称">{{ userName(selectedUser) }}</el-descriptions-item>
+        <el-descriptions-item label="手机号">{{ selectedUser.phone || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="是否会员">{{ selectedUser.memberships?.length ? "是" : "否" }}</el-descriptions-item>
+        <el-descriptions-item label="当前等级">{{ selectedUser.memberships?.[0]?.level.name || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="openid">{{ selectedUser.openid || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="来源">微信小程序</el-descriptions-item>
+        <el-descriptions-item label="注册时间">{{ formatDate(selectedUser.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item label="最近活跃">{{ formatDate(selectedUser.lastActiveAt) }}</el-descriptions-item>
+        <el-descriptions-item label="标签" :span="2">标签能力未配置，当前不展示空壳入口。</el-descriptions-item>
+      </el-descriptions>
+    </el-dialog>
 
     <el-dialog v-model="grantVisible" title="授予会员" width="620px">
       <el-form :model="grantForm" label-width="130px">
@@ -168,6 +234,7 @@ import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
+import { currentRoute, navigateTo } from "../../router";
 import { changeMembershipLevel, disableMembership, grantMembership, listMemberLevels, listMemberships, listUsers, renewMembership } from "../../services/admin";
 import type { AdminAppUser, MemberLevel, UserMembership } from "../../services/types";
 
@@ -184,10 +251,13 @@ const grantVisible = ref(false);
 const actionVisible = ref(false);
 const grantsVisible = ref(false);
 const selectedMembership = ref<UserMembership | null>(null);
+const selectedUser = ref<AdminAppUser | null>(null);
+const userDetailVisible = ref(false);
 const actionMode = ref<"renew" | "disable" | "changeLevel">("renew");
 const grantForm = reactive({ userId: "", levelId: "", durationDays: undefined as number | undefined, source: "ADMIN_GRANT", remark: "" });
 const actionForm = reactive({ durationDays: 365, levelId: "", reason: "", remark: "" });
 const enabledLevels = computed(() => levels.value.filter((item) => item.enabled));
+const isUserList = computed(() => currentRoute.value.path === "/users");
 const actionTitle = computed(() => (actionMode.value === "renew" ? "续期会员" : actionMode.value === "disable" ? "停用会员" : "调整会员等级"));
 
 onMounted(async () => {
@@ -260,6 +330,15 @@ function openGrantLog(row: UserMembership) {
   grantsVisible.value = true;
 }
 
+function openUserDetail(row: AdminAppUser) {
+  selectedUser.value = row;
+  userDetailVisible.value = true;
+}
+
+function goUserOrders() {
+  navigateTo("/orders");
+}
+
 async function saveAction() {
   if (!selectedMembership.value) return;
   if (actionMode.value === "renew") await renewMembership(selectedMembership.value.id, { durationDays: actionForm.durationDays, remark: actionForm.remark || undefined });
@@ -271,7 +350,11 @@ async function saveAction() {
 }
 
 function userName(user: AdminAppUser) {
-  return user.nickname || user.wechatNickname || "未命名用户";
+  return user.wechatNickname || user.nickname || "未命名用户";
+}
+
+function userInitial(user: AdminAppUser) {
+  return userName(user).slice(0, 1);
 }
 
 function statusText(value: string) {
@@ -289,3 +372,33 @@ function formatDate(value: string | null | undefined) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 </script>
+
+<style scoped>
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.user-cell img,
+.avatar-fallback {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #edf4ff;
+  color: var(--admin-color-primary);
+  font-weight: 800;
+  object-fit: cover;
+}
+
+.user-cell strong,
+.user-cell .muted-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

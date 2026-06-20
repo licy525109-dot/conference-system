@@ -252,7 +252,7 @@ export class CheckinService {
         skip,
         take: pageSize,
         include: {
-          registration: { select: { registrationNo: true, attendeeName: true, phone: true, conference: { select: { title: true } }, user: { select: userPublicSelect } } },
+          registration: { select: { registrationNo: true, attendeeName: true, phone: true, formDataJson: true, conference: { select: { title: true } }, user: { select: userPublicSelect } } },
           attendee: { select: { name: true, phone: true, formDataJson: true } },
           operator: { select: { username: true, displayName: true } }
         }
@@ -275,6 +275,7 @@ export class CheckinService {
         beforeStatus: item.beforeStatus,
         afterStatus: item.afterStatus,
         matchedFields: item.matchedFields,
+        formSummary: formSummaryFromData(item.registration.formDataJson, item.attendee.formDataJson),
         failureReason: item.failureReason,
         operatorName: item.operator?.displayName ?? item.operator?.username ?? item.operatorUserId ?? "用户本人",
         remark: item.remark,
@@ -733,7 +734,8 @@ function formatCheckinAttendeeRow(
     operatorName: log ? log.operator?.displayName ?? log.operator?.username ?? log.operatorUserId ?? "用户本人" : "-",
     failureReason: log?.failureReason ?? null,
     checkInLogAt: log?.createdAt.toISOString() ?? null,
-    paidAt: item.registration.order.paidAt?.toISOString() ?? null
+    paidAt: item.registration.order.paidAt?.toISOString() ?? null,
+    formSummary: formSummaryFromData(registrationData, attendeeData)
   };
 }
 
@@ -757,6 +759,7 @@ function formatCheckinLogRow(log: CheckinStatsLog) {
     checkInStatusText: checkInStatusShortText(log.afterStatus),
     result: log.result,
     failureReason: log.failureReason,
+    formSummary: formSummaryFromData(log.registration.formDataJson, log.attendee.formDataJson),
     operatorName: log.operator?.displayName ?? log.operator?.username ?? log.operatorUserId ?? "用户本人",
     checkedInAt: log.createdAt.toISOString(),
     checkInLogAt: log.createdAt.toISOString()
@@ -851,6 +854,17 @@ function readObject(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function formSummaryFromData(...sources: unknown[]) {
+  const merged = Object.assign({}, ...sources.map(readObject));
+  return Object.entries(merged)
+    .filter(([, value]) => value !== null && typeof value !== "undefined" && String(value).trim().length > 0)
+    .slice(0, 24)
+    .map(([label, value]) => ({
+      label,
+      value: Array.isArray(value) ? value.join("、") : String(value)
+    }));
+}
+
 function readValue(source: Record<string, unknown>, key: string): string {
   const value = source[key];
   if (Array.isArray(value)) return value.join("、");
@@ -918,11 +932,12 @@ const checkinStatsLogInclude = {
       registrationNo: true,
       attendeeName: true,
       phone: true,
+      formDataJson: true,
       user: { select: userPublicSelect },
       conference: { select: { title: true } }
     }
   },
-  attendee: { select: { name: true, phone: true, company: true, sku: { select: { name: true } } } },
+  attendee: { select: { name: true, phone: true, company: true, formDataJson: true, sku: { select: { name: true } } } },
   operator: { select: { username: true, displayName: true } }
 } satisfies Prisma.CheckinLogInclude;
 

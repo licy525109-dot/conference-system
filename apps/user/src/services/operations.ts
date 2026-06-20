@@ -1,4 +1,5 @@
 import { readUniErrMsg } from "@/utils/uniErrors";
+import { API_BASE_URL } from "@/config/app";
 import { ensureLogin } from "./auth";
 import type { WechatPrepayResponse } from "./payment";
 import { request } from "./request";
@@ -73,9 +74,47 @@ export function getConferenceAiSuggestions(conferenceId: string) {
   return request<AiSuggestionResponse>(`/conferences/${encodeURIComponent(conferenceId)}/ai/suggestions`, { auth: false });
 }
 
-export async function createInvoiceApplication(input: { sourceType?: "REGISTRATION" | "MALL"; orderNo: string; title: string; taxNo?: string; invoiceType?: string; email?: string; phone?: string; remark?: string }) {
+export interface InvoiceProfile {
+  id: string;
+  title: string;
+  taxNo: string | null;
+  invoiceType: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  bankName: string | null;
+  bankAccount: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function createInvoiceApplication(input: {
+  sourceType?: "REGISTRATION" | "MALL";
+  orderNo: string;
+  title: string;
+  taxNo?: string;
+  invoiceType?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  bankName?: string;
+  bankAccount?: string;
+  remark?: string;
+  saveAsDefault?: boolean;
+}) {
   await ensureLogin();
   return request<Record<string, unknown>>("/invoices", { method: "POST", data: input });
+}
+
+export async function getMyInvoiceProfile() {
+  await ensureLogin();
+  return request<{ item: InvoiceProfile | null }>("/my/invoice-profile");
+}
+
+export async function saveMyInvoiceProfile(input: Partial<InvoiceProfile> & { title: string }) {
+  await ensureLogin();
+  return request<InvoiceProfile>("/my/invoice-profile", { method: "POST", data: input });
 }
 
 export async function getMyInvoices() {
@@ -119,6 +158,8 @@ export interface FinanceRefund {
   createdAt: string;
   updatedAt: string;
   afterSaleStatus?: string | null;
+  refundNotice?: string | null;
+  maxRefundableAmountCent?: number | null;
 }
 
 export async function createMallOrder(input: {
@@ -142,9 +183,34 @@ export async function getMyMallOrder(id: string) {
   return request<MallOrder>(`/my/mall-orders/${encodeURIComponent(id)}`);
 }
 
-export async function createMallAfterSale(input: { orderId: string; type?: string; reason?: string; note?: string }) {
+export async function createMallAfterSale(input: { orderId: string; type?: string; reason: string; note?: string; attachments?: string[] }) {
   await ensureLogin();
   return request<MallAfterSale>("/my/mall-aftersales", { method: "POST", data: input });
+}
+
+export async function uploadMallAfterSaleAttachment(filePath: string): Promise<string> {
+  const token = await ensureLogin();
+  return new Promise((resolve, reject) => {
+    uni.uploadFile({
+      url: `${API_BASE_URL}/my/uploads/aftersale`,
+      filePath,
+      name: "file",
+      header: { Authorization: `Bearer ${token}` },
+      success: (response) => {
+        try {
+          const body = JSON.parse(String(response.data || "{}"));
+          if (response.statusCode >= 200 && response.statusCode < 300 && body?.code === "OK" && body?.data?.url) {
+            resolve(String(body.data.url));
+            return;
+          }
+          reject(new Error(body?.message || "售后凭证上传失败"));
+        } catch {
+          reject(new Error("售后凭证上传失败"));
+        }
+      },
+      fail: (error) => reject(new Error(readUniErrMsg(error, "售后凭证上传失败")))
+    });
+  });
 }
 
 export async function prepayMallOrderWechat(id: string) {
@@ -210,6 +276,7 @@ export interface MallAfterSale {
   status: string;
   reason: string | null;
   note: string | null;
+  attachmentsJson?: string[] | null;
   handledAt: string | null;
   createdAt: string;
   updatedAt: string;

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { RequestWithCurrentUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PublicOperationsService } from "./public-operations.service";
@@ -41,6 +42,18 @@ export class PublicOperationsController {
     return this.operations.createInvoice(body, request.currentUser);
   }
 
+  @Get("my/invoice-profile")
+  @UseGuards(JwtAuthGuard)
+  myInvoiceProfile(@Req() request: RequestWithCurrentUser) {
+    return this.operations.myInvoiceProfile(request.currentUser);
+  }
+
+  @Post("my/invoice-profile")
+  @UseGuards(JwtAuthGuard)
+  saveInvoiceProfile(@Body() body: unknown, @Req() request: RequestWithCurrentUser) {
+    return this.operations.saveInvoiceProfile(body, request.currentUser);
+  }
+
   @Get("my/invoices")
   @UseGuards(JwtAuthGuard)
   myInvoices(@Req() request: RequestWithCurrentUser) {
@@ -57,6 +70,16 @@ export class PublicOperationsController {
   @UseGuards(JwtAuthGuard)
   myRefunds(@Req() request: RequestWithCurrentUser) {
     return this.operations.myRefunds(request.currentUser);
+  }
+
+  @Post("my/uploads/aftersale")
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadAfterSaleAttachment(
+    @UploadedFile() file: { buffer: Buffer; originalname?: string; mimetype?: string; size: number } | undefined,
+    @Req() request: RequestWithCurrentUser & { headers?: Record<string, string | string[] | undefined> }
+  ) {
+    return this.operations.uploadAfterSaleAttachment(file, getPublicOrigin(request));
   }
 
   @Get("my/mall-orders")
@@ -76,4 +99,16 @@ export class PublicOperationsController {
   createMallAfterSale(@Body() body: unknown, @Req() request: RequestWithCurrentUser) {
     return this.operations.createMallAfterSale(body, request.currentUser);
   }
+}
+
+function getPublicOrigin(request: { headers?: Record<string, string | string[] | undefined> }): string {
+  const forwardedProto = readFirstHeader(request.headers?.["x-forwarded-proto"]);
+  const forwardedHost = readFirstHeader(request.headers?.["x-forwarded-host"]);
+  const host = forwardedHost || readFirstHeader(request.headers?.host) || "localhost:3000";
+  const proto = forwardedProto || (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+function readFirstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

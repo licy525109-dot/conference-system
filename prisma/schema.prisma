@@ -193,6 +193,7 @@ model User {
   couponClaims              CouponClaim[]
   refunds                   Refund[]
   invoiceApplications       InvoiceApplication[]
+  invoiceProfiles           InvoiceProfile[]
   memberBenefitGrants       MemberBenefitGrant[]
 
   @@index([createdAt])
@@ -1099,6 +1100,7 @@ model MallAfterSale {
   status    String    @default("REQUESTED")
   reason    String?
   note      String?
+  attachmentsJson Json?
   handledAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2048,6 +2050,9 @@ model InvoiceApplication {
   amountCent   Int
   email        String?
   phone        String?
+  address      String?
+  bankName     String?
+  bankAccount  String?
   status       InvoiceStatus @default(REQUESTED)
   rejectReason String?
   issuedInvoiceNo String?
@@ -2066,6 +2071,27 @@ model InvoiceApplication {
   @@index([status])
   @@index([createdAt])
   @@map("invoice_applications")
+}
+
+model InvoiceProfile {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  taxNo       String?
+  invoiceType String   @default("GENERAL")
+  email       String?
+  phone       String?
+  address     String?
+  bankName    String?
+  bankAccount String?
+  isDefault   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isDefault])
+  @@map("invoice_profiles")
 }
 
 model WechatBill {

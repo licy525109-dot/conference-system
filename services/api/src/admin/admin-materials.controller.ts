@@ -29,6 +29,12 @@ export class AdminMaterialsController {
     return this.materialsService.listAssets(query);
   }
 
+  @Get("materials/:id/diagnose")
+  @RequireAdminPermissions("material:view")
+  diagnoseAsset(@Param("id") id: string) {
+    return this.materialsService.diagnoseAsset(id);
+  }
+
   @Post("materials")
   @RequireAdminPermissions("material:write")
   @UseInterceptors(
