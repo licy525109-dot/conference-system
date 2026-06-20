@@ -69,8 +69,10 @@ export interface FormField {
 export interface AdminWechatUser {
   id: string;
   openid: string | null;
+  nickname: string | null;
   wechatNickname: string | null;
   wechatAvatarUrl: string | null;
+  phone: string | null;
   registeredAt: string;
   lastActiveAt: string | null;
 }
@@ -600,6 +602,13 @@ export interface MaterialAsset {
     name: string;
     code: string;
   } | null;
+  uploadCheck?: {
+    url: string;
+    localPath?: string | null;
+    localExists?: boolean;
+    staticUrl?: string | null;
+    accessHint: string;
+  };
 }
 
 export interface CmsComponent {
@@ -739,11 +748,22 @@ export interface ThemeConfig {
   backgroundGradientTo?: string;
   backgroundImageUrl?: string;
   backgroundVideoUrl?: string;
+  backgroundVideoPosterUrl?: string;
+  backgroundVideoOverlayMode?: string;
+  backgroundVideoOverlayOpacity?: number;
   backgroundDynamicDensity?: number;
   backgroundDynamicSpeed?: number;
+  backgroundDynamicPattern?: string;
   backgroundGradientAngle?: number;
   backgroundBottomFilter?: boolean;
   backgroundApplyTo?: string;
+  splashEnabled?: boolean;
+  splashVideoUrl?: string;
+  splashPosterUrl?: string;
+  splashCountdownSeconds?: number;
+  splashAllowSkip?: boolean;
+  splashSkipText?: string;
+  splashFrequency?: string;
   themeApplyMode?: string;
   themeApplyPageKeys?: string[];
   [key: string]: string | number | boolean | string[] | null | undefined;
@@ -809,6 +829,21 @@ export interface AdminAppUser {
     endsAt: string | null;
     level: { id: string; code: string; name: string };
   }>;
+}
+
+export interface CheckinStaffAssignment {
+  id: string;
+  userId: string;
+  conferenceId: string | null;
+  enabled: boolean;
+  permissions: string[];
+  remark: string | null;
+  disabledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  scopeText: string;
+  user: Pick<AdminAppUser, "id" | "openid" | "nickname" | "wechatNickname" | "wechatAvatarUrl" | "phone">;
+  conference: Pick<Conference, "id" | "title"> | null;
 }
 
 export interface MemberLevelBase {

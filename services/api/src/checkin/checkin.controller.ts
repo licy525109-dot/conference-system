@@ -40,6 +40,18 @@ export class CheckinController {
     return this.checkin.scanCheckin(body, request.currentAdmin!);
   }
 
+  @Get("checkin/staff-me")
+  @UseGuards(JwtAuthGuard)
+  getStaffMe(@Req() request: RequestWithCurrentUser) {
+    return this.checkin.getStaffMe(request.currentUser!);
+  }
+
+  @Post("checkin/staff-scan")
+  @UseGuards(JwtAuthGuard)
+  staffScanCheckin(@Body() body: unknown, @Req() request: RequestWithCurrentUser) {
+    return this.checkin.staffScanCheckin(body, request.currentUser!);
+  }
+
   @Get("admin/checkins/records")
   @UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
   @RequireAdminPermissions("checkin:view")
@@ -52,6 +64,27 @@ export class CheckinController {
   @RequireAdminPermissions("checkin:view")
   adminStatistics(@Query() query: Record<string, unknown>) {
     return this.checkin.statistics(query);
+  }
+
+  @Get("admin/checkin-staff")
+  @UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
+  @RequireAdminPermissions("checkin:view")
+  adminStaffAssignments(@Query() query: Record<string, unknown>) {
+    return this.checkin.listStaffAssignments(query);
+  }
+
+  @Post("admin/checkin-staff")
+  @UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
+  @RequireAdminPermissions("checkin:write")
+  createStaffAssignment(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.checkin.createStaffAssignment(body, request.currentAdmin!);
+  }
+
+  @Patch("admin/checkin-staff/:id")
+  @UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
+  @RequireAdminPermissions("checkin:write")
+  updateStaffAssignment(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.checkin.updateStaffAssignment(id, body, request.currentAdmin!);
   }
 
   @Post("admin/checkins/manual")

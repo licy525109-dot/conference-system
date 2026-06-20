@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { onHide, onLaunch, onShow } from "@dcloudio/uni-app";
+import { getAppTheme, type ThemeConfig } from "@/services/cms";
 import { goHome } from "@/utils/navigation";
 
 const HOME_ROUTE = "pages/index/index";
+const SPLASH_ROUTE = "pages/splash/index";
 const STARTUP_FALLBACK_DELAY_MS = 500;
 const MAX_STARTUP_FALLBACK_ATTEMPTS = 5;
 let startupFallbackTimer: ReturnType<typeof setTimeout> | undefined;
 let startupFallbackAttempts = 0;
 let startupFallbackResolved = false;
+let splashOpening = false;
 
 onLaunch((options) => {
   console.log("[APP_LAUNCH]", options);
@@ -63,6 +66,11 @@ function shouldRelaunchHome(route: string, options: Record<string, unknown>): bo
   }
 
   if (route === HOME_ROUTE) {
+    void maybeOpenSplash();
+    return false;
+  }
+
+  if (route === SPLASH_ROUTE) {
     return false;
   }
 
@@ -103,6 +111,58 @@ function shouldRelaunchHome(route: string, options: Record<string, unknown>): bo
   }
 
   return true;
+}
+
+async function maybeOpenSplash(): Promise<void> {
+  if (splashOpening) return;
+  splashOpening = true;
+  try {
+    const theme = await getAppTheme("home");
+    if (!shouldShowSplash(theme)) return;
+    markSplashShown(theme);
+    uni.navigateTo({ url: `/pages/splash/index?redirect=${encodeURIComponent(`/${HOME_ROUTE}`)}` });
+  } catch {
+    // 启动页是增强体验，主题接口失败时继续进入首页。
+  } finally {
+    splashOpening = false;
+  }
+}
+
+function shouldShowSplash(theme: ThemeConfig): boolean {
+  if (!theme.splashEnabled) return false;
+  if (!hasStringValue(theme.splashVideoUrl) && !hasStringValue(theme.splashPosterUrl)) return false;
+  const frequency = String(theme.splashFrequency || "daily");
+  if (frequency === "every_time") return true;
+  const key = splashStorageKey(theme, frequency);
+  return uni.getStorageSync(key) !== splashStorageValue(frequency);
+}
+
+function markSplashShown(theme: ThemeConfig): void {
+  const frequency = String(theme.splashFrequency || "daily");
+  if (frequency === "every_time") return;
+  uni.setStorageSync(splashStorageKey(theme, frequency), splashStorageValue(frequency));
+}
+
+function splashStorageKey(theme: ThemeConfig, frequency: string): string {
+  if (frequency === "version") {
+    const versionSeed = [theme.splashVideoUrl, theme.splashPosterUrl, theme.splashCountdownSeconds, theme.splashSkipText].map((value) => String(value || "")).join("|");
+    return `conference:splash:version:${hashStorageSeed(versionSeed)}`;
+  }
+  return "conference:splash:daily";
+}
+
+function splashStorageValue(frequency: string): string {
+  if (frequency === "version") return "shown";
+  const now = new Date();
+  return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+}
+
+function hashStorageSeed(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return String(hash);
 }
 
 function readQuery(query: unknown): Record<string, unknown> {

@@ -2,7 +2,7 @@
   <section class="admin-page">
     <AdminPageHeader
       title="会员等级"
-      eyebrow="会员"
+      eyebrow="用户中心"
       subtitle="配置会员等级、默认有效期、会员价参与状态和等级权益。停用等级不会影响历史会员，但不能再新授予或命中新订单会员价。"
     >
       <AdminFeatureBadge label="已可运营" description="等级、权益数量、会员人数和会员价状态均来自真实数据。" tone="success" />

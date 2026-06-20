@@ -257,7 +257,7 @@ async function save() {
   saving.value = true;
   uploadProgress.value = form.file ? 1 : 0;
   try {
-    await createMaterial({
+    const asset = await createMaterial({
       name: form.name.trim(),
       categoryId: form.categoryId || undefined,
       usage: form.usage.trim(),
@@ -271,7 +271,12 @@ async function save() {
     dialogVisible.value = false;
     uploadProgress.value = 0;
     await load();
-    ElMessage.success("素材已保存");
+    const diagnostic = uploadDiagnostic(asset);
+    if (diagnostic) {
+      await ElMessageBox.alert(diagnostic, "素材已保存", { confirmButtonText: "知道了", type: "success" });
+    } else {
+      ElMessage.success("素材已保存");
+    }
   } catch (error) {
     await showError("素材保存失败", errorMessage(error));
   } finally {
@@ -393,6 +398,19 @@ function validateMaterialForm(): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "请检查网络、登录状态和表单内容后重试";
+}
+
+function uploadDiagnostic(asset: MaterialAsset): string {
+  const check = asset.uploadCheck;
+  if (!check) return "";
+  const lines = [
+    `素材公网 URL：${check.url}`,
+    check.staticUrl ? `uploads 静态目录：${check.staticUrl}` : "",
+    check.localPath ? `服务器文件路径：${check.localPath}` : "",
+    typeof check.localExists === "boolean" ? `本地文件检测：${check.localExists ? "已存在" : "未检测到"}` : "",
+    check.accessHint
+  ].filter(Boolean);
+  return lines.join("\n");
 }
 
 async function showError(title: string, message: string) {

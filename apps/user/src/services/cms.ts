@@ -60,13 +60,24 @@ export interface ThemeConfig {
   backgroundGradientTo?: string;
   backgroundImageUrl?: string;
   backgroundVideoUrl?: string;
+  backgroundVideoPosterUrl?: string;
+  backgroundVideoOverlayMode?: string;
+  backgroundVideoOverlayOpacity?: number;
   backgroundDynamicDensity?: number;
   backgroundDynamicSpeed?: number;
+  backgroundDynamicPattern?: string;
   backgroundGradientAngle?: number;
   backgroundBottomFilter?: boolean;
   backgroundApplyTo?: string;
   themeApplyMode?: string;
   themeApplyPageKeys?: string[];
+  splashEnabled?: boolean;
+  splashVideoUrl?: string;
+  splashPosterUrl?: string;
+  splashCountdownSeconds?: number;
+  splashAllowSkip?: boolean;
+  splashSkipText?: string;
+  splashFrequency?: string;
   [key: string]: string | number | boolean | string[] | null | undefined;
 }
 
@@ -106,13 +117,24 @@ export const DEFAULT_THEME: ThemeConfig = {
   backgroundGradientTo: "#edf3f0",
   backgroundImageUrl: "",
   backgroundVideoUrl: "",
+  backgroundVideoPosterUrl: "",
+  backgroundVideoOverlayMode: "light",
+  backgroundVideoOverlayOpacity: 0.08,
   backgroundDynamicDensity: 40,
   backgroundDynamicSpeed: 30,
+  backgroundDynamicPattern: "flow",
   backgroundGradientAngle: 135,
   backgroundBottomFilter: true,
   backgroundApplyTo: "body",
   themeApplyMode: "all",
-  themeApplyPageKeys: []
+  themeApplyPageKeys: [],
+  splashEnabled: false,
+  splashVideoUrl: "",
+  splashPosterUrl: "",
+  splashCountdownSeconds: 5,
+  splashAllowSkip: true,
+  splashSkipText: "跳过",
+  splashFrequency: "daily"
 };
 
 export async function getPublishedPage(pageKey: string, params: { conferenceId?: string; productId?: string } = {}): Promise<PublishedPage | null> {

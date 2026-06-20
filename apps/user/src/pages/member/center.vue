@@ -1,6 +1,6 @@
 <template>
   <view class="page ui-page" :style="pageStyle">
-    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
 
@@ -29,7 +29,11 @@
       </view>
     </view>
 
-    <button v-if="hasAdminAccess" class="admin-entry ui-button-primary" @click="goAdminNotifications">管理员通知中心</button>
+    <view v-if="hasStaffCheckinAccess || hasAdminAccess" class="staff-tools ui-card">
+      <button v-if="hasStaffCheckinAccess" class="ui-button-primary" @click="goPage('/pages/checkin/scan')">扫码核销</button>
+      <button v-if="hasAdminAccess" class="ui-button-secondary" @click="goAdminNotifications">工作人员工具</button>
+      <text class="muted tool-tip">扫码核销用于工作人员扫描参会人报名凭证二维码完成签到。</text>
+    </view>
     <view class="quick-links ui-card">
       <button class="ui-button-secondary" @click="goPage('/pages/registrations/my')">我的报名</button>
       <button class="ui-button-secondary" @click="goPage('/pages/coupon/my')">我的优惠券</button>
@@ -116,7 +120,7 @@ import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
-import { createMobileAdminSession } from "@/services/admin-mobile";
+import { createMobileAdminSession, getCheckinStaffMe } from "@/services/admin-mobile";
 import { ensureLogin, getStoredUser, type CurrentUser } from "@/services/auth";
 import { getMemberCenter, type CurrentMembership, type MemberBenefitGrant, type MemberLevel } from "@/services/member";
 import { goHome } from "@/utils/navigation";
@@ -129,6 +133,7 @@ const levels = ref<MemberLevel[]>([]);
 const grants = ref<MemberBenefitGrant[]>([]);
 const purchaseMessage = ref("会员购买支付暂未开放，可联系会务组或等待后台授予。");
 const hasAdminAccess = ref(false);
+const hasStaffCheckinAccess = ref(false);
 const displayName = computed(() => user.value?.wechatNickname || user.value?.nickname || "微信用户");
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("member-center");
 
@@ -136,6 +141,7 @@ onMounted(() => {
   void refreshTheme();
   void load();
   void checkAdminAccess();
+  void checkStaffAccess();
 });
 
 async function load() {
@@ -163,6 +169,15 @@ async function checkAdminAccess() {
     hasAdminAccess.value = true;
   } catch {
     hasAdminAccess.value = false;
+  }
+}
+
+async function checkStaffAccess() {
+  try {
+    const staff = await getCheckinStaffMe();
+    hasStaffCheckinAccess.value = Boolean(staff.canScan);
+  } catch {
+    hasStaffCheckinAccess.value = false;
   }
 }
 
@@ -254,8 +269,11 @@ function grantStatusText(value: string) {
   justify-content: flex-start;
 }
 
-.admin-entry {
-  width: 100%;
+.staff-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  padding: 24rpx;
 }
 
 .quick-links {

@@ -7,8 +7,8 @@
     </view>
 
     <view class="ui-card action-card">
-      <text class="account-line">{{ admin ? `当前账号：${admin.displayName || admin.username}` : "未绑定后台账号" }}</text>
-      <text class="permission-line">{{ admin ? (hasCheckinWrite ? "权限状态：可扫码签到" : "权限状态：缺少 checkin:write") : "请先绑定后台账号后使用扫码签到" }}</text>
+      <text class="account-line">{{ accountLine }}</text>
+      <text class="permission-line">{{ permissionLine }}</text>
       <button class="ui-button-primary" :loading="loading" :disabled="!canScan" @click="scan">扫码核销</button>
       <button class="ui-button-secondary" @click="openAdminBind">绑定管理员账号</button>
       <text v-if="error" class="error">{{ error }}</text>
@@ -25,19 +25,45 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { createMobileAdminSession, getStoredMobileAdmin, scanCheckinCredential, type MobileAdminUser } from "@/services/admin-mobile";
+import {
+  createMobileAdminSession,
+  getCheckinStaffMe,
+  getStoredMobileAdmin,
+  scanCheckinCredential,
+  scanCheckinCredentialAsStaff,
+  type CheckinStaffMe,
+  type MobileAdminUser
+} from "@/services/admin-mobile";
 import { formatDateTime } from "@/utils/date";
 
 const loading = ref(false);
 const error = ref("");
 const admin = ref<MobileAdminUser | null>(getStoredMobileAdmin());
+const staff = ref<CheckinStaffMe | null>(null);
 const result = ref<Awaited<ReturnType<typeof scanCheckinCredential>> | null>(null);
 const hasCheckinWrite = computed(() => Boolean(admin.value?.permissions?.includes("*") || admin.value?.permissions?.includes("checkin:write")));
-const canScan = computed(() => Boolean(admin.value && hasCheckinWrite.value));
+const hasStaffScan = computed(() => Boolean(staff.value?.canScan));
+const canScan = computed(() => hasStaffScan.value || Boolean(admin.value && hasCheckinWrite.value));
+const accountLine = computed(() => {
+  if (hasStaffScan.value) return `当前工作人员：${staff.value?.scopeText || "已授权"}`;
+  if (admin.value) return `当前管理员：${admin.value.displayName || admin.value.username}`;
+  return "未绑定后台账号";
+});
+const permissionLine = computed(() => {
+  if (hasStaffScan.value) return `权限状态：可扫码签到，范围：${staff.value?.scopeText || "已授权会议"}`;
+  if (admin.value) return hasCheckinWrite.value ? "权限状态：可扫码签到" : "权限状态：缺少 checkin:write";
+  return "请先绑定后台账号后使用扫码签到，或由后台将当前微信用户授权为签到工作人员";
+});
 
 onMounted(() => void refreshAdminSession());
 
 async function refreshAdminSession() {
+  try {
+    staff.value = await getCheckinStaffMe();
+  } catch {
+    staff.value = null;
+  }
+  if (staff.value?.canScan) return;
   try {
     const session = await createMobileAdminSession();
     admin.value = session.admin;
@@ -47,11 +73,11 @@ async function refreshAdminSession() {
 }
 
 async function scan() {
-  if (!admin.value) {
-    error.value = "请先绑定后台账号";
+  if (!canScan.value) {
+    error.value = "请先绑定后台账号，或联系后台管理员授权当前微信用户为签到工作人员";
     return;
   }
-  if (!hasCheckinWrite.value) {
+  if (!hasStaffScan.value && !hasCheckinWrite.value) {
     error.value = "当前后台账号暂无 checkin:write 权限，请联系管理员授权";
     return;
   }
@@ -60,7 +86,7 @@ async function scan() {
   result.value = null;
   try {
     const qrPayload = await scanQrCode();
-    result.value = await scanCheckinCredential(qrPayload);
+    result.value = hasStaffScan.value ? await scanCheckinCredentialAsStaff(qrPayload) : await scanCheckinCredential(qrPayload);
     uni.showToast({ title: result.value.message, icon: "success" });
   } catch (err) {
     error.value = err instanceof Error ? err.message : "扫码核销失败";

@@ -189,6 +189,7 @@ model User {
   notificationSubscriptions NotificationSubscription[]
   notificationLogs          NotificationLog[]
   adminWechatBindings       AdminWechatBinding[]
+  checkinStaffAssignments   CheckinStaffAssignment[]
   couponClaims              CouponClaim[]
   refunds                   Refund[]
   invoiceApplications       InvoiceApplication[]
@@ -300,6 +301,27 @@ model AdminWechatBinding {
   @@map("admin_wechat_bindings")
 }
 
+model CheckinStaffAssignment {
+  id           String      @id @default(cuid())
+  userId       String
+  conferenceId String?
+  enabled      Boolean     @default(true)
+  permissions  Json?
+  remark       String?
+  createdBy    String?
+  disabledAt   DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conference   Conference? @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([conferenceId])
+  @@index([enabled])
+  @@index([createdAt])
+  @@map("checkin_staff_assignments")
+}
+
 model Conference {
   id                       String                     @id @default(cuid())
   title                    String
@@ -338,6 +360,7 @@ model Conference {
   couponCampaigns          CouponCampaign[]
   customerGroupTasks       CustomerGroupMessageTask[]
   wecomCustomerGroups      WecomCustomerGroup[]
+  checkinStaffAssignments  CheckinStaffAssignment[]
 
   @@index([status])
   @@index([createdAt])

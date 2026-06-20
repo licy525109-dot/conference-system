@@ -33,7 +33,7 @@ export class AdminMaterialsController {
   @RequireAdminPermissions("material:write")
   @UseInterceptors(
     FileInterceptor("file", {
-      limits: { fileSize: 10 * 1024 * 1024 }
+      limits: { fileSize: 20 * 1024 * 1024 }
     })
   )
   createAsset(
@@ -64,13 +64,19 @@ export class AdminMaterialsController {
 }
 
 function getPublicOrigin(request: { headers?: Record<string, string | string[] | undefined> }): string {
+  const configured = process.env.PUBLIC_ORIGIN || process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_BASE_URL;
+  if (configured) return stripApiSuffix(configured);
   const forwardedProto = readFirstHeader(request.headers?.["x-forwarded-proto"]);
   const forwardedHost = readFirstHeader(request.headers?.["x-forwarded-host"]);
   const host = forwardedHost || readFirstHeader(request.headers?.host) || "localhost:3000";
   const proto = forwardedProto || (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
-  return `${proto}://${host}`;
+  return stripApiSuffix(`${proto}://${host}`);
 }
 
 function readFirstHeader(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function stripApiSuffix(value: string): string {
+  return value.trim().replace(/\/+$/, "").replace(/\/api$/, "");
 }

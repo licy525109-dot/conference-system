@@ -42,6 +42,18 @@
             <div class="muted-text">{{ row.orderNo }}</div>
           </template>
         </el-table-column>
+        <el-table-column label="微信用户" min-width="200">
+          <template #default="{ row }">
+            <div class="wechat-user-cell">
+              <img v-if="row.user?.wechatAvatarUrl" :src="row.user.wechatAvatarUrl" alt="" />
+              <span v-else class="avatar-fallback">{{ userInitial(row) }}</span>
+              <div>
+                <strong>{{ row.user?.wechatNickname || row.user?.nickname || "微信用户" }}</strong>
+                <small>{{ row.user?.phone || row.user?.openid || "-" }}</small>
+              </div>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="conferenceTitle" label="会议" min-width="200" show-overflow-tooltip />
         <el-table-column prop="skuName" label="规格" width="140" show-overflow-tooltip />
         <el-table-column label="参会人" min-width="150">
@@ -218,7 +230,47 @@ function formatJson(value: unknown) {
   return JSON.stringify(value ?? {}, null, 2);
 }
 
+function userInitial(row: AdminRegistration) {
+  return String(row.user?.wechatNickname || row.user?.nickname || row.attendeeName || "微").slice(0, 1);
+}
+
 function goConferences() {
   navigateTo("/conferences");
 }
 </script>
+
+<style scoped>
+.wechat-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wechat-user-cell img,
+.avatar-fallback {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #edf4ff;
+  color: var(--admin-color-primary);
+  font-size: 13px;
+  font-weight: 800;
+  object-fit: cover;
+}
+
+.wechat-user-cell strong,
+.wechat-user-cell small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wechat-user-cell small {
+  color: var(--admin-color-muted);
+  font-size: 12px;
+}
+</style>

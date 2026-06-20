@@ -2,7 +2,7 @@
   <section class="admin-page">
     <AdminPageHeader
       title="会员价规则"
-      eyebrow="会员"
+      eyebrow="用户中心"
       subtitle="会员价已参与报名 quote/create order；保存规则只影响新的报价和新订单，订单金额仍由后端重新计算。"
     >
       <AdminFeatureBadge label="计价顺序" description="SKU 原价 -> 会员价 -> 优惠券 -> 满减 -> 最终应付。" tone="success" />

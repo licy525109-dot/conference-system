@@ -435,8 +435,18 @@ export function createCmsThemeVars(config: ThemeConfig): Record<string, string> 
     "--ui-radius-sm": `${theme.radius.sm}px`,
     "--ui-radius": `${theme.radius.md}px`,
     "--ui-shadow-card": theme.shadow.md,
-    "--ui-shadow-bottom": theme.shadow.floating
+    "--ui-shadow-bottom": theme.shadow.floating,
+    "--cms-video-overlay-opacity": String(resolveVideoOverlayOpacity(config))
   };
+}
+
+function resolveVideoOverlayOpacity(config: ThemeConfig): number {
+  const mode = String(config.backgroundVideoOverlayMode || "light");
+  if (mode === "none") return 0;
+  if (mode === "medium") return 0.22;
+  if (mode === "strong") return 0.38;
+  if (mode === "custom") return Math.max(0, Math.min(0.7, Number(config.backgroundVideoOverlayOpacity) || 0));
+  return 0.08;
 }
 
 export function createCmsBackgroundStyle(config: ThemeConfig, target: "body" | "header"): Record<string, string> {
@@ -445,6 +455,14 @@ export function createCmsBackgroundStyle(config: ThemeConfig, target: "body" | "
   if (target === "header" && config.backgroundApplyTo !== "header") return {};
 
   if (config.backgroundMode === "video") {
+    if (config.backgroundVideoPosterUrl) {
+      return {
+        backgroundImage: `url("${config.backgroundVideoPosterUrl}")`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat"
+      };
+    }
     return { background: "transparent" };
   }
 
@@ -482,11 +500,19 @@ export function dynamicGradientBackground(config: ThemeConfig): string {
   const from = config.backgroundGradientFrom || theme.colors.pageBg;
   const to = config.backgroundGradientTo || theme.colors.secondarySoft;
   const density = Math.max(10, Math.min(100, Number(config.backgroundDynamicDensity) || 44));
-  const scale = Math.max(32, Math.round(density / 1.35));
+  const scale = Math.max(44, Math.round(density / 1.05));
   const overlay = config.backgroundBottomFilter === false
     ? ""
     : `linear-gradient(180deg, rgba(255,255,255,0.02), ${alpha(theme.colors.pageBg, 0.58)} 118%), `;
-  return `${overlay}radial-gradient(circle at 12% 10%, ${alpha(theme.colors.primary, 0.5)} 0, transparent ${scale}%), radial-gradient(circle at 88% 16%, ${alpha(theme.colors.secondary, 0.46)} 0, transparent ${scale + 12}%), radial-gradient(circle at 18% 82%, ${alpha(theme.colors.accent, 0.3)} 0, transparent ${scale + 20}%), linear-gradient(132deg, ${from} 0%, ${to} 60%, ${theme.colors.accentSoft} 142%)`;
+  const pattern = String(config.backgroundDynamicPattern || "flow");
+  const extra = pattern === "ripple"
+    ? `repeating-radial-gradient(circle at 50% 56%, ${alpha(theme.colors.primary, 0.12)} 0 2%, transparent 2% 8%), `
+    : pattern === "float"
+      ? `radial-gradient(circle at 32% 42%, ${alpha(theme.colors.secondary, 0.22)} 0, transparent ${scale + 34}%), `
+      : pattern === "zoom"
+        ? `radial-gradient(circle at 50% 50%, ${alpha(theme.colors.accent, 0.26)} 0, transparent ${scale + 48}%), `
+      : "";
+  return `${overlay}${extra}radial-gradient(circle at 8% 8%, ${alpha(theme.colors.primary, 0.66)} 0, transparent ${scale}%), radial-gradient(circle at 92% 14%, ${alpha(theme.colors.secondary, 0.6)} 0, transparent ${scale + 18}%), radial-gradient(circle at 24% 86%, ${alpha(theme.colors.accent, 0.5)} 0, transparent ${scale + 26}%), radial-gradient(circle at 72% 58%, ${alpha(theme.colors.primary, 0.32)} 0, transparent ${scale + 8}%), linear-gradient(132deg, ${from} 0%, ${to} 58%, ${theme.colors.accentSoft} 148%)`;
 }
 
 function normalizePresetId(value: unknown): CmsThemePresetId {

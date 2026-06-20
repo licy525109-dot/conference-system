@@ -148,7 +148,35 @@
                 <el-input v-model="form.backgroundVideoUrl" placeholder="建议 MP4/H.264，720p 或 1080p，5-15 秒，单个不超过 20MB" />
                 <el-button @click="openMaterialPicker('backgroundVideoUrl', 'video')">应用素材库</el-button>
               </div>
-              <p class="form-help">H5 使用 muted/loop/playsinline/autoplay；小程序端背景视频可能受自动播放限制，请准备背景封面兜底。</p>
+              <p class="form-help">H5 和小程序端均使用静音循环播放；无法播放时会自动显示背景封面。</p>
+            </el-form-item>
+            <el-form-item v-if="form.backgroundMode === 'video'">
+              <template #label>视频封面<MaterialSpecHelp spec-key="backgroundImage" /></template>
+              <div class="field-row">
+                <el-input v-model="form.backgroundVideoPosterUrl" placeholder="视频加载失败或未自动播放时展示，建议 1920x1080 JPG/WebP" />
+                <el-button @click="openMaterialPicker('backgroundVideoPosterUrl', 'image')">应用素材库</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item v-if="form.backgroundMode === 'video'" label="视频遮罩">
+              <el-select v-model="form.backgroundVideoOverlayMode">
+                <el-option label="无遮罩" value="none" />
+                <el-option label="轻微遮罩" value="light" />
+                <el-option label="中等遮罩" value="medium" />
+                <el-option label="强遮罩" value="strong" />
+                <el-option label="自定义" value="custom" />
+              </el-select>
+              <p class="form-help">默认使用轻微遮罩，保证背景可见且不压住正文。</p>
+            </el-form-item>
+            <el-form-item v-if="form.backgroundMode === 'video' && form.backgroundVideoOverlayMode === 'custom'" label="遮罩透明度">
+              <el-slider v-model="form.backgroundVideoOverlayOpacity" :min="0" :max="0.7" :step="0.01" show-input />
+            </el-form-item>
+            <el-form-item v-if="form.backgroundMode === 'dynamic-gradient'" label="动态预设">
+              <el-radio-group v-model="form.backgroundDynamicPattern">
+                <el-radio-button label="flow">流动</el-radio-button>
+                <el-radio-button label="ripple">涟漪</el-radio-button>
+                <el-radio-button label="float">漂浮</el-radio-button>
+                <el-radio-button label="zoom">缩放</el-radio-button>
+              </el-radio-group>
             </el-form-item>
             <el-form-item v-if="form.backgroundMode === 'dynamic-gradient'" label="动态密度"><el-slider v-model="form.backgroundDynamicDensity" :min="10" :max="100" /></el-form-item>
             <el-form-item v-if="form.backgroundMode === 'dynamic-gradient'" label="变化速度"><el-slider v-model="form.backgroundDynamicSpeed" :min="6" :max="40" /></el-form-item>
@@ -159,6 +187,46 @@
                 <el-radio-button label="header">仅头部</el-radio-button>
                 <el-radio-button label="body">头部和正文</el-radio-button>
               </el-radio-group>
+            </el-form-item>
+          </section>
+
+          <section class="form-section">
+            <div class="section-head">
+              <strong>启动视频</strong>
+              <span>用于小程序进入首页前的全屏品牌视频，可按频率控制展示。</span>
+            </div>
+            <el-form-item label="启用启动页">
+              <el-switch v-model="form.splashEnabled" active-text="开启" inactive-text="关闭" />
+            </el-form-item>
+            <el-form-item v-if="form.splashEnabled">
+              <template #label>启动视频<MaterialSpecHelp spec-key="backgroundVideo" /></template>
+              <div class="field-row">
+                <el-input v-model="form.splashVideoUrl" placeholder="建议 MP4/H.264，5-15 秒，单个不超过 20MB" />
+                <el-button @click="openMaterialPicker('splashVideoUrl', 'video')">应用素材库</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item v-if="form.splashEnabled">
+              <template #label>启动封面<MaterialSpecHelp spec-key="backgroundImage" /></template>
+              <div class="field-row">
+                <el-input v-model="form.splashPosterUrl" placeholder="视频未加载完成时展示，建议 1080x1920 或 750x1334" />
+                <el-button @click="openMaterialPicker('splashPosterUrl', 'image')">应用素材库</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item v-if="form.splashEnabled" label="展示频率">
+              <el-select v-model="form.splashFrequency">
+                <el-option label="每次进入首页" value="every_time" />
+                <el-option label="每天一次" value="daily" />
+                <el-option label="每个版本一次" value="version" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="form.splashEnabled" label="倒计时秒数">
+              <el-input-number v-model="form.splashCountdownSeconds" :min="1" :max="15" />
+            </el-form-item>
+            <el-form-item v-if="form.splashEnabled" label="允许跳过">
+              <el-switch v-model="form.splashAllowSkip" active-text="允许" inactive-text="不允许" />
+            </el-form-item>
+            <el-form-item v-if="form.splashEnabled && form.splashAllowSkip" label="跳过文案">
+              <el-input v-model="form.splashSkipText" placeholder="跳过" />
             </el-form-item>
           </section>
         </el-form>
@@ -180,12 +248,14 @@
             v-if="form.backgroundMode === 'video' && form.backgroundVideoUrl"
             class="preview-video"
             :src="form.backgroundVideoUrl"
+            :poster="form.backgroundVideoPosterUrl"
             autoplay
             muted
             loop
             playsinline
             webkit-playsinline
           />
+          <div v-if="form.backgroundMode === 'video' && form.backgroundVideoUrl" class="preview-video-overlay" :style="{ opacity: previewVideoOverlayOpacity }" />
           <div class="preview-phone">
             <div class="preview-phone__status">
               <span>9:41</span>
@@ -284,13 +354,24 @@ const DEFAULT_THEME: ThemeConfig = {
   backgroundGradientTo: "#edf3f0",
   backgroundImageUrl: "",
   backgroundVideoUrl: "",
+  backgroundVideoPosterUrl: "",
+  backgroundVideoOverlayMode: "light",
+  backgroundVideoOverlayOpacity: 0.08,
   backgroundDynamicDensity: 40,
   backgroundDynamicSpeed: 18,
+  backgroundDynamicPattern: "flow",
   backgroundGradientAngle: 135,
   backgroundBottomFilter: true,
   backgroundApplyTo: "body",
   themeApplyMode: "all",
-  themeApplyPageKeys: []
+  themeApplyPageKeys: [],
+  splashEnabled: false,
+  splashVideoUrl: "",
+  splashPosterUrl: "",
+  splashCountdownSeconds: 5,
+  splashAllowSkip: true,
+  splashSkipText: "跳过",
+  splashFrequency: "daily"
 };
 
 const palettePresets: PalettePreset[] = [
@@ -412,6 +493,7 @@ const appliedPageNames = computed(() => {
 });
 const previewApplied = computed(() => form.themeApplyMode !== "selected" || (form.themeApplyPageKeys ?? []).includes(previewPageKey.value));
 const usesGradient = computed(() => form.backgroundMode === "gradient" || form.backgroundMode === "dynamic-gradient");
+const previewVideoOverlayOpacity = computed(() => String(resolveVideoOverlayOpacity(form)));
 const previewStageStyle = computed(() => ({
   "--theme-primary": form.primaryColor,
   "--theme-secondary": form.secondaryColor,
@@ -423,7 +505,9 @@ const previewStageStyle = computed(() => ({
   "--theme-shadow": shadowValue(form.shadow),
   background: previewApplied.value ? previewBackground.value : "#f5f7fb",
   animationDuration: `${Math.max(6, Number(form.backgroundDynamicSpeed) || 18)}s`,
-  backgroundSize: `${dynamicSize.value}% ${dynamicSize.value}%`
+  backgroundImage: form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? `url("${form.backgroundVideoPosterUrl}")` : undefined,
+  backgroundPosition: form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "center" : undefined,
+  backgroundSize: form.backgroundMode === "video" && form.backgroundVideoPosterUrl ? "cover" : `${dynamicSize.value}% ${dynamicSize.value}%`
 }));
 const previewHeroStyle = computed(() => {
   if (!previewApplied.value) return {};
@@ -554,21 +638,56 @@ function dynamicGradient(config: ThemeConfig): string {
   const scale = Math.max(28, Math.round(density / 1.45));
   const angle = Math.max(0, Math.min(360, Number(config.backgroundGradientAngle) || 135));
   const overlay = config.backgroundBottomFilter === false ? "" : "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(245,247,246,0.58)), ";
-  return `${overlay}radial-gradient(circle at 10% 14%, ${hexAlpha(config.primaryColor, 0.62)} 0, transparent ${scale}%), radial-gradient(circle at 88% 18%, ${hexAlpha(config.secondaryColor, 0.56)} 0, transparent ${scale + 14}%), radial-gradient(circle at 46% 80%, ${hexAlpha(config.accentColor, 0.48)} 0, transparent ${scale + 20}%), radial-gradient(circle at 68% 42%, ${hexAlpha(config.primaryColor, 0.34)} 0, transparent ${scale + 10}%), linear-gradient(${angle}deg, ${from} 0%, ${to} 60%, ${hexAlpha(config.accentColor, 0.34)} 142%)`;
+  const pattern = String(config.backgroundDynamicPattern || "flow");
+  const patternLayer =
+    pattern === "ripple"
+      ? `repeating-radial-gradient(circle at 50% 54%, ${hexAlpha(config.primaryColor, 0.12)} 0 2%, transparent 2% 8%), `
+      : pattern === "float"
+        ? `radial-gradient(circle at 32% 42%, ${hexAlpha(config.secondaryColor, 0.22)} 0, transparent ${scale + 34}%), `
+        : pattern === "zoom"
+          ? `radial-gradient(circle at 50% 50%, ${hexAlpha(config.accentColor, 0.26)} 0, transparent ${scale + 48}%), `
+          : "";
+  return `${overlay}${patternLayer}radial-gradient(circle at 10% 14%, ${hexAlpha(config.primaryColor, 0.62)} 0, transparent ${scale}%), radial-gradient(circle at 88% 18%, ${hexAlpha(config.secondaryColor, 0.56)} 0, transparent ${scale + 14}%), radial-gradient(circle at 46% 80%, ${hexAlpha(config.accentColor, 0.48)} 0, transparent ${scale + 20}%), radial-gradient(circle at 68% 42%, ${hexAlpha(config.primaryColor, 0.34)} 0, transparent ${scale + 10}%), linear-gradient(${angle}deg, ${from} 0%, ${to} 60%, ${hexAlpha(config.accentColor, 0.34)} 142%)`;
 }
 
 async function validateBackgroundBeforeSave(): Promise<string | null> {
-  if (form.backgroundMode !== "video") return null;
-  const url = String(form.backgroundVideoUrl || "").trim();
-  if (!url) return "背景视频模式必须填写 MP4 视频 URL";
-  if (!/\.mp4(\?|$)/i.test(url)) return "背景视频仅支持 MP4 地址";
-  try {
-    const response = await fetch(url, { method: "HEAD" });
-    if (!response.ok) return `背景视频无法访问 (${response.status})`;
-  } catch {
-    return "背景视频 URL 无法访问，请检查地址或上传到素材管理";
+  if (form.backgroundMode === "video") {
+    const url = String(form.backgroundVideoUrl || "").trim();
+    if (!url) return "背景视频模式必须填写 MP4 视频 URL";
+    if (!/\.mp4(\?|$)/i.test(url)) return "背景视频仅支持 MP4 地址";
+    const accessMessage = await validateAssetHead(url, "背景视频");
+    if (accessMessage) return accessMessage;
+  }
+  if (form.splashEnabled) {
+    const videoUrl = String(form.splashVideoUrl || "").trim();
+    const posterUrl = String(form.splashPosterUrl || "").trim();
+    if (!videoUrl && !posterUrl) return "启用启动页后，请至少配置启动视频或启动封面";
+    if (videoUrl && !/\.mp4(\?|$)/i.test(videoUrl)) return "启动视频仅支持 MP4 地址";
+    if (videoUrl) {
+      const accessMessage = await validateAssetHead(videoUrl, "启动视频");
+      if (accessMessage) return accessMessage;
+    }
   }
   return null;
+}
+
+async function validateAssetHead(url: string, label: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, { method: "HEAD" });
+    if (!response.ok) return `${label}无法访问 (${response.status})`;
+  } catch {
+    return `${label} URL 无法访问，请检查地址或上传到素材管理`;
+  }
+  return null;
+}
+
+function resolveVideoOverlayOpacity(config: ThemeConfig): number {
+  const mode = String(config.backgroundVideoOverlayMode || "light");
+  if (mode === "none") return 0;
+  if (mode === "medium") return 0.22;
+  if (mode === "strong") return 0.38;
+  if (mode === "custom") return Math.max(0, Math.min(0.7, Number(config.backgroundVideoOverlayOpacity) || 0));
+  return 0.08;
 }
 
 function hexAlpha(value: string | undefined, alpha: number): string {
@@ -755,6 +874,14 @@ function hexAlpha(value: string | undefined, alpha: number): string {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.preview-video-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #f5f7fb;
+  pointer-events: none;
 }
 
 .preview-phone {

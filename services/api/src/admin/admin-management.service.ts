@@ -1128,8 +1128,10 @@ const formFieldSelect = {
 const adminUserProfileSelect = {
   id: true,
   openid: true,
+  nickname: true,
   wechatNickname: true,
   wechatAvatarUrl: true,
+  phone: true,
   createdAt: true,
   lastActiveAt: true
 } satisfies Prisma.UserSelect;
@@ -1700,8 +1702,10 @@ function formatUserProfile(user: Prisma.UserGetPayload<{ select: typeof adminUse
   return {
     id: user.id,
     openid: user.openid,
+    nickname: user.nickname,
     wechatNickname: user.wechatNickname,
     wechatAvatarUrl: user.wechatAvatarUrl,
+    phone: user.phone,
     registeredAt: user.createdAt.toISOString(),
     lastActiveAt: user.lastActiveAt?.toISOString() ?? null
   };

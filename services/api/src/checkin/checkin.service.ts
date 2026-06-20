@@ -118,6 +118,46 @@ export class CheckinService {
     return ok(successCheckinResponse(updated, registration, "签到成功"));
   }
 
+  async getStaffMe(currentUser: CurrentUser): Promise<ApiResponse<unknown>> {
+    const assignments = await this.prisma.checkinStaffAssignment.findMany({
+      where: { userId: currentUser.id, enabled: true },
+      include: { conference: { select: { id: true, title: true } }, user: staffUserSelect },
+      orderBy: [{ createdAt: "desc" }]
+    });
+    return ok(formatStaffMe(currentUser.id, assignments));
+  }
+
+  async staffScanCheckin(input: unknown, currentUser: CurrentUser): Promise<ApiResponse<unknown>> {
+    const body = readObject(input);
+    const rawPayload = readRequiredString(body, "qrPayload");
+    const parsed = parseCheckinCredentialPayload(rawPayload);
+    if (!parsed.registrationId) throw new BadRequestException("二维码无效或已过期");
+    const registration = await this.prisma.registration.findFirst({
+      where: { id: parsed.registrationId, registrationNo: parsed.registrationNo },
+      include: registrationCheckinInclude
+    });
+    if (!registration) throw new NotFoundException("未找到报名");
+    await this.assertStaffCanScan(currentUser.id, registration.conferenceId);
+    const config = formatCheckinConfig(await this.findConferenceWithFields(registration.conferenceId));
+    assertCheckinAvailable(config);
+    if (!config.methods.includes("QR_SCAN")) throw new ConflictException("当前会议未启用二维码扫码核销");
+    assertPaidRegistration(registration);
+    const attendee = pickPrimaryAttendee(registration.attendees);
+    if (attendee.checkInStatus === CheckInStatus.CHECKED_IN) {
+      return ok(alreadyCheckedInResponse(attendee, registration, "已签到，无需重复核销"));
+    }
+    if (attendee.checkInStatus === CheckInStatus.CANCELLED) throw new ConflictException("报名已取消，不能签到");
+
+    const updated = await this.completeCheckin({
+      attendee,
+      action: CheckinActionType.QR_SCAN,
+      method: "QR_SCAN",
+      operatorUserId: currentUser.id,
+      remark: readOptionalString(body.remark)
+    });
+    return ok(successCheckinResponse(updated, registration, "签到成功"));
+  }
+
   async adminManualCheckin(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const body = readObject(input);
     const attendeeId = readOptionalString(body.attendeeId);
@@ -191,7 +231,20 @@ export class CheckinService {
   async listRecords(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
     const { page, pageSize, skip } = readPage(query);
     const conferenceId = readOptionalString(query.conferenceId);
-    const where: Prisma.CheckinLogWhereInput = conferenceId ? { registration: { conferenceId } } : {};
+    const method = readOptionalString(query.method);
+    const result = readOptionalString(query.result);
+    const keyword = readOptionalString(query.keyword);
+    const where: Prisma.CheckinLogWhereInput = {
+      ...(conferenceId ? { registration: { conferenceId } } : {}),
+      ...(method ? { method } : {}),
+      ...(result ? { result } : {}),
+      ...(keyword ? { OR: [
+        { registration: { registrationNo: { contains: keyword, mode: "insensitive" } } },
+        { registration: { attendeeName: { contains: keyword, mode: "insensitive" } } },
+        { registration: { user: { wechatNickname: { contains: keyword, mode: "insensitive" } } } },
+        { attendee: { phone: { contains: keyword, mode: "insensitive" } } }
+      ] } : {})
+    };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.checkinLog.findMany({
         where,
@@ -199,7 +252,7 @@ export class CheckinService {
         skip,
         take: pageSize,
         include: {
-          registration: { select: { registrationNo: true, attendeeName: true, phone: true, conference: { select: { title: true } } } },
+          registration: { select: { registrationNo: true, attendeeName: true, phone: true, conference: { select: { title: true } }, user: { select: userPublicSelect } } },
           attendee: { select: { name: true, phone: true, formDataJson: true } },
           operator: { select: { username: true, displayName: true } }
         }
@@ -211,6 +264,8 @@ export class CheckinService {
       items: items.map((item) => ({
         id: item.id,
         conferenceTitle: item.registration.conference.title,
+        wechatAvatarUrl: item.registration.user?.wechatAvatarUrl ?? null,
+        wechatNickname: item.registration.user?.wechatNickname ?? item.registration.user?.nickname ?? null,
         registrationNo: item.registration.registrationNo,
         attendeeName: item.attendee.name || item.registration.attendeeName,
         phone: item.attendee.phone || item.registration.phone,
@@ -233,28 +288,54 @@ export class CheckinService {
 
   async statistics(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
     const conferenceId = readOptionalString(query.conferenceId);
-    const attendeeWhere: Prisma.RegistrationAttendeeWhereInput = conferenceId ? { registration: { conferenceId } } : {};
+    const checkInStatus = readOptionalString(query.checkInStatus);
+    const paymentStatus = readOptionalString(query.paymentStatus);
+    const skuId = readOptionalString(query.skuId);
+    const method = readOptionalString(query.method);
+    const keyword = readOptionalString(query.keyword);
+    const attendeeWhere: Prisma.RegistrationAttendeeWhereInput = {
+      ...(conferenceId ? { registration: { conferenceId } } : {}),
+      ...(skuId ? { skuId } : {}),
+      ...(checkInStatus ? { checkInStatus: checkInStatus as CheckInStatus } : {}),
+      ...(paymentStatus ? { registration: { ...(conferenceId ? { conferenceId } : {}), order: { status: paymentStatus as OrderStatus } } } : {}),
+      ...(keyword ? { OR: [
+        { name: { contains: keyword, mode: "insensitive" } },
+        { phone: { contains: keyword, mode: "insensitive" } },
+        { registration: { registrationNo: { contains: keyword, mode: "insensitive" } } },
+        { registration: { attendeeName: { contains: keyword, mode: "insensitive" } } },
+        { registration: { user: { wechatNickname: { contains: keyword, mode: "insensitive" } } } }
+      ] } : {})
+    };
     const registrationWhere: Prisma.RegistrationWhereInput = conferenceId ? { conferenceId } : {};
     const [registeredCount, paidCount, attendees, logs] = await this.prisma.$transaction([
       this.prisma.registration.count({ where: registrationWhere }),
       this.prisma.registration.count({ where: { ...registrationWhere, order: { status: OrderStatus.PAID } } }),
       this.prisma.registrationAttendee.findMany({ where: attendeeWhere, include: checkinStatsAttendeeInclude }),
-      this.prisma.checkinLog.findMany({ where: conferenceId ? { registration: { conferenceId } } : {}, orderBy: { createdAt: "asc" } })
+      this.prisma.checkinLog.findMany({
+        where: {
+          ...(conferenceId ? { registration: { conferenceId } } : {}),
+          ...(method ? { method } : {})
+        },
+        include: checkinStatsLogInclude,
+        orderBy: { createdAt: "asc" }
+      })
     ]);
     const checkedIn = attendees.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN).length;
     const pending = attendees.filter((item) => item.checkInStatus === CheckInStatus.PENDING).length;
     const notRequired = attendees.filter((item) => item.checkInStatus === CheckInStatus.NOT_REQUIRED).length;
     const total = attendees.length;
-    const latestSuccessLogByAttendee = new Map<string, { method: string | null; action: CheckinActionType; createdAt: Date }>();
+    const latestSuccessLogByAttendee = new Map<string, CheckinStatsLog>();
     for (const log of logs) {
       if (log.afterStatus === CheckInStatus.CHECKED_IN) {
-        latestSuccessLogByAttendee.set(log.attendeeId, { method: log.method, action: log.action, createdAt: log.createdAt });
+        latestSuccessLogByAttendee.set(log.attendeeId, log);
       }
     }
     const paidAttendees = attendees.filter((item) => item.registration.order?.status === OrderStatus.PAID);
     const attendeeRows = paidAttendees.map((item) => formatCheckinAttendeeRow(item, latestSuccessLogByAttendee.get(item.id) ?? null));
     const checkedInList = attendeeRows.filter((item) => item.checkInStatus === CheckInStatus.CHECKED_IN);
     const uncheckedInList = attendeeRows.filter((item) => item.checkInStatus !== CheckInStatus.CHECKED_IN);
+    const failedList = logs.filter((log) => log.result === "FAILED").map(formatCheckinLogRow);
+    const repeatedList = logs.filter((log) => log.failureReason === "DUPLICATE_CHECKIN" || log.result === "DUPLICATE").map(formatCheckinLogRow);
 
     return ok({
       registeredCount,
@@ -264,6 +345,8 @@ export class CheckinService {
       pending,
       notRequired,
       uncheckedIn: Math.max(0, paidCount - checkedIn),
+      failedCount: failedList.length,
+      repeatedCount: repeatedList.length,
       checkInRate: paidCount > 0 ? Number((checkedIn / paidCount).toFixed(4)) : 0,
       bySku: aggregateBy(attendees, (item) => item.sku.name, (rows) => ({
         total: rows.length,
@@ -273,8 +356,82 @@ export class CheckinService {
       byHour: aggregateBy(logs.filter((log) => log.afterStatus === CheckInStatus.CHECKED_IN), (log) => log.createdAt.toISOString().slice(0, 13) + ":00:00.000Z", (rows) => ({ count: rows.length })),
       checkedInList,
       uncheckedInList,
-      paidList: attendeeRows
+      paidList: attendeeRows,
+      registeredList: attendees.map((item) => formatCheckinAttendeeRow(item, latestSuccessLogByAttendee.get(item.id) ?? null)),
+      failedList,
+      repeatedList,
+      emptyReason: conferenceId && total === 0 ? "当前会议未开启签到或暂无报名人员" : "当前筛选条件无结果"
     });
+  }
+
+  async listStaffAssignments(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
+    const { page, pageSize, skip } = readPage(query);
+    const keyword = readOptionalString(query.keyword);
+    const conferenceId = readOptionalString(query.conferenceId);
+    const where: Prisma.CheckinStaffAssignmentWhereInput = {
+      ...(conferenceId ? { OR: [{ conferenceId }, { conferenceId: null }] } : {}),
+      ...(keyword ? { user: { OR: [
+        { nickname: { contains: keyword, mode: "insensitive" } },
+        { wechatNickname: { contains: keyword, mode: "insensitive" } },
+        { phone: { contains: keyword, mode: "insensitive" } },
+        { openid: { contains: keyword, mode: "insensitive" } }
+      ] } } : {})
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.checkinStaffAssignment.findMany({
+        where,
+        include: { user: staffUserSelect, conference: { select: { id: true, title: true } } },
+        orderBy: [{ createdAt: "desc" }],
+        skip,
+        take: pageSize
+      }),
+      this.prisma.checkinStaffAssignment.count({ where })
+    ]);
+    return ok({ items: items.map(formatStaffAssignment), total, page, pageSize });
+  }
+
+  async createStaffAssignment(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const body = readObject(input);
+    const userId = readRequiredString(body, "userId");
+    const conferenceId = readOptionalString(body.conferenceId) ?? null;
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) throw new NotFoundException("User not found");
+    if (conferenceId) {
+      const conference = await this.prisma.conference.findUnique({ where: { id: conferenceId }, select: { id: true } });
+      if (!conference) throw new NotFoundException("Conference not found");
+    }
+    const assignment = await this.prisma.checkinStaffAssignment.create({
+      data: {
+        userId,
+        conferenceId,
+        enabled: readOptionalBoolean(body.enabled) ?? true,
+        permissions: ["checkin:write"],
+        remark: readOptionalString(body.remark),
+        createdBy: admin.id
+      },
+      include: { user: staffUserSelect, conference: { select: { id: true, title: true } } }
+    });
+    await this.writeAudit(admin, AuditAction.CREATE, "CheckinStaffAssignment", assignment.id, "Grant check-in staff permission", { userId, conferenceId });
+    return ok(formatStaffAssignment(assignment));
+  }
+
+  async updateStaffAssignment(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const body = readObject(input);
+    const enabled = readOptionalBoolean(body.enabled);
+    const assignment = await this.prisma.checkinStaffAssignment.update({
+      where: { id },
+      data: {
+        ...(typeof enabled === "boolean" ? { enabled, disabledAt: enabled ? null : new Date() } : {}),
+        ...(typeof body.remark !== "undefined" ? { remark: readOptionalString(body.remark) ?? null } : {})
+      },
+      include: { user: staffUserSelect, conference: { select: { id: true, title: true } } }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "CheckinStaffAssignment", id, enabled ? "Update check-in staff permission" : "Disable check-in staff permission", {
+      userId: assignment.userId,
+      conferenceId: assignment.conferenceId,
+      enabled: assignment.enabled
+    });
+    return ok(formatStaffAssignment(assignment));
   }
 
   private matchPhoneAndName(
@@ -406,6 +563,18 @@ export class CheckinService {
     return attendee ? ({ ...attendee, registration } as AdminAttendeeForCheckin) : null;
   }
 
+  private async assertStaffCanScan(userId: string, conferenceId: string) {
+    const assignment = await this.prisma.checkinStaffAssignment.findFirst({
+      where: {
+        userId,
+        enabled: true,
+        OR: [{ conferenceId }, { conferenceId: null }]
+      },
+      select: { id: true }
+    });
+    if (!assignment) throw new ConflictException("无权限核销该会议");
+  }
+
   private writeAudit(admin: CurrentAdmin, action: AuditAction, entityType: string, entityId: string | null, summary: string, metadataJson?: Prisma.InputJsonValue) {
     return this.prisma.auditLog.create({ data: { adminUserId: admin.id, action, entityType, entityId, summary, metadataJson } });
   }
@@ -535,7 +704,7 @@ function actionToMethod(action: CheckinActionType) {
 
 function formatCheckinAttendeeRow(
   item: CheckinStatsAttendee,
-  log: { method: string | null; action: CheckinActionType; createdAt: Date } | null
+  log: CheckinStatsLog | null
 ) {
   const registrationData = readObject(item.registration.formDataJson);
   const attendeeData = readObject(item.formDataJson);
@@ -545,6 +714,9 @@ function formatCheckinAttendeeRow(
     attendeeId: item.id,
     registrationId: item.registrationId,
     conferenceTitle: item.registration.conference.title,
+    wechatAvatarUrl: item.registration.user?.wechatAvatarUrl ?? null,
+    wechatNickname: item.registration.user?.wechatNickname ?? item.registration.user?.nickname ?? null,
+    userPhone: item.registration.user?.phone ?? null,
     registrationNo: item.registration.registrationNo,
     attendeeName: item.name || item.registration.attendeeName,
     phone: item.phone || item.registration.phone || readValue(attendeeData, "phone") || readValue(registrationData, "phone"),
@@ -558,8 +730,66 @@ function formatCheckinAttendeeRow(
     checkedInAt: item.checkedInAt?.toISOString() ?? null,
     checkInMethod: method,
     checkInMethodText: method ? checkinMethodText(method) : "-",
+    operatorName: log ? log.operator?.displayName ?? log.operator?.username ?? log.operatorUserId ?? "用户本人" : "-",
+    failureReason: log?.failureReason ?? null,
     checkInLogAt: log?.createdAt.toISOString() ?? null,
     paidAt: item.registration.order.paidAt?.toISOString() ?? null
+  };
+}
+
+function formatCheckinLogRow(log: CheckinStatsLog) {
+  const method = log.method ?? actionToMethod(log.action);
+  return {
+    attendeeId: log.attendeeId,
+    registrationId: log.registrationId,
+    conferenceTitle: log.registration.conference.title,
+    wechatAvatarUrl: log.registration.user?.wechatAvatarUrl ?? null,
+    wechatNickname: log.registration.user?.wechatNickname ?? log.registration.user?.nickname ?? null,
+    userPhone: log.registration.user?.phone ?? null,
+    registrationNo: log.registration.registrationNo,
+    attendeeName: log.attendee.name || log.registration.attendeeName,
+    phone: log.attendee.phone || log.registration.phone,
+    company: log.attendee.company,
+    skuName: log.attendee.sku.name,
+    checkInMethod: method,
+    checkInMethodText: checkinMethodText(method),
+    checkInStatus: log.afterStatus,
+    checkInStatusText: checkInStatusShortText(log.afterStatus),
+    result: log.result,
+    failureReason: log.failureReason,
+    operatorName: log.operator?.displayName ?? log.operator?.username ?? log.operatorUserId ?? "用户本人",
+    checkedInAt: log.createdAt.toISOString(),
+    checkInLogAt: log.createdAt.toISOString()
+  };
+}
+
+function formatStaffMe(userId: string, assignments: StaffAssignment[]) {
+  const enabled = assignments.length > 0;
+  const hasAllConferences = assignments.some((item) => !item.conferenceId);
+  return {
+    userId,
+    enabled,
+    canScan: enabled,
+    permissions: enabled ? ["checkin:write"] : [],
+    scopeText: enabled ? (hasAllConferences ? "全部会议" : assignments.map((item) => item.conference?.title).filter(Boolean).join("、")) : "未授权",
+    assignments: assignments.map(formatStaffAssignment)
+  };
+}
+
+function formatStaffAssignment(item: StaffAssignment) {
+  return {
+    id: item.id,
+    userId: item.userId,
+    conferenceId: item.conferenceId,
+    enabled: item.enabled,
+    permissions: Array.isArray(item.permissions) ? item.permissions : ["checkin:write"],
+    remark: item.remark,
+    disabledAt: item.disabledAt?.toISOString() ?? null,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    user: item.user,
+    conference: item.conference,
+    scopeText: item.conference?.title ?? "全部会议"
   };
 }
 
@@ -609,6 +839,10 @@ function readOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function readOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : value === "true" ? true : value === "false" ? false : undefined;
+}
+
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()) : [];
 }
@@ -648,6 +882,19 @@ const registrationCheckinInclude = {
   attendees: { orderBy: { createdAt: "asc" }, include: { sku: { select: { name: true } } } }
 } satisfies Prisma.RegistrationInclude;
 
+const userPublicSelect = {
+  id: true,
+  nickname: true,
+  wechatNickname: true,
+  wechatAvatarUrl: true,
+  phone: true,
+  openid: true
+} satisfies Prisma.UserSelect;
+
+const staffUserSelect = {
+  select: userPublicSelect
+} satisfies Prisma.UserDefaultArgs;
+
 const checkinStatsAttendeeInclude = {
   sku: { select: { name: true } },
   registration: {
@@ -658,15 +905,32 @@ const checkinStatsAttendeeInclude = {
       phone: true,
       status: true,
       formDataJson: true,
+      user: { select: userPublicSelect },
       order: { select: { status: true, paidAt: true } },
       conference: { select: { title: true } }
     }
   }
 } satisfies Prisma.RegistrationAttendeeInclude;
 
+const checkinStatsLogInclude = {
+  registration: {
+    select: {
+      registrationNo: true,
+      attendeeName: true,
+      phone: true,
+      user: { select: userPublicSelect },
+      conference: { select: { title: true } }
+    }
+  },
+  attendee: { select: { name: true, phone: true, company: true, sku: { select: { name: true } } } },
+  operator: { select: { username: true, displayName: true } }
+} satisfies Prisma.CheckinLogInclude;
+
 type RegistrationForCheckin = Prisma.RegistrationGetPayload<{ include: typeof registrationCheckinInclude }>;
 type AdminAttendeeForCheckin = Prisma.RegistrationAttendeeGetPayload<{ include: { registration: { include: typeof registrationCheckinInclude } } }>;
 type CheckinStatsAttendee = Prisma.RegistrationAttendeeGetPayload<{ include: typeof checkinStatsAttendeeInclude }>;
+type CheckinStatsLog = Prisma.CheckinLogGetPayload<{ include: typeof checkinStatsLogInclude }>;
+type StaffAssignment = Prisma.CheckinStaffAssignmentGetPayload<{ include: { user: typeof staffUserSelect; conference: { select: { id: true; title: true } } } }>;
 type ConferenceWithFields = Prisma.ConferenceGetPayload<{
   include: {
     formDefinition: {

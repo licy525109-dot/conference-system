@@ -365,12 +365,22 @@ function editDocument(row: Record<string, any>) {
 
 async function saveDocument() {
   const payload = { title: docForm.title, sourceType: docForm.sourceType, status: docForm.status, contentText: docForm.contentText, fileBase64: docForm.fileBase64 };
-  if (docForm.id) await updateKnowledgeDocument(docForm.id, payload);
-  else await createKnowledgeDocument(conferenceId.value, payload);
-  Object.assign(docForm, { id: "", title: "", sourceType: "TEXT", status: "ACTIVE", contentText: "", fileBase64: "" });
-  docVisible.value = false;
-  await loadDocuments();
-  ElMessage.success("文档已保存并完成分块");
+  saving.value = true;
+  try {
+    const saved = docForm.id ? await updateKnowledgeDocument(docForm.id, payload) : await createKnowledgeDocument(conferenceId.value, payload);
+    Object.assign(docForm, { id: "", title: "", sourceType: "TEXT", status: "ACTIVE", contentText: "", fileBase64: "" });
+    docVisible.value = false;
+    await loadDocuments();
+    if (String(saved.status) === "FAILED") {
+      ElMessage.error(String(saved.lastError || "PDF 解析失败，文档已保存为解析失败状态"));
+    } else {
+      ElMessage.success("文档已保存并完成分块");
+    }
+  } catch (err) {
+    ElMessage.error(readErrorMessage(err));
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function readDocumentFile(event: Event) {
@@ -486,6 +496,11 @@ function readAsDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error || new Error("文件读取失败"));
     reader.readAsDataURL(file);
   });
+}
+
+function readErrorMessage(err: unknown) {
+  if (err instanceof Error && err.message) return err.message;
+  return "文档保存失败，请检查文件格式、大小和网络连接";
 }
 
 function selectConference(id: string, target: string) {

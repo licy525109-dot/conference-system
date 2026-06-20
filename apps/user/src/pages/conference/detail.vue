@@ -1,6 +1,6 @@
 <template>
   <view :class="pageClass" :style="pageStyle">
-    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
     <view class="page-content">
@@ -37,6 +37,16 @@
 
         <AiAssistantEntry v-if="showAssistant" :conference-id="conference.id" />
 
+        <FormSection
+          v-for="module in detailContentModules"
+          :key="module.key"
+          :title="module.title"
+          :class="`detail-module detail-module--${module.style}`"
+        >
+          <button v-if="module.key === 'shareButton'" class="ui-button-secondary" open-type="share">{{ module.content || "分享给微信好友" }}</button>
+          <text v-else class="body-text">{{ module.content || moduleFallbackText(module.key) }}</text>
+        </FormSection>
+
         <FormSection v-if="isModuleVisible('skus')" :title="displaySettings.skusTitle" description="报名规格来自后台票种配置。金额以提交订单时系统计算结果为准。">
           <EmptyState v-if="conference.skus.length === 0" title="暂无可报名规格" description="主办方尚未开放报名票种。" mark="票" />
           <view v-else class="sku-list">
@@ -51,7 +61,7 @@
               </view>
               <view class="sku-side">
                 <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
-                <button v-if="isModuleVisible('submitOrder')" class="ui-button-primary ui-button-compact sku-button" @click="goRegister(sku.id)">{{ displaySettings.primaryButtonText }}</button>
+                <button v-if="showRegistrationAction" class="ui-button-primary ui-button-compact sku-button" @click="goRegister(sku.id)">{{ displaySettings.primaryButtonText }}</button>
               </view>
             </view>
           </view>
@@ -73,7 +83,7 @@
     </view>
     <CustomTabbar active-page-key="conference-detail" />
     <FixedBottomActionBar
-      v-if="conference && isModuleVisible('submitOrder')"
+      v-if="conference && showRegistrationAction"
       amount-label="报名费用"
       :amount-value="priceRangeText"
       note="金额以提交订单时系统计算结果为准"
@@ -123,6 +133,10 @@ const showBodyDynamicBackground = computed(() => theme.value.backgroundMode === 
 const displaySettings = computed(() => normalizeDetailDisplay(conference.value?.contentJson));
 const stockDisplayMode = computed(() => displaySettings.value.inventoryDisplayMode);
 const showAssistant = computed(() => isModuleVisible("assistant") && displaySettings.value.assistantMode === "ai");
+const showRegistrationAction = computed(() => isModuleVisible("registrationButton") || isModuleVisible("submitOrder"));
+const detailContentModules = computed(() =>
+  displaySettings.value.modules.filter((item) => item.visible && ["speakers", "schedule", "location", "customerService", "customerGroup", "calendar", "shareButton"].includes(item.key))
+);
 const contentText = computed(() => toContentText(conference.value?.contentJson) || "会议议程、嘉宾和报名说明请以主办方发布内容为准。");
 const priceRangeText = computed(() => {
   const prices = conference.value?.skus.map((sku) => sku.priceCent).filter(Number.isFinite) ?? [];
@@ -216,6 +230,16 @@ function isModuleVisible(moduleKey: string): boolean {
   return displaySettings.value.visibleModules.includes(moduleKey);
 }
 
+function moduleFallbackText(moduleKey: string): string {
+  if (moduleKey === "location") return conference.value?.location || "会场地点以主办方通知为准。";
+  if (moduleKey === "speakers") return "嘉宾介绍由主办方维护，请以现场议程为准。";
+  if (moduleKey === "schedule") return "日程安排由主办方维护，请以现场通知为准。";
+  if (moduleKey === "customerService") return "如需咨询，请联系会务组。";
+  if (moduleKey === "customerGroup") return "请联系会务组获取官方客户群入口。";
+  if (moduleKey === "calendar") return "可将会议时间添加到个人日程。";
+  return "";
+}
+
 function toContentText(value: unknown): string {
   if (!value) {
     return "";
@@ -240,7 +264,8 @@ function toContentText(value: unknown): string {
 
 function normalizeDetailDisplay(value: unknown) {
   const defaults = {
-    visibleModules: ["conferenceInfo", "assistant", "skus", "inventory", "submitOrder", "guide"],
+    modules: defaultDetailModules(),
+    visibleModules: ["conferenceInfo", "assistant", "skus", "inventory", "registrationButton", "guide"],
     assistantMode: "ai",
     skusTitle: "报名规格",
     guideTitle: "会议详情",
@@ -249,19 +274,63 @@ function normalizeDetailDisplay(value: unknown) {
     lowStockThreshold: 10
   };
   const content = readRecord(value);
-  const source = readRecord(content.detailDisplay);
+  const source = readRecord(content.detailPageDisplay ?? content.detailDisplay);
+  const modules = normalizeDetailModules(source);
   const visibleModules = Array.isArray(source.visibleModules) ? source.visibleModules.filter((item): item is string => typeof item === "string") : defaults.visibleModules;
   const mode = String(source.inventoryDisplayMode || defaults.inventoryDisplayMode).toUpperCase();
   return {
     ...defaults,
-    visibleModules: visibleModules.length ? visibleModules : defaults.visibleModules,
+    modules,
+    visibleModules: modules.filter((item) => item.visible).map((item) => item.key).concat(visibleModules.includes("submitOrder") ? ["submitOrder"] : []),
     assistantMode: typeof source.assistantMode === "string" ? source.assistantMode : defaults.assistantMode,
-    skusTitle: typeof source.skusTitle === "string" && source.skusTitle.trim() ? source.skusTitle.trim() : defaults.skusTitle,
-    guideTitle: typeof source.guideTitle === "string" && source.guideTitle.trim() ? source.guideTitle.trim() : defaults.guideTitle,
+    skusTitle: moduleTitle(modules, "skus", defaults.skusTitle),
+    guideTitle: moduleTitle(modules, "guide", defaults.guideTitle),
     primaryButtonText: typeof source.primaryButtonText === "string" && source.primaryButtonText.trim() ? source.primaryButtonText.trim() : defaults.primaryButtonText,
     inventoryDisplayMode: mode === "EXACT" || mode === "HIDDEN" ? mode : "STATUS",
     lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : defaults.lowStockThreshold
   };
+}
+
+function defaultDetailModules() {
+  return [
+    { key: "conferenceInfo", title: "会议信息", content: "", visible: true, sort: 10, style: "card" },
+    { key: "speakers", title: "嘉宾介绍", content: "", visible: true, sort: 20, style: "card" },
+    { key: "schedule", title: "日程安排", content: "", visible: true, sort: 30, style: "card" },
+    { key: "location", title: "会议地点", content: "", visible: true, sort: 40, style: "card" },
+    { key: "guide", title: "参会指南", content: "", visible: true, sort: 50, style: "card" },
+    { key: "assistant", title: "会议助手", content: "", visible: true, sort: 60, style: "card" },
+    { key: "skus", title: "报名规格", content: "", visible: true, sort: 70, style: "card" },
+    { key: "inventory", title: "库存展示", content: "", visible: true, sort: 80, style: "compact" },
+    { key: "customerService", title: "联系客服", content: "", visible: false, sort: 90, style: "compact" },
+    { key: "customerGroup", title: "加入客户群", content: "", visible: false, sort: 100, style: "compact" },
+    { key: "calendar", title: "添加到日历", content: "", visible: false, sort: 110, style: "compact" },
+    { key: "registrationButton", title: "立即报名", content: "", visible: true, sort: 120, style: "accent" },
+    { key: "shareButton", title: "分享会议", content: "分享给微信好友", visible: true, sort: 130, style: "compact" }
+  ];
+}
+
+function normalizeDetailModules(source: Record<string, unknown>) {
+  const rawModules = Array.isArray(source.modules) ? source.modules : [];
+  const oldVisibleModules = Array.isArray(source.visibleModules) ? source.visibleModules.filter((item): item is string => typeof item === "string") : [];
+  const oldVisible = new Set(oldVisibleModules);
+  return defaultDetailModules()
+    .map((item) => {
+      const record = readRecord(rawModules.find((raw) => readRecord(raw).key === item.key));
+      const hasOldVisible = oldVisibleModules.length > 0;
+      return {
+        ...item,
+        visible: typeof record.visible === "boolean" ? record.visible : hasOldVisible ? oldVisible.has(item.key) || (item.key === "registrationButton" && oldVisible.has("submitOrder")) : item.visible,
+        title: typeof record.title === "string" && record.title.trim() ? record.title.trim() : item.title,
+        content: typeof record.content === "string" ? record.content : item.content,
+        sort: Number.isFinite(Number(record.sort)) ? Number(record.sort) : item.sort,
+        style: typeof record.style === "string" ? record.style : item.style
+      };
+    })
+    .sort((a, b) => a.sort - b.sort);
+}
+
+function moduleTitle(modules: Array<{ key: string; title: string }>, key: string, fallback: string) {
+  return modules.find((item) => item.key === key)?.title || fallback;
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

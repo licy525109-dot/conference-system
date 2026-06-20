@@ -25,20 +25,35 @@
         <el-form-item label="支付模式">
           <el-radio-group v-model="paymentConfigForm.mode">
             <el-radio-button label="disabled">关闭</el-radio-button>
-            <el-radio-button label="mock">Mock 测试</el-radio-button>
             <el-radio-button label="wechat">微信支付</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="商城回调地址">
-          <el-input v-model="paymentConfigForm.notifyUrl" placeholder="https://.../api/mall/payments/wechat/notify" style="width: 360px" />
-        </el-form-item>
-        <el-form-item label="允许测试支付">
-          <el-switch v-model="paymentConfigForm.allowMockPayment" />
+          <div class="notify-field">
+            <el-input v-model="paymentConfigForm.notifyUrl" readonly style="width: 420px" />
+            <el-button @click="copyNotifyUrl">复制回调地址</el-button>
+          </div>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="paymentConfigSaving" @click="savePaymentConfig">保存支付配置</el-button>
         </el-form-item>
       </el-form>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="商城微信支付开启后，系统会在商城 prepay 请求中使用该 notify_url；该回调只处理商城订单，不处理会议报名订单；商城 outTradeNo 使用 MALL_ 前缀。"
+      />
+      <div class="payment-guide">
+        <strong>操作步骤</strong>
+        <span>1. 支付模式选择“微信支付”。</span>
+        <span>2. 检查并复制商城回调地址。</span>
+        <span>3. 保存配置后，用测试商品发起支付。</span>
+        <span>4. 支付成功后查看商城订单状态和支付记录。</span>
+      </div>
+      <div class="readiness-list">
+        <span v-for="item in readinessItems" :key="item.key" :class="{ ok: item.ok }">{{ item.ok ? "已配置" : "缺失" }}：{{ item.label }}</span>
+      </div>
       <el-alert v-if="paymentConfig.unavailableReason" type="warning" :closable="false" show-icon :title="String(paymentConfig.unavailableReason)" />
     </section>
 
@@ -194,7 +209,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
@@ -217,16 +232,19 @@ const shipOrderId = ref("");
 const shipForm = reactive({ company: "", trackingNo: "", pickupCode: "", remark: "" });
 const paymentConfig = ref<Record<string, unknown>>({});
 const paymentConfigSaving = ref(false);
-const paymentConfigForm = reactive({ mode: "disabled", notifyUrl: "", allowMockPayment: false, remark: "" });
+const paymentConfigForm = reactive({ mode: "disabled", notifyUrl: "", remark: "" });
+const readinessItems = computed(() => {
+  const readiness = paymentConfig.value.readiness as { items?: Array<{ key: string; label: string; ok: boolean }> } | undefined;
+  return readiness?.items ?? [];
+});
 
 onMounted(() => void Promise.all([loadPaymentConfig(), load()]));
 
 async function loadPaymentConfig() {
   paymentConfig.value = await getMallPaymentConfig();
   Object.assign(paymentConfigForm, {
-    mode: String(paymentConfig.value.mode || "disabled"),
-    notifyUrl: String(paymentConfig.value.notifyUrl || ""),
-    allowMockPayment: Boolean(paymentConfig.value.allowMockPayment),
+    mode: String(paymentConfig.value.mode || "disabled") === "wechat" ? "wechat" : "disabled",
+    notifyUrl: String(paymentConfig.value.fixedNotifyUrl || paymentConfig.value.notifyUrl || "https://guanchaohuiji.com/api/mall/payments/wechat/notify"),
     remark: String(paymentConfig.value.remark || "")
   });
 }
@@ -240,6 +258,21 @@ async function savePaymentConfig() {
   } finally {
     paymentConfigSaving.value = false;
   }
+}
+
+async function copyNotifyUrl() {
+  const text = paymentConfigForm.notifyUrl || "https://guanchaohuiji.com/api/mall/payments/wechat/notify";
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+  } else {
+    const input = document.createElement("textarea");
+    input.value = text;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    document.body.removeChild(input);
+  }
+  ElMessage.success("商城回调地址已复制");
 }
 
 async function load() {
@@ -321,7 +354,7 @@ function productTypeText(value?: string | null) {
 }
 
 function paymentModeText(value?: string | null) {
-  return { disabled: "支付关闭", mock: "Mock 测试", wechat: "微信支付" }[value || "disabled"] ?? value ?? "-";
+  return { disabled: "支付关闭", mock: "历史测试配置", wechat: "微信支付" }[value || "disabled"] ?? value ?? "-";
 }
 
 function shipmentStatusText(value: string) {
@@ -345,7 +378,7 @@ function refundStatusText(value?: string | null) {
 }
 
 function providerText(value?: string | null) {
-  return value ? ({ MOCK: "Mock 测试", WECHAT: "微信支付" }[value] ?? value) : "-";
+  return value ? ({ MOCK: "历史测试记录", WECHAT: "微信支付" }[value] ?? value) : "-";
 }
 </script>
 
@@ -376,6 +409,47 @@ function providerText(value?: string | null) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.notify-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.payment-guide,
+.readiness-list {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.payment-guide {
+  align-items: center;
+  color: var(--admin-color-text-muted, #64748b);
+  font-size: 13px;
+}
+
+.payment-guide strong {
+  color: var(--admin-color-text, #172033);
+}
+
+.readiness-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.readiness-list span.ok {
+  background: #ecfdf5;
+  color: #047857;
 }
 
 .pagination-row {

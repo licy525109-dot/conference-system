@@ -1,4 +1,3 @@
-import { PAYMENT_MODE } from "@/config/app";
 import { readUniErrMsg } from "@/utils/uniErrors";
 import { ensureLogin } from "./auth";
 import type { WechatPrepayResponse } from "./payment";
@@ -166,13 +165,6 @@ export async function getMallPaymentStatus(id: string) {
 export async function startMallOrderPayment(id: string): Promise<MallPaymentStatus> {
   await ensureLogin();
 
-  // #ifndef MP-WEIXIN
-  if (PAYMENT_MODE === "mock") {
-    await mockPayMallOrder(id);
-    return pollMallPaidStatus(id);
-  }
-  // #endif
-
   // #ifdef MP-WEIXIN
   const prepay = await prepayMallOrderWechat(id);
   await requestMallMiniProgramPayment(prepay);
@@ -180,7 +172,7 @@ export async function startMallOrderPayment(id: string): Promise<MallPaymentStat
   // #endif
 
   // #ifndef MP-WEIXIN
-  throw new Error("当前平台暂不支持真实微信支付，请在 mock 环境使用测试支付。");
+  throw new Error("当前平台暂不支持发起商城微信支付，请在微信小程序中支付。");
   // #endif
 }
 
