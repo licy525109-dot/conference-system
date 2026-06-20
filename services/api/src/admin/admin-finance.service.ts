@@ -264,6 +264,47 @@ export class AdminFinanceService {
     return ok({ items: rows.slice(skip, skip + pageSize), total: registrationTotal + mallTotal, page, pageSize });
   }
 
+  async refundConfig() {
+    const publicBase = resolvePublicApiBase();
+    const registrationWechatConfigured = isRegistrationWechatRefundConfigured() && Boolean(process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim());
+    const mallWechatConfigured = isMallWechatRefundConfigured() && Boolean(process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim());
+    return ok({
+      registration: {
+        enabled: isFeatureEnabled("REFUND_ENABLED"),
+        requiresApproval: process.env.REFUND_REQUIRES_APPROVAL !== "false",
+        mockEnabled: isRegistrationMockRefundEnabled(),
+        wechatRefundEnabled: registrationWechatConfigured,
+        callbackUrl: process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim() || `${publicBase}/payments/wechat/refund-notify`,
+        autoRestoreQuota: process.env.REFUND_AUTO_RESTORE_QUOTA === "true",
+        deadlineText: process.env.REFUND_DEADLINE_TEXT || "退款截止时间未配置，请按运营规则人工核对。",
+        description: process.env.REFUND_DESCRIPTION || "未开启微信真实退款时，只记录退款申请和审核，不会自动打款。"
+      },
+      mall: {
+        enabled: process.env.MALL_REFUND_MODE !== "disabled" || process.env.MALL_MOCK_REFUND_ENABLED === "true" || process.env.MALL_WECHAT_REFUND_ENABLED === "true",
+        requiresApproval: process.env.MALL_REFUND_REQUIRES_APPROVAL !== "false",
+        mockEnabled: isMallMockRefundEnabled(),
+        wechatRefundEnabled: mallWechatConfigured,
+        callbackUrl: process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim() || `${publicBase}/payments/wechat/refund-notify`,
+        autoRestoreStock: process.env.MALL_REFUND_AUTO_RESTORE_STOCK === "true",
+        deadlineText: process.env.MALL_REFUND_DEADLINE_TEXT || "商城退款截止时间未配置，请按售后规则人工核对。",
+        description: process.env.MALL_REFUND_DESCRIPTION || "商城退款和报名退款彼此隔离；未配置微信退款时，不会自动打款。"
+      },
+      offlineMarkEnabled: process.env.OFFLINE_REFUND_MARK_ENABLED === "true",
+      steps: [
+        "配置商户证书、API v3 key、商户号和 WECHAT_PAY_REFUND_NOTIFY_URL。",
+        "确认微信商户平台已设置退款通知地址，并完成公网 HTTPS 回调验证。",
+        "发起退款后等待微信退款结果回调，或在退款详情中查询当前系统记录。",
+        "未配置真实微信退款时，审批只进入处理中或待线下处理，不会显示退款成功。"
+      ],
+      requiredEnv: [
+        { key: "REFUND_ENABLED", configured: typeof process.env.REFUND_ENABLED !== "undefined", restartRequired: true },
+        { key: "REFUND_MODE / WECHAT_REFUND_ENABLED", configured: isRegistrationWechatRefundConfigured() || isRegistrationMockRefundEnabled(), restartRequired: true },
+        { key: "MALL_REFUND_MODE / MALL_WECHAT_REFUND_ENABLED", configured: isMallWechatRefundConfigured() || isMallMockRefundEnabled(), restartRequired: true },
+        { key: "WECHAT_PAY_REFUND_NOTIFY_URL", configured: Boolean(process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim()), restartRequired: true }
+      ]
+    });
+  }
+
   async approveRefund(id: string, admin: CurrentAdmin) {
     const registration = await this.prisma.refund.findUnique({ where: { id }, include: { order: true } });
     if (registration) return this.approveRegistrationRefund(registration, admin);
@@ -1153,6 +1194,11 @@ function isRegistrationWechatRefundConfigured(): boolean {
 
 function isWechatBillDownloadEnabled(): boolean {
   return process.env.WECHAT_PAY_BILL_DOWNLOAD_ENABLED === "true" && Boolean(process.env.WECHAT_PAY_BILL_STORAGE_PATH?.trim());
+}
+
+function resolvePublicApiBase(): string {
+  const base = (process.env.PUBLIC_API_BASE_URL || process.env.API_PUBLIC_BASE_URL || process.env.API_BASE_URL || "https://guanchaohuiji.com/api").trim();
+  return base.replace(/\/$/, "");
 }
 
 function generateCode(prefix: string): string {

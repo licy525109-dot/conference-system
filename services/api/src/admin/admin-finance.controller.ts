@@ -52,6 +52,12 @@ export class AdminFinanceController {
     return this.financeService.listRefunds(query);
   }
 
+  @Get("refund-config")
+  @RequireAdminPermissions("refund:view")
+  refundConfig() {
+    return this.financeService.refundConfig();
+  }
+
   @Post("refunds")
   @RequireAdminPermissions("refund:write")
   createRefund(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {

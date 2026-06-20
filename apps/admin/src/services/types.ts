@@ -1051,6 +1051,29 @@ export interface FinanceRefund {
   refundNotice?: string | null;
 }
 
+export interface FinanceRefundConfig {
+  registration: FinanceRefundRuntimeConfig;
+  mall: FinanceRefundRuntimeConfig & { autoRestoreStock?: boolean };
+  offlineMarkEnabled: boolean;
+  steps: string[];
+  requiredEnv: Array<{
+    key: string;
+    configured: boolean;
+    restartRequired: boolean;
+  }>;
+}
+
+export interface FinanceRefundRuntimeConfig {
+  enabled: boolean;
+  requiresApproval: boolean;
+  mockEnabled: boolean;
+  wechatRefundEnabled: boolean;
+  callbackUrl: string;
+  autoRestoreQuota?: boolean;
+  deadlineText: string;
+  description: string;
+}
+
 export interface FinanceInvoice {
   id: string;
   invoiceNo: string;

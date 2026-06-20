@@ -41,28 +41,17 @@
           </div>
         </section>
 
-        <section class="data-panel cms-panel fixed-module-panel">
+        <section class="data-panel cms-panel cms-planning-panel">
           <div class="library-head">
             <div>
-              <div class="panel-title">固定业务页模块</div>
-              <p class="page-subtitle">会议详情、报名页、商城详情、订单页、凭证页和会员中心在这里集中查看接入状态。</p>
+              <div class="panel-title">业务页接入说明</div>
+              <p class="page-subtitle">真实可编辑、可预览、可发布的业务页直接在上方页面列表中管理。</p>
             </div>
           </div>
-          <div class="fixed-module-list">
-            <button
-              v-for="item in fixedModulePages"
-              :key="item.key"
-              type="button"
-              class="fixed-module-item"
-              :class="{ disabled: !item.enabled }"
-              @click="openFixedModule(item)"
-            >
-              <span>
-                <strong>{{ item.title }}</strong>
-                <small>{{ item.description }}</small>
-              </span>
-              <em>{{ item.enabled ? fixedModuleStatus(item) : "暂未接入渲染" }}</em>
-            </button>
+          <div class="cms-planning-list">
+            <p><strong>已接入渲染：</strong>会议详情页、商城商品详情页。请在页面列表中选择对应模板或指定页面编辑。</p>
+            <p><strong>后续规划：</strong>会议报名页、订单支付页、报名凭证页、会员中心页、发票申请页、售后申请页暂不放入主列表，避免运营误以为已在用户端生效。</p>
+            <p><strong>页面区分：</strong>会议详情页用于“查看详情”，会议报名页用于“立即报名”，两者配置不会互相覆盖。</p>
           </div>
         </section>
 
@@ -143,7 +132,7 @@
           <div class="library-head">
             <div>
               <div class="panel-title">手机预览</div>
-              <p class="page-subtitle">点击预览中的组件即可编辑，拖动组件可调整页面顺序。</p>
+              <p class="page-subtitle">实际小程序预览效果：使用与用户端一致的组件字段协议；未接入渲染的配置不会标为已生效。</p>
             </div>
             <el-select
               v-model="selectedComponentId"
@@ -692,14 +681,6 @@ const pageTypeOptions = [
   { label: "商品详情模板", value: "PRODUCT_DETAIL_TEMPLATE" },
   { label: "指定商品详情页", value: "PRODUCT_DETAIL_PAGE" }
 ];
-const fixedModulePages = [
-  { key: "conference-detail", title: "会议详情页", description: "已接入小程序/H5 会议详情真实渲染", pageType: "CONFERENCE_DETAIL_TEMPLATE", slug: "conference-detail-template", enabled: true },
-  { key: "mall-detail", title: "商城商品详情页", description: "已接入小程序/H5 商品详情真实渲染", pageType: "PRODUCT_DETAIL_TEMPLATE", slug: "product-detail-template", enabled: true },
-  { key: "registration", title: "报名页", description: "当前使用报名表单真实流程，装修插槽待接入", pageType: "CUSTOM", slug: "registration", enabled: false },
-  { key: "order", title: "订单支付页", description: "当前保持支付主链路稳定，装修插槽待接入", pageType: "CUSTOM", slug: "order", enabled: false },
-  { key: "credential", title: "报名凭证页", description: "当前优先保障二维码和签到状态展示，装修插槽待接入", pageType: "CUSTOM", slug: "credential", enabled: false },
-  { key: "member-center", title: "会员中心", description: "当前会员中心使用运营闭环页面，装修插槽待接入", pageType: "CUSTOM", slug: "member-center", enabled: false }
-];
 const loadedPreviewFonts = new Set<string>();
 const materialPickerSpecKey = computed<MaterialSpecKey>(() => {
   if (materialPageTarget.value) return "shareCover";
@@ -1086,31 +1067,6 @@ async function createCustomPage() {
   Object.assign(createForm, { slug: "", title: "", description: "", templateId: "", pageType: "CUSTOM", conferenceId: "", productId: "" });
   createVisible.value = false;
   await loadPages();
-}
-
-async function openFixedModule(item: (typeof fixedModulePages)[number]) {
-  if (!item.enabled) {
-    ElMessage.warning(`${item.title} 暂未接入页面装修渲染，当前仅展示真实业务页。`);
-    return;
-  }
-  const page = pages.value.find((candidate) => candidate.pageKey === item.key || candidate.pageKey === `custom:${item.slug}` || candidate.pageType === item.pageType);
-  if (page) {
-    await selectPage(page);
-    return;
-  }
-  await createPage({
-    pageKey: item.key,
-    title: item.title,
-    description: item.description,
-    pageType: item.pageType
-  });
-  await loadPages();
-  const created = pages.value.find((candidate) => candidate.pageKey === item.key || candidate.pageType === item.pageType);
-  if (created) await selectPage(created);
-}
-
-function fixedModuleStatus(item: (typeof fixedModulePages)[number]) {
-  return pages.value.some((page) => page.pageKey === item.key || page.pageType === item.pageType) ? "已配置" : "可创建";
 }
 
 function syncCreateSlug() {
@@ -2449,62 +2405,28 @@ function splitPreviewLine(value: string): string[] {
   color: var(--admin-color-muted);
 }
 
-.fixed-module-panel {
+.cms-planning-panel {
   margin-top: 12px;
 }
 
-.fixed-module-list {
+.cms-planning-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin-top: 14px;
 }
 
-.fixed-module-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  min-height: 58px;
+.cms-planning-list p {
+  margin: 0;
   padding: 10px 12px;
   border: 1px solid var(--admin-color-border);
   border-radius: 10px;
-  background: #fff;
+  background: #f8fbff;
   color: var(--admin-color-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.fixed-module-item.disabled {
-  cursor: default;
-  background: #f8fafc;
-}
-
-.fixed-module-item strong,
-.fixed-module-item small {
-  display: block;
-}
-
-.fixed-module-item small {
-  margin-top: 3px;
-  color: var(--admin-color-muted);
   line-height: 1.35;
 }
 
-.fixed-module-item em {
-  flex: 0 0 auto;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: #eef4ff;
+.cms-planning-list strong {
   color: var(--admin-color-primary);
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 800;
-}
-
-.fixed-module-item.disabled em {
-  background: #fff7ed;
-  color: #b45309;
 }
 
 .cms-editor,
