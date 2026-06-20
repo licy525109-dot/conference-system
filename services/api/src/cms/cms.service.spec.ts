@@ -40,6 +40,38 @@ describe("CmsService public fallbacks", () => {
     assert.equal(response.data.version.versionNo, 2);
     assert.equal(firstComponent?.type, "hero");
   });
+
+  it("matches specific conference pages by business page type", async () => {
+    const service = new CmsService(
+      createScopedPublishedPagePrismaMock([
+        scopedTemplate("detail-specific", "custom:conference-c1", "CONFERENCE_DETAIL_PAGE", "SPECIFIC_CONFERENCE", "conference-1", "version-detail"),
+        scopedTemplate("form-specific", "custom:registration-c1", "REGISTRATION_FORM_PAGE", "SPECIFIC_CONFERENCE", "conference-1", "version-form"),
+        scopedTemplate("form-generic", "registration-form", "REGISTRATION_FORM", null, null, "version-form-generic")
+      ])
+    );
+
+    const form = await service.getPublishedPage("registration-form", { conferenceId: "conference-1" });
+    const detail = await service.getPublishedPage("conference-detail", { conferenceId: "conference-1" });
+
+    assert.equal(form.data.id, "form-specific");
+    assert.equal(form.data.pageType, "REGISTRATION_FORM_PAGE");
+    assert.equal(detail.data.id, "detail-specific");
+    assert.equal(detail.data.pageType, "CONFERENCE_DETAIL_PAGE");
+  });
+
+  it("falls back to a published generic template when the built-in page has no published version", async () => {
+    const service = new CmsService(
+      createScopedPublishedPagePrismaMock([
+        scopedTemplate("detail-draft", "conference-detail", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_TEMPLATE", null, null),
+        scopedTemplate("detail-template", "custom:conference-detail-template", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_TEMPLATE", null, "version-template")
+      ])
+    );
+
+    const response = await service.getPublishedPage("conference-detail");
+
+    assert.equal(response.data.id, "detail-template");
+    assert.equal(response.data.bindingType, "CONFERENCE_TEMPLATE");
+  });
 });
 
 describe("AdminCmsService validation", () => {
@@ -152,6 +184,72 @@ function createPublicPrismaMock(input: { activeTheme: unknown; tabbar: unknown }
     }
   };
   return mock as typeof mock & PrismaService;
+}
+
+function scopedTemplate(
+  id: string,
+  pageKey: string,
+  pageType: string,
+  bindingType: string | null,
+  conferenceId: string | null,
+  publishedVersionId: string | null
+) {
+  return {
+    id,
+    pageKey,
+    title: id,
+    description: null,
+    pageType,
+    bindingType,
+    conferenceId,
+    productId: null,
+    enabled: true,
+    publishedVersionId,
+    sortOrder: 0,
+    updatedAt: new Date("2026-06-18T00:00:00.000Z")
+  };
+}
+
+function createScopedPublishedPagePrismaMock(templates: ReturnType<typeof scopedTemplate>[]) {
+  const now = new Date("2026-06-18T00:00:00.000Z");
+  const mock = {
+    pageTemplate: {
+      findFirst: async (input: { where: Record<string, unknown>; orderBy?: unknown }) => templates.find((template) => templateMatches(template, input.where)) ?? null
+    },
+    pageVersion: {
+      findFirst: async (input: { where: { id?: string; templateId?: string; status?: string } }) => {
+        const template = templates.find((item) => item.id === input.where.templateId && item.publishedVersionId === input.where.id);
+        if (!template || !template.publishedVersionId) return null;
+        return {
+          id: template.publishedVersionId,
+          versionNo: 1,
+          title: template.title,
+          components: [{ id: `${template.id}-title`, type: "title", enabled: true, sortOrder: 0, config: { text: template.title } }],
+          themeJson: null,
+          publishedAt: now,
+          updatedAt: now
+        };
+      }
+    },
+    activeThemeConfig: {
+      findUnique: async () => null
+    },
+    tabBarConfig: {
+      findUnique: async () => null
+    }
+  };
+  return mock as typeof mock & PrismaService;
+}
+
+function templateMatches(template: ReturnType<typeof scopedTemplate>, where: Record<string, unknown>): boolean {
+  if (where.pageKey && template.pageKey !== where.pageKey) return false;
+  if (where.pageType && template.pageType !== where.pageType) return false;
+  if (where.bindingType && template.bindingType !== where.bindingType) return false;
+  if (where.conferenceId && template.conferenceId !== where.conferenceId) return false;
+  if (typeof where.enabled === "boolean" && template.enabled !== where.enabled) return false;
+  const publishedVersionId = where.publishedVersionId as { not?: null } | undefined;
+  if (publishedVersionId?.not === null && !template.publishedVersionId) return false;
+  return true;
 }
 
 function createAdminValidationPrismaMock(status: string, components: unknown[] = []) {

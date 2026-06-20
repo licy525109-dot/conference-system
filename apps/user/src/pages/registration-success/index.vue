@@ -159,12 +159,10 @@ async function loadCredential() {
   error.value = "";
   try {
     await ensureLogin();
-    const [credentialData, page] = await Promise.all([
-      registrationId.value
-        ? getRegistrationCredential(registrationId.value)
-        : getOrderRegistrationCredential(orderNo.value),
-      getPublishedPage("registration-success")
-    ]);
+    const credentialData = registrationId.value
+      ? await getRegistrationCredential(registrationId.value)
+      : await getOrderRegistrationCredential(orderNo.value);
+    const page = await getPublishedPage("registration-success", { conferenceId: credentialData.conference.id });
     credential.value = credentialData;
     cmsPage.value = page;
     applyPageTitle(page, "报名凭证");

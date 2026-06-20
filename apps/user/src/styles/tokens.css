@@ -79,6 +79,8 @@ page {
   padding: 30rpx var(--cms-space-page-x) calc(228rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
   background: var(--cms-gradient-page);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
   overflow-x: hidden;
   overflow-y: visible;
 }

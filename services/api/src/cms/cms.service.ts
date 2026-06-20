@@ -68,9 +68,11 @@ export class CmsService {
     } satisfies Prisma.PageTemplateSelect;
 
     const conferenceId = options.conferenceId?.trim();
+    const specificConferencePageType = specificConferencePageTypeFor(pageKey);
     if (conferenceId) {
       const specific = await this.prisma.pageTemplate.findFirst({
         where: {
+          pageType: specificConferencePageType,
           bindingType: "SPECIFIC_CONFERENCE",
           conferenceId,
           enabled: true,
@@ -83,9 +85,11 @@ export class CmsService {
     }
 
     const productId = options.productId?.trim();
+    const specificProductPageType = specificProductPageTypeFor(pageKey);
     if (productId) {
       const specific = await this.prisma.pageTemplate.findFirst({
         where: {
+          pageType: specificProductPageType,
           bindingType: "SPECIFIC_PRODUCT",
           productId,
           enabled: true,
@@ -95,6 +99,30 @@ export class CmsService {
         select
       });
       if (specific) return specific;
+    }
+
+    const exact = await this.prisma.pageTemplate.findFirst({
+      where: {
+        pageKey,
+        enabled: true,
+        publishedVersionId: { not: null }
+      },
+      select
+    });
+    if (exact) return exact;
+
+    const templateBindingType = templateBindingTypeFor(pageKey);
+    if (templateBindingType) {
+      const template = await this.prisma.pageTemplate.findFirst({
+        where: {
+          bindingType: templateBindingType,
+          enabled: true,
+          publishedVersionId: { not: null }
+        },
+        orderBy: [{ pageKey: "asc" }, { sortOrder: "asc" }, { updatedAt: "desc" }],
+        select
+      });
+      if (template) return template;
     }
 
     return this.prisma.pageTemplate.findFirst({
@@ -170,6 +198,24 @@ export class CmsService {
       updatedAt: config.updatedAt.toISOString()
     });
   }
+}
+
+function specificConferencePageTypeFor(pageKey: string): string {
+  if (pageKey === "conference-detail") return "CONFERENCE_DETAIL_PAGE";
+  if (pageKey === "registration-form") return "REGISTRATION_FORM_PAGE";
+  if (pageKey === "registration-success") return "REGISTRATION_CREDENTIAL_PAGE";
+  return "__NO_SPECIFIC_CONFERENCE_PAGE__";
+}
+
+function specificProductPageTypeFor(pageKey: string): string {
+  if (pageKey === "mall-detail") return "PRODUCT_DETAIL_PAGE";
+  return "__NO_SPECIFIC_PRODUCT_PAGE__";
+}
+
+function templateBindingTypeFor(pageKey: string): string | null {
+  if (pageKey === "conference-detail") return "CONFERENCE_TEMPLATE";
+  if (pageKey === "mall-detail") return "PRODUCT_TEMPLATE";
+  return null;
 }
 
 export function ok<TData>(data: TData) {

@@ -342,7 +342,7 @@ function readRecord(value: unknown): Record<string, unknown> {
 .page {
   position: relative;
   padding-bottom: calc(260rpx + env(safe-area-inset-bottom));
-  overflow: hidden;
+  overflow: visible;
 }
 
 .page-bg-video {

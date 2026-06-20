@@ -33,7 +33,7 @@
               @click="selectPage(page)"
             >
               <span class="page-item__copy">
-                <strong>{{ page.title }}</strong>
+                <strong>{{ pageDisplayTitle(page) }}</strong>
                 <small>{{ pageTypeLabel(page.pageType) }}{{ pageBindingLabel(page) ? ` · ${pageBindingLabel(page)}` : "" }}</small>
               </span>
               <span class="page-item__status">{{ page.publishedVersionId ? "已发布" : "草稿中" }}</span>
@@ -86,8 +86,8 @@
         <section class="data-panel cms-panel cms-stage-head">
           <div class="editor-heading">
             <div>
-              <div class="panel-title">{{ selectedPage.title }}</div>
-              <p class="page-subtitle">当前页面：{{ selectedPage.pageKey }}，草稿标题用于区分每次装修版本。</p>
+              <div class="panel-title">{{ selectedPageDisplayTitle }}</div>
+              <p class="page-subtitle">当前页面：{{ selectedPage.pageKey }}，{{ selectedPageContextText }}。草稿标题用于区分每次装修版本。</p>
             </div>
             <div class="stage-head__actions">
               <el-input v-model="versionTitle" placeholder="草稿标题" style="width: 260px" />
@@ -146,6 +146,14 @@
               </button>
             </div>
           </el-scrollbar>
+          <el-alert
+            v-if="previewContextHint"
+            class="preview-context-alert"
+            type="info"
+            :closable="false"
+            show-icon
+            :title="previewContextHint"
+          />
           <div class="phone-shell">
             <div class="phone-status" />
             <div class="phone-window" :style="previewStyle">
@@ -155,25 +163,29 @@
                 <span class="phone-capsule"><i /><i /></span>
               </div>
               <div class="phone-screen">
-                <template v-if="previewComponents.length > 0">
-                  <div
-                    v-for="component in previewComponents"
-                    :id="previewComponentDomId(component.id)"
-                    :key="component.id"
-                    class="preview-block"
-                    :class="{ 'is-selected': selectedComponentId === component.id, 'is-dragging': draggingComponentId === component.id }"
-                    draggable="true"
-                    @click="selectPreviewComponent(component.id)"
-                    @dragstart="startPreviewDrag(component.id, $event)"
-                    @dragover.prevent
-                    @drop.prevent="dropPreviewComponent(component.id)"
-                    @dragend="finishPreviewDrag"
-                  >
-                    <span class="preview-block__handle">按住拖动</span>
-                    <component-preview :item="component" :name="presetName(component.type)" />
-                  </div>
-                </template>
-                <div v-else class="preview-empty">页面暂无展示内容</div>
+                <ThemeDynamicBackgroundPreview v-if="previewShowDynamicBackground" :theme="previewTheme" />
+                <div class="phone-screen__content">
+                  <BusinessPreviewContext v-if="businessPreviewContext" :context="businessPreviewContext" />
+                  <template v-if="previewComponents.length > 0">
+                    <div
+                      v-for="component in previewComponents"
+                      :id="previewComponentDomId(component.id)"
+                      :key="component.id"
+                      class="preview-block"
+                      :class="{ 'is-selected': selectedComponentId === component.id, 'is-dragging': draggingComponentId === component.id }"
+                      draggable="true"
+                      @click="selectPreviewComponent(component.id)"
+                      @dragstart="startPreviewDrag(component.id, $event)"
+                      @dragover.prevent
+                      @drop.prevent="dropPreviewComponent(component.id)"
+                      @dragend="finishPreviewDrag"
+                    >
+                      <span class="preview-block__handle">按住拖动</span>
+                      <component-preview :item="component" :name="presetName(component.type)" />
+                    </div>
+                  </template>
+                  <div v-else class="preview-empty">页面暂无展示内容</div>
+                </div>
               </div>
               <div v-if="previewTabbarItems.length > 0" class="phone-tabbar">
                 <div
@@ -364,14 +376,14 @@
         <el-form-item label="页面地址尾缀"><el-input v-model="createForm.slug" placeholder="例如 about-us；指定详情页可自动生成" /></el-form-item>
         <el-form-item label="页面标题"><el-input v-model="createForm.title" /></el-form-item>
         <el-form-item label="页面说明"><el-input v-model="createForm.description" /></el-form-item>
-        <el-form-item v-if="createForm.pageType === 'CONFERENCE_DETAIL_PAGE'" label="绑定会议">
-          <el-select v-model="createForm.conferenceId" filterable placeholder="选择具体会议">
+        <el-form-item v-if="requiresCreateConference" label="绑定会议">
+          <el-select v-model="createForm.conferenceId" filterable placeholder="选择具体会议" @change="syncCreateSlug">
             <el-option v-for="item in previewConferences" :key="item.id" :label="item.title" :value="item.id" />
           </el-select>
-          <p class="form-help">指定会议详情页只对所选会议生效；未命中时用户端会回退会议详情模板。</p>
+          <p class="form-help">{{ createConferenceBindingHelp }}</p>
         </el-form-item>
         <el-form-item v-if="createForm.pageType === 'PRODUCT_DETAIL_PAGE'" label="绑定商品">
-          <el-select v-model="createForm.productId" filterable placeholder="选择具体商品">
+          <el-select v-model="createForm.productId" filterable placeholder="选择具体商品" @change="syncCreateSlug">
             <el-option v-for="item in productOptions" :key="item.id" :label="item.title" :value="item.id" />
           </el-select>
           <p class="form-help">指定商品详情页只对所选商品生效；未命中时用户端会回退商品详情模板。</p>
@@ -507,9 +519,11 @@
 import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
+import ThemeDynamicBackgroundPreview from "../../components/ThemeDynamicBackgroundPreview.vue";
 import {
   createPage,
   createPageLibraryTemplate,
+  getTheme,
   getProductCategoryOptions,
   getProductOptions,
   getPageVersion,
@@ -582,6 +596,16 @@ interface CmsComponentSupportMeta {
   description: string;
 }
 
+interface BusinessPreviewContextModel {
+  kind: string;
+  label: string;
+  title: string;
+  subtitle: string;
+  rows: Array<{ label: string; value: string }>;
+  notice: string;
+  cta?: string;
+}
+
 const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
   hero: { label: "已支持", status: "supported", description: "小程序/H5 已完整支持图片横幅展示" },
   "conference-list": { label: "已支持", status: "supported", description: "小程序/H5 已完整支持会议列表展示和详情跳转" },
@@ -632,6 +656,36 @@ const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
 
 const ADDABLE_SUPPORT_STATUSES: CmsComponentSupportStatus[] = ["supported", "basic"];
 const REGISTRATION_CTA_TYPES = ["registration-button", "floating-registration-button"];
+const PAGE_TYPES_REQUIRING_CONFERENCE_UI = ["CONFERENCE_DETAIL_PAGE", "REGISTRATION_FORM_PAGE", "REGISTRATION_CREDENTIAL_PAGE"];
+const DEFAULT_PREVIEW_THEME: ThemeConfig = {
+  visualPreset: "business-blue",
+  primaryColor: "#315d7d",
+  secondaryColor: "#3a8f79",
+  accentColor: "#b58b47",
+  backgroundColor: "#f5f7f6",
+  cardBackground: "#ffffff",
+  radius: 8,
+  buttonStyle: "solid",
+  shadow: "soft",
+  titleFontSize: 42,
+  bannerStyle: "clean",
+  backgroundMode: "solid",
+  backgroundGradientFrom: "#fbfcfb",
+  backgroundGradientTo: "#edf3f0",
+  backgroundImageUrl: "",
+  backgroundVideoUrl: "",
+  backgroundVideoPosterUrl: "",
+  backgroundVideoOverlayMode: "light",
+  backgroundVideoOverlayOpacity: 0.08,
+  backgroundDynamicDensity: 40,
+  backgroundDynamicSpeed: 30,
+  backgroundDynamicPattern: "flow",
+  backgroundGradientAngle: 135,
+  backgroundBottomFilter: true,
+  backgroundApplyTo: "body",
+  themeApplyMode: "all",
+  themeApplyPageKeys: []
+};
 
 const pages = ref<PageTemplate[]>([]);
 const libraryTemplates = ref<PageLibraryTemplate[]>([]);
@@ -655,7 +709,7 @@ const selectedComponentId = ref("");
 const draggingComponentId = ref("");
 const templateKeyword = ref("");
 const templateCategory = ref("全部");
-const previewTheme: Partial<ThemeConfig> = { primaryColor: "#1463ff", secondaryColor: "#18c29c", backgroundColor: "#f5f7fb", cardBackground: "#ffffff", radius: 8 };
+const previewTheme = reactive<ThemeConfig>({ ...DEFAULT_PREVIEW_THEME });
 const materialVisible = ref(false);
 const materialLoading = ref(false);
 const materialKeyword = ref("");
@@ -671,7 +725,9 @@ const pageTypeOptions = [
   { label: "普通页面", value: "CUSTOM" },
   { label: "会议首页", value: "HOME" },
   { label: "会议报名页", value: "REGISTRATION_FORM" },
+  { label: "指定会议报名页", value: "REGISTRATION_FORM_PAGE" },
   { label: "报名凭证页", value: "REGISTRATION_CREDENTIAL" },
+  { label: "指定报名凭证页", value: "REGISTRATION_CREDENTIAL_PAGE" },
   { label: "用户页", value: "USER" },
   { label: "商城下单/购物车页", value: "MALL_CHECKOUT" },
   { label: "商城首页", value: "MALL" },
@@ -750,8 +806,147 @@ const componentOptions = computed(() =>
   }))
 );
 const selectedComponent = computed(() => components.value.find((component) => component.id === selectedComponentId.value) ?? null);
-const previewTitle = computed(() => pageMeta.pageTitle.trim() || selectedPage.value?.title || "会议报名");
+const selectedPageDisplayTitle = computed(() => (selectedPage.value ? pageDisplayTitle(selectedPage.value) : "页面装修"));
+const previewTitle = computed(() => pageMeta.pageTitle.trim() || selectedPageDisplayTitle.value || "会议报名");
 const previewTabbarItems = computed(() => (previewTabbar.value?.enabled === false ? [] : (previewTabbar.value?.items ?? []).filter((item) => item.visible).sort((a, b) => a.sortOrder - b.sortOrder)));
+const requiresCreateConference = computed(() => PAGE_TYPES_REQUIRING_CONFERENCE_UI.includes(createForm.pageType));
+const createConferenceBindingHelp = computed(() => {
+  if (createForm.pageType === "REGISTRATION_FORM_PAGE") return "指定会议报名页只对所选会议生效；未命中时用户端会回退会议报名通用页。";
+  if (createForm.pageType === "REGISTRATION_CREDENTIAL_PAGE") return "指定报名凭证页只对所选会议的报名凭证生效；未命中时用户端会回退报名凭证通用页。";
+  return "指定会议详情页只对所选会议生效；未命中时用户端会回退会议详情通用模板。";
+});
+const selectedBoundConference = computed(() => {
+  const conferenceId = selectedPage.value?.conferenceId;
+  return conferenceId ? previewConferences.value.find((item) => item.id === conferenceId) ?? null : null;
+});
+const selectedBoundProduct = computed(() => {
+  const productId = selectedPage.value?.productId;
+  return productId ? productOptions.value.find((item) => item.id === productId) ?? null : null;
+});
+const previewContextConferences = computed(() => {
+  if (selectedBoundConference.value) return [selectedBoundConference.value];
+  if (selectedPage.value && isConferenceContextPage(selectedPage.value)) return previewConferences.value.slice(0, 1);
+  return previewConferences.value;
+});
+const selectedPageContextText = computed(() => (selectedPage.value ? pageContextText(selectedPage.value) : "未选择页面"));
+const previewContextHint = computed(() => {
+  const page = selectedPage.value;
+  if (!page) return "";
+  if (selectedBoundConference.value) {
+    return `${pageDisplayTitle(page)} · 预览数据来自会议“${selectedBoundConference.value.title}”，小程序会按 conferenceId 优先读取该页面。`;
+  }
+  if (isConferenceContextPage(page)) {
+    const sample = previewContextConferences.value[0];
+    return `${pageDisplayTitle(page)} · 未绑定具体会议，发布后作为通用模板；预览使用${sample ? `“${sample.title}”` : "示例会议"}上下文。`;
+  }
+  if (selectedBoundProduct.value) {
+    return `${pageDisplayTitle(page)} · 预览数据来自商品“${selectedBoundProduct.value.title}”，小程序会按 productId 优先读取该页面。`;
+  }
+  if (page.bindingType === "PRODUCT_TEMPLATE") {
+    return `${pageDisplayTitle(page)} · 未绑定具体商品，发布后作为商品详情通用模板。`;
+  }
+  return "";
+});
+const businessPreviewContext = computed<BusinessPreviewContextModel | null>(() => {
+  const page = selectedPage.value;
+  if (!page) return null;
+  const conference = selectedBoundConference.value ?? (isConferenceContextPage(page) ? previewContextConferences.value[0] : null);
+  const product = selectedBoundProduct.value ?? (page.pageType === "PRODUCT_DETAIL_TEMPLATE" || page.pageType === "PRODUCT_DETAIL_PAGE" || page.pageKey === "mall-detail" ? productOptions.value[0] ?? null : null);
+
+  if (["CONFERENCE_DETAIL", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_DETAIL_PAGE"].includes(page.pageType) || page.pageKey === "conference-detail") {
+    return {
+      kind: "conference-detail",
+      label: selectedBoundConference.value ? "指定会议详情" : "会议详情通用模板",
+      title: conference?.title ?? "选择会议，完成报名缴费",
+      subtitle: conference?.subtitle || "会议详情固定展示会议标题、时间、地点和报名状态，CMS 内容会显示在详情说明区域。",
+      rows: [
+        { label: "会议时间", value: conference ? formatPreviewDate(conference.startAt) : "以会议真实时间为准" },
+        { label: "会议地点", value: conference?.location || "以会议真实地点为准" },
+        { label: "报名状态", value: "由会议报名时间和票种库存实时计算" }
+      ],
+      notice: "小程序真实页会先展示会议固定信息和底部报名按钮，再展示当前 CMS 组件。",
+      cta: "立即报名"
+    };
+  }
+
+  if (page.pageType === "REGISTRATION_FORM" || page.pageType === "REGISTRATION_FORM_PAGE") {
+    return {
+      kind: "registration-form",
+      label: selectedBoundConference.value ? "指定会议报名页" : "会议报名通用页",
+      title: conference?.title ?? "会议报名",
+      subtitle: "报名页固定展示票种选择、优惠试算、参会人表单和费用确认，CMS 内容插入在报名信息与票种选择之间。",
+      rows: [
+        { label: "绑定会议", value: conference?.title ?? "进入具体会议报名时自动注入" },
+        { label: "表单字段", value: "来自该会议报名表单配置" },
+        { label: "金额计算", value: "提交订单时由后端重算" }
+      ],
+      notice: "后台预览使用所选会议上下文；用户端会按 conferenceId 读取指定页，未命中时回退通用页。",
+      cta: "提交订单"
+    };
+  }
+
+  if (page.pageType === "REGISTRATION_CREDENTIAL" || page.pageType === "REGISTRATION_CREDENTIAL_PAGE") {
+    return {
+      kind: "registration-credential",
+      label: selectedBoundConference.value ? "指定报名凭证页" : "报名凭证通用页",
+      title: conference?.title ?? "报名凭证",
+      subtitle: "凭证页会注入真实报名号、二维码、支付信息、报名字段和签到状态。",
+      rows: [
+        { label: "绑定会议", value: conference?.title ?? "根据报名记录自动注入" },
+        { label: "凭证二维码", value: "使用真实报名凭证 token" },
+        { label: "签到状态", value: "按当前报名记录实时展示" }
+      ],
+      notice: "预览展示页面结构；小程序真实页会使用用户自己的报名凭证数据。",
+      cta: "查看签到"
+    };
+  }
+
+  if (page.pageType === "PRODUCT_DETAIL_TEMPLATE" || page.pageType === "PRODUCT_DETAIL_PAGE" || page.pageKey === "mall-detail") {
+    return {
+      kind: "product-detail",
+      label: selectedBoundProduct.value ? "指定商品详情" : "商品详情通用模板",
+      title: product?.title ?? "商品详情",
+      subtitle: product?.subtitle || "商品详情固定展示商品图片、SKU 库存、数量和履约信息，CMS 内容会显示在商品说明区域。",
+      rows: [
+        { label: "绑定商品", value: product?.title ?? "进入具体商品时自动注入" },
+        { label: "库存", value: "来自商品 SKU 实时库存" },
+        { label: "订单", value: "创建商城待支付订单后再支付" }
+      ],
+      notice: "指定商品页按 productId 优先生效；未命中时回退商品详情通用模板。",
+      cta: "创建订单"
+    };
+  }
+
+  if (page.pageKey === "cart" || page.pageType === "MALL_CHECKOUT") {
+    return {
+      kind: "cart",
+      label: "商城下单/购物车页",
+      title: "购物车",
+      subtitle: "页面固定展示会议报名项和商城商品项，CMS 内容显示在顶部运营位。",
+      rows: [
+        { label: "报名项", value: "沿用会议报名支付链路" },
+        { label: "商品项", value: "创建商城待支付订单" }
+      ],
+      notice: "后台只装修运营内容区域，订单金额和库存以用户端实时数据为准。"
+    };
+  }
+
+  if (page.pageKey === "member-center") {
+    return {
+      kind: "member-center",
+      label: "会员中心页",
+      title: "会员中心",
+      subtitle: "页面固定展示当前会员、权益和等级说明，CMS 内容显示在顶部运营位。",
+      rows: [
+        { label: "会员状态", value: "来自当前登录用户" },
+        { label: "会员价", value: "报名 quote/create order 后端计算" }
+      ],
+      notice: "预览展示页面结构；真实用户数据进入小程序后注入。"
+    };
+  }
+
+  return null;
+});
 const templateCategories = computed(() =>
   Array.from(new Set(libraryTemplates.value.map((item) => item.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-CN"))
 );
@@ -767,17 +962,20 @@ const templatePreviewComponents = computed(() => (templatePreview.value?.version
 const previewStyle = computed(() => ({
   "--preview-primary": previewTheme.primaryColor,
   "--preview-secondary": previewTheme.secondaryColor,
-  "--preview-bg": previewTheme.backgroundColor,
+  "--preview-bg": previewBodyBackground(previewTheme),
+  "--preview-page-bg": previewBodyBackground(previewTheme),
   "--preview-card": previewTheme.cardBackground,
   "--preview-radius": `${previewTheme.radius}px`
 }));
 const templatePreviewStyle = computed(() => ({
   "--preview-primary": previewTheme.primaryColor,
   "--preview-secondary": previewTheme.secondaryColor,
-  "--preview-bg": templateBackgroundColor(templatePreview.value),
+  "--preview-bg": templateBackgroundColor(templatePreview.value) || previewBodyBackground(previewTheme),
+  "--preview-page-bg": templateBackgroundColor(templatePreview.value) || previewBodyBackground(previewTheme),
   "--preview-card": previewTheme.cardBackground,
   "--preview-radius": `${previewTheme.radius}px`
 }));
+const previewShowDynamicBackground = computed(() => previewTheme.backgroundMode === "dynamic-gradient" && previewTheme.backgroundApplyTo !== "header");
 
 watch(
   filteredPresetGroups,
@@ -792,13 +990,14 @@ watch(
 watch(components, installPreviewFonts, { deep: true });
 
 onMounted(async () => {
-  const [presetResponse, conferenceResponse, tabbarResponse, campaignResponse, categoryResponse, productResponse] = await Promise.all([
+  const [presetResponse, conferenceResponse, tabbarResponse, campaignResponse, categoryResponse, productResponse, themeResponse] = await Promise.all([
     listComponentPresets(),
     listConferences({ page: 1, pageSize: 100, status: "PUBLISHED" }).catch(() => ({ items: [] as Conference[] })),
     getTabbar().catch(() => null),
     listCouponCampaigns({ page: 1, pageSize: 100 }).catch(() => ({ items: [] as CouponCampaign[] })),
     getProductCategoryOptions().catch(() => ({ items: [] as ProductCategory[] })),
-    getProductOptions().catch(() => ({ items: [] as Product[] }))
+    getProductOptions().catch(() => ({ items: [] as Product[] })),
+    getTheme().catch(() => null)
   ]);
   presets.value = presetResponse.items;
   previewConferences.value = conferenceResponse.items;
@@ -806,6 +1005,9 @@ onMounted(async () => {
   couponCampaignOptions.value = campaignResponse.items;
   productCategoryOptions.value = categoryResponse.items;
   productOptions.value = productResponse.items;
+  if (themeResponse?.config) {
+    Object.assign(previewTheme, { ...DEFAULT_PREVIEW_THEME, ...themeResponse.config });
+  }
   activePresetGroup.value = presetGroups.value[0]?.name ?? "";
   await Promise.all([loadPages(), loadLibraryTemplates()]);
 });
@@ -1071,14 +1273,20 @@ async function createCustomPage() {
 }
 
 function syncCreateSlug() {
+  if (!PAGE_TYPES_REQUIRING_CONFERENCE_UI.includes(createForm.pageType)) createForm.conferenceId = "";
+  if (createForm.pageType !== "PRODUCT_DETAIL_PAGE") createForm.productId = "";
   if (createForm.pageType === "CONFERENCE_DETAIL_TEMPLATE") createForm.slug = "conference-detail-template";
   if (createForm.pageType === "PRODUCT_DETAIL_TEMPLATE") createForm.slug = "product-detail-template";
   if (createForm.pageType === "CONFERENCE_DETAIL_PAGE" && createForm.conferenceId) createForm.slug = `conference-${createForm.conferenceId.slice(-8)}`;
+  if (createForm.pageType === "REGISTRATION_FORM_PAGE" && createForm.conferenceId) createForm.slug = `registration-${createForm.conferenceId.slice(-8)}`;
+  if (createForm.pageType === "REGISTRATION_CREDENTIAL_PAGE" && createForm.conferenceId) createForm.slug = `credential-${createForm.conferenceId.slice(-8)}`;
   if (createForm.pageType === "PRODUCT_DETAIL_PAGE" && createForm.productId) createForm.slug = `product-${createForm.productId.slice(-8)}`;
 }
 
 function defaultCreateSlug() {
   if (createForm.pageType === "CONFERENCE_DETAIL_PAGE" && createForm.conferenceId) return `conference-${createForm.conferenceId.slice(-8)}`;
+  if (createForm.pageType === "REGISTRATION_FORM_PAGE" && createForm.conferenceId) return `registration-${createForm.conferenceId.slice(-8)}`;
+  if (createForm.pageType === "REGISTRATION_CREDENTIAL_PAGE" && createForm.conferenceId) return `credential-${createForm.conferenceId.slice(-8)}`;
   if (createForm.pageType === "PRODUCT_DETAIL_PAGE" && createForm.productId) return `product-${createForm.productId.slice(-8)}`;
   return `page-${Date.now()}`;
 }
@@ -1090,6 +1298,8 @@ function pageTypeLabel(value: string) {
 function pageTypeHelp(value: string) {
   if (value === "CONFERENCE_DETAIL_TEMPLATE") return "作为所有会议详情页的默认模板，不绑定具体会议。";
   if (value === "CONFERENCE_DETAIL_PAGE") return "绑定某一个具体会议，用户打开该会议详情时优先生效。";
+  if (value === "REGISTRATION_FORM_PAGE") return "绑定某一个具体会议，用户打开该会议报名页时优先生效。";
+  if (value === "REGISTRATION_CREDENTIAL_PAGE") return "绑定某一个具体会议，用户查看该会议报名凭证时优先生效。";
   if (value === "PRODUCT_DETAIL_TEMPLATE") return "作为所有商品详情页的默认模板，不绑定具体商品。";
   if (value === "PRODUCT_DETAIL_PAGE") return "绑定某一个具体商品，用户打开该商品详情时优先生效。";
   return "普通页面可通过底部导航或自定义入口访问。";
@@ -1098,9 +1308,59 @@ function pageTypeHelp(value: string) {
 function pageBindingLabel(page: PageTemplate) {
   if (page.bindingType === "SPECIFIC_CONFERENCE") return previewConferences.value.find((item) => item.id === page.conferenceId)?.title || "已绑定会议";
   if (page.bindingType === "SPECIFIC_PRODUCT") return productOptions.value.find((item) => item.id === page.productId)?.title || "已绑定商品";
-  if (page.bindingType === "CONFERENCE_TEMPLATE") return "所有会议详情";
+  if (page.bindingType === "CONFERENCE_TEMPLATE") return "会议详情通用模板";
   if (page.bindingType === "PRODUCT_TEMPLATE") return "所有商品详情";
   return "";
+}
+
+function pageDisplayTitle(page: PageTemplate) {
+  const binding = pageBindingLabel(page);
+  if (page.pageType === "CONFERENCE_DETAIL_TEMPLATE" || page.pageKey === "conference-detail") return "会议详情页（通用模板）";
+  if (page.pageType === "CONFERENCE_DETAIL_PAGE") return `会议详情页（${binding || "未绑定会议"}）`;
+  if (page.pageType === "REGISTRATION_FORM") return "会议报名页（通用模板）";
+  if (page.pageType === "REGISTRATION_FORM_PAGE") return `会议报名页（${binding || "未绑定会议"}）`;
+  if (page.pageType === "REGISTRATION_CREDENTIAL") return "报名凭证页（通用模板）";
+  if (page.pageType === "REGISTRATION_CREDENTIAL_PAGE") return `报名凭证页（${binding || "未绑定会议"}）`;
+  if (page.pageType === "PRODUCT_DETAIL_TEMPLATE" || page.pageKey === "mall-detail") return "商品详情页（通用模板）";
+  if (page.pageType === "PRODUCT_DETAIL_PAGE") return `商品详情页（${binding || "未绑定商品"}）`;
+  return page.title;
+}
+
+function pageContextText(page: PageTemplate) {
+  const binding = pageBindingLabel(page);
+  if (page.bindingType === "SPECIFIC_CONFERENCE") return `已绑定会议：${binding || page.conferenceId || "未识别"}`;
+  if (page.bindingType === "SPECIFIC_PRODUCT") return `已绑定商品：${binding || page.productId || "未识别"}`;
+  if (page.bindingType === "CONFERENCE_TEMPLATE") return "会议详情通用模板，未单独绑定的会议会回退到此页";
+  if (page.pageType === "REGISTRATION_FORM") return "会议报名通用页，未单独绑定的会议报名会回退到此页";
+  if (page.pageType === "REGISTRATION_CREDENTIAL") return "报名凭证通用页，未单独绑定的会议凭证会回退到此页";
+  if (page.bindingType === "PRODUCT_TEMPLATE") return "商品详情通用模板，未单独绑定的商品会回退到此页";
+  return "普通业务页面";
+}
+
+function isConferenceContextPage(page: PageTemplate): boolean {
+  return (
+    page.bindingType === "SPECIFIC_CONFERENCE" ||
+    page.bindingType === "CONFERENCE_TEMPLATE" ||
+    ["CONFERENCE_DETAIL", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_DETAIL_PAGE", "REGISTRATION_FORM", "REGISTRATION_FORM_PAGE", "REGISTRATION_CREDENTIAL", "REGISTRATION_CREDENTIAL_PAGE"].includes(page.pageType) ||
+    ["conference-detail", "registration-form", "registration-success"].includes(page.pageKey)
+  );
+}
+
+function previewBodyBackground(theme: ThemeConfig): string {
+  if (theme.backgroundApplyTo === "header") {
+    return theme.backgroundColor || DEFAULT_PREVIEW_THEME.backgroundColor;
+  }
+  if (theme.backgroundMode === "image" && theme.backgroundImageUrl) {
+    const overlay = theme.backgroundBottomFilter === false ? "" : `linear-gradient(180deg, rgba(255,255,255,0.10), ${theme.backgroundColor || DEFAULT_PREVIEW_THEME.backgroundColor} 96%), `;
+    return `${overlay}url("${theme.backgroundImageUrl}") center top / cover no-repeat`;
+  }
+  if (theme.backgroundMode === "gradient" || theme.backgroundMode === "dynamic-gradient") {
+    return `linear-gradient(180deg, ${theme.backgroundGradientFrom || theme.backgroundColor || DEFAULT_PREVIEW_THEME.backgroundColor}, ${theme.backgroundGradientTo || theme.secondaryColor || DEFAULT_PREVIEW_THEME.secondaryColor})`;
+  }
+  if (theme.backgroundMode === "video" && theme.backgroundVideoPosterUrl) {
+    return `url("${theme.backgroundVideoPosterUrl}") center / cover no-repeat`;
+  }
+  return theme.backgroundColor || DEFAULT_PREVIEW_THEME.backgroundColor;
 }
 
 function openTemplateLibrary() {
@@ -1210,7 +1470,7 @@ function templateComponentNames(template: PageLibraryTemplate): string[] {
 
 function templateBackgroundColor(template: PageLibraryTemplate | null): string {
   const value = template?.version?.themeJson?.backgroundColor;
-  return typeof value === "string" && value.trim() ? value : "#f5f7fb";
+  return typeof value === "string" && value.trim() ? value : "";
 }
 
 function componentSummary(component: EditableComponent): string {
@@ -1909,7 +2169,8 @@ function componentNotice(component: EditableComponent): string {
 }
 
 function isConferenceDetailPage(): boolean {
-  return selectedPage.value?.pageKey === "conference-detail";
+  const page = selectedPage.value;
+  return Boolean(page && (page.pageKey === "conference-detail" || ["CONFERENCE_DETAIL", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_DETAIL_PAGE"].includes(page.pageType)));
 }
 
 function isRegistrationCtaType(type: string): boolean {
@@ -1931,6 +2192,30 @@ function thumbClass(type: string): string {
   return "is-content";
 }
 
+const BusinessPreviewContext = defineComponent({
+  name: "BusinessPreviewContext",
+  props: {
+    context: { type: Object as () => BusinessPreviewContextModel, required: true }
+  },
+  setup(props) {
+    return () =>
+      h("div", { class: ["business-preview", `is-${props.context.kind}`] }, [
+        h("span", { class: "business-preview__label" }, props.context.label),
+        h("strong", props.context.title),
+        h("p", props.context.subtitle),
+        h(
+          "div",
+          { class: "business-preview__rows" },
+          props.context.rows.map((row) =>
+            h("span", { key: row.label }, [h("small", row.label), h("b", row.value)])
+          )
+        ),
+        h("em", props.context.notice),
+        props.context.cta ? h("button", props.context.cta) : null
+      ]);
+  }
+});
+
 const ComponentPreview = defineComponent({
   name: "ComponentPreview",
   props: {
@@ -1944,7 +2229,7 @@ const ComponentPreview = defineComponent({
     const titleStyle = () => buildPreviewTitleStyle(props.item);
     const parsedList = (key: string) => list(key).map(splitPreviewLine).filter((item) => item.length > 0);
     const meetings = () =>
-      (previewConferences.value.length > 0 ? previewConferences.value : sampleConferences).map((item, index) => ({
+      (previewContextConferences.value.length > 0 ? previewContextConferences.value : sampleConferences).map((item, index) => ({
         id: item.id,
         title: item.title,
         summary: "summary" in item && typeof item.summary === "string" ? item.summary : summaryFallbackText(props.item),
@@ -2982,11 +3267,21 @@ function splitPreviewLine(value: string): string[] {
 }
 
 .phone-screen {
+  position: relative;
   min-height: 560px;
   max-height: 620px;
   overflow: auto;
+  background: var(--preview-page-bg);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  box-sizing: border-box;
+}
+
+.phone-screen__content {
+  position: relative;
+  z-index: 1;
+  min-height: 560px;
   padding: 8px 0 14px;
-  background: var(--preview-bg);
   box-sizing: border-box;
 }
 
@@ -2997,7 +3292,8 @@ function splitPreviewLine(value: string): string[] {
   gap: 4px;
   padding: 6px 8px 8px;
   border-top: 1px solid rgb(15 23 42 / 8%);
-  background: #ffffff;
+  background: rgb(255 255 255 / 88%);
+  backdrop-filter: blur(12px);
 }
 
 .phone-tabbar__item {
@@ -3192,6 +3488,10 @@ function splitPreviewLine(value: string): string[] {
   display: flex;
   gap: 8px;
   min-width: max-content;
+}
+
+.preview-context-alert {
+  margin: 12px 0 14px;
 }
 
 .preview-component-chip {
@@ -4041,16 +4341,86 @@ function splitPreviewLine(value: string): string[] {
   box-shadow: inset 0 0 0 1px rgb(15 23 42 / 8%);
 }
 
-.phone-screen {
-  background:
-    radial-gradient(circle at 12% 8%, rgb(20 99 255 / 10%), transparent 26%),
-    var(--preview-bg);
-}
-
 .preview-block {
   margin-right: 12px;
   margin-left: 12px;
   border-radius: calc(var(--preview-radius) + 8px);
+}
+
+.business-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px;
+  padding: 16px;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: calc(var(--preview-radius) + 10px);
+  background: rgb(255 255 255 / 92%);
+  color: #172033;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 10%);
+}
+
+.business-preview__label {
+  align-self: flex-start;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgb(49 93 125 / 12%);
+  color: var(--preview-primary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.business-preview strong {
+  color: #172033;
+  font-size: 21px;
+  line-height: 1.25;
+}
+
+.business-preview p,
+.business-preview em {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.65;
+}
+
+.business-preview__rows {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border-radius: var(--preview-radius);
+  background: #f6f8fb;
+}
+
+.business-preview__rows span {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.business-preview__rows small {
+  color: #8a94a6;
+  font-size: 11px;
+}
+
+.business-preview__rows b {
+  min-width: 0;
+  color: #263143;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.business-preview button {
+  align-self: flex-end;
+  min-width: 96px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--preview-primary), var(--preview-secondary));
+  color: #ffffff;
+  font-weight: 800;
 }
 
 .preview-block.is-selected {

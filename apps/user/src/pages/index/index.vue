@@ -251,7 +251,7 @@ interface HomeConferenceDetailText {
 .page {
   position: relative;
   padding-bottom: calc(228rpx + env(safe-area-inset-bottom));
-  overflow: hidden;
+  overflow: visible;
 }
 
 .page-bg-video {
