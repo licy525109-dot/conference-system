@@ -96,7 +96,7 @@ function isTabbarLikePage(url: string): boolean {
   min-height: 124rpx;
   padding: 14rpx 18rpx calc(14rpx + env(safe-area-inset-bottom));
   border-top: 1px solid var(--cms-border);
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.88);
   box-shadow: var(--ui-shadow-bottom);
   backdrop-filter: blur(12px);
 }

@@ -28,7 +28,7 @@ const KNOWN_PAGE_KEYS = new Set([
   "mall-orders",
   "invoice"
 ]);
-const PAGE_TYPES_REQUIRING_CONFERENCE = new Set(["CONFERENCE_DETAIL_PAGE"]);
+const PAGE_TYPES_REQUIRING_CONFERENCE = new Set(["CONFERENCE_DETAIL_PAGE", "REGISTRATION_FORM_PAGE", "REGISTRATION_CREDENTIAL_PAGE"]);
 const PAGE_TYPES_REQUIRING_PRODUCT = new Set(["PRODUCT_DETAIL_PAGE"]);
 const DEFAULT_SCOPE = "global";
 const PAGE_LIBRARY_PREFIX = "template:";
@@ -59,7 +59,7 @@ export class AdminCmsService {
     const pageType = readOptionalString(body, "pageType") ?? inferPageType(pageKey);
     const binding = await this.normalizePageBinding(pageType, body);
     const templateVersion = await this.loadPageLibraryTemplateVersion(readOptionalString(body, "templateId"));
-    const components = parseComponents(body.components ?? templateVersion?.components ?? defaultPageComponents(pageKey));
+    const components = parseComponents(body.components ?? templateVersion?.components ?? defaultPageComponents(defaultComponentPageKey(pageType, pageKey)));
     const themeJson = cloneTemplateThemeForPage(templateVersion?.themeJson, title);
     const template = await catchUniqueConstraint(
       this.prisma.pageTemplate.create({
@@ -574,7 +574,7 @@ export class AdminCmsService {
     for (const page of [
       { pageKey: "home", title: "首页", pageType: "HOME", sortOrder: 0 },
       { pageKey: "conference-list", title: "会议列表页", pageType: "CONFERENCE_LIST", sortOrder: 10 },
-      { pageKey: "conference-detail", title: "会议详情页", pageType: "CONFERENCE_DETAIL", sortOrder: 20 },
+      { pageKey: "conference-detail", title: "会议详情页", pageType: "CONFERENCE_DETAIL_TEMPLATE", sortOrder: 20 },
       { pageKey: "registration-form", title: "会议报名页", pageType: "REGISTRATION_FORM", sortOrder: 30 },
       { pageKey: "registration-success", title: "报名凭证页", pageType: "REGISTRATION_CREDENTIAL", sortOrder: 40 },
       { pageKey: "my-registrations", title: "我的报名页", pageType: "USER", sortOrder: 50 },
@@ -1035,7 +1035,7 @@ function normalizePageKey(value: string): string {
 function inferPageType(pageKey: string): string {
   if (pageKey === "home") return "HOME";
   if (pageKey === "conference-list") return "CONFERENCE_LIST";
-  if (pageKey === "conference-detail") return "CONFERENCE_DETAIL";
+  if (pageKey === "conference-detail") return "CONFERENCE_DETAIL_TEMPLATE";
   if (pageKey === "registration-form") return "REGISTRATION_FORM";
   if (pageKey === "registration-success") return "REGISTRATION_CREDENTIAL";
   if (pageKey === "my-registrations") return "USER";
@@ -1046,6 +1046,14 @@ function inferPageType(pageKey: string): string {
   if (pageKey === "mall-orders") return "MALL_AFTERSALE";
   if (pageKey === "invoice") return "INVOICE";
   return "CUSTOM";
+}
+
+function defaultComponentPageKey(pageType: string, pageKey: string): string {
+  if (["CONFERENCE_DETAIL", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_DETAIL_PAGE"].includes(pageType)) return "conference-detail";
+  if (["REGISTRATION_FORM", "REGISTRATION_FORM_PAGE"].includes(pageType)) return "registration-form";
+  if (["REGISTRATION_CREDENTIAL", "REGISTRATION_CREDENTIAL_PAGE"].includes(pageType)) return "registration-success";
+  if (["PRODUCT_DETAIL_TEMPLATE", "PRODUCT_DETAIL_PAGE"].includes(pageType)) return "mall-detail";
+  return pageKey;
 }
 
 function normalizeTemplateSlug(value: string): string {

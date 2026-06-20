@@ -1,6 +1,5 @@
 <template>
   <view :class="rootClass" :style="rootStyle">
-    <ThemeDynamicBackground v-if="showRootDynamicBackground" :theme="props.theme" placement="absolute" />
     <view
       v-for="(component, index) in visibleComponents"
       :key="component.id"
@@ -451,11 +450,9 @@ const conferences = computed(() => props.conferences ?? []);
 const storedUser = ref(getStoredUser());
 const profileInitial = computed(() => (storedUser.value?.wechatNickname || storedUser.value?.nickname || "用").slice(0, 1));
 const rootStyle = computed(() => ({
-  ...createCmsThemeVars(props.theme),
-  ...createCmsBackgroundStyle(props.theme, "body")
+  ...createCmsThemeVars(props.theme)
 }));
 const rootClass = computed(() => ["cms-page"]);
-const showRootDynamicBackground = computed(() => props.theme.backgroundApplyTo !== "header" && props.theme.backgroundMode === "dynamic-gradient");
 const showHeaderVideo = computed(() => props.theme.backgroundMode === "video" && Boolean(props.theme.backgroundVideoUrl) && props.theme.backgroundApplyTo === "header");
 
 async function handleComponentAction(component: CmsComponent) {

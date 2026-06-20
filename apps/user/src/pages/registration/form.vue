@@ -253,7 +253,7 @@ async function loadPage() {
     const [detail, formResponse, page] = await Promise.all([
       getConferenceDetail(conferenceId.value),
       getConferenceForm(conferenceId.value),
-      getPublishedPage("registration-form")
+      getPublishedPage("registration-form", { conferenceId: conferenceId.value })
     ]);
     conference.value = detail;
     form.value = formResponse;
