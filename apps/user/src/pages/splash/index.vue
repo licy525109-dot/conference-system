@@ -28,9 +28,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from "vue";
-import { onLoad } from "@dcloudio/uni-app";
+import { computed, nextTick, onUnmounted, ref } from "vue";
+import { onLoad, onReady } from "@dcloudio/uni-app";
 import { DEFAULT_THEME, getAppTheme, type ThemeConfig } from "@/services/cms";
+import { resolveSplashRedirect } from "@/utils/launch";
 import { goHome } from "@/utils/navigation";
 
 const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
@@ -38,7 +39,9 @@ const redirectUrl = ref("/pages/index/index");
 const countdown = ref(5);
 const videoFailed = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
+let pendingRedirectTimer: ReturnType<typeof setTimeout> | undefined;
 let finished = false;
+let pageReady = false;
 
 const videoUrl = computed(() => String(theme.value.splashVideoUrl || ""));
 const posterUrl = computed(() => String(theme.value.splashPosterUrl || ""));
@@ -52,12 +55,17 @@ const bottomTextStyle = computed(() => {
 });
 
 onLoad((query) => {
-  redirectUrl.value = normalizeRedirect(query?.redirect);
+  redirectUrl.value = resolveSplashRedirect(query?.redirect);
   void loadSplash();
+});
+
+onReady(() => {
+  pageReady = true;
 });
 
 onUnmounted(() => {
   clearTimer();
+  clearPendingRedirect();
 });
 
 async function loadSplash(): Promise<void> {
@@ -97,17 +105,32 @@ function finish(): void {
   if (finished) return;
   finished = true;
   clearTimer();
-  if (getCurrentPages().length > 1) {
-    uni.navigateBack({
-      delta: 1,
-      fail: () => redirectHome()
-    });
-    return;
-  }
-  redirectHome();
+  void scheduleRedirect();
 }
 
-function redirectHome(): void {
+async function scheduleRedirect(): Promise<void> {
+  await nextTick();
+  if (!pageReady) {
+    pendingRedirectTimer = setTimeout(() => {
+      pendingRedirectTimer = undefined;
+      void scheduleRedirect();
+    }, 0);
+    return;
+  }
+
+  pendingRedirectTimer = setTimeout(() => {
+    pendingRedirectTimer = undefined;
+    redirectToTarget();
+  }, 0);
+}
+
+function redirectToTarget(): void {
+  const pages = getCurrentPages();
+  const current = pages[pages.length - 1] as unknown as { route?: string } | undefined;
+  if (current?.route && current.route !== "pages/splash/index") {
+    return;
+  }
+
   uni.redirectTo({
     url: redirectUrl.value,
     fail: () => goHome()
@@ -125,11 +148,6 @@ function clampSeconds(value: unknown): number {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 5;
   return Math.max(1, Math.min(15, Math.round(numeric)));
-}
-
-function normalizeRedirect(value: unknown): string {
-  const raw = typeof value === "string" ? decodeURIComponent(value) : "/pages/index/index";
-  return raw.startsWith("/pages/") ? raw : "/pages/index/index";
 }
 
 function shouldShowSplash(value: ThemeConfig): boolean {
@@ -165,6 +183,13 @@ function hashStorageSeed(value: string): string {
     hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
   }
   return String(hash);
+}
+
+function clearPendingRedirect(): void {
+  if (pendingRedirectTimer) {
+    clearTimeout(pendingRedirectTimer);
+    pendingRedirectTimer = undefined;
+  }
 }
 </script>
 

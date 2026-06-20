@@ -1,4 +1,5 @@
 import { request } from "./request";
+import { createSplashRedirectUrl } from "@/utils/launch";
 
 export interface CmsComponent {
   id: string;
@@ -184,7 +185,7 @@ export function buildPageShare(page: PublishedPage | null | undefined, path: str
   const meta = getPageMeta(page);
   return {
     title: meta.shareTitle || meta.pageTitle || page?.title || fallbackTitle,
-    path,
+    path: createSplashRedirectUrl(path),
     ...(meta.shareImageUrl ? { imageUrl: meta.shareImageUrl } : {})
   };
 }
