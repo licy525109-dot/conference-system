@@ -21,6 +21,8 @@
         <el-option label="会议封面" value="conference_cover" />
         <el-option label="详情头图" value="conference_header" />
         <el-option label="底部导航图标" value="tabbar_icon" />
+        <el-option label="动图图标" value="animated_icon" />
+        <el-option label="小程序顶部 Logo" value="top_title_logo" />
         <el-option label="支付结果页" value="payment_result" />
         <el-option label="页面字体" value="page_font" />
         <el-option label="主题背景视频" value="theme_background_video" />
@@ -101,6 +103,8 @@
             <el-option label="会议封面" value="conference_cover" />
             <el-option label="详情头图" value="conference_header" />
             <el-option label="底部导航图标" value="tabbar_icon" />
+            <el-option label="动图图标" value="animated_icon" />
+            <el-option label="小程序顶部 Logo" value="top_title_logo" />
             <el-option label="页面字体" value="page_font" />
             <el-option label="主题背景视频" value="theme_background_video" />
             <el-option label="资料下载" value="download_file" />
@@ -139,6 +143,8 @@
             <el-option label="会议封面" value="conference_cover" />
             <el-option label="详情头图" value="conference_header" />
             <el-option label="底部导航图标" value="tabbar_icon" />
+            <el-option label="动图图标" value="animated_icon" />
+            <el-option label="小程序顶部 Logo" value="top_title_logo" />
             <el-option label="页面字体" value="page_font" />
             <el-option label="主题背景视频" value="theme_background_video" />
             <el-option label="资料下载" value="download_file" />

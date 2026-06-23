@@ -649,7 +649,9 @@ function blockClass(component: CmsComponent, index: number): string[] {
   return [
     "cms-block",
     props.theme.backgroundApplyTo === "header" && index === 0 ? "is-header-block" : "",
-    isGenericFullBleed(component) ? "is-component-full-bleed" : ""
+    isGenericFullBleed(component) ? "is-component-full-bleed" : "",
+    isComponentTransparent(component) ? "is-component-transparent" : "",
+    entryTilesUseTransparentBackground(component) ? "is-entry-tiles-transparent" : ""
   ].filter(Boolean);
 }
 
@@ -665,6 +667,22 @@ function showHeaderDynamicBackground(index: number): boolean {
 function isGenericFullBleed(component: CmsComponent): boolean {
   if (!booleanConfig(component, "fullBleed", false)) return false;
   return !["hero", "hero-banner", "carousel", "floating-registration-button"].includes(component.type);
+}
+
+function componentContainerStyle(component: CmsComponent): "card" | "transparent" {
+  const value = stringConfig(component, "contentBackgroundStyle") || stringConfig(component, "containerStyle");
+  if (value === "transparent") return "transparent";
+  if (value === "card") return "card";
+  return isRichContentComponent(component) ? "transparent" : "card";
+}
+
+function isComponentTransparent(component: CmsComponent): boolean {
+  return componentContainerStyle(component) === "transparent";
+}
+
+function entryTilesUseTransparentBackground(component: CmsComponent): boolean {
+  if (!["quick-icon-grid", "service-shortcut-card"].includes(component.type)) return false;
+  return isComponentTransparent(component) && !stringConfig(component, "cardBackground");
 }
 
 function arrayConfig(component: CmsComponent, key: string): unknown[] {
@@ -1656,6 +1674,13 @@ function homeTextStyle(component: CmsComponent): Record<string, string> {
 }
 
 function homePanelStyle(component: CmsComponent): Record<string, string> {
+  if (isComponentTransparent(component)) {
+    return {
+      background: "transparent",
+      border: "0",
+      boxShadow: "none"
+    };
+  }
   const background = stringConfig(component, "backgroundColor") || stringConfig(component, "cardBackground");
   return background ? { background } : {};
 }
@@ -1679,14 +1704,15 @@ function entryLayoutMode(component: CmsComponent): "grid" | "scroll" {
 }
 
 function homeEntryClass(component: CmsComponent, entry: HomeEntryItem): string[] {
-  const style = entry.cardStyle || stringConfig(component, "cardStyle") || "soft";
+  const style = entry.cardStyle || stringConfig(component, "cardStyle") || (entryTilesUseTransparentBackground(component) ? "plain" : "soft");
   return ["cms-entry-tile", `is-${style}`];
 }
 
 function homeEntryStyle(component: CmsComponent, entry: HomeEntryItem): Record<string, string> {
   const radius = Math.max(0, intConfig(component, "cardRadius", 28));
+  const background = entry.backgroundColor || stringConfig(component, "cardBackground");
   return {
-    ...(entry.backgroundColor || stringConfig(component, "cardBackground") ? { background: entry.backgroundColor || stringConfig(component, "cardBackground") } : {}),
+    ...(background ? { background } : entryTilesUseTransparentBackground(component) ? { background: "transparent", borderColor: "transparent", boxShadow: "none" } : {}),
     ...(entry.textColor ? { color: entry.textColor } : {}),
     borderRadius: `${radius}rpx`
   };
@@ -1822,8 +1848,7 @@ function richContentStyle(component: CmsComponent): Record<string, string> {
 }
 
 function richContentContainerStyle(component: CmsComponent): string {
-  const value = stringConfig(component, "contentBackgroundStyle") || stringConfig(component, "containerStyle");
-  return value === "card" ? "card" : "transparent";
+  return componentContainerStyle(component);
 }
 
 function richContentImageOnly(component: CmsComponent): boolean {
@@ -3361,6 +3386,36 @@ function readErrorText(error: unknown, fallback: string): string {
   border-right-width: 0;
   border-left-width: 0;
   border-radius: 0;
+}
+
+.cms-block.is-header-block.is-component-transparent,
+.cms-block.is-header-block.is-component-full-bleed {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: 0;
+}
+
+.cms-block.is-component-transparent > .cms-section,
+.cms-block.is-component-transparent > .cms-card,
+.cms-block.is-component-transparent > .cms-mini-card,
+.cms-block.is-component-transparent > .cms-grid,
+.cms-block.is-component-transparent > .cms-notice,
+.cms-block.is-component-transparent > .cms-title,
+.cms-block.is-component-transparent > .cms-register {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cms-block.is-entry-tiles-transparent .cms-entry-tile {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cms-block.is-entry-tiles-transparent .cms-entry-tile__icon,
+.cms-block.is-entry-tiles-transparent .cms-entry-tile__icon--text {
+  background: transparent;
 }
 
 .cms-section__title,
