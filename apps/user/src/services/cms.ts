@@ -30,6 +30,8 @@ export interface PublishedPage {
 
 export interface PageMeta {
   pageTitle: string;
+  navLogoUrl: string;
+  navLogoDynamicUrl: string;
   shareTitle: string;
   shareDescription: string;
   shareImageUrl: string;
@@ -169,6 +171,8 @@ export function getPageMeta(page: PublishedPage | null | undefined): PageMeta {
   const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   return {
     pageTitle: typeof source.pageTitle === "string" ? source.pageTitle : "",
+    navLogoUrl: typeof source.navLogoUrl === "string" ? source.navLogoUrl : "",
+    navLogoDynamicUrl: typeof source.navLogoDynamicUrl === "string" ? source.navLogoDynamicUrl : "",
     shareTitle: typeof source.shareTitle === "string" ? source.shareTitle : "",
     shareDescription: typeof source.shareDescription === "string" ? source.shareDescription : "",
     shareImageUrl: typeof source.shareImageUrl === "string" ? source.shareImageUrl : ""
