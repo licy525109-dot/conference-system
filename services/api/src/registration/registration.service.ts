@@ -7,7 +7,9 @@ import {
   UnauthorizedException
 } from "@nestjs/common";
 import {
+  CouponClaimStatus,
   CouponRedemptionStatus,
+  CouponScope,
   CouponType,
   DiscountType,
   ConferenceStatus,
@@ -527,6 +529,12 @@ export class RegistrationService {
       couponRedemption?: {
         count(args: unknown): Promise<number>;
       };
+      mallCouponRedemption?: {
+        count(args: unknown): Promise<number>;
+      };
+      couponClaim?: {
+        count(args: unknown): Promise<number>;
+      };
     };
     if (!prismaAny.coupon?.findUnique) {
       return null;
@@ -537,20 +545,31 @@ export class RegistrationService {
       throw new BadRequestException("优惠券不存在");
     }
     validateCoupon(coupon, this.getCurrentTime(), conferenceId, items, discountBaseAmountCent, totalQuantity);
+    await ensureCouponClaimedForUse(prismaAny, coupon.id, userId);
 
     if (prismaAny.couponRedemption?.count) {
       if (typeof coupon.totalLimit === "number") {
-        const totalUsed = await prismaAny.couponRedemption.count({
+        const registrationUsed = await prismaAny.couponRedemption.count({
           where: { couponId: coupon.id, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
         });
+        const mallUsed =
+          (await prismaAny.mallCouponRedemption?.count({
+            where: { couponId: coupon.id, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
+          })) ?? 0;
+        const totalUsed = registrationUsed + mallUsed;
         if (totalUsed >= coupon.totalLimit) {
           throw new BadRequestException("优惠券已被领完或使用完");
         }
       }
       if (userId && typeof coupon.perUserLimit === "number") {
-        const userUsed = await prismaAny.couponRedemption.count({
+        const registrationUsed = await prismaAny.couponRedemption.count({
           where: { couponId: coupon.id, userId, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
         });
+        const mallUsed =
+          (await prismaAny.mallCouponRedemption?.count({
+            where: { couponId: coupon.id, userId, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
+          })) ?? 0;
+        const userUsed = registrationUsed + mallUsed;
         if (userUsed >= coupon.perUserLimit) {
           throw new BadRequestException("你已使用过该优惠券");
         }
@@ -779,6 +798,10 @@ function validateCoupon(
   if (!coupon.enabled) {
     throw new BadRequestException("优惠券不可用");
   }
+  const scope = coupon.scope ?? CouponScope.CONFERENCE;
+  if (scope !== CouponScope.CONFERENCE && scope !== CouponScope.BOTH) {
+    throw new BadRequestException("优惠券不适用于会议报名");
+  }
   if (coupon.startAt && coupon.startAt > now) {
     throw new BadRequestException("优惠券尚未开始");
   }
@@ -797,6 +820,23 @@ function validateCoupon(
   if (typeof coupon.minQuantity === "number" && totalQuantity < coupon.minQuantity) {
     throw new BadRequestException("未达到优惠券使用张数");
   }
+}
+
+async function ensureCouponClaimedForUse(
+  client: {
+    couponClaim?: {
+      count(args: unknown): Promise<number>;
+    };
+  },
+  couponId: string,
+  userId: string | null
+) {
+  if (!client.couponClaim?.count) return;
+  const totalClaims = await client.couponClaim.count({ where: { couponId } });
+  if (totalClaims === 0) return;
+  if (!userId) throw new BadRequestException("请先登录后使用已领取优惠券");
+  const userClaims = await client.couponClaim.count({ where: { couponId, userId, status: CouponClaimStatus.CLAIMED } });
+  if (userClaims === 0) throw new BadRequestException("请先领取该优惠券");
 }
 
 function calculateCouponAmount(coupon: CouponRecord, originAmountCent: number): number {
@@ -828,6 +868,7 @@ function serializeCouponSnapshot(coupon: CouponRecord): Prisma.InputJsonObject {
     code: coupon.code,
     name: coupon.name,
     type: coupon.type,
+    scope: coupon.scope,
     discountAmountCent: coupon.discountAmountCent,
     discountPercent: coupon.discountPercent,
     maxDiscountCent: coupon.maxDiscountCent,
@@ -1241,6 +1282,7 @@ interface CouponRecord {
   code: string;
   name: string;
   type: CouponType;
+  scope: CouponScope;
   discountAmountCent: number | null;
   discountPercent: number | null;
   maxDiscountCent: number | null;

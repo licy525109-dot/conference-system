@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
+import { applyMallCoupon, type MallCouponPricedItem } from "../mall/mall-coupon-pricing";
 import { resolveMallPaymentRuntime } from "../mall/mall-payment.config";
 import { PrismaService } from "../prisma.service";
 import { RegistrationService } from "../registration/registration.service";
@@ -189,6 +190,7 @@ export class CartService {
     const body = readObject(input);
     assertNoClientAmount(body);
     const itemIds = readStringArray(body.itemIds);
+    const couponCode = readOptionalString(body.couponCode);
     if (itemIds.length === 0) throw new BadRequestException("请选择要结算的商品");
     const items = await this.prisma.cartItem.findMany({
       where: { id: { in: itemIds }, userId: currentUser.id },
@@ -202,6 +204,7 @@ export class CartService {
     const fulfillmentType = requiresReceiver ? "SHIPMENT" : "VIRTUAL";
     const order = await this.prisma.$transaction(async (tx) => {
       const orderItems: Prisma.MallOrderItemCreateWithoutOrderInput[] = [];
+      const pricedItems: MallCouponPricedItem[] = [];
       const logs: Array<{ skuId: string; quantity: number; beforeLockedStock: number; afterLockedStock: number; beforeSoldCount: number; afterSoldCount: number }> = [];
       for (const item of items) {
         const sku = item.sku;
@@ -227,6 +230,7 @@ export class CartService {
           quantity: item.quantity,
           totalAmountCent: item.quantity * sku.priceCent
         });
+        pricedItems.push({ skuId: item.skuId, quantity: item.quantity, totalAmountCent: item.quantity * sku.priceCent });
         logs.push({
           skuId: item.skuId,
           quantity: item.quantity,
@@ -237,14 +241,19 @@ export class CartService {
         });
       }
       const originAmountCent = orderItems.reduce((sum, item) => sum + item.totalAmountCent, 0);
+      const coupon = await applyMallCoupon(tx, { couponCode, userId: currentUser.id, items: pricedItems, originAmountCent });
+      const discountAmountCent = coupon?.discountAmountCent ?? 0;
+      const payableAmountCent = Math.max(0, originAmountCent - discountAmountCent);
       const created = await tx.mallOrder.create({
         data: {
           orderNo: `MALL${Date.now()}${Math.floor(Math.random() * 1000)}`,
           userId: currentUser.id,
           originAmountCent,
-          discountAmountCent: 0,
-          payableAmountCent: originAmountCent,
+          discountAmountCent,
+          payableAmountCent,
           status: "PENDING_PAYMENT",
+          couponId: coupon?.couponId ?? null,
+          couponCode: coupon?.couponCode ?? null,
           receiverName,
           receiverPhone,
           receiverAddress,
@@ -264,6 +273,15 @@ export class CartService {
           }
         }
       });
+      if (coupon) {
+        await tx.mallCouponRedemption.create({
+          data: {
+            couponId: coupon.couponId,
+            userId: currentUser.id,
+            mallOrderId: created.id
+          }
+        });
+      }
       await tx.cartItem.deleteMany({ where: { id: { in: itemIds }, userId: currentUser.id } });
       return created;
     });

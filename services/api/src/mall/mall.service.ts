@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
+import { applyMallCoupon, type MallCouponPricedItem } from "./mall-coupon-pricing";
 import { resolveMallPaymentRuntime, type MallPaymentRuntimeConfig } from "./mall-payment.config";
 
 const FORBIDDEN_AMOUNT_FIELDS = new Set(["originAmountCent", "discountAmountCent", "payableAmountCent", "paidAmountCent", "amountCent", "totalAmountCent", "priceCent"]);
@@ -65,9 +66,11 @@ export class MallService {
     assertNoClientAmount(body);
     const items = readOrderItems(body.items);
     const remark = readNullableString(body.remark);
+    const couponCode = readNullableString(body.couponCode);
 
     const order = await this.prisma.$transaction(async (tx) => {
       const orderItems: Prisma.MallOrderItemCreateWithoutOrderInput[] = [];
+      const pricedItems: MallCouponPricedItem[] = [];
       const logInputs: Array<{
         skuId: string;
         quantity: number;
@@ -104,6 +107,7 @@ export class MallService {
           quantity: item.quantity,
           totalAmountCent: sku.priceCent * item.quantity
         });
+        pricedItems.push({ skuId: sku.id, quantity: item.quantity, totalAmountCent: sku.priceCent * item.quantity });
         logInputs.push({
           skuId: sku.id,
           quantity: item.quantity,
@@ -114,7 +118,10 @@ export class MallService {
         });
       }
 
-      const payableAmountCent = orderItems.reduce((sum, item) => sum + item.totalAmountCent, 0);
+      const originAmountCent = orderItems.reduce((sum, item) => sum + item.totalAmountCent, 0);
+      const coupon = await applyMallCoupon(tx, { couponCode, userId: currentUser.id, items: pricedItems, originAmountCent });
+      const discountAmountCent = coupon?.discountAmountCent ?? 0;
+      const payableAmountCent = Math.max(0, originAmountCent - discountAmountCent);
       const receiverName = requiresReceiver ? readRequiredString(body, "receiverName") : readNullableString(body.receiverName);
       const receiverPhone = requiresReceiver ? readRequiredString(body, "receiverPhone") : readNullableString(body.receiverPhone);
       const receiverAddress = requiresReceiver ? readRequiredString(body, "receiverAddress") : readNullableString(body.receiverAddress);
@@ -122,11 +129,13 @@ export class MallService {
         data: {
           orderNo: generateOrderNo("SHOP"),
           userId: currentUser.id,
-          originAmountCent: payableAmountCent,
-          discountAmountCent: 0,
+          originAmountCent,
+          discountAmountCent,
           payableAmountCent,
           paidAmountCent: null,
           status: "PENDING_PAYMENT",
+          couponId: coupon?.couponId ?? null,
+          couponCode: coupon?.couponCode ?? null,
           receiverName,
           receiverPhone,
           receiverAddress,
@@ -148,6 +157,15 @@ export class MallService {
         },
         include: mallOrderInclude
       });
+      if (coupon) {
+        await tx.mallCouponRedemption.create({
+          data: {
+            couponId: coupon.couponId,
+            userId: currentUser.id,
+            mallOrderId: created.id
+          }
+        });
+      }
       return created;
     });
 

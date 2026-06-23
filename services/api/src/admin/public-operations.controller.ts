@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { RequestWithCurrentUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -16,8 +16,8 @@ export class PublicOperationsController {
 
   @Get("my/coupons")
   @UseGuards(JwtAuthGuard)
-  myCoupons(@Req() request: RequestWithCurrentUser) {
-    return this.operations.myCoupons(request.currentUser);
+  myCoupons(@Req() request: RequestWithCurrentUser, @Query() query: Record<string, string | undefined>) {
+    return this.operations.myCoupons(request.currentUser, query);
   }
 
   @Get("coupon-campaigns/:id/public")

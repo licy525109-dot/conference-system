@@ -50,6 +50,13 @@
             <button class="qty-button" :disabled="!canAddProduct" @click="changeQuantity(1)">+</button>
           </view>
         </view>
+        <view class="coupon-box ui-card">
+          <view>
+            <text class="section-title">商品优惠券</text>
+            <text class="muted">{{ couponCode ? `已选择 ${couponCode}` : "可选择已领取的商品券或通用券，订单金额以后端重算为准。" }}</text>
+          </view>
+          <button class="ui-button-secondary ui-button-compact" @click="selectMallCoupon">{{ couponCode ? "更换" : "选择" }}</button>
+        </view>
         <view v-if="isProductModuleVisible('detail')" class="description-card ui-card">
           <text class="section-title">{{ productModuleTitle('detail', '商品说明') }}</text>
           <text class="muted">{{ descriptionText }}</text>
@@ -103,7 +110,7 @@ import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { addProductCartItem } from "@/services/cart";
 import { getProductDetail, type Product, type ProductSku } from "@/services/mall";
-import { createMallOrder } from "@/services/operations";
+import { createMallOrder, getMyCoupons, type MyCouponItem } from "@/services/operations";
 
 const productId = ref("");
 const product = ref<Product | null>(null);
@@ -115,6 +122,7 @@ const quantity = ref(1);
 const adding = ref(false);
 const buying = ref(false);
 const receiver = ref({ name: "", phone: "", address: "" });
+const couponCode = ref("");
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("mall-detail");
 const heroImage = computed(() => product.value?.coverImageUrl || product.value?.images[0]?.url || "");
 const selectedSku = computed(() => product.value?.skus.find((item) => item.id === selectedSkuId.value) ?? null);
@@ -132,9 +140,29 @@ const descriptionText = computed(() => toDescriptionText(product.value?.descript
 
 onLoad((query) => {
   productId.value = typeof query?.id === "string" ? query.id : "";
+  couponCode.value = readInitialCouponCode(query, "MALL");
   void refreshTheme();
   void load();
 });
+
+function readInitialCouponCode(query: Record<string, unknown> | undefined, scope: "CONFERENCE" | "MALL"): string {
+  const direct = typeof query?.couponCode === "string" ? query.couponCode.trim() : "";
+  if (direct) return direct;
+  const pending = readPendingCoupon(scope);
+  return pending?.code ?? "";
+}
+
+function readPendingCoupon(scope: "CONFERENCE" | "MALL"): { code: string } | null {
+  const value = uni.getStorageSync("pendingCouponForUse");
+  if (!value || typeof value !== "object") return null;
+  const record = value as { code?: unknown; scope?: unknown; savedAt?: unknown };
+  const code = typeof record.code === "string" ? record.code.trim() : "";
+  const couponScope = typeof record.scope === "string" ? record.scope : "";
+  const savedAt = typeof record.savedAt === "number" ? record.savedAt : 0;
+  const fresh = Date.now() - savedAt < 30 * 60 * 1000;
+  if (!code || !fresh || (couponScope !== scope && couponScope !== "BOTH")) return null;
+  return { code };
+}
 
 async function load() {
   if (!productId.value) {
@@ -172,6 +200,7 @@ async function buyNow() {
   try {
     const order = await createMallOrder({
       items: [{ skuId: selectedSkuId.value, quantity: quantity.value }],
+      couponCode: normalizedCouponCode(),
       receiverName: requiresReceiver.value ? receiver.value.name : undefined,
       receiverPhone: requiresReceiver.value ? receiver.value.phone : undefined,
       receiverAddress: requiresReceiver.value ? receiver.value.address : undefined
@@ -188,6 +217,45 @@ async function buyNow() {
   } finally {
     buying.value = false;
   }
+}
+
+async function selectMallCoupon() {
+  try {
+    const response = await getMyCoupons({ scope: "MALL" });
+    const usable = response.items.filter((item) => item.usable && couponFitsSelectedSku(item)).slice(0, 5);
+    if (usable.length === 0) {
+      uni.showToast({ title: "暂无可用于该商品的优惠券", icon: "none" });
+      return;
+    }
+    uni.showActionSheet({
+      itemList: ["不使用优惠券", ...usable.map(formatCouponOption)],
+      success: ({ tapIndex }) => {
+        couponCode.value = tapIndex === 0 ? "" : usable[tapIndex - 1]?.coupon.code ?? "";
+      }
+    });
+  } catch (err) {
+    console.error("[MALL_DETAIL_COUPON_ERROR]", err);
+    uni.showToast({ title: "优惠券加载失败", icon: "none" });
+  }
+}
+
+function couponFitsSelectedSku(item: MyCouponItem) {
+  const allowed = item.coupon.allowedSkuIds ?? [];
+  return allowed.length === 0 || (selectedSkuId.value ? allowed.includes(selectedSkuId.value) : false);
+}
+
+function formatCouponOption(item: MyCouponItem) {
+  const discount =
+    item.coupon.type === "AMOUNT"
+      ? `减 ¥${formatCent(item.coupon.discountAmountCent ?? 0)}`
+      : `${((item.coupon.discountPercent ?? 0) / 100).toFixed(2)} 折`;
+  const threshold = item.coupon.minAmountCent ? `，满 ¥${formatCent(item.coupon.minAmountCent)} 可用` : "";
+  return `${item.coupon.name}（${discount}${threshold}）`;
+}
+
+function normalizedCouponCode(): string | undefined {
+  const code = couponCode.value.trim();
+  return code ? code : undefined;
 }
 
 function selectSku(id: string) {
@@ -393,6 +461,7 @@ function readRecord(value: unknown): Record<string, unknown> {
 
 .description-card,
 .quantity-box,
+.coupon-box,
 .receiver-card {
   padding: 24rpx;
 }
@@ -413,6 +482,13 @@ function readRecord(value: unknown): Record<string, unknown> {
 }
 
 .quantity-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.coupon-box {
   display: flex;
   align-items: center;
   justify-content: space-between;

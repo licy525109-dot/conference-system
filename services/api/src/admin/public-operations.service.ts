@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { CouponClaimStatus, InvoiceStatus, Prisma } from "@prisma/client";
+import { CouponClaimStatus, CouponRedemptionStatus, CouponScope, InvoiceStatus, Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { decryptSecret } from "../wecom/wecom.crypto";
@@ -60,31 +60,69 @@ export class PublicOperationsService {
     });
   }
 
-  async myCoupons(currentUser: CurrentUser | undefined) {
+  async myCoupons(currentUser: CurrentUser | undefined, query: Record<string, unknown> = {}) {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
+    const scope = readOptionalCouponScope(query.scope);
     const items = await this.prisma.couponClaim.findMany({
       where: { userId: currentUser.id },
       orderBy: { createdAt: "desc" },
       include: { coupon: true, campaign: true }
     });
+    const couponIds = Array.from(new Set(items.map((item) => item.couponId)));
+    const [registrationRedemptions, mallRedemptions] = await Promise.all([
+      this.prisma.couponRedemption.findMany({
+        where: { userId: currentUser.id, couponId: { in: couponIds }, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } },
+        select: { couponId: true, status: true, usedAt: true, orderId: true }
+      }),
+      this.prisma.mallCouponRedemption.findMany({
+        where: { userId: currentUser.id, couponId: { in: couponIds }, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } },
+        select: { couponId: true, status: true, usedAt: true, mallOrderId: true }
+      })
+    ]);
+    const usageByCoupon = new Map<string, { pending: boolean; used: boolean; usedAt: string | null }>();
+    for (const item of [...registrationRedemptions, ...mallRedemptions]) {
+      const usage = usageByCoupon.get(item.couponId) ?? { pending: false, used: false, usedAt: null };
+      usage.pending = usage.pending || item.status === CouponRedemptionStatus.PENDING;
+      usage.used = usage.used || item.status === CouponRedemptionStatus.USED;
+      usage.usedAt = usage.usedAt ?? item.usedAt?.toISOString() ?? null;
+      usageByCoupon.set(item.couponId, usage);
+    }
+    const filtered = scope ? items.filter((item) => couponMatchesScope(item.coupon.scope, scope)) : items;
     return ok({
-      items: items.map((item) => ({
-        ...formatDateFields(item),
-        coupon: {
-          id: item.coupon.id,
-          code: item.coupon.code,
-          name: item.coupon.name,
-          type: item.coupon.type,
-          discountAmountCent: item.coupon.discountAmountCent,
-          discountPercent: item.coupon.discountPercent,
-          minAmountCent: item.coupon.minAmountCent,
-          endAt: item.coupon.endAt?.toISOString() ?? null
-        },
-        campaign: {
-          id: item.campaign.id,
-          name: item.campaign.name
-        }
-      }))
+      items: filtered.map((item) => {
+        const usage = usageByCoupon.get(item.couponId);
+        const expired = Boolean(item.coupon.endAt && item.coupon.endAt < new Date());
+        const usable = item.status === CouponClaimStatus.CLAIMED && item.coupon.enabled && !expired && !usage?.pending && !usage?.used;
+        return {
+          ...formatDateFields(item),
+          usedAt: usage?.usedAt ?? item.usedAt?.toISOString() ?? null,
+          usable,
+          statusText: usage?.used ? "已使用" : usage?.pending ? "待支付占用" : expired ? "已过期" : usable ? "可使用" : "不可用",
+          businessType: couponBusinessType(item.coupon.scope),
+          scopeText: couponScopeText(item.coupon.scope),
+          usePath: couponUsePath(item.coupon),
+          coupon: {
+            id: item.coupon.id,
+            code: item.coupon.code,
+            name: item.coupon.name,
+            type: item.coupon.type,
+            scope: item.coupon.scope,
+            discountAmountCent: item.coupon.discountAmountCent,
+            discountPercent: item.coupon.discountPercent,
+            minAmountCent: item.coupon.minAmountCent,
+            minQuantity: item.coupon.minQuantity,
+            conferenceId: item.coupon.conferenceId,
+            allowedSkuIds: Array.isArray(item.coupon.allowedSkuIds) ? item.coupon.allowedSkuIds.filter((value): value is string => typeof value === "string") : [],
+            enabled: item.coupon.enabled,
+            startAt: item.coupon.startAt?.toISOString() ?? null,
+            endAt: item.coupon.endAt?.toISOString() ?? null
+          },
+          campaign: {
+            id: item.campaign.id,
+            name: item.campaign.name
+          }
+        };
+      })
     });
   }
 
@@ -114,6 +152,8 @@ export class PublicOperationsService {
         id: item.coupon.id,
         name: item.coupon.name,
         type: item.coupon.type,
+        scope: item.coupon.scope,
+        scopeText: couponScopeText(item.coupon.scope),
         discountAmountCent: item.coupon.discountAmountCent,
         discountPercent: item.coupon.discountPercent,
         minAmountCent: item.coupon.minAmountCent,
@@ -601,6 +641,34 @@ function formatDateFields(item: Record<string, unknown>): Record<string, unknown
     if (value instanceof Date) output[key] = value.toISOString();
   }
   return output;
+}
+
+function readOptionalCouponScope(value: unknown): CouponScope | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const normalized = value.trim().toUpperCase();
+  return Object.values(CouponScope).includes(normalized as CouponScope) ? (normalized as CouponScope) : null;
+}
+
+function couponMatchesScope(couponScope: CouponScope, requestedScope: CouponScope): boolean {
+  return couponScope === requestedScope || couponScope === CouponScope.BOTH;
+}
+
+function couponBusinessType(scope: CouponScope): "CONFERENCE" | "MALL" | "BOTH" {
+  if (scope === CouponScope.MALL) return "MALL";
+  if (scope === CouponScope.BOTH) return "BOTH";
+  return "CONFERENCE";
+}
+
+function couponScopeText(scope: CouponScope): string {
+  if (scope === CouponScope.MALL) return "商品优惠券";
+  if (scope === CouponScope.BOTH) return "会议/商品通用券";
+  return "会议优惠券";
+}
+
+function couponUsePath(coupon: { scope: CouponScope; conferenceId: string | null }): string {
+  if (coupon.scope === CouponScope.MALL) return "/pages/mall/index";
+  if (coupon.conferenceId) return `/pages/conference/detail?id=${encodeURIComponent(coupon.conferenceId)}`;
+  return "/pages/index/index";
 }
 
 function publicRefundNotice(status: string): string {
