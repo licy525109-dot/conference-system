@@ -160,7 +160,10 @@
             <div class="phone-window" :style="previewStyle">
               <div class="phone-nav">
                 <span class="phone-nav__spacer" />
-                <span class="phone-nav__title">{{ previewTitle }}</span>
+                <span class="phone-nav__title">
+                  <img v-if="previewTitleLogoUrl" class="phone-nav__logo" :src="previewTitleLogoUrl" alt="" />
+                  <span>{{ previewTitle }}</span>
+                </span>
                 <span class="phone-capsule"><i /><i /></span>
               </div>
               <div class="phone-screen">
@@ -260,6 +263,22 @@
             <el-form-item label="小程序页面标题">
               <el-input v-model="pageMeta.pageTitle" placeholder="显示在手机预览顶部" />
             </el-form-item>
+            <el-form-item>
+              <template #label>顶部标题 Logo<MaterialSpecHelp spec-key="topTitleLogo" /></template>
+              <div class="field-row">
+                <el-input v-model="pageMeta.navLogoUrl" placeholder="建议 64x64 或 96x96，PNG/SVG/WebP/GIF，单张不超过 300KB" />
+                <el-button @click="openPageMetaImagePicker('navLogoUrl')">应用素材库</el-button>
+              </div>
+              <p class="form-help">用于后台手机预览中的小程序顶部标题。微信原生导航栏不支持直接插入图片，若正式端需要展示 Logo，需使用自定义导航栏页面。</p>
+            </el-form-item>
+            <el-form-item>
+              <template #label>顶部动态 Logo<MaterialSpecHelp spec-key="topTitleLogo" /></template>
+              <div class="field-row">
+                <el-input v-model="pageMeta.navLogoDynamicUrl" placeholder="可填 GIF/APNG/WebP 动图 URL，不填则使用静态 Logo" />
+                <el-button @click="openPageMetaImagePicker('navLogoDynamicUrl')">应用素材库</el-button>
+              </div>
+              <p class="form-help">动态素材建议控制在 300KB 内，避免影响小程序首屏加载。</p>
+            </el-form-item>
             <el-form-item label="微信分享标题">
               <el-input v-model="pageMeta.shareTitle" placeholder="转发给朋友时展示的标题" />
             </el-form-item>
@@ -345,6 +364,15 @@
           </div>
 
           <template v-if="selectedComponent">
+            <div class="selected-component-actions">
+              <span>{{ selectedComponentIndex + 1 }}. {{ presetName(selectedComponent.type) }}</span>
+              <div>
+                <el-button size="small" plain @click="selectedComponent.enabled = !selectedComponent.enabled">
+                  {{ selectedComponent.enabled ? "隐藏模块" : "显示模块" }}
+                </el-button>
+                <el-button size="small" type="danger" plain @click="removeSelectedComponent">删除当前模块</el-button>
+              </div>
+            </div>
             <el-collapse v-model="expandedConfigGroupIds[selectedComponent.id]" class="config-group-collapse">
               <el-collapse-item v-for="group in groupedFieldsFor(selectedComponent.type)" :key="group.key" :title="group.title" :name="group.key">
                 <el-form label-position="top" class="config-form">
@@ -818,6 +846,8 @@ interface ConfigFieldGroup {
 
 interface PageMetaForm {
   pageTitle: string;
+  navLogoUrl: string;
+  navLogoDynamicUrl: string;
   shareTitle: string;
   shareDescription: string;
   shareImageUrl: string;
@@ -1235,7 +1265,7 @@ const pageTypeOptions = [
 const loadedPreviewFonts = new Set<string>();
 const materialPickerSpecKey = computed<MaterialSpecKey>(() => {
   if (materialEntryTarget.value) return "tabbarIcon";
-  if (materialPageTarget.value) return "shareCover";
+  if (materialPageTarget.value) return pageMetaMaterialSpecKey(materialPageTarget.value);
   const target = materialTarget.value;
   return target ? materialSpecKeyForField(target.component.type, target.field) ?? "materialUpload" : "materialUpload";
 });
@@ -1259,6 +1289,11 @@ const materialDialogTitle = computed(() => {
   } as const;
   return map[materialPickerKind.value];
 });
+
+function pageMetaMaterialSpecKey(key: keyof PageMetaForm): MaterialSpecKey {
+  if (key === "navLogoUrl" || key === "navLogoDynamicUrl") return "topTitleLogo";
+  return "shareCover";
+}
 const materialEmptyText = computed(() => {
   const map = {
     image: "暂无可用图片素材，请先到素材管理上传图片",
@@ -1270,7 +1305,7 @@ const materialEmptyText = computed(() => {
 });
 const expandedComponentIds = ref<string[]>([]);
 const expandedConfigGroupIds = reactive<Record<string, string[]>>({});
-const pageMeta = reactive<PageMetaForm>({ pageTitle: "", shareTitle: "", shareDescription: "", shareImageUrl: "" });
+const pageMeta = reactive<PageMetaForm>({ pageTitle: "", navLogoUrl: "", navLogoDynamicUrl: "", shareTitle: "", shareDescription: "", shareImageUrl: "" });
 const businessDisplay = reactive<BusinessDisplayForm>(defaultBusinessDisplay());
 
 const presetGroups = computed(() => {
@@ -1303,8 +1338,10 @@ const componentOptions = computed(() =>
   }))
 );
 const selectedComponent = computed(() => components.value.find((component) => component.id === selectedComponentId.value) ?? null);
+const selectedComponentIndex = computed(() => components.value.findIndex((component) => component.id === selectedComponentId.value));
 const selectedPageDisplayTitle = computed(() => (selectedPage.value ? pageDisplayTitle(selectedPage.value) : "页面装修"));
 const previewTitle = computed(() => pageMeta.pageTitle.trim() || selectedPageDisplayTitle.value || "会议报名");
+const previewTitleLogoUrl = computed(() => pageMeta.navLogoDynamicUrl.trim() || pageMeta.navLogoUrl.trim());
 const previewTabbarItems = computed(() => (previewTabbar.value?.enabled === false ? [] : (previewTabbar.value?.items ?? []).filter((item) => item.visible).sort((a, b) => a.sortOrder - b.sortOrder)));
 const requiresCreateConference = computed(() => PAGE_TYPES_REQUIRING_CONFERENCE_UI.includes(createForm.pageType));
 const createConferenceBindingHelp = computed(() => {
@@ -1659,6 +1696,30 @@ function removeComponent(index: number) {
     delete expandedConfigGroupIds[target.id];
     if (selectedComponentId.value === target.id) selectedComponentId.value = "";
   }
+}
+
+async function removeSelectedComponent() {
+  const index = selectedComponentIndex.value;
+  const target = selectedComponent.value;
+  if (index < 0 || !target) return;
+  try {
+    await ElMessageBox.confirm(
+      `确认删除「${presetName(target.type)}」模块？删除后需要保存草稿或发布页面才会生效。`,
+      "删除当前模块",
+      {
+        confirmButtonText: "删除模块",
+        cancelButtonText: "取消",
+        type: "warning"
+      }
+    );
+  } catch {
+    return;
+  }
+  removeComponent(index);
+  const next = components.value[Math.min(index, components.value.length - 1)];
+  selectedComponentId.value = next?.id ?? "";
+  if (next) expandedConfigGroupIds[next.id] = expandedConfigGroupIds[next.id] ?? defaultExpandedConfigGroups(next.type);
+  ElMessage.success("已删除当前模块，请保存草稿或发布页面");
 }
 
 function componentDomId(id: string) {
@@ -2017,6 +2078,8 @@ function normalizeConfig(config: Record<string, unknown>, componentType?: string
 function applyPageMeta(themeJson: Record<string, unknown> | null | undefined, fallbackTitle?: string | null) {
   const meta = readPageMeta(themeJson);
   pageMeta.pageTitle = meta.pageTitle || fallbackTitle || "";
+  pageMeta.navLogoUrl = meta.navLogoUrl || "";
+  pageMeta.navLogoDynamicUrl = meta.navLogoDynamicUrl || "";
   pageMeta.shareTitle = meta.shareTitle || fallbackTitle || "";
   pageMeta.shareDescription = meta.shareDescription || "";
   pageMeta.shareImageUrl = meta.shareImageUrl || "";
@@ -2028,6 +2091,8 @@ function readPageMeta(themeJson: Record<string, unknown> | null | undefined): Pa
   const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   return {
     pageTitle: typeof source.pageTitle === "string" ? source.pageTitle : "",
+    navLogoUrl: typeof source.navLogoUrl === "string" ? source.navLogoUrl : "",
+    navLogoDynamicUrl: typeof source.navLogoDynamicUrl === "string" ? source.navLogoDynamicUrl : "",
     shareTitle: typeof source.shareTitle === "string" ? source.shareTitle : "",
     shareDescription: typeof source.shareDescription === "string" ? source.shareDescription : "",
     shareImageUrl: typeof source.shareImageUrl === "string" ? source.shareImageUrl : ""
@@ -2047,6 +2112,8 @@ function nextThemeJson(): Record<string, unknown> {
     ...(version.value?.themeJson ?? {}),
     pageMeta: {
       pageTitle: pageMeta.pageTitle.trim(),
+      navLogoUrl: pageMeta.navLogoUrl.trim(),
+      navLogoDynamicUrl: pageMeta.navLogoDynamicUrl.trim(),
       shareTitle: pageMeta.shareTitle.trim(),
       shareDescription: pageMeta.shareDescription.trim(),
       shareImageUrl: pageMeta.shareImageUrl.trim()
@@ -3071,9 +3138,9 @@ async function openMaterialPicker(component: EditableComponent, field: ConfigFie
   await loadMaterials();
 }
 
-async function openPageMetaImagePicker() {
+async function openPageMetaImagePicker(key: keyof PageMetaForm = "shareImageUrl") {
   materialTarget.value = null;
-  materialPageTarget.value = "shareImageUrl";
+  materialPageTarget.value = key;
   materialEntryTarget.value = null;
   materialVisible.value = true;
   await loadMaterials();
@@ -3114,9 +3181,10 @@ function chooseMaterial(asset: MaterialAsset) {
   }
   if (materialPageTarget.value) {
     pageMeta[materialPageTarget.value] = asset.url;
+    const isLogo = materialPageTarget.value === "navLogoUrl" || materialPageTarget.value === "navLogoDynamicUrl";
     materialVisible.value = false;
     materialPageTarget.value = null;
-    ElMessage.success("已应用分享封面");
+    ElMessage.success(isLogo ? "已应用顶部 Logo" : "已应用分享封面");
     return;
   }
   const target = materialTarget.value;
@@ -4448,10 +4516,28 @@ function looksLikePreviewImage(value: string): boolean {
 
 .phone-nav__title {
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: center;
   white-space: nowrap;
+}
+
+.phone-nav__title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phone-nav__logo {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  object-fit: contain;
+  border-radius: 6px;
 }
 
 .phone-capsule {
@@ -4566,6 +4652,35 @@ function looksLikePreviewImage(value: string): boolean {
 
 .config-group-collapse :deep(.el-collapse-item__content) {
   padding: 10px 12px 12px;
+}
+
+.selected-component-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.selected-component-actions span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--admin-color-text);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-component-actions div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .phone-status {

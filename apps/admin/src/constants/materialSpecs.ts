@@ -21,6 +21,7 @@ export const materialSpecs = {
   sponsorLogo: spec("赞助商 Logo", "宽度 300-600px", "透明 PNG/SVG", 500 * KB, "透明背景更适合深浅主题切换。", ["image/png", "image/svg+xml"]),
   shareCover: spec("分享封面", "500x400 或 5:4", "JPG/PNG", 1 * MB, "分享卡片图不宜包含过小文字。", ["image/jpeg", "image/png"]),
   tabbarIcon: spec("底部导航图标", "96x96", "PNG", 200 * KB, "普通和选中图标各一张，主体居中留白。", ["image/png", "image/svg+xml"]),
+  topTitleLogo: spec("小程序顶部标题 Logo", "64x64 或 96x96", "PNG/SVG/WebP/GIF/APNG", 300 * KB, "建议使用简洁品牌符号，动态 Logo 控制帧数和体积，避免影响首屏加载。", ["image/png", "image/svg+xml", "image/webp", "image/gif", "image/apng"]),
   adminBrandIcon: spec("后台品牌图标", "96x96", "PNG/SVG", 300 * KB, "建议使用简洁品牌符号，深色侧栏下需可识别。", ["image/png", "image/svg+xml"]),
   favicon: spec("浏览器 favicon", "32x32 或 64x64", "ICO/PNG/SVG", 100 * KB, "浏览器标签页展示，图形越简洁越清晰。", ["image/x-icon", "image/vnd.microsoft.icon", "image/png", "image/svg+xml"]),
   backgroundImage: spec("背景图片", "1920x1080 或 1440x900", "JPG/WebP", 3 * MB, "背景图建议弱化细节，避免干扰页面内容。", ["image/jpeg", "image/webp", "image/png"]),
