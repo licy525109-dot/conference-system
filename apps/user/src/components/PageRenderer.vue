@@ -229,6 +229,7 @@
           :key="block.id"
           :class="richBlockClass(block)"
           :style="richBlockStyle(block)"
+          @click.stop="handleRichBlockAction(component, block)"
         >
           <text v-if="block.type === 'heading'" class="cms-rich-content__heading" :style="richBlockHeadingStyle(component, block)">{{ block.title || "图文标题" }}</text>
           <text v-else-if="block.type === 'paragraph'" class="cms-rich-content__paragraph" :style="richBlockTextStyle(component, block)">{{ block.text || "请填写正文内容" }}</text>
@@ -240,7 +241,7 @@
             <view v-else class="cms-rich-content__image cms-rich-content__image--empty"><text>图片未配置</text></view>
             <text v-if="block.caption" class="cms-rich-content__caption">{{ block.caption }}</text>
           </view>
-          <view v-else-if="block.type === 'button'" class="cms-rich-content__button" @click.stop="runRichBlockAction(component, block)">
+          <view v-else-if="block.type === 'button'" class="cms-rich-content__button">
             <text>{{ block.buttonText || "查看详情" }}</text>
           </view>
           <view v-else class="cms-rich-content__divider" />
@@ -587,6 +588,9 @@ function pagePath(pageKey: string) {
     invoice: "/pages/invoice/index",
     "ai-assistant": props.conference?.id ? `/pages/ai-assistant/index?conferenceId=${encodeURIComponent(props.conference.id)}` : "/pages/ai-assistant/index"
   };
+  if (pageKey.startsWith("custom:")) {
+    return `/pages/custom/index?pageKey=${encodeURIComponent(pageKey.slice("custom:".length))}`;
+  }
   return builtin[pageKey] ?? `/pages/custom/index?pageKey=${encodeURIComponent(pageKey)}`;
 }
 
@@ -969,6 +973,15 @@ function actionFromEntry(component: CmsComponent, entry: HomeEntryItem): CmsActi
 
 async function runRichBlockAction(component: CmsComponent, block: RichContentBlockItem): Promise<void> {
   await runAction(actionFromRichBlock(component, block));
+}
+
+async function handleRichBlockAction(component: CmsComponent, block: RichContentBlockItem): Promise<void> {
+  if (!richBlockHasAction(block)) return;
+  await runRichBlockAction(component, block);
+}
+
+function richBlockHasAction(block: RichContentBlockItem): boolean {
+  return block.type !== "divider" && Boolean(block.actionTargetType && block.actionTargetType !== "none");
 }
 
 function actionFromRichBlock(component: CmsComponent, block: RichContentBlockItem): CmsActionConfig {
@@ -1775,7 +1788,7 @@ function textStyle(component: CmsComponent): Record<string, string> {
 }
 
 function richBlockClass(block: RichContentBlockItem): string[] {
-  return ["cms-rich-content__block", `is-${block.type}`];
+  return ["cms-rich-content__block", `is-${block.type}`, richBlockHasAction(block) ? "is-clickable" : ""];
 }
 
 function richBlockStyle(block: RichContentBlockItem): Record<string, string> {
@@ -2186,6 +2199,15 @@ function readErrorText(error: unknown, fallback: string): string {
 
 .cms-rich-content__block {
   display: block;
+}
+
+.cms-rich-content__block.is-clickable {
+  cursor: pointer;
+}
+
+.cms-rich-content__block.is-clickable .cms-rich-content__image,
+.cms-rich-content__block.is-clickable .cms-rich-content__heading {
+  opacity: 0.98;
 }
 
 .cms-rich-content__heading {

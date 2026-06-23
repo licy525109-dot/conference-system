@@ -60,13 +60,32 @@ const showBodyDynamicBackground = computed(() => theme.value.backgroundMode === 
 const extensionNotice = computed(() => extensionNoticeFor(pageKey.value));
 
 onLoad((query) => {
-  pageKey.value = String(query?.pageKey || "custom:");
+  pageKey.value = normalizeCustomPageKey(query?.pageKey);
   void loadPage();
 });
 
 onShareAppMessage(() =>
-  buildPageShare(cmsPage.value, `/pages/custom/index?pageKey=${encodeURIComponent(pageKey.value)}`, cmsPage.value?.title || "会议报名")
+  buildPageShare(cmsPage.value, `/pages/custom/index?pageKey=${encodeURIComponent(customPageSlug(pageKey.value))}`, cmsPage.value?.title || "会议报名")
 );
+
+function normalizeCustomPageKey(value: unknown): string {
+  const raw = decodeRouteValue(value).trim();
+  if (!raw || raw === "custom:") return "custom:";
+  return raw.startsWith("custom:") ? raw : `custom:${raw}`;
+}
+
+function customPageSlug(key: string): string {
+  return key.startsWith("custom:") ? key.slice("custom:".length) : key;
+}
+
+function decodeRouteValue(value: unknown): string {
+  const raw = String(value || "");
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
 
 async function loadPage() {
   loading.value = true;
