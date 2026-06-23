@@ -115,7 +115,7 @@
           />
         </section>
 
-        <section class="data-panel cms-panel phone-preview">
+        <section class="data-panel cms-panel phone-preview cms-editor-preview">
           <div class="library-head">
             <div>
               <div class="panel-title">手机预览</div>
@@ -248,7 +248,7 @@
         </section>
       </main>
 
-      <aside v-if="selectedPage && version" class="cms-sidebar cms-sidebar--right">
+      <aside v-if="selectedPage && version" class="cms-sidebar cms-sidebar--right cms-editor-settings">
         <section class="data-panel cms-panel inspector-panel">
           <div class="library-head">
             <div>
@@ -399,21 +399,39 @@
                         <p>每个入口独立配置图标、文案、颜色和跳转动作；保存后小程序按相同字段渲染。</p>
                         <el-button type="primary" plain size="small" @click="addEntryItem(selectedComponent)">新增入口</el-button>
                       </div>
-                      <div v-for="(entry, entryIndex) in entryItemsFor(selectedComponent)" :key="entry.id" class="entry-card">
+                      <div
+                        v-for="(entry, entryIndex) in entryItemsFor(selectedComponent)"
+                        :key="entry.id"
+                        class="entry-card"
+                        :class="{ 'is-expanded': isEntryExpanded(entry.id) }"
+                      >
                         <div class="entry-card__top">
-                          <div class="entry-card__sort">
-                            <strong>{{ entryIndex + 1 }}. {{ entry.title || "未命名入口" }}</strong>
-                            <small>{{ entryActionLabel(entry) }}</small>
+                          <div class="entry-card__summary">
+                            <span class="entry-card__icon">
+                              <img v-if="entryIconPreview(entry)" :src="entryIconPreview(entry)" :alt="entry.title" />
+                              <b v-else>{{ builtinIconLabel(entry) }}</b>
+                            </span>
+                            <span class="entry-card__sort">
+                              <strong>{{ entryIndex + 1 }}. {{ entry.title || "未命名入口" }}</strong>
+                              <small>{{ entry.subtitle || "未填写副标题" }}</small>
+                              <small>跳转：{{ entryActionLabel(entry) }}</small>
+                              <small>状态：{{ entry.enabled ? "启用" : "停用" }}</small>
+                            </span>
                           </div>
                           <div class="entry-card__actions">
                             <el-switch v-model="entry.enabled" active-text="启用" inactive-text="停用" />
+                            <el-button size="small" type="primary" plain @click="toggleEntryExpanded(entry.id)">
+                              {{ isEntryExpanded(entry.id) ? "收起" : "编辑" }}
+                            </el-button>
+                            <el-button size="small" plain @click="duplicateEntryItem(selectedComponent, entryIndex)">复制</el-button>
                             <el-button size="small" :disabled="entryIndex === 0" @click="moveEntryItem(selectedComponent, entryIndex, -1)">上移</el-button>
                             <el-button size="small" :disabled="entryIndex === entryItemsFor(selectedComponent).length - 1" @click="moveEntryItem(selectedComponent, entryIndex, 1)">下移</el-button>
                             <el-button size="small" type="danger" plain @click="removeEntryItem(selectedComponent, entryIndex)">删除</el-button>
                           </div>
                         </div>
 
-                        <div class="entry-card__grid">
+                        <div v-if="isEntryExpanded(entry.id)" class="entry-card__grid">
+                          <div class="entry-card__group-title">基础信息</div>
                           <label>
                             <span>中文标题</span>
                             <el-input v-model="entry.title" placeholder="例如 会议报名" />
@@ -422,6 +440,7 @@
                             <span>英文副标题</span>
                             <el-input v-model="entry.subtitle" placeholder="例如 Registration，可留空" />
                           </label>
+                          <div class="entry-card__group-title">图标</div>
                           <label>
                             <span>静态图标</span>
                             <div class="field-row">
@@ -451,6 +470,7 @@
                               <el-option label="客服" value="service" />
                             </el-select>
                           </label>
+                          <div class="entry-card__group-title">样式</div>
                           <label>
                             <span>卡片样式</span>
                             <el-select v-model="entry.cardStyle">
@@ -468,6 +488,7 @@
                             <span>文字颜色</span>
                             <el-color-picker v-model="entry.textColor" />
                           </label>
+                          <div class="entry-card__group-title">跳转动作</div>
                           <label>
                             <span>点击动作</span>
                             <el-select v-model="entry.actionTargetType">
@@ -567,6 +588,12 @@
             </el-collapse>
           </template>
           <el-empty v-else description="从中间页面内容区选择一个组件，即可在这里编辑参数" />
+        </section>
+
+        <section class="settings-footer">
+          <el-button @click="rollback">回滚已发布</el-button>
+          <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
+          <el-button type="primary" :loading="publishing" @click="publish">发布页面</el-button>
         </section>
       </aside>
     </section>
@@ -1171,6 +1198,7 @@ const saveTemplateForm = reactive({ slug: "", title: "", category: "自定义模
 const presetKeyword = ref("");
 const activePresetGroup = ref("");
 const selectedComponentId = ref("");
+const expandedEntryIds = ref<string[]>([]);
 const draggingComponentId = ref("");
 const templateKeyword = ref("");
 const templateCategory = ref("全部");
@@ -1968,14 +1996,16 @@ function toPayloadComponents(): CmsComponent[] {
     type: component.type,
     enabled: component.enabled,
     sortOrder: index,
-    config: normalizeConfig(component.config)
+    config: normalizeConfig(component.config, component.type)
   }));
 }
 
-function normalizeConfig(config: Record<string, unknown>): Record<string, unknown> {
+function normalizeConfig(config: Record<string, unknown>, componentType?: string): Record<string, unknown> {
   const next: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(config)) {
-    if (typeof value === "string") {
+    if ((componentType === "quick-icon-grid" || componentType === "service-shortcut-card") && key === "items") {
+      next[key] = normalizeEntryItems(value, componentType);
+    } else if (typeof value === "string") {
       next[key] = value.trim();
     } else {
       next[key] = value;
@@ -2815,16 +2845,35 @@ function setConfig(component: EditableComponent, key: string, value: unknown) {
 
 function entryItemsFor(component: EditableComponent): EntryConfigItem[] {
   const current = component.config.items;
-  const items = normalizeEntryItems(current, component.type);
-  if (!Array.isArray(current) || current.some((item) => !isEntryConfigRecord(item))) {
-    setConfig(component, "items", items);
+  if (Array.isArray(current) && current.every(isStandardEntryConfigItem)) {
+    return current as EntryConfigItem[];
   }
+  const items = normalizeEntryItems(current, component.type);
+  setConfig(component, "items", items);
   return items;
+}
+
+function isEntryExpanded(id: string): boolean {
+  return expandedEntryIds.value.includes(id);
+}
+
+function toggleEntryExpanded(id: string) {
+  expandedEntryIds.value = isEntryExpanded(id)
+    ? expandedEntryIds.value.filter((item) => item !== id)
+    : [...expandedEntryIds.value, id];
+}
+
+function expandEntry(id: string) {
+  if (!isEntryExpanded(id)) expandedEntryIds.value = [...expandedEntryIds.value, id];
+}
+
+function entryIconPreview(entry: EntryConfigItem): string {
+  return entry.dynamicIconUrl || entry.iconUrl;
 }
 
 function normalizeEntryItems(value: unknown, componentType = "quick-icon-grid"): EntryConfigItem[] {
   const fallback = componentType === "service-shortcut-card" ? defaultServiceEntries() : defaultQuickEntries();
-  const rawItems = Array.isArray(value) && value.length > 0 ? value : fallback;
+  const rawItems = Array.isArray(value) ? value : fallback;
   return rawItems
     .map((item, index) => normalizeEntryItem(item, index))
     .filter((item) => item.title)
@@ -2884,25 +2933,29 @@ function normalizeEntryItem(value: unknown, index: number): EntryConfigItem {
 
 function addEntryItem(component: EditableComponent) {
   const items = entryItemsFor(component);
+  const nextEntry = normalizeEntryItem(
+    {
+      id: `entry-${Date.now()}`,
+      title: "新入口",
+      subtitle: "",
+      actionTargetType: "page",
+      targetPageKey: ""
+    },
+    items.length
+  );
   setConfig(component, "items", [
     ...items,
-    normalizeEntryItem(
-      {
-        id: `entry-${Date.now()}`,
-        title: "新入口",
-        subtitle: "",
-        actionTargetType: "page",
-        targetPageKey: ""
-      },
-      items.length
-    )
+    nextEntry
   ]);
+  expandEntry(nextEntry.id);
 }
 
 function removeEntryItem(component: EditableComponent, index: number) {
   const items = [...entryItemsFor(component)];
+  const removed = items[index];
   items.splice(index, 1);
   setConfig(component, "items", items.map((item, nextIndex) => ({ ...item, sort: nextIndex * 10 + 10 })));
+  if (removed) expandedEntryIds.value = expandedEntryIds.value.filter((id) => id !== removed.id);
 }
 
 function moveEntryItem(component: EditableComponent, index: number, offset: number) {
@@ -2914,12 +2967,25 @@ function moveEntryItem(component: EditableComponent, index: number, offset: numb
   setConfig(component, "items", items.map((entry, nextIndex) => ({ ...entry, sort: nextIndex * 10 + 10 })));
 }
 
+function duplicateEntryItem(component: EditableComponent, index: number) {
+  const items = [...entryItemsFor(component)];
+  const source = items[index];
+  if (!source) return;
+  const nextEntry = normalizeEntryItem({ ...source, id: `entry-${Date.now()}`, title: `${source.title || "入口"} 副本` }, index + 1);
+  items.splice(index + 1, 0, nextEntry);
+  setConfig(component, "items", items.map((entry, nextIndex) => ({ ...entry, sort: nextIndex * 10 + 10 })));
+  expandEntry(nextEntry.id);
+}
+
 function entryActionLabel(entry: EntryConfigItem): string {
   const option = actionTargetOptions().find((item) => item.value === entry.actionTargetType);
-  if (entry.actionTargetType === "page") return `${option?.label || "打开页面"}：${entry.targetPageKey || "未选择"}`;
+  if (entry.actionTargetType === "page") return `${option?.label || "打开页面"}：${pageTargetOptions().find((item) => item.value === entry.targetPageKey)?.label || entry.targetPageKey || "未选择"}`;
   if (entry.actionTargetType === "conference" || entry.actionTargetType === "registration") return `${option?.label || "会议"}：${conferenceSelectOptions().find((item) => item.value === entry.targetConferenceId)?.label || "未选择"}`;
   if (entry.actionTargetType === "product") return `${option?.label || "商品"}：${productSelectOptions().find((item) => item.value === entry.targetProductId)?.label || "未选择"}`;
+  if (entry.actionTargetType === "product-category") return `${option?.label || "商品分类"}：${productCategorySelectOptions().find((item) => item.value === entry.targetProductCategoryId)?.label || "未选择"}`;
+  if (entry.actionTargetType === "coupon") return `${option?.label || "券活动"}：${couponCampaignSelectOptions().find((item) => item.value === entry.targetCouponCampaignId)?.label || "未选择"}`;
   if (entry.actionTargetType === "external-h5") return `${option?.label || "外部 H5"}：${entry.externalUrl || "未填写"}`;
+  if (entry.actionTargetType === "external-miniapp") return `${option?.label || "外部小程序"}：${entry.externalMiniappAppId || "未填写"}`;
   if (entry.actionTargetType === "phone") return `${option?.label || "电话"}：${entry.phone || "未填写"}`;
   if (entry.actionTargetType === "copy") return `${option?.label || "复制"}：${entry.copyText || "未填写"}`;
   return option?.label || "无跳转";
@@ -2935,6 +3001,17 @@ function defaultServiceEntries(): string[] {
 
 function isEntryConfigRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStandardEntryConfigItem(value: unknown): value is EntryConfigItem {
+  return (
+    isEntryConfigRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.enabled === "boolean" &&
+    typeof value.sort === "number" &&
+    typeof value.title === "string" &&
+    typeof value.actionTargetType === "string"
+  );
 }
 
 function isImageField(field: ConfigField): boolean {
@@ -3741,7 +3818,7 @@ function previewPanelStyle(component: EditableComponent) {
 
 function previewGridColumnsStyle(component: EditableComponent) {
   const columns = Math.min(4, Math.max(2, Number(component.config.columns) || 3));
-  const gap = numberValue(component, "cardGap", 14);
+  const gap = Math.max(2, Math.round(numberValue(component, "cardGap", 14) / 2));
   if (component.config.layoutMode === "scroll") {
     return {
       gap: `${gap}px`
@@ -3913,13 +3990,16 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .cms-workbench {
-  grid-template-columns: 288px minmax(760px, 1fr) 360px;
+  grid-template-columns: 300px minmax(360px, 1fr) 400px;
   align-items: start;
-  min-width: 1420px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .cms-page {
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 .form-help {
@@ -3940,7 +4020,7 @@ function looksLikePreviewImage(value: string): boolean {
 .cms-sidebar,
 .phone-preview {
   position: sticky;
-  top: 20px;
+  top: 80px;
 }
 
 .panel-title {
@@ -4044,9 +4124,18 @@ function looksLikePreviewImage(value: string): boolean {
 
 .cms-editor,
 .component-stack {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.cms-stage {
+  height: calc(100vh - 96px);
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .publish-guard-alert {
@@ -4059,7 +4148,16 @@ function looksLikePreviewImage(value: string): boolean {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 14px;
+}
+
+.stage-head__actions,
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .library-filters {
@@ -4285,7 +4383,7 @@ function looksLikePreviewImage(value: string): boolean {
 
 .config-form {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0 12px;
   margin-top: 12px;
 }
@@ -4300,18 +4398,18 @@ function looksLikePreviewImage(value: string): boolean {
 
 .range-field {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) 118px;
+  grid-template-columns: minmax(0, 1fr) 118px;
   align-items: center;
   gap: 14px;
 }
 
 .phone-preview {
-  position: relative;
-  top: auto;
+  position: sticky;
+  top: 0;
   right: auto;
   width: auto;
-  z-index: auto;
-  max-height: none;
+  z-index: 5;
+  max-height: calc(100vh - 100px);
   overflow: hidden;
 }
 
@@ -4411,7 +4509,7 @@ function looksLikePreviewImage(value: string): boolean {
 
 .page-meta-form {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0 12px;
 }
 
@@ -5416,7 +5514,9 @@ function looksLikePreviewImage(value: string): boolean {
 .field-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 8px;
+  max-width: 100%;
 }
 
 .material-button {
@@ -5456,9 +5556,51 @@ function looksLikePreviewImage(value: string): boolean {
 .entry-card__top,
 .entry-card__actions {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+
+.entry-card__top {
+  min-width: 0;
+}
+
+.entry-card__summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.entry-card__icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #eef4ff;
+  color: var(--admin-color-primary);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.entry-card__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.entry-card__actions {
+  flex: 0 0 142px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.entry-card__actions :deep(.el-switch) {
+  flex-basis: 100%;
+  justify-content: flex-end;
 }
 
 .entry-card__sort {
@@ -5482,8 +5624,10 @@ function looksLikePreviewImage(value: string): boolean {
 
 .entry-card__grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgb(213 224 239 / 96%);
 }
 
 .entry-card__grid label {
@@ -5504,6 +5648,37 @@ function looksLikePreviewImage(value: string): boolean {
 
 .entry-card__wide {
   grid-column: 1 / -1;
+}
+
+.entry-card__group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--admin-color-primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.entry-card__group-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgb(213 224 239 / 96%);
+}
+
+.settings-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 -10px 24px rgb(15 23 42 / 8%);
+  backdrop-filter: blur(12px);
 }
 
 .material-picker {
@@ -5609,9 +5784,35 @@ function looksLikePreviewImage(value: string): boolean {
 
 .cms-sidebar--left,
 .cms-sidebar--right {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.cms-sidebar--left,
+.cms-editor-settings {
+  height: calc(100vh - 96px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.cms-sidebar--left {
+  width: 300px;
+}
+
+.cms-editor-settings {
+  width: 400px;
+  max-width: 400px;
+}
+
+.cms-page :deep(.el-input),
+.cms-page :deep(.el-select),
+.cms-page :deep(.el-input-number),
+.cms-page :deep(.el-textarea) {
+  width: 100%;
+  max-width: 100%;
 }
 
 .phone-preview {
@@ -5922,8 +6123,8 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .preview-entry-grid__items.is-scroll .preview-entry-tile {
-  width: 82px;
-  flex: 0 0 82px;
+  width: 95px;
+  flex: 0 0 95px;
 }
 
 .preview-entry-tile {
@@ -5933,19 +6134,23 @@ function looksLikePreviewImage(value: string): boolean {
   align-items: center;
   gap: 4px;
   padding: 10px 6px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid transparent;
   border-radius: 12px;
   background: #ffffff;
   text-align: center;
+  box-shadow: 0 6px 16px rgb(15 23 42 / 8%);
 }
 
 .preview-entry-tile.is-outline {
+  border-color: #e2e8f0;
   background: transparent;
+  box-shadow: none;
 }
 
 .preview-entry-tile.is-plain {
   border-color: transparent;
   background: transparent;
+  box-shadow: none;
 }
 
 .preview-entry-tile img,
