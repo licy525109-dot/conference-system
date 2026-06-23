@@ -507,16 +507,17 @@
                               <el-option label="居右" value="right" />
                             </el-select>
                           </label>
-                          <template v-if="block.type === 'button'">
-                            <label>
-                              <span>按钮文字</span>
-                              <el-input v-model="block.buttonText" placeholder="例如 立即查看" />
-                            </label>
+                          <label v-if="block.type === 'button'">
+                            <span>按钮文字</span>
+                            <el-input v-model="block.buttonText" placeholder="例如 立即查看" />
+                          </label>
+                          <template v-if="block.type !== 'divider'">
                             <label>
                               <span>点击动作</span>
                               <el-select v-model="block.actionTargetType">
                                 <el-option v-for="option in actionTargetOptions()" :key="option.value" :label="option.label" :value="option.value" />
                               </el-select>
+                              <small>标题、图片、正文和按钮都可点击跳转；不需要跳转时选择“无跳转”。</small>
                             </label>
                             <label v-if="block.actionTargetType === 'page'">
                               <span>内部页面</span>
@@ -552,6 +553,16 @@
                               <span>外部 H5 URL</span>
                               <el-input v-model="block.externalUrl" placeholder="https://example.com" />
                             </label>
+                            <template v-if="block.actionTargetType === 'external-miniapp'">
+                              <label>
+                                <span>小程序 AppID</span>
+                                <el-input v-model="block.externalMiniappAppId" placeholder="目标小程序 AppID" />
+                              </label>
+                              <label>
+                                <span>小程序路径</span>
+                                <el-input v-model="block.externalMiniappPath" placeholder="pages/index/index" />
+                              </label>
+                            </template>
                             <label v-if="block.actionTargetType === 'phone'">
                               <span>电话</span>
                               <el-input v-model="block.phone" placeholder="用于一键拨打" />
@@ -3400,11 +3411,16 @@ function richBlockTypeLabel(type: RichContentBlockItem["type"]): string {
 }
 
 function richBlockSummary(block: RichContentBlockItem): string {
-  if (block.type === "heading") return block.title || "未命名标题";
-  if (block.type === "paragraph" || block.type === "quote") return block.text || "未填写内容";
-  if (block.type === "image") return block.caption || block.imageUrl || "未选择图片";
+  const action = richBlockHasAction(block) ? ` · ${richBlockActionLabel(block)}` : "";
+  if (block.type === "heading") return `${block.title || "未命名标题"}${action}`;
+  if (block.type === "paragraph" || block.type === "quote") return `${block.text || "未填写内容"}${action}`;
+  if (block.type === "image") return `${block.caption || block.imageUrl || "未选择图片"}${action}`;
   if (block.type === "button") return `${block.buttonText || "按钮"} · ${richBlockActionLabel(block)}`;
   return "内容分割线";
+}
+
+function richBlockHasAction(block: RichContentBlockItem): boolean {
+  return block.type !== "divider" && Boolean(block.actionTargetType && block.actionTargetType !== "none");
 }
 
 function richBlockActionLabel(block: RichContentBlockItem): string {
@@ -3412,8 +3428,10 @@ function richBlockActionLabel(block: RichContentBlockItem): string {
   if (block.actionTargetType === "page") return `${option?.label || "打开页面"}：${pageTargetOptions().find((item) => item.value === block.targetPageKey)?.label || block.targetPageKey || "未选择"}`;
   if (block.actionTargetType === "conference" || block.actionTargetType === "registration") return `${option?.label || "会议"}：${conferenceSelectOptions().find((item) => item.value === block.targetConferenceId)?.label || "未选择"}`;
   if (block.actionTargetType === "product") return `${option?.label || "商品"}：${productSelectOptions().find((item) => item.value === block.targetProductId)?.label || "未选择"}`;
+  if (block.actionTargetType === "product-category") return `${option?.label || "商品分类"}：${productCategorySelectOptions().find((item) => item.value === block.targetProductCategoryId)?.label || "未选择"}`;
   if (block.actionTargetType === "coupon") return `${option?.label || "券活动"}：${couponCampaignSelectOptions().find((item) => item.value === block.targetCouponCampaignId)?.label || "未选择"}`;
   if (block.actionTargetType === "external-h5") return `${option?.label || "外部 H5"}：${block.externalUrl || "未填写"}`;
+  if (block.actionTargetType === "external-miniapp") return `${option?.label || "外部小程序"}：${block.externalMiniappAppId || "未填写"}`;
   if (block.actionTargetType === "phone") return `${option?.label || "电话"}：${block.phone || "未填写"}`;
   if (block.actionTargetType === "copy") return `${option?.label || "复制"}：${block.copyText || "未填写"}`;
   return option?.label || "无跳转";
@@ -3819,20 +3837,26 @@ const ComponentPreview = defineComponent({
     const parsedList = (key: string) => list(key).map(splitPreviewLine).filter((item) => item.length > 0);
     const entryItems = () => normalizeEntryItems(props.item.config.items, props.item.type).filter((entry) => entry.enabled !== false);
     const richBlocks = () => normalizeRichBlocks(props.item.config.blocks, props.item).filter((block) => block.enabled !== false);
+    const richPreviewBlockClass = (block: RichContentBlockItem) => ["preview-rich-content__block", `is-${block.type}`, richBlockHasAction(block) ? "is-clickable" : ""];
+    const richPreviewBlockTitle = (block: RichContentBlockItem) => richBlockHasAction(block) ? richBlockActionLabel(block) : "";
+    type PreviewNode = ReturnType<typeof h> | string;
+    const wrapRichPreviewBlock = (block: RichContentBlockItem, children: PreviewNode | PreviewNode[]) =>
+      h("div", { class: richPreviewBlockClass(block), title: richPreviewBlockTitle(block) }, children);
     const richContentPreview = () =>
       h("div", { class: "preview-section preview-rich-content" }, richBlocks().map((block) => {
         const alignStyle = { textAlign: block.align || "left" };
-        if (block.type === "heading") return h("strong", { class: "preview-rich-content__heading", style: { ...titleStyle(), ...alignStyle } }, block.title || "图文标题");
-        if (block.type === "paragraph") return h("p", { class: "preview-rich-content__paragraph", style: { ...textStyle(), ...alignStyle } }, block.text || "请填写正文内容");
-        if (block.type === "quote") return h("blockquote", { class: "preview-rich-content__quote", style: { ...textStyle(), ...alignStyle } }, block.text || "请填写重点提示");
+        if (block.type === "heading") return wrapRichPreviewBlock(block, h("strong", { class: "preview-rich-content__heading", style: { ...titleStyle(), ...alignStyle } }, block.title || "图文标题"));
+        if (block.type === "paragraph") return wrapRichPreviewBlock(block, h("p", { class: "preview-rich-content__paragraph", style: { ...textStyle(), ...alignStyle } }, block.text || "请填写正文内容"));
+        if (block.type === "quote") return wrapRichPreviewBlock(block, h("blockquote", { class: "preview-rich-content__quote", style: { ...textStyle(), ...alignStyle } }, block.text || "请填写重点提示"));
         if (block.type === "image") {
-          return h("figure", { class: "preview-rich-content__figure" }, [
-            block.imageUrl ? h("img", { src: block.imageUrl, alt: block.caption || "" }) : h("div", { class: "preview-rich-content__image-empty" }, "请选择图片"),
-            block.caption ? h("figcaption", block.caption) : null
-          ]);
+          const imageChildren: PreviewNode[] = [
+            block.imageUrl ? h("img", { src: block.imageUrl, alt: block.caption || "" }) : h("div", { class: "preview-rich-content__image-empty" }, "请选择图片")
+          ];
+          if (block.caption) imageChildren.push(h("figcaption", block.caption));
+          return wrapRichPreviewBlock(block, h("figure", { class: "preview-rich-content__figure" }, imageChildren));
         }
-        if (block.type === "button") return h("button", { class: "preview-rich-content__button" }, block.buttonText || "查看详情");
-        return h("div", { class: "preview-rich-content__divider" });
+        if (block.type === "button") return wrapRichPreviewBlock(block, h("button", { class: "preview-rich-content__button" }, block.buttonText || "查看详情"));
+        return wrapRichPreviewBlock(block, h("div", { class: "preview-rich-content__divider" }));
       }));
     const meetings = () =>
       (previewContextConferences.value.length > 0 ? previewContextConferences.value : sampleConferences).map((item, index) => ({
@@ -5599,6 +5623,19 @@ function looksLikePreviewImage(value: string): boolean {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.preview-rich-content__block {
+  display: block;
+}
+
+.preview-rich-content__block.is-clickable {
+  cursor: pointer;
+}
+
+.preview-rich-content__block.is-clickable .preview-rich-content__heading,
+.preview-rich-content__block.is-clickable .preview-rich-content__figure img {
+  opacity: 0.98;
 }
 
 .preview-rich-content__heading {
