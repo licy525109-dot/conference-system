@@ -6,8 +6,8 @@
     <LoadingState v-if="loading" title="加载商品详情中" description="正在读取商品图片、规格和库存。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回商城" @retry="load" @secondary="goMall" />
     <template v-else-if="product">
-      <view class="hero-card ui-card">
-        <image v-if="heroImage" class="hero" :src="heroImage" mode="aspectFill" />
+      <view v-if="isProductModuleVisible('productInfo')" class="hero-card ui-card">
+        <image v-if="heroImage && isProductModuleVisible('cover')" class="hero" :src="heroImage" mode="aspectFill" />
         <view v-else class="hero empty">暂无图片</view>
         <view class="headline">
           <StatusTag :label="productTypeText(product.productType)" tone="info" />
@@ -25,8 +25,8 @@
       />
 
       <view class="content">
-        <view class="sku-list">
-          <text class="section-title">规格</text>
+        <view v-if="isProductModuleVisible('skuSelector')" class="sku-list">
+          <text class="section-title">{{ productModuleTitle('skuSelector', '规格') }}</text>
           <EmptyState v-if="product.skus.length === 0" title="暂无可选规格" description="商品规格完善后可创建待支付订单。" mark="规" />
           <view
             v-for="sku in product.skus"
@@ -50,8 +50,8 @@
             <button class="qty-button" :disabled="!canAddProduct" @click="changeQuantity(1)">+</button>
           </view>
         </view>
-        <view class="description-card ui-card">
-          <text class="section-title">商品说明</text>
+        <view v-if="isProductModuleVisible('detail')" class="description-card ui-card">
+          <text class="section-title">{{ productModuleTitle('detail', '商品说明') }}</text>
           <text class="muted">{{ descriptionText }}</text>
         </view>
         <PageRenderer
@@ -79,11 +79,11 @@
         <text class="bottom-note">后端计价，订单页支付</text>
       </view>
       <button class="ui-button-secondary action-button" @click="goCart">购物车</button>
-      <button class="ui-button-primary action-button" :disabled="adding || !canAddProduct" @click="addToCart">
-        {{ adding ? "加入中..." : "加入购物车" }}
+      <button v-if="isProductModuleVisible('addCartButton')" class="ui-button-primary action-button" :disabled="adding || !canAddProduct" @click="addToCart">
+        {{ adding ? "加入中..." : productModuleContent('addCartButton', '加入购物车') }}
       </button>
-      <button class="ui-button-primary action-button" :disabled="buying || !canAddProduct" @click="buyNow">
-        {{ buying ? "下单中..." : "创建订单" }}
+      <button v-if="isProductModuleVisible('buyNowButton')" class="ui-button-primary action-button" :disabled="buying || !canAddProduct" @click="buyNow">
+        {{ buying ? "下单中..." : productModuleContent('buyNowButton', '创建订单') }}
       </button>
     </view>
   </view>
@@ -120,6 +120,7 @@ const heroImage = computed(() => product.value?.coverImageUrl || product.value?.
 const selectedSku = computed(() => product.value?.skus.find((item) => item.id === selectedSkuId.value) ?? null);
 const canAddProduct = computed(() => Boolean(selectedSku.value && skuAvailable(selectedSku.value)));
 const requiresReceiver = computed(() => product.value?.productType !== "VIRTUAL" && product.value?.productType !== "SERVICE");
+const productDisplayModules = computed(() => normalizeProductModules(readCmsBusinessDisplay(cmsPage.value)));
 const priceRangeText = computed(() => {
   const prices = product.value?.skus.map((sku) => sku.priceCent) ?? [];
   if (prices.length === 0) return "暂无价格";
@@ -249,6 +250,53 @@ function toDescriptionText(value: unknown): string {
     return [record.title, record.text, record.content, record.description, record.blocks].map(toDescriptionText).filter(Boolean).join("\n");
   }
   return "";
+}
+
+function readCmsBusinessDisplay(page: PublishedPage | null): Record<string, unknown> {
+  const themeJson = readRecord(page?.version.themeJson);
+  const businessDisplay = readRecord(themeJson.businessDisplay);
+  return readRecord(businessDisplay.productDetail);
+}
+
+function normalizeProductModules(source: Record<string, unknown>) {
+  const defaults = [
+    { key: "productInfo", title: "商品信息", content: "", visible: true, sort: 10 },
+    { key: "cover", title: "商品封面", content: "", visible: true, sort: 20 },
+    { key: "skuSelector", title: "规格", content: "", visible: true, sort: 40 },
+    { key: "detail", title: "商品说明", content: "", visible: true, sort: 60 },
+    { key: "addCartButton", title: "加入购物车", content: "加入购物车", visible: true, sort: 70 },
+    { key: "buyNowButton", title: "创建订单", content: "创建订单", visible: true, sort: 80 }
+  ];
+  const rawModules = Array.isArray(source.modules) ? source.modules : [];
+  return defaults.map((item) => {
+    const record = readRecord(rawModules.find((raw) => readRecord(raw).key === item.key));
+    return {
+      ...item,
+      visible: typeof record.visible === "boolean" ? record.visible : item.visible,
+      title: typeof record.title === "string" && record.title.trim() ? record.title.trim() : item.title,
+      content: typeof record.content === "string" && record.content.trim() ? record.content.trim() : item.content
+    };
+  });
+}
+
+function productModule(key: string) {
+  return productDisplayModules.value.find((item) => item.key === key);
+}
+
+function isProductModuleVisible(key: string): boolean {
+  return productModule(key)?.visible !== false;
+}
+
+function productModuleTitle(key: string, fallback: string): string {
+  return productModule(key)?.title || fallback;
+}
+
+function productModuleContent(key: string, fallback: string): string {
+  return productModule(key)?.content || fallback;
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 </script>
 

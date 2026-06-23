@@ -130,9 +130,20 @@ export const ENABLED_COMPONENT_PRESETS = [
   }),
   preset("quick-icon-grid", "图标入口宫格", "首页运营", "2 到 4 列快捷入口，支持图标、动态图标和跳转", {
     title: "快捷入口",
+    showTitle: true,
+    subtitle: "",
     columns: 3,
+    layoutMode: "grid",
+    iconSize: "large",
     cardStyle: "soft",
-    items: ["会议报名｜Registration｜｜page｜conference-list", "我的报名｜My tickets｜｜page｜my-registrations", "商城｜Shop｜｜page｜mall"]
+    cardRadius: 28,
+    cardGap: 14,
+    showSubtitle: true,
+    items: [
+      entry("会议报名", "Registration", "registration", "page", { targetPageKey: "conference-list" }),
+      entry("我的报名", "My tickets", "order", "page", { targetPageKey: "my-registrations" }),
+      entry("商城", "Shop", "shop", "page", { targetPageKey: "mall" })
+    ]
   }),
   preset("member-promo-banner", "会员 / 优惠横幅", "首页运营", "会员、优惠券或活动推广横幅", {
     title: "会员权益",
@@ -153,8 +164,20 @@ export const ENABLED_COMPONENT_PRESETS = [
   }),
   preset("service-shortcut-card", "订单中心 / 快捷服务", "首页运营", "我的报名、商城订单、发票、售后、客服等服务入口", {
     title: "服务中心",
+    showTitle: true,
     columns: 2,
-    items: ["我的报名｜查看报名与凭证｜｜page｜my-registrations", "商城订单｜查看商品订单｜｜page｜mall-orders", "发票申请｜提交和查看发票｜｜invoice｜", "联系客服｜复制客服信息｜｜copy｜请联系会务组"]
+    layoutMode: "grid",
+    iconSize: "small",
+    cardStyle: "soft",
+    cardRadius: 24,
+    cardGap: 14,
+    showSubtitle: true,
+    items: [
+      entry("我的报名", "查看报名与凭证", "registration", "page", { targetPageKey: "my-registrations" }),
+      entry("商城订单", "查看商品订单", "order", "page", { targetPageKey: "mall-orders" }),
+      entry("发票申请", "提交和查看发票", "invoice", "invoice"),
+      entry("联系客服", "复制客服信息", "service", "copy", { copyText: "请联系会务组" })
+    ]
   }),
   preset("task-progress-card", "积分 / 任务进度", "首页运营", "积分、集点或任务进度展示，无任务时可隐藏", {
     title: "任务进度",
@@ -288,8 +311,19 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
         enabled: true,
         config: {
           title: "快捷入口",
+          showTitle: true,
           columns: 3,
-          items: ["会议报名｜Registration｜｜page｜conference-list", "我的报名｜My tickets｜｜page｜my-registrations", "商城｜Shop｜｜page｜mall"]
+          layoutMode: "grid",
+          iconSize: "large",
+          cardStyle: "soft",
+          cardRadius: 28,
+          cardGap: 14,
+          showSubtitle: true,
+          items: [
+            entry("会议报名", "Registration", "registration", "page", { targetPageKey: "conference-list" }),
+            entry("我的报名", "My tickets", "order", "page", { targetPageKey: "my-registrations" }),
+            entry("商城", "Shop", "shop", "page", { targetPageKey: "mall" })
+          ]
         }
       },
       {
@@ -298,8 +332,20 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
         enabled: true,
         config: {
           title: "服务中心",
+          showTitle: true,
           columns: 2,
-          items: ["我的报名｜查看报名与凭证｜｜page｜my-registrations", "商城订单｜查看商品订单｜｜page｜mall-orders", "发票申请｜提交和查看发票｜｜invoice｜", "联系客服｜复制客服信息｜｜copy｜请联系会务组"]
+          layoutMode: "grid",
+          iconSize: "small",
+          cardStyle: "soft",
+          cardRadius: 24,
+          cardGap: 14,
+          showSubtitle: true,
+          items: [
+            entry("我的报名", "查看报名与凭证", "registration", "page", { targetPageKey: "my-registrations" }),
+            entry("商城订单", "查看商品订单", "order", "page", { targetPageKey: "mall-orders" }),
+            entry("发票申请", "提交和查看发票", "invoice", "invoice"),
+            entry("联系客服", "复制客服信息", "service", "copy", { copyText: "请联系会务组" })
+          ]
         }
       },
       {
@@ -376,6 +422,13 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
           calendarText: "添加到日历"
         }
       }
+    ];
+  }
+
+  if (pageKey === "my-registrations") {
+    return [
+      { id: "my-registration-title-default", type: "title", enabled: true, config: { text: "我的报名" } },
+      { id: "my-registration-notice-default", type: "notice", enabled: true, config: { text: "支付成功后的报名凭证会显示在这里，可查看签到和退款入口。" } }
     ];
   }
 
@@ -867,5 +920,28 @@ function preset(
     defaultConfigJson,
     enabled,
     system: true
+  };
+}
+
+function entry(
+  title: string,
+  subtitle: string,
+  builtinIcon: string,
+  actionTargetType: string,
+  extra: Prisma.InputJsonObject = {}
+): Prisma.InputJsonObject {
+  return {
+    id: `${title.toLowerCase().replace(/\s+/g, "-")}-${actionTargetType}`,
+    enabled: true,
+    title,
+    subtitle,
+    iconUrl: "",
+    dynamicIconUrl: "",
+    builtinIcon,
+    cardStyle: "",
+    backgroundColor: "",
+    textColor: "",
+    actionTargetType,
+    ...extra
   };
 }

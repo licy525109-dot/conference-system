@@ -394,6 +394,151 @@
                       inactive-text="隐藏"
                       @update:model-value="setConfig(selectedComponent, field.key, $event)"
                     />
+                    <div v-else-if="field.kind === 'entry-list'" class="entry-editor">
+                      <div class="entry-editor__head">
+                        <p>每个入口独立配置图标、文案、颜色和跳转动作；保存后小程序按相同字段渲染。</p>
+                        <el-button type="primary" plain size="small" @click="addEntryItem(selectedComponent)">新增入口</el-button>
+                      </div>
+                      <div v-for="(entry, entryIndex) in entryItemsFor(selectedComponent)" :key="entry.id" class="entry-card">
+                        <div class="entry-card__top">
+                          <div class="entry-card__sort">
+                            <strong>{{ entryIndex + 1 }}. {{ entry.title || "未命名入口" }}</strong>
+                            <small>{{ entryActionLabel(entry) }}</small>
+                          </div>
+                          <div class="entry-card__actions">
+                            <el-switch v-model="entry.enabled" active-text="启用" inactive-text="停用" />
+                            <el-button size="small" :disabled="entryIndex === 0" @click="moveEntryItem(selectedComponent, entryIndex, -1)">上移</el-button>
+                            <el-button size="small" :disabled="entryIndex === entryItemsFor(selectedComponent).length - 1" @click="moveEntryItem(selectedComponent, entryIndex, 1)">下移</el-button>
+                            <el-button size="small" type="danger" plain @click="removeEntryItem(selectedComponent, entryIndex)">删除</el-button>
+                          </div>
+                        </div>
+
+                        <div class="entry-card__grid">
+                          <label>
+                            <span>中文标题</span>
+                            <el-input v-model="entry.title" placeholder="例如 会议报名" />
+                          </label>
+                          <label>
+                            <span>英文副标题</span>
+                            <el-input v-model="entry.subtitle" placeholder="例如 Registration，可留空" />
+                          </label>
+                          <label>
+                            <span>静态图标</span>
+                            <div class="field-row">
+                              <el-input v-model="entry.iconUrl" placeholder="从素材库选择、上传后粘贴 URL，或填写图片地址" />
+                              <el-button @click="openEntryMaterialPicker(selectedComponent, entry, 'iconUrl')">素材库</el-button>
+                            </div>
+                            <small>建议 96x96 PNG/SVG，单张不超过 200KB。</small>
+                          </label>
+                          <label>
+                            <span>动态图标</span>
+                            <div class="field-row">
+                              <el-input v-model="entry.dynamicIconUrl" placeholder="可填写 GIF/APNG 动图地址；不填则使用静态图标" />
+                              <el-button @click="openEntryMaterialPicker(selectedComponent, entry, 'dynamicIconUrl')">素材库</el-button>
+                            </div>
+                            <small>如小程序端不支持动效格式，会回退为静态图片或文字占位。</small>
+                          </label>
+                          <label>
+                            <span>内置图标</span>
+                            <el-select v-model="entry.builtinIcon">
+                              <el-option label="自动首字占位" value="" />
+                              <el-option label="会议" value="conference" />
+                              <el-option label="报名" value="registration" />
+                              <el-option label="订单" value="order" />
+                              <el-option label="商城" value="shop" />
+                              <el-option label="会员" value="member" />
+                              <el-option label="发票" value="invoice" />
+                              <el-option label="客服" value="service" />
+                            </el-select>
+                          </label>
+                          <label>
+                            <span>卡片样式</span>
+                            <el-select v-model="entry.cardStyle">
+                              <el-option label="跟随模块" value="" />
+                              <el-option label="柔和卡片" value="soft" />
+                              <el-option label="描边卡片" value="outline" />
+                              <el-option label="扁平入口" value="plain" />
+                            </el-select>
+                          </label>
+                          <label>
+                            <span>入口背景色</span>
+                            <el-color-picker v-model="entry.backgroundColor" />
+                          </label>
+                          <label>
+                            <span>文字颜色</span>
+                            <el-color-picker v-model="entry.textColor" />
+                          </label>
+                          <label>
+                            <span>点击动作</span>
+                            <el-select v-model="entry.actionTargetType">
+                              <el-option v-for="option in actionTargetOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                            </el-select>
+                          </label>
+                          <label v-if="entry.actionTargetType === 'page'">
+                            <span>内部页面</span>
+                            <el-select v-model="entry.targetPageKey" filterable>
+                              <el-option v-for="option in pageTargetOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                            </el-select>
+                          </label>
+                          <label v-if="entry.actionTargetType === 'conference' || entry.actionTargetType === 'registration' || entry.actionTargetType === 'ai'">
+                            <span>目标会议</span>
+                            <el-select v-model="entry.targetConferenceId" filterable>
+                              <el-option v-for="option in conferenceSelectOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                            </el-select>
+                          </label>
+                          <label v-if="entry.actionTargetType === 'product'">
+                            <span>目标商品</span>
+                            <el-select v-model="entry.targetProductId" filterable>
+                              <el-option v-for="option in productSelectOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                            </el-select>
+                          </label>
+                          <label v-if="entry.actionTargetType === 'product-category'">
+                            <span>商品分类</span>
+                            <el-select v-model="entry.targetProductCategoryId" filterable>
+                              <el-option v-for="option in productCategorySelectOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                            </el-select>
+                          </label>
+                          <label v-if="entry.actionTargetType === 'coupon'">
+                            <span>券活动</span>
+                            <el-select v-model="entry.targetCouponCampaignId" filterable>
+                              <el-option v-for="option in couponCampaignSelectOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                            </el-select>
+                          </label>
+                          <label v-if="entry.actionTargetType === 'external-h5'">
+                            <span>外部 H5 URL</span>
+                            <el-input v-model="entry.externalUrl" placeholder="https://example.com；注意小程序业务域名限制" />
+                          </label>
+                          <template v-if="entry.actionTargetType === 'external-miniapp'">
+                            <label>
+                              <span>外部小程序 AppID</span>
+                              <el-input v-model="entry.externalMiniappAppId" placeholder="wx..." />
+                            </label>
+                            <label>
+                              <span>外部小程序路径</span>
+                              <el-input v-model="entry.externalMiniappPath" placeholder="pages/index/index" />
+                            </label>
+                            <label class="entry-card__wide">
+                              <span>extraData</span>
+                              <el-input v-model="entry.externalMiniappExtraData" type="textarea" :rows="2" placeholder="JSON 字符串，可留空" />
+                            </label>
+                          </template>
+                          <label v-if="entry.actionTargetType === 'phone'">
+                            <span>电话号码</span>
+                            <el-input v-model="entry.phone" placeholder="用于一键拨打" />
+                          </label>
+                          <template v-if="entry.actionTargetType === 'copy'">
+                            <label>
+                              <span>复制内容</span>
+                              <el-input v-model="entry.copyText" placeholder="用户点击后复制这段文本" />
+                            </label>
+                            <label>
+                              <span>复制成功提示</span>
+                              <el-input v-model="entry.copySuccessText" placeholder="内容已复制" />
+                            </label>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
                     <el-input
                       v-else-if="field.kind === 'textarea' || field.kind === 'list'"
                       :model-value="textValue(selectedComponent, field)"
@@ -628,7 +773,7 @@ interface EditableComponent {
 interface ConfigField {
   key: string;
   label: string;
-  kind?: "text" | "textarea" | "number" | "range" | "list" | "color" | "select" | "switch";
+  kind?: "text" | "textarea" | "number" | "range" | "list" | "entry-list" | "color" | "select" | "switch";
   placeholder?: string;
   rows?: number;
   fallback?: number | string;
@@ -673,6 +818,33 @@ interface BusinessDisplayForm {
   primaryButtonText: string;
   inventoryDisplayMode: "EXACT" | "STATUS" | "HIDDEN";
   lowStockThreshold: number;
+}
+
+interface EntryConfigItem {
+  id: string;
+  enabled: boolean;
+  sort: number;
+  title: string;
+  subtitle: string;
+  iconUrl: string;
+  dynamicIconUrl: string;
+  builtinIcon: string;
+  backgroundColor: string;
+  textColor: string;
+  cardStyle: string;
+  actionTargetType: string;
+  targetPageKey: string;
+  targetConferenceId: string;
+  targetProductId: string;
+  targetProductCategoryId: string;
+  targetCouponCampaignId: string;
+  externalUrl: string;
+  externalMiniappAppId: string;
+  externalMiniappPath: string;
+  externalMiniappExtraData: string;
+  phone: string;
+  copyText: string;
+  copySuccessText: string;
 }
 
 interface CmsComponentSupportMeta {
@@ -797,6 +969,108 @@ const DEFAULT_BUSINESS_MODULES: BusinessDisplayModule[] = [
   { key: "shareButton", title: "分享会议", content: "分享给微信好友", visible: true, sort: 130, style: "compact" }
 ];
 
+const BUSINESS_PAGE_MODULES: Record<string, BusinessDisplayModule[]> = {
+  conferenceDetail: DEFAULT_BUSINESS_MODULES,
+  registrationForm: [
+    { key: "registrationInfo", title: "报名信息", content: "", visible: true, sort: 10, style: "card" },
+    { key: "skuSelector", title: "选择报名规格", content: "", visible: true, sort: 20, style: "card" },
+    { key: "couponFee", title: "优惠与费用", content: "", visible: true, sort: 30, style: "card" },
+    { key: "attendeeForm", title: "参会人信息", content: "", visible: true, sort: 40, style: "card" },
+    { key: "inventory", title: "库存展示", content: "", visible: true, sort: 50, style: "compact" },
+    { key: "addCartButton", title: "加入购物车", content: "加入购物车", visible: true, sort: 60, style: "compact" },
+    { key: "submitOrder", title: "提交订单", content: "提交订单", visible: true, sort: 70, style: "accent" },
+    { key: "assistant", title: "会议助手", content: "", visible: false, sort: 80, style: "card" },
+    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 90, style: "compact" }
+  ],
+  registrationCredential: [
+    { key: "credentialHeader", title: "凭证头部", content: "", visible: true, sort: 10, style: "card" },
+    { key: "credentialQr", title: "签到二维码", content: "", visible: true, sort: 20, style: "card" },
+    { key: "conferenceInfo", title: "会议信息", content: "", visible: true, sort: 30, style: "card" },
+    { key: "attendeeInfo", title: "参会人信息", content: "", visible: true, sort: 40, style: "card" },
+    { key: "paymentInfo", title: "支付信息", content: "", visible: true, sort: 50, style: "card" },
+    { key: "formSummary", title: "报名表单摘要", content: "", visible: true, sort: 60, style: "card" },
+    { key: "checkinInfo", title: "签到信息", content: "", visible: true, sort: 70, style: "card" },
+    { key: "actionButtons", title: "操作按钮", content: "", visible: true, sort: 80, style: "accent" },
+    { key: "assistant", title: "会议助手", content: "", visible: false, sort: 90, style: "card" },
+    { key: "customerService", title: "联系客服", content: "", visible: false, sort: 100, style: "compact" }
+  ],
+  myRegistrations: [
+    { key: "listHeader", title: "我的报名", content: "", visible: true, sort: 10, style: "card" },
+    { key: "statusTag", title: "状态标签", content: "", visible: true, sort: 20, style: "compact" },
+    { key: "credentialEntry", title: "查看凭证", content: "查看凭证", visible: true, sort: 30, style: "compact" },
+    { key: "refundEntry", title: "退款入口", content: "申请退款", visible: true, sort: 40, style: "compact" },
+    { key: "checkinEntry", title: "签到入口", content: "去签到", visible: true, sort: 50, style: "compact" },
+    { key: "emptyState", title: "空状态文案", content: "暂无报名记录", visible: true, sort: 60, style: "card" },
+    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 70, style: "compact" }
+  ],
+  mallHome: [
+    { key: "mallHeader", title: "商城首页头部", content: "", visible: true, sort: 10, style: "card" },
+    { key: "banner", title: "商城 Banner", content: "", visible: true, sort: 20, style: "card" },
+    { key: "quickGrid", title: "商城入口宫格", content: "", visible: true, sort: 30, style: "card" },
+    { key: "categories", title: "商品分类", content: "", visible: true, sort: 40, style: "compact" },
+    { key: "recommended", title: "推荐商品", content: "", visible: true, sort: 50, style: "card" },
+    { key: "coupon", title: "优惠券入口", content: "", visible: false, sort: 60, style: "compact" },
+    { key: "orderCenter", title: "订单中心", content: "", visible: true, sort: 70, style: "compact" },
+    { key: "cart", title: "购物车", content: "", visible: true, sort: 80, style: "compact" },
+    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 90, style: "compact" }
+  ],
+  productDetail: [
+    { key: "productInfo", title: "商品信息", content: "", visible: true, sort: 10, style: "card" },
+    { key: "cover", title: "商品封面", content: "", visible: true, sort: 20, style: "card" },
+    { key: "price", title: "价格展示", content: "", visible: true, sort: 30, style: "compact" },
+    { key: "skuSelector", title: "规格选择", content: "", visible: true, sort: 40, style: "card" },
+    { key: "inventory", title: "库存展示", content: "", visible: true, sort: 50, style: "compact" },
+    { key: "detail", title: "商品详情", content: "", visible: true, sort: 60, style: "card" },
+    { key: "addCartButton", title: "加入购物车", content: "加入购物车", visible: true, sort: 70, style: "compact" },
+    { key: "buyNowButton", title: "立即购买", content: "立即购买", visible: true, sort: 80, style: "accent" },
+    { key: "aftersales", title: "售后说明", content: "", visible: true, sort: 90, style: "card" },
+    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 100, style: "compact" }
+  ],
+  cartCheckout: [
+    { key: "cartItems", title: "商品与报名项", content: "", visible: true, sort: 10, style: "card" },
+    { key: "quantity", title: "数量调整", content: "", visible: true, sort: 20, style: "compact" },
+    { key: "feeSummary", title: "费用确认", content: "", visible: true, sort: 30, style: "card" },
+    { key: "submitButton", title: "提交按钮", content: "提交订单", visible: true, sort: 40, style: "accent" },
+    { key: "emptyState", title: "空购物车文案", content: "购物车暂无商品", visible: true, sort: 50, style: "card" },
+    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 60, style: "compact" }
+  ],
+  mallOrders: [
+    { key: "orderList", title: "订单列表", content: "", visible: true, sort: 10, style: "card" },
+    { key: "statusFilter", title: "状态筛选", content: "", visible: true, sort: 20, style: "compact" },
+    { key: "aftersalesEntry", title: "售后入口", content: "申请售后", visible: true, sort: 30, style: "compact" },
+    { key: "invoiceEntry", title: "发票入口", content: "申请发票", visible: true, sort: 40, style: "compact" },
+    { key: "emptyState", title: "空订单文案", content: "暂无商城订单", visible: true, sort: 50, style: "card" },
+    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 60, style: "compact" }
+  ],
+  memberCenter: [
+    { key: "memberProfile", title: "用户卡片", content: "", visible: true, sort: 10, style: "card" },
+    { key: "level", title: "会员等级", content: "", visible: true, sort: 20, style: "card" },
+    { key: "benefitList", title: "会员权益", content: "", visible: true, sort: 30, style: "card" },
+    { key: "memberPricing", title: "会员价说明", content: "会员价由后端 quote/create order 计算", visible: true, sort: 40, style: "card" },
+    { key: "registrations", title: "我的报名", content: "", visible: true, sort: 50, style: "compact" },
+    { key: "orders", title: "商城订单", content: "", visible: true, sort: 60, style: "compact" },
+    { key: "invoice", title: "发票申请", content: "", visible: true, sort: 70, style: "compact" },
+    { key: "aftersales", title: "售后申请", content: "", visible: true, sort: 80, style: "compact" },
+    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 90, style: "compact" }
+  ],
+  invoice: [
+    { key: "invoiceableOrders", title: "可开票订单", content: "", visible: true, sort: 10, style: "card" },
+    { key: "invoiceProfile", title: "发票抬头", content: "", visible: true, sort: 20, style: "card" },
+    { key: "invoiceForm", title: "开票信息表单", content: "", visible: true, sort: 30, style: "card" },
+    { key: "submitButton", title: "提交申请", content: "提交发票申请", visible: true, sort: 40, style: "accent" },
+    { key: "emptyState", title: "空状态文案", content: "暂无可开票订单", visible: true, sort: 50, style: "card" },
+    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 60, style: "compact" }
+  ],
+  aftersale: [
+    { key: "aftersaleInfo", title: "售后说明", content: "", visible: true, sort: 10, style: "card" },
+    { key: "orderProduct", title: "订单商品信息", content: "", visible: true, sort: 20, style: "card" },
+    { key: "reason", title: "售后原因", content: "", visible: true, sort: 30, style: "card" },
+    { key: "imageUpload", title: "凭证上传", content: "", visible: true, sort: 40, style: "card" },
+    { key: "submitButton", title: "提交申请", content: "提交售后申请", visible: true, sort: 50, style: "accent" },
+    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 60, style: "compact" }
+  ]
+};
+
 const BUSINESS_MODULE_GUIDES: Record<string, BusinessModuleGuide> = {
   conferenceInfo: {
     source: "会议管理中的标题、时间、地点、状态和报名时间",
@@ -907,6 +1181,7 @@ const materialKeyword = ref("");
 const materialAssets = ref<MaterialAsset[]>([]);
 const materialTarget = ref<{ component: EditableComponent; field: ConfigField } | null>(null);
 const materialPageTarget = ref<keyof PageMetaForm | null>(null);
+const materialEntryTarget = ref<{ component: EditableComponent; entry: EntryConfigItem; key: "iconUrl" | "dynamicIconUrl" } | null>(null);
 const previewConferences = ref<Conference[]>([]);
 const previewTabbar = ref<TabBarConfig | null>(null);
 const couponCampaignOptions = ref<CouponCampaign[]>([]);
@@ -931,12 +1206,14 @@ const pageTypeOptions = [
 ];
 const loadedPreviewFonts = new Set<string>();
 const materialPickerSpecKey = computed<MaterialSpecKey>(() => {
+  if (materialEntryTarget.value) return "tabbarIcon";
   if (materialPageTarget.value) return "shareCover";
   const target = materialTarget.value;
   return target ? materialSpecKeyForField(target.component.type, target.field) ?? "materialUpload" : "materialUpload";
 });
 const materialPickerSpecText = computed(() => materialSpecText(materialSpecs[materialPickerSpecKey.value]));
 const materialPickerKind = computed<"image" | "video" | "file" | "font">(() => {
+  if (materialEntryTarget.value) return "image";
   if (materialPageTarget.value) return "image";
   const target = materialTarget.value;
   if (!target) return "image";
@@ -1023,7 +1300,7 @@ const previewContextConferences = computed(() => {
 const selectedPageContextText = computed(() => (selectedPage.value ? pageContextText(selectedPage.value) : "未选择页面"));
 const showBusinessDisplayEditor = computed(() => {
   const page = selectedPage.value;
-  return Boolean(page && (page.pageKey === "conference-detail" || ["CONFERENCE_DETAIL", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_DETAIL_PAGE"].includes(page.pageType)));
+  return Boolean(page && businessDisplayKeyForPage(page));
 });
 const previewBusinessModules = computed(() =>
   businessDisplay.modules
@@ -1087,6 +1364,7 @@ const businessPreviewContext = computed<BusinessPreviewContextModel | null>(() =
         { label: "金额计算", value: "提交订单时由后端重算" }
       ],
       notice: "后台预览使用所选会议上下文；用户端会按 conferenceId 读取指定页，未命中时回退通用页。",
+      modules: previewBusinessModules.value,
       cta: "提交订单"
     };
   }
@@ -1103,6 +1381,7 @@ const businessPreviewContext = computed<BusinessPreviewContextModel | null>(() =
         { label: "签到状态", value: "按当前报名记录实时展示" }
       ],
       notice: "预览展示页面结构；小程序真实页会使用用户自己的报名凭证数据。",
+      modules: previewBusinessModules.value,
       cta: "查看签到"
     };
   }
@@ -1119,6 +1398,7 @@ const businessPreviewContext = computed<BusinessPreviewContextModel | null>(() =
         { label: "订单", value: "创建商城待支付订单后再支付" }
       ],
       notice: "指定商品页按 productId 优先生效；未命中时回退商品详情通用模板。",
+      modules: previewBusinessModules.value,
       cta: "创建订单"
     };
   }
@@ -1133,7 +1413,9 @@ const businessPreviewContext = computed<BusinessPreviewContextModel | null>(() =
         { label: "报名项", value: "沿用会议报名支付链路" },
         { label: "商品项", value: "创建商城待支付订单" }
       ],
-      notice: "后台只装修运营内容区域，订单金额和库存以用户端实时数据为准。"
+      notice: "后台只装修运营内容区域，订单金额和库存以用户端实时数据为准。",
+      modules: previewBusinessModules.value,
+      cta: "提交订单"
     };
   }
 
@@ -1147,7 +1429,55 @@ const businessPreviewContext = computed<BusinessPreviewContextModel | null>(() =
         { label: "会员状态", value: "来自当前登录用户" },
         { label: "会员价", value: "报名 quote/create order 后端计算" }
       ],
-      notice: "预览展示页面结构；真实用户数据进入小程序后注入。"
+      notice: "预览展示页面结构；真实用户数据进入小程序后注入。",
+      modules: previewBusinessModules.value
+    };
+  }
+
+  if (page.pageKey === "mall" || page.pageType === "MALL") {
+    return {
+      kind: "mall-home",
+      label: "商城首页",
+      title: "商城商品",
+      subtitle: "商城首页固定展示分类、商品列表、订单中心和购物车入口，CMS 内容显示在顶部运营位。",
+      rows: [
+        { label: "商品分类", value: "来自后台商品分类" },
+        { label: "推荐商品", value: "来自已发布商品和库存" },
+        { label: "订单中心", value: "跳转商城订单页" }
+      ],
+      notice: "后台预览展示结构；小程序端会读取真实商品、分类和库存。",
+      modules: previewBusinessModules.value
+    };
+  }
+
+  if (page.pageKey === "mall-orders") {
+    return {
+      kind: "mall-orders",
+      label: page.pageType === "MALL_AFTERSALE" ? "售后申请页" : "商城订单页",
+      title: page.pageType === "MALL_AFTERSALE" ? "售后申请" : "商城订单",
+      subtitle: "固定展示订单列表、状态筛选、售后和发票入口。",
+      rows: [
+        { label: "订单数据", value: "来自当前登录用户" },
+        { label: "售后状态", value: "来自商城售后流程" }
+      ],
+      notice: "真实订单和售后状态进入小程序后注入。",
+      modules: previewBusinessModules.value
+    };
+  }
+
+  if (page.pageKey === "invoice" || page.pageType === "INVOICE") {
+    return {
+      kind: "invoice",
+      label: "发票申请页",
+      title: "发票申请",
+      subtitle: "固定展示可开票订单、抬头表单和提交按钮。",
+      rows: [
+        { label: "可开票订单", value: "来自报名和商城支付成功订单" },
+        { label: "发票状态", value: "后台审核后更新" }
+      ],
+      notice: "真实开票订单、审核状态和抬头信息进入小程序后注入。",
+      modules: previewBusinessModules.value,
+      cta: "提交发票申请"
     };
   }
 
@@ -1675,6 +2005,14 @@ function readPageMeta(themeJson: Record<string, unknown> | null | undefined): Pa
 }
 
 function nextThemeJson(): Record<string, unknown> {
+  const businessDisplayKey = selectedPage.value ? businessDisplayKeyForPage(selectedPage.value) : "";
+  const currentBusinessDisplay = readRecord(version.value?.themeJson?.businessDisplay);
+  const nextBusinessDisplay = businessDisplayKey
+    ? {
+        ...currentBusinessDisplay,
+        [businessDisplayKey]: serializeBusinessDisplay()
+      }
+    : currentBusinessDisplay;
   return {
     ...(version.value?.themeJson ?? {}),
     pageMeta: {
@@ -1683,16 +2021,32 @@ function nextThemeJson(): Record<string, unknown> {
       shareDescription: pageMeta.shareDescription.trim(),
       shareImageUrl: pageMeta.shareImageUrl.trim()
     },
-    businessDisplay: {
-      ...readRecord(version.value?.themeJson?.businessDisplay),
-      conferenceDetail: serializeBusinessDisplay()
-    }
+    businessDisplay: nextBusinessDisplay
   };
 }
 
-function defaultBusinessDisplay(): BusinessDisplayForm {
+function businessDisplayKeyForPage(page: PageTemplate | null | undefined): string {
+  if (!page) return "";
+  if (page.pageKey === "conference-detail" || ["CONFERENCE_DETAIL", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_DETAIL_PAGE"].includes(page.pageType)) return "conferenceDetail";
+  if (page.pageKey === "registration-form" || ["REGISTRATION_FORM", "REGISTRATION_FORM_PAGE"].includes(page.pageType)) return "registrationForm";
+  if (page.pageKey === "registration-success" || ["REGISTRATION_CREDENTIAL", "REGISTRATION_CREDENTIAL_PAGE"].includes(page.pageType)) return "registrationCredential";
+  if (page.pageKey === "my-registrations") return "myRegistrations";
+  if (page.pageKey === "mall" || page.pageType === "MALL") return "mallHome";
+  if (page.pageKey === "mall-detail" || ["PRODUCT_DETAIL_TEMPLATE", "PRODUCT_DETAIL_PAGE"].includes(page.pageType)) return "productDetail";
+  if (page.pageKey === "cart" || page.pageType === "MALL_CHECKOUT") return "cartCheckout";
+  if (page.pageKey === "mall-orders") return page.pageType === "MALL_AFTERSALE" ? "aftersale" : "mallOrders";
+  if (page.pageKey === "member-center") return "memberCenter";
+  if (page.pageKey === "invoice" || page.pageType === "INVOICE") return "invoice";
+  return "";
+}
+
+function businessModulesForKey(key: string): BusinessDisplayModule[] {
+  return (BUSINESS_PAGE_MODULES[key] ?? DEFAULT_BUSINESS_MODULES).map((module) => ({ ...module }));
+}
+
+function defaultBusinessDisplay(modules = businessModulesForKey("conferenceDetail")): BusinessDisplayForm {
   return {
-    modules: DEFAULT_BUSINESS_MODULES.map((module) => ({ ...module })),
+    modules: modules.map((module) => ({ ...module })),
     assistantMode: "ai",
     primaryButtonText: "立即报名",
     inventoryDisplayMode: "STATUS",
@@ -1701,7 +2055,7 @@ function defaultBusinessDisplay(): BusinessDisplayForm {
 }
 
 function applyBusinessDisplay(themeJson: Record<string, unknown> | null | undefined) {
-  const next = readBusinessDisplay(themeJson);
+  const next = readBusinessDisplay(themeJson, selectedPage.value ? businessDisplayKeyForPage(selectedPage.value) : "conferenceDetail");
   businessDisplay.modules = next.modules;
   businessDisplay.assistantMode = next.assistantMode;
   businessDisplay.primaryButtonText = next.primaryButtonText;
@@ -1709,14 +2063,16 @@ function applyBusinessDisplay(themeJson: Record<string, unknown> | null | undefi
   businessDisplay.lowStockThreshold = next.lowStockThreshold;
 }
 
-function readBusinessDisplay(themeJson: Record<string, unknown> | null | undefined): BusinessDisplayForm {
+function readBusinessDisplay(themeJson: Record<string, unknown> | null | undefined, key = "conferenceDetail"): BusinessDisplayForm {
   const businessDisplaySource = readRecord(themeJson?.businessDisplay);
-  const source = readRecord(businessDisplaySource.conferenceDetail ?? themeJson?.detailDisplay);
+  const fallbackSource = key === "conferenceDetail" ? businessDisplaySource.conferenceDetail ?? themeJson?.detailDisplay : {};
+  const source = readRecord(businessDisplaySource[key] ?? fallbackSource);
   const mode = String(source.inventoryDisplayMode || "STATUS").toUpperCase();
   const rawModules = Array.isArray(source.modules) ? source.modules : [];
   const oldVisibleModules = Array.isArray(source.visibleModules) ? source.visibleModules.filter((item): item is string => typeof item === "string") : [];
   const oldVisible = new Set(oldVisibleModules);
-  const modules = DEFAULT_BUSINESS_MODULES.map((module) => {
+  const defaultModules = businessModulesForKey(key);
+  const modules = defaultModules.map((module) => {
     const configured = readRecord(rawModules.find((item) => readRecord(item).key === module.key));
     const hasOldVisible = oldVisibleModules.length > 0;
     return {
@@ -1755,11 +2111,11 @@ function serializeBusinessDisplay(): Record<string, unknown> {
 }
 
 function businessModuleLabel(key: string): string {
-  return DEFAULT_BUSINESS_MODULES.find((module) => module.key === key)?.title || key;
+  return businessModulesForKey(selectedPage.value ? businessDisplayKeyForPage(selectedPage.value) : "conferenceDetail").find((module) => module.key === key)?.title || key;
 }
 
 function businessModuleAllowsContent(key: string): boolean {
-  return ["speakers", "schedule", "location", "customerService", "customerGroup", "calendar", "shareButton"].includes(key);
+  return !["conferenceInfo", "registrationInfo", "credentialHeader", "productInfo", "mallHeader", "memberProfile", "cartItems", "orderList", "invoiceableOrders"].includes(key);
 }
 
 function businessModuleGuide(key: string): BusinessModuleGuide {
@@ -1808,8 +2164,32 @@ function componentSummary(component: EditableComponent): string {
 
 function fieldsFor(type: string): ConfigField[] {
   const commonTitle = [{ key: "title", label: "模块标题", placeholder: "请输入模块标题" }];
+  const moduleHeadingFields: ConfigField[] = [
+    { key: "showTitle", label: "显示模块标题", kind: "switch", fallback: "true" },
+    { key: "subtitle", label: "模块副标题", placeholder: "可填写标题下方说明" },
+    { key: "titleBottomGap", label: "标题与内容间距", kind: "range", fallback: 18, min: 0, max: 60 },
+    { key: "showMore", label: "显示查看更多", kind: "switch", fallback: "false" },
+    { key: "moreText", label: "查看更多文案", placeholder: "查看更多" },
+    { key: "moreActionTargetType", label: "查看更多跳转", kind: "select", fallback: "none", options: actionTargetOptions() },
+    { key: "moreTargetPageKey", label: "查看更多目标页面", kind: "select", options: pageTargetOptions() },
+    { key: "moreTargetConferenceId", label: "查看更多目标会议", kind: "select", options: conferenceSelectOptions() },
+    { key: "moreTargetProductId", label: "查看更多目标商品", kind: "select", options: productSelectOptions() },
+    { key: "moreExternalUrl", label: "查看更多外部 H5", placeholder: "https://example.com" }
+  ];
   const titleStyleFields: ConfigField[] = [
     { key: "titleFontSize", label: "模块标题字号", kind: "number", fallback: 32 },
+    {
+      key: "titleFontWeight",
+      label: "模块标题字重",
+      kind: "select",
+      fallback: "800",
+      options: [
+        { label: "常规", value: "400" },
+        { label: "中等", value: "600" },
+        { label: "加粗", value: "800" },
+        { label: "特粗", value: "900" }
+      ]
+    },
     {
       key: "titleFontFamily",
       label: "模块标题字体",
@@ -1825,6 +2205,8 @@ function fieldsFor(type: string): ConfigField[] {
     },
     { key: "titleFontAssetUrl", label: "模块标题字体文件", placeholder: "从素材库选择字体文件" },
     { key: "titleTextColor", label: "模块标题颜色", kind: "color", fallback: "#172033" },
+    { key: "subtitleFontSize", label: "模块副标题字号", kind: "number", fallback: 22 },
+    { key: "subtitleTextColor", label: "模块副标题颜色", kind: "color", fallback: "#637083" },
     {
       key: "titleTextAlign",
       label: "模块标题对齐",
@@ -1869,7 +2251,9 @@ function fieldsFor(type: string): ConfigField[] {
   const layoutFields: ConfigField[] = [
     { key: "fullBleed", label: "组件铺满屏幕宽度", kind: "switch", fallback: "false" }
   ];
-  const withTextStyle = (fields: ConfigField[], fontSize = 26) => [...fields, ...layoutFields, ...titleStyleFields, { ...textStyleFields[0], fallback: fontSize }, ...textStyleFields.slice(1)];
+  const uniqueFields = (fields: ConfigField[]) => fields.filter((field, index, list) => list.findIndex((item) => item.key === field.key) === index);
+  const withTextStyle = (fields: ConfigField[], fontSize = 26) =>
+    uniqueFields([...fields, ...layoutFields, ...moduleHeadingFields, ...titleStyleFields, { ...textStyleFields[0], fallback: fontSize }, ...textStyleFields.slice(1)]);
   const conferenceDisplayFields: ConfigField[] = [
     { key: "showCover", label: "显示会议封面", kind: "switch", fallback: "true" },
     {
@@ -2069,10 +2453,15 @@ function fieldsFor(type: string): ConfigField[] {
     "quick-icon-grid": withTextStyle([
       ...commonTitle,
       { key: "columns", label: "列数", kind: "select", fallback: "3", options: [{ label: "2 列", value: "2" }, { label: "3 列", value: "3" }, { label: "4 列", value: "4" }] },
+      { key: "layoutMode", label: "布局方式", kind: "select", fallback: "grid", options: [{ label: "宫格", value: "grid" }, { label: "横向滑动", value: "scroll" }] },
+      { key: "iconSize", label: "图标尺寸", kind: "select", fallback: "large", options: [{ label: "大图标", value: "large" }, { label: "小图标", value: "small" }] },
       { key: "cardStyle", label: "卡片样式", kind: "select", fallback: "soft", options: [{ label: "柔和卡片", value: "soft" }, { label: "描边卡片", value: "outline" }, { label: "无边框", value: "plain" }] },
+      { key: "cardRadius", label: "卡片圆角", kind: "range", fallback: 28, min: 0, max: 48 },
+      { key: "cardGap", label: "入口间距", kind: "range", fallback: 14, min: 4, max: 40 },
       { key: "backgroundColor", label: "模块背景色", kind: "color", fallback: "" },
       { key: "cardBackground", label: "卡片背景色", kind: "color", fallback: "" },
-      { key: "items", label: "入口配置", kind: "list", rows: 6, placeholder: "每行一个入口：标题｜英文副标题｜图标URL｜跳转类型｜目标值，例如：商城｜Shop｜https://.../shop.png｜page｜mall" }
+      { key: "showSubtitle", label: "显示英文副标题", kind: "switch", fallback: "true" },
+      { key: "items", label: "入口配置", kind: "entry-list" }
     ], 24),
     "member-promo-banner": withTextStyle([
       ...commonTitle,
@@ -2095,7 +2484,15 @@ function fieldsFor(type: string): ConfigField[] {
     "service-shortcut-card": withTextStyle([
       ...commonTitle,
       { key: "columns", label: "列数", kind: "select", fallback: "2", options: [{ label: "2 列", value: "2" }, { label: "3 列", value: "3" }, { label: "4 列", value: "4" }] },
-      { key: "items", label: "服务入口", kind: "list", rows: 6, placeholder: "每行一个入口：标题｜说明｜图标URL｜跳转类型｜目标值，例如：发票申请｜提交和查看发票｜｜invoice｜" }
+      { key: "layoutMode", label: "布局方式", kind: "select", fallback: "grid", options: [{ label: "宫格", value: "grid" }, { label: "横向滑动", value: "scroll" }] },
+      { key: "iconSize", label: "图标尺寸", kind: "select", fallback: "small", options: [{ label: "大图标", value: "large" }, { label: "小图标", value: "small" }] },
+      { key: "cardStyle", label: "卡片样式", kind: "select", fallback: "soft", options: [{ label: "柔和卡片", value: "soft" }, { label: "描边卡片", value: "outline" }, { label: "无边框", value: "plain" }] },
+      { key: "cardRadius", label: "卡片圆角", kind: "range", fallback: 24, min: 0, max: 48 },
+      { key: "cardGap", label: "入口间距", kind: "range", fallback: 14, min: 4, max: 40 },
+      { key: "backgroundColor", label: "模块背景色", kind: "color", fallback: "" },
+      { key: "cardBackground", label: "卡片背景色", kind: "color", fallback: "" },
+      { key: "showSubtitle", label: "显示说明文字", kind: "switch", fallback: "true" },
+      { key: "items", label: "服务入口", kind: "entry-list" }
     ], 24),
     "task-progress-card": withTextStyle([
       ...commonTitle,
@@ -2252,7 +2649,10 @@ function actionTargetOptions(): Array<{ label: string; value: string }> {
     { label: "打开商品分类", value: "product-category" },
     { label: "打开券活动", value: "coupon" },
     { label: "会员中心", value: "member" },
+    { label: "购物车", value: "cart" },
+    { label: "商城订单", value: "mall-orders" },
     { label: "发票申请", value: "invoice" },
+    { label: "售后申请", value: "aftersale" },
     { label: "AI 助手", value: "ai" },
     { label: "外部 H5", value: "external-h5" },
     { label: "外部小程序", value: "external-miniapp" },
@@ -2353,11 +2753,11 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
       { key: "card-summary", title: "会议简介样式", fields: fieldsByKeys(fields, ["cardSummaryFontSize", "cardSummaryColor", "cardSummaryAlign"]) },
       { key: "card-meta", title: "时间地点人数样式", fields: fieldsByKeys(fields, ["cardMetaFontSize", "cardMetaColor", "cardMetaAlign"]) },
       { key: "card-font", title: "卡片字体", fields: fieldsByKeys(fields, ["fontFamily", "fontAssetUrl"]) },
-      { key: "module-title", title: "模块标题样式", fields: fieldsByKeys(fields, ["titleFontSize", "titleFontFamily", "titleFontAssetUrl", "titleTextColor", "titleTextAlign"]) }
+      { key: "module-title", title: "模块标题样式", fields: fieldsByKeys(fields, ["showTitle", "title", "subtitle", "titleBottomGap", "showMore", "moreText", "moreActionTargetType", "moreTargetPageKey", "moreTargetConferenceId", "moreTargetProductId", "moreExternalUrl", "titleFontSize", "titleFontWeight", "titleFontFamily", "titleFontAssetUrl", "titleTextColor", "subtitleFontSize", "subtitleTextColor", "titleTextAlign"]) }
     ]);
   }
 
-  const titleKeys = ["titleFontSize", "titleFontFamily", "titleFontAssetUrl", "titleTextColor", "titleTextAlign"];
+  const titleKeys = ["showTitle", "title", "subtitle", "titleBottomGap", "showMore", "moreText", "moreActionTargetType", "moreTargetPageKey", "moreTargetConferenceId", "moreTargetProductId", "moreExternalUrl", "titleFontSize", "titleFontWeight", "titleFontFamily", "titleFontAssetUrl", "titleTextColor", "subtitleFontSize", "subtitleTextColor", "titleTextAlign"];
   const textKeys = ["fontSize", "fontFamily", "fontAssetUrl", "textColor", "textAlign"];
   const contentFields = fields.filter((field) => !titleKeys.includes(field.key) && !textKeys.includes(field.key));
   return compactGroups([
@@ -2413,6 +2813,130 @@ function setConfig(component: EditableComponent, key: string, value: unknown) {
   component.config = { ...component.config, [key]: value };
 }
 
+function entryItemsFor(component: EditableComponent): EntryConfigItem[] {
+  const current = component.config.items;
+  const items = normalizeEntryItems(current, component.type);
+  if (!Array.isArray(current) || current.some((item) => !isEntryConfigRecord(item))) {
+    setConfig(component, "items", items);
+  }
+  return items;
+}
+
+function normalizeEntryItems(value: unknown, componentType = "quick-icon-grid"): EntryConfigItem[] {
+  const fallback = componentType === "service-shortcut-card" ? defaultServiceEntries() : defaultQuickEntries();
+  const rawItems = Array.isArray(value) && value.length > 0 ? value : fallback;
+  return rawItems
+    .map((item, index) => normalizeEntryItem(item, index))
+    .filter((item) => item.title)
+    .sort((a, b) => a.sort - b.sort)
+    .map((item, index) => ({ ...item, sort: index * 10 + 10 }));
+}
+
+function normalizeEntryItem(value: unknown, index: number): EntryConfigItem {
+  if (isEntryConfigRecord(value)) {
+    const targetType = readString(value.actionTargetType ?? value.targetType ?? value.actionType ?? value.type) || "none";
+    const fallbackTarget = readString(value.targetValue ?? value.target);
+    return {
+      id: readString(value.id) || `entry-${Date.now()}-${index}`,
+      enabled: typeof value.enabled === "boolean" ? value.enabled : true,
+      sort: Number.isFinite(Number(value.sort)) ? Number(value.sort) : index * 10 + 10,
+      title: readString(value.title ?? value.name ?? value.label ?? value.text) || "入口",
+      subtitle: readString(value.subtitle ?? value.description ?? value.desc ?? value.englishTitle),
+      iconUrl: readString(value.iconUrl ?? value.imageUrl ?? value.icon ?? value.image),
+      dynamicIconUrl: readString(value.dynamicIconUrl ?? value.animatedIconUrl),
+      builtinIcon: readString(value.builtinIcon),
+      backgroundColor: readString(value.backgroundColor),
+      textColor: readString(value.textColor),
+      cardStyle: readString(value.cardStyle),
+      actionTargetType: targetType,
+      targetPageKey: readString(value.targetPageKey ?? value.pageKey) || (targetType === "page" ? fallbackTarget : ""),
+      targetConferenceId: readString(value.targetConferenceId ?? value.conferenceId) || (targetType === "conference" || targetType === "registration" || targetType === "ai" ? fallbackTarget : ""),
+      targetProductId: readString(value.targetProductId ?? value.productId) || (targetType === "product" ? fallbackTarget : ""),
+      targetProductCategoryId: readString(value.targetProductCategoryId ?? value.productCategoryId) || (targetType === "product-category" ? fallbackTarget : ""),
+      targetCouponCampaignId: readString(value.targetCouponCampaignId ?? value.couponCampaignId) || (targetType === "coupon" ? fallbackTarget : ""),
+      externalUrl: readString(value.externalUrl ?? value.url) || (targetType === "external-h5" ? fallbackTarget : ""),
+      externalMiniappAppId: readString(value.externalMiniappAppId ?? value.miniappAppId) || (targetType === "external-miniapp" ? fallbackTarget : ""),
+      externalMiniappPath: readString(value.externalMiniappPath ?? value.miniappPath),
+      externalMiniappExtraData: readString(value.externalMiniappExtraData ?? value.miniappExtraData),
+      phone: readString(value.phone) || (targetType === "phone" ? fallbackTarget : ""),
+      copyText: readString(value.copyText) || (targetType === "copy" ? fallbackTarget : ""),
+      copySuccessText: readString(value.copySuccessText) || "内容已复制"
+    };
+  }
+
+  const parts = String(value).split(/[|｜]/).map((item) => item.trim());
+  const targetType = parts[3] || (parts[2] && !looksLikePreviewImage(parts[2]) ? parts[2] : "none");
+  const targetValue = parts[4] || "";
+  return normalizeEntryItem(
+    {
+      id: `entry-${Date.now()}-${index}`,
+      enabled: true,
+      sort: index * 10 + 10,
+      title: parts[0] || "入口",
+      subtitle: parts[1] || "",
+      iconUrl: looksLikePreviewImage(parts[2] || "") ? parts[2] : "",
+      actionTargetType: targetType,
+      targetValue
+    },
+    index
+  );
+}
+
+function addEntryItem(component: EditableComponent) {
+  const items = entryItemsFor(component);
+  setConfig(component, "items", [
+    ...items,
+    normalizeEntryItem(
+      {
+        id: `entry-${Date.now()}`,
+        title: "新入口",
+        subtitle: "",
+        actionTargetType: "page",
+        targetPageKey: ""
+      },
+      items.length
+    )
+  ]);
+}
+
+function removeEntryItem(component: EditableComponent, index: number) {
+  const items = [...entryItemsFor(component)];
+  items.splice(index, 1);
+  setConfig(component, "items", items.map((item, nextIndex) => ({ ...item, sort: nextIndex * 10 + 10 })));
+}
+
+function moveEntryItem(component: EditableComponent, index: number, offset: number) {
+  const items = [...entryItemsFor(component)];
+  const target = index + offset;
+  if (target < 0 || target >= items.length) return;
+  const [item] = items.splice(index, 1);
+  items.splice(target, 0, item);
+  setConfig(component, "items", items.map((entry, nextIndex) => ({ ...entry, sort: nextIndex * 10 + 10 })));
+}
+
+function entryActionLabel(entry: EntryConfigItem): string {
+  const option = actionTargetOptions().find((item) => item.value === entry.actionTargetType);
+  if (entry.actionTargetType === "page") return `${option?.label || "打开页面"}：${entry.targetPageKey || "未选择"}`;
+  if (entry.actionTargetType === "conference" || entry.actionTargetType === "registration") return `${option?.label || "会议"}：${conferenceSelectOptions().find((item) => item.value === entry.targetConferenceId)?.label || "未选择"}`;
+  if (entry.actionTargetType === "product") return `${option?.label || "商品"}：${productSelectOptions().find((item) => item.value === entry.targetProductId)?.label || "未选择"}`;
+  if (entry.actionTargetType === "external-h5") return `${option?.label || "外部 H5"}：${entry.externalUrl || "未填写"}`;
+  if (entry.actionTargetType === "phone") return `${option?.label || "电话"}：${entry.phone || "未填写"}`;
+  if (entry.actionTargetType === "copy") return `${option?.label || "复制"}：${entry.copyText || "未填写"}`;
+  return option?.label || "无跳转";
+}
+
+function defaultQuickEntries(): string[] {
+  return ["会议报名｜Registration｜｜page｜conference-list", "我的报名｜My tickets｜｜page｜my-registrations", "商城｜Shop｜｜page｜mall"];
+}
+
+function defaultServiceEntries(): string[] {
+  return ["我的报名｜查看报名与凭证｜｜page｜my-registrations", "商城订单｜查看商品订单｜｜page｜mall-orders", "发票申请｜提交和查看发票｜｜invoice｜", "联系客服｜复制客服信息｜｜copy｜请联系会务组"];
+}
+
+function isEntryConfigRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function isImageField(field: ConfigField): boolean {
   return ["imageUrl", "images", "coverUrl", "iconUrl", "backgroundImageUrl"].includes(field.key);
 }
@@ -2465,6 +2989,7 @@ function materialSpecKeyForField(componentType: string, field: ConfigField): Mat
 async function openMaterialPicker(component: EditableComponent, field: ConfigField) {
   materialTarget.value = { component, field };
   materialPageTarget.value = null;
+  materialEntryTarget.value = null;
   materialVisible.value = true;
   await loadMaterials();
 }
@@ -2472,6 +2997,15 @@ async function openMaterialPicker(component: EditableComponent, field: ConfigFie
 async function openPageMetaImagePicker() {
   materialTarget.value = null;
   materialPageTarget.value = "shareImageUrl";
+  materialEntryTarget.value = null;
+  materialVisible.value = true;
+  await loadMaterials();
+}
+
+async function openEntryMaterialPicker(component: EditableComponent, entry: EntryConfigItem, key: "iconUrl" | "dynamicIconUrl") {
+  materialTarget.value = null;
+  materialPageTarget.value = null;
+  materialEntryTarget.value = { component, entry, key };
   materialVisible.value = true;
   await loadMaterials();
 }
@@ -2493,6 +3027,14 @@ async function loadMaterials() {
 }
 
 function chooseMaterial(asset: MaterialAsset) {
+  if (materialEntryTarget.value) {
+    materialEntryTarget.value.entry[materialEntryTarget.value.key] = asset.url;
+    setConfig(materialEntryTarget.value.component, "items", [...entryItemsFor(materialEntryTarget.value.component)]);
+    materialVisible.value = false;
+    materialEntryTarget.value = null;
+    ElMessage.success("已应用入口图标");
+    return;
+  }
   if (materialPageTarget.value) {
     pageMeta[materialPageTarget.value] = asset.url;
     materialVisible.value = false;
@@ -2634,9 +3176,15 @@ const BusinessPreviewContext = defineComponent({
     const isVisible = (key: string) => props.context.modules?.some((module) => module.key === key && module.visible) ?? true;
     const moduleTitle = (key: string, fallback: string) => props.context.modules?.find((module) => module.key === key)?.title || fallback;
     const moduleContent = (key: string, fallback: string) => props.context.modules?.find((module) => module.key === key)?.content || fallback;
+    const heroKeys = ["conferenceInfo", "registrationInfo", "credentialHeader", "productInfo", "cartItems", "memberProfile", "mallHeader", "orderList", "invoiceableOrders", "aftersaleInfo"];
+    const heroVisible = () => {
+      const modules = props.context.modules ?? [];
+      if (modules.length === 0) return true;
+      return modules.some((module) => heroKeys.includes(module.key) && module.visible);
+    };
     const textModules = () =>
       (props.context.modules ?? [])
-        .filter((module) => ["speakers", "schedule", "location", "customerService", "customerGroup", "calendar", "shareButton"].includes(module.key) && module.visible)
+        .filter((module) => !heroKeys.includes(module.key) && !["assistant", "skus", "inventory", "guide", "registrationButton", "submitOrder"].includes(module.key) && module.visible)
         .map((module) =>
           h("div", { key: module.key, class: "business-preview__module" }, [
             h("strong", module.title || businessModuleLabel(module.key)),
@@ -2645,7 +3193,7 @@ const BusinessPreviewContext = defineComponent({
         );
     return () =>
       h("div", { class: ["business-preview", `is-${props.context.kind}`] }, [
-        isVisible("conferenceInfo")
+        heroVisible()
           ? h("div", { class: "business-preview__hero" }, [
               h("span", { class: "business-preview__label" }, props.context.label),
               h("strong", props.context.title),
@@ -2674,7 +3222,9 @@ const BusinessPreviewContext = defineComponent({
               h("p", props.context.notice)
             ])
           : null,
-        props.context.cta && isVisible("registrationButton") ? h("button", moduleContent("registrationButton", props.context.cta)) : null
+        props.context.cta && (isVisible("registrationButton") || isVisible("submitOrder"))
+          ? h("button", moduleContent(isVisible("registrationButton") ? "registrationButton" : "submitOrder", props.context.cta))
+          : null
       ]);
   }
 });
@@ -2702,12 +3252,7 @@ const ComponentPreview = defineComponent({
     const textStyle = () => buildPreviewTextStyle(props.item);
     const titleStyle = () => buildPreviewTitleStyle(props.item);
     const parsedList = (key: string) => list(key).map(splitPreviewLine).filter((item) => item.length > 0);
-    const entryItems = () =>
-      (list("items").length > 0 ? list("items").map(splitPreviewEntryLine) : [["会议报名", "Registration"], ["我的报名", "My tickets"], ["商城", "Shop"]]).map((parts) => ({
-        title: parts[0] || "入口",
-        subtitle: parts[1] || "",
-        iconUrl: parts.find((part) => looksLikePreviewImage(part)) || ""
-      }));
+    const entryItems = () => normalizeEntryItems(props.item.config.items, props.item.type).filter((entry) => entry.enabled !== false);
     const meetings = () =>
       (previewContextConferences.value.length > 0 ? previewContextConferences.value : sampleConferences).map((item, index) => ({
         id: item.id,
@@ -2765,12 +3310,20 @@ const ComponentPreview = defineComponent({
       }
       if (type === "quick-icon-grid" || type === "service-shortcut-card") {
         return h("div", { class: ["preview-section", "preview-entry-grid"], style: previewPanelStyle(props.item) }, [
-          h("strong", { style: titleStyle() }, value("title", type === "quick-icon-grid" ? "快捷入口" : "服务中心")),
-          h("div", { class: "preview-entry-grid__items", style: previewGridColumnsStyle(props.item) }, entryItems().map((entry) =>
-            h("div", { class: "preview-entry-tile" }, [
-              entry.iconUrl ? h("img", { src: entry.iconUrl, alt: entry.title }) : h("span", entry.title.slice(0, 1)),
-              h("b", entry.title),
-              entry.subtitle ? h("small", entry.subtitle) : null
+          h("div", { class: "preview-module-head", style: previewModuleHeadStyle(props.item) }, [
+            h("div", [
+              h("strong", { style: titleStyle() }, value("title", type === "quick-icon-grid" ? "快捷入口" : "服务中心")),
+              value("subtitle") ? h("small", { style: buildPreviewSubtitleStyle(props.item) }, value("subtitle")) : null
+            ]),
+            booleanConfig(props.item, "showMore", false) ? h("span", value("moreText", "查看更多")) : null
+          ]),
+          h("div", { class: previewEntryGridClass(props.item), style: previewGridColumnsStyle(props.item) }, entryItems().map((entry) =>
+            h("div", { class: previewEntryTileClass(props.item, entry), style: previewEntryTileStyle(props.item, entry) }, [
+              entry.dynamicIconUrl || entry.iconUrl
+                ? h("img", { src: entry.dynamicIconUrl || entry.iconUrl, alt: entry.title, style: previewEntryIconStyle(props.item) })
+                : h("span", { style: previewEntryIconStyle(props.item) }, builtinIconLabel(entry)),
+              h("b", { style: previewEntryTitleStyle(entry) }, entry.title),
+              entry.subtitle && booleanConfig(props.item, "showSubtitle", true) ? h("small", { style: previewEntrySubtitleStyle(entry) }, entry.subtitle) : null
             ])
           ))
         ]);
@@ -3089,11 +3642,21 @@ function buildPreviewTitleStyle(component: EditableComponent) {
   const fontSize = numberValue(component, "titleFontSize", 32);
   const customFontKey = typeof component.config.titleFontAssetUrl === "string" && component.config.titleFontAssetUrl ? "titleFontAssetUrl" : "fontAssetUrl";
   return {
+    display: booleanConfig(component, "showTitle", true) ? undefined : "none",
     color,
     fontSize: `${Math.max(6, fontSize)}px`,
     textAlign: align,
     fontFamily: fontFamilyValue(String(component.config.titleFontFamily ?? component.config.fontFamily ?? "system"), component, customFontKey),
-    fontWeight: component.config.titleFontFamily === "bold-sans" ? "800" : undefined
+    fontWeight: String(component.config.titleFontWeight || (component.config.titleFontFamily === "bold-sans" ? "800" : "800"))
+  };
+}
+
+function buildPreviewSubtitleStyle(component: EditableComponent) {
+  return {
+    display: booleanConfig(component, "showTitle", true) ? undefined : "none",
+    color: String(component.config.subtitleTextColor || "#637083"),
+    fontSize: `${Math.max(6, numberValue(component, "subtitleFontSize", 22))}px`,
+    textAlign: String(component.config.titleTextAlign ?? component.config.textAlign ?? "left")
   };
 }
 
@@ -3178,9 +3741,69 @@ function previewPanelStyle(component: EditableComponent) {
 
 function previewGridColumnsStyle(component: EditableComponent) {
   const columns = Math.min(4, Math.max(2, Number(component.config.columns) || 3));
+  const gap = numberValue(component, "cardGap", 14);
+  if (component.config.layoutMode === "scroll") {
+    return {
+      gap: `${gap}px`
+    };
+  }
   return {
-    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`
+    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+    gap: `${gap}px`
   };
+}
+
+function previewModuleHeadStyle(component: EditableComponent) {
+  return {
+    textAlign: String(component.config.titleTextAlign ?? "left"),
+    marginBottom: `${numberValue(component, "titleBottomGap", 18)}px`
+  };
+}
+
+function previewEntryGridClass(component: EditableComponent): string[] {
+  return ["preview-entry-grid__items", component.config.layoutMode === "scroll" ? "is-scroll" : ""].filter(Boolean);
+}
+
+function previewEntryTileClass(component: EditableComponent, entry: EntryConfigItem): string[] {
+  const style = entry.cardStyle || String(component.config.cardStyle || "soft");
+  return ["preview-entry-tile", `is-${style}`];
+}
+
+function previewEntryTileStyle(component: EditableComponent, entry: EntryConfigItem) {
+  return {
+    borderRadius: `${numberValue(component, "cardRadius", 28) / 2}px`,
+    background: entry.backgroundColor || String(component.config.cardBackground || ""),
+    color: entry.textColor || String(component.config.textColor || "")
+  };
+}
+
+function previewEntryIconStyle(component: EditableComponent) {
+  const size = component.config.iconSize === "small" ? 30 : 40;
+  return {
+    width: `${size}px`,
+    height: `${size}px`
+  };
+}
+
+function previewEntryTitleStyle(entry: EntryConfigItem) {
+  return entry.textColor ? { color: entry.textColor } : {};
+}
+
+function previewEntrySubtitleStyle(entry: EntryConfigItem) {
+  return entry.textColor ? { color: entry.textColor, opacity: "0.72" } : {};
+}
+
+function builtinIconLabel(entry: EntryConfigItem): string {
+  const map: Record<string, string> = {
+    conference: "会",
+    registration: "报",
+    order: "单",
+    shop: "商",
+    member: "员",
+    invoice: "票",
+    service: "客"
+  };
+  return map[entry.builtinIcon] || entry.title.slice(0, 1) || "入";
 }
 
 function previewCarouselStyle(component: EditableComponent) {
@@ -3668,6 +4291,10 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .config-form :deep(.el-form-item:has(.el-textarea)) {
+  grid-column: 1 / -1;
+}
+
+.config-form :deep(.el-form-item:has(.entry-editor)) {
   grid-column: 1 / -1;
 }
 
@@ -4796,6 +5423,89 @@ function looksLikePreviewImage(value: string): boolean {
   margin-top: 8px;
 }
 
+.entry-editor {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.entry-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.entry-editor__head p {
+  margin: 0;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.entry-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.entry-card__top,
+.entry-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.entry-card__sort {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.entry-card__sort strong,
+.entry-card__sort small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-card__sort small {
+  color: var(--admin-color-muted);
+  font-size: 12px;
+}
+
+.entry-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.entry-card__grid label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--admin-color-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.entry-card__grid label small {
+  color: var(--admin-color-muted);
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.entry-card__wide {
+  grid-column: 1 / -1;
+}
+
 .material-picker {
   display: flex;
   flex-direction: column;
@@ -5184,6 +5894,38 @@ function looksLikePreviewImage(value: string): boolean {
   margin-top: 10px;
 }
 
+.preview-module-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.preview-module-head > div {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-module-head > span {
+  flex: 0 0 auto;
+  color: var(--preview-primary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.preview-entry-grid__items.is-scroll {
+  display: flex;
+  overflow: hidden;
+}
+
+.preview-entry-grid__items.is-scroll .preview-entry-tile {
+  width: 82px;
+  flex: 0 0 82px;
+}
+
 .preview-entry-tile {
   display: flex;
   min-width: 0;
@@ -5195,6 +5937,15 @@ function looksLikePreviewImage(value: string): boolean {
   border-radius: 12px;
   background: #ffffff;
   text-align: center;
+}
+
+.preview-entry-tile.is-outline {
+  background: transparent;
+}
+
+.preview-entry-tile.is-plain {
+  border-color: transparent;
+  background: transparent;
 }
 
 .preview-entry-tile img,
