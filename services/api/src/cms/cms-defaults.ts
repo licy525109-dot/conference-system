@@ -205,7 +205,11 @@ export const ENABLED_COMPONENT_PRESETS = [
     content: "请在后台填写图文内容。",
     imageUrl: "",
     buttonText: "",
-    actionTargetType: "none"
+    actionTargetType: "none",
+    blocks: [
+      { id: "heading", enabled: true, sort: 10, type: "heading", title: "品牌故事", align: "left" },
+      { id: "body", enabled: true, sort: 20, type: "paragraph", text: "请在后台添加标题、正文、图片、引用、按钮等内容块。", align: "left" }
+    ]
   }),
   preset("conference-list", "会议卡片列表", "会议", "展示可报名会议列表", {
     title: "可报名会议",
@@ -232,8 +236,18 @@ export const ENABLED_COMPONENT_PRESETS = [
   preset("floating-registration-button", "悬浮报名按钮", "报名", "页面底部固定报名入口", { text: "立即报名" }),
   preset("coupon-card", "优惠券领取卡片", "营销", "展示优惠券信息", { title: "优惠券", description: "领取后报名可用", buttonText: "立即领取", couponCampaignId: "", claimCode: "" }),
   preset("promotion-bar", "满减活动提示条", "营销", "展示满减活动", { text: "满减活动进行中" }),
-  preset("rich-text", "图文富文本", "内容", "安全富文本内容", { html: "<p>请输入内容</p>" }),
-  preset("safe-html", "安全图文片段", "内容", "白名单图文内容，不执行脚本", { html: "<p>请输入内容</p>" }),
+  preset("rich-text", "图文富文本", "内容", "结构化图文内容，不需要填写 HTML 代码", {
+    html: "",
+    blocks: [
+      { id: "intro", enabled: true, sort: 10, type: "paragraph", text: "请添加正文、图片、引用、按钮等内容块。", align: "left" }
+    ]
+  }),
+  preset("safe-html", "安全图文片段", "内容", "结构化图文内容，不执行脚本", {
+    html: "",
+    blocks: [
+      { id: "intro", enabled: true, sort: 10, type: "paragraph", text: "请添加正文、图片、引用、按钮等内容块。", align: "left" }
+    ]
+  }),
   preset("image-grid", "图片宫格", "媒体", "多图片展示", { images: [] }),
   preset("video", "视频组件", "媒体", "视频播放入口", { title: "视频", url: "", coverUrl: "" }),
   preset("countdown", "倒计时", "内容", "活动倒计时", { title: "距离开始", targetAt: "", endedText: "活动已开始" }),
@@ -245,7 +259,15 @@ export const ENABLED_COMPONENT_PRESETS = [
   preset("stats-grid", "数字亮点", "运营转化", "展示报名人数、嘉宾数量、席位等核心数字", { title: "会议亮点", items: ["500+ 参会席位", "30+ 行业嘉宾", "12 场主题分享"] }),
   preset("ticket-price-list", "票种价格", "报名", "展示门票规格和价格说明", { title: "报名票种", items: ["早鸟票 ¥299", "标准票 ¥399", "团体票 请联系主办方"] }),
   preset("process-steps", "报名流程", "报名", "展示报名、支付、参会流程", { title: "报名流程", items: ["选择会议和票种", "填写报名信息", "完成支付", "现场签到参会"] }),
-  preset("text-image", "图文介绍", "内容", "左文右图或上图下文介绍模块", { title: "大会介绍", text: "聚焦行业趋势、案例实践和高质量连接。", imageUrl: "" }),
+  preset("text-image", "图文介绍", "内容", "支持多段正文、多张图片和按钮的图文介绍模块", {
+    title: "大会介绍",
+    text: "聚焦行业趋势、案例实践和高质量连接。",
+    imageUrl: "",
+    blocks: [
+      { id: "heading", enabled: true, sort: 10, type: "heading", title: "大会介绍", align: "left" },
+      { id: "body", enabled: true, sort: 20, type: "paragraph", text: "聚焦行业趋势、案例实践和高质量连接。", align: "left" }
+    ]
+  }),
   preset("download-list", "资料下载", "内容", "展示会议资料、议程文件、招商资料", { title: "资料下载", items: ["会议议程", "参会指南", "招商手册"] }),
   preset("live-card", "直播入口", "媒体", "展示直播或回放入口", { title: "线上直播", platform: "", startAt: "", endAt: "", text: "无法到场也可预约线上观看", url: "", coverUrl: "", buttonText: "打开直播" }),
   preset("testimonial-list", "参会评价", "内容", "展示往届参会反馈", { title: "参会评价", items: ["内容扎实，嘉宾质量很高", "现场组织流畅，交流效率高"] }),
