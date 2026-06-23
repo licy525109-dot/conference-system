@@ -111,6 +111,79 @@ export const ENABLED_COMPONENT_PRESETS = [
     autoplay: true,
     indicatorDots: true
   }),
+  preset("hero-banner", "顶部主视觉 Banner", "首页运营", "可配置标题、副标题、背景图、按钮和跳转", {
+    title: "欢迎进入会务小程序",
+    subtitle: "会议报名、签到和会务服务一站完成",
+    description: "支持绑定会议、报名页、商城、会员中心和外部链接。",
+    imageUrl: "",
+    backgroundColor: "#315d7d",
+    textColor: "#ffffff",
+    buttonText: "查看会议",
+    secondaryButtonText: "我的报名",
+    actionTargetType: "page",
+    targetPageKey: "conference-list",
+    secondaryActionTargetType: "page",
+    secondaryTargetPageKey: "my-registrations",
+    radius: 28,
+    height: 420,
+    fullBleed: false
+  }),
+  preset("quick-icon-grid", "图标入口宫格", "首页运营", "2 到 4 列快捷入口，支持图标、动态图标和跳转", {
+    title: "快捷入口",
+    columns: 3,
+    cardStyle: "soft",
+    items: ["会议报名｜Registration｜｜page｜conference-list", "我的报名｜My tickets｜｜page｜my-registrations", "商城｜Shop｜｜page｜mall"]
+  }),
+  preset("member-promo-banner", "会员 / 优惠横幅", "首页运营", "会员、优惠券或活动推广横幅", {
+    title: "会员权益",
+    subtitle: "查看会员价和专属权益",
+    description: "会员价以创建订单时后端计价为准。",
+    imageUrl: "",
+    buttonText: "查看会员中心",
+    actionTargetType: "member"
+  }),
+  preset("event-card-carousel", "活动 / 会议横滑", "首页运营", "横向滑动展示会议卡片", {
+    title: "精选会议",
+    limit: 6,
+    cardSize: "large",
+    detailButtonText: "查看详情",
+    showSummary: true,
+    showTime: true,
+    showLocation: true
+  }),
+  preset("service-shortcut-card", "订单中心 / 快捷服务", "首页运营", "我的报名、商城订单、发票、售后、客服等服务入口", {
+    title: "服务中心",
+    columns: 2,
+    items: ["我的报名｜查看报名与凭证｜｜page｜my-registrations", "商城订单｜查看商品订单｜｜page｜mall-orders", "发票申请｜提交和查看发票｜｜invoice｜", "联系客服｜复制客服信息｜｜copy｜请联系会务组"]
+  }),
+  preset("task-progress-card", "积分 / 任务进度", "首页运营", "积分、集点或任务进度展示，无任务时可隐藏", {
+    title: "任务进度",
+    subtitle: "完成任务领取权益",
+    description: "当前未接入积分体系时建议隐藏该模块。",
+    current: 0,
+    target: 8,
+    unit: "项",
+    ruleText: "完成 8 项任务可领取权益",
+    actionTargetType: "page",
+    targetPageKey: "member-center"
+  }),
+  preset("image-promo-card", "自定义图片卡片", "首页运营", "图片、标题、说明和按钮组合卡片", {
+    title: "活动推荐",
+    subtitle: "自定义活动卡片",
+    imageUrl: "",
+    buttonText: "查看详情",
+    actionTargetType: "page",
+    targetPageKey: "conference-list",
+    radius: 24
+  }),
+  preset("rich-content-block", "自定义图文模块", "首页运营", "标题、正文、图片和按钮的轻量内容模块", {
+    title: "品牌故事",
+    subtitle: "可用于介绍主办方、服务说明或活动亮点",
+    content: "请在后台填写图文内容。",
+    imageUrl: "",
+    buttonText: "",
+    actionTargetType: "none"
+  }),
   preset("conference-list", "会议卡片列表", "会议", "展示可报名会议列表", {
     title: "可报名会议",
     limit: 10,
@@ -187,7 +260,66 @@ export const ENABLED_COMPONENT_TYPES = new Set(ENABLED_COMPONENT_PRESETS.map((it
 export const ALL_COMPONENT_TYPES = new Set(ALL_COMPONENT_PRESETS.map((item) => item.type));
 
 export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
-  if (pageKey === "home" || pageKey === "conference-list") {
+  if (pageKey === "home") {
+    return [
+      {
+        id: "home-hero-banner-default",
+        type: "hero-banner",
+        enabled: true,
+        config: {
+          title: "欢迎进入会务小程序",
+          subtitle: "报名、签到、会务服务一站完成",
+          description: "选择会议并完成报名缴费，后续可在我的报名中查看凭证。",
+          buttonText: "查看会议",
+          secondaryButtonText: "我的报名",
+          actionTargetType: "page",
+          targetPageKey: "conference-list",
+          secondaryActionTargetType: "page",
+          secondaryTargetPageKey: "my-registrations",
+          backgroundColor: "#315d7d",
+          textColor: "#ffffff",
+          height: 420,
+          radius: 28
+        }
+      },
+      {
+        id: "home-quick-grid-default",
+        type: "quick-icon-grid",
+        enabled: true,
+        config: {
+          title: "快捷入口",
+          columns: 3,
+          items: ["会议报名｜Registration｜｜page｜conference-list", "我的报名｜My tickets｜｜page｜my-registrations", "商城｜Shop｜｜page｜mall"]
+        }
+      },
+      {
+        id: "home-service-shortcuts-default",
+        type: "service-shortcut-card",
+        enabled: true,
+        config: {
+          title: "服务中心",
+          columns: 2,
+          items: ["我的报名｜查看报名与凭证｜｜page｜my-registrations", "商城订单｜查看商品订单｜｜page｜mall-orders", "发票申请｜提交和查看发票｜｜invoice｜", "联系客服｜复制客服信息｜｜copy｜请联系会务组"]
+        }
+      },
+      {
+        id: "home-event-carousel-default",
+        type: "event-card-carousel",
+        enabled: true,
+        config: {
+          title: "精选会议",
+          limit: 6,
+          cardSize: "large",
+          detailButtonText: "查看详情",
+          showSummary: true,
+          showTime: true,
+          showLocation: true
+        }
+      }
+    ];
+  }
+
+  if (pageKey === "conference-list") {
     return [
       {
         id: "conference-list-default",

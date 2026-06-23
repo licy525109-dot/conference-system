@@ -129,6 +129,92 @@
         <view v-else class="cms-empty cms-empty-card">暂无轮播图片</view>
       </view>
 
+      <view v-else-if="component.type === 'hero-banner'" class="cms-home-hero" :style="homeHeroStyle(component)">
+        <image v-if="stringConfig(component, 'imageUrl')" class="cms-home-hero__image" :src="stringConfig(component, 'imageUrl')" mode="aspectFill" />
+        <view class="cms-home-hero__shade" />
+        <view class="cms-home-hero__copy">
+          <text v-if="stringConfig(component, 'subtitle')" class="cms-home-hero__subtitle">{{ stringConfig(component, "subtitle") }}</text>
+          <text class="cms-home-hero__title" :style="homeTitleStyle(component)">{{ stringConfig(component, "title") || "欢迎进入会务小程序" }}</text>
+          <text v-if="stringConfig(component, 'description')" class="cms-home-hero__desc" :style="homeTextStyle(component)">{{ stringConfig(component, "description") }}</text>
+          <view class="cms-home-hero__actions">
+            <view v-if="stringConfig(component, 'buttonText')" class="cms-home-hero__button" @click="handleComponentAction(component)">
+              <text>{{ stringConfig(component, "buttonText") }}</text>
+            </view>
+            <view v-if="stringConfig(component, 'secondaryButtonText')" class="cms-home-hero__button is-secondary" @click="handleSecondaryComponentAction(component)">
+              <text>{{ stringConfig(component, "secondaryButtonText") }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'quick-icon-grid' || component.type === 'service-shortcut-card'" class="cms-section cms-entry-section" :style="homePanelStyle(component)">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || (component.type === "quick-icon-grid" ? "快捷入口" : "服务中心") }}</text>
+        <view class="cms-entry-grid" :style="homeGridStyle(component)">
+          <view v-for="entry in homeEntries(component)" :key="entry.title + entry.targetType + entry.targetValue" :class="homeEntryClass(component)" @click="handleEntryAction(component, entry)">
+            <image v-if="entry.iconUrl" class="cms-entry-tile__icon" :src="entry.iconUrl" mode="aspectFit" />
+            <view v-else class="cms-entry-tile__icon cms-entry-tile__icon--text"><text>{{ entry.title.slice(0, 1) || "入" }}</text></view>
+            <text class="cms-entry-tile__title">{{ entry.title }}</text>
+            <text v-if="entry.subtitle" class="cms-entry-tile__subtitle">{{ entry.subtitle }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'member-promo-banner'" class="cms-member-promo" :style="homePanelStyle(component)" @click="handleComponentAction(component)">
+        <image v-if="stringConfig(component, 'imageUrl')" class="cms-member-promo__image" :src="stringConfig(component, 'imageUrl')" mode="aspectFill" />
+        <view class="cms-member-promo__copy">
+          <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会员权益" }}</text>
+          <text v-if="stringConfig(component, 'subtitle')" class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "subtitle") }}</text>
+          <text v-if="stringConfig(component, 'description')" class="cms-section__text">{{ stringConfig(component, "description") }}</text>
+          <view v-if="stringConfig(component, 'buttonText')" class="cms-card__button"><text>{{ stringConfig(component, "buttonText") }}</text></view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'event-card-carousel'" class="cms-section cms-event-carousel">
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "精选会议" }}</text>
+        <scroll-view scroll-x class="cms-event-carousel__rail">
+          <view class="cms-event-carousel__track">
+            <view v-for="(item, index) in carouselConferences(component)" :key="item.id" :class="eventCardClass(component)" @click="$emit('openConference', item.id)">
+              <image v-if="showConferenceCover(component, item)" class="cms-event-card__image" :src="conferenceCoverUrl(item)" :mode="conferenceImageMode(component)" @error="markConferenceCoverFailed(item.id)" />
+              <view v-else class="cms-event-card__image cms-card__image--empty"><text>{{ conferenceCoverInitial(item) }}</text></view>
+              <text class="cms-event-card__title">{{ item.title }}</text>
+              <text v-if="booleanConfig(component, 'showSummary', true)" class="cms-event-card__text">{{ item.summary || summaryFallback(component) }}</text>
+              <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-event-card__meta">{{ line }}</text>
+              <view class="cms-card__button"><text>{{ detailButtonText(component) }}</text></view>
+            </view>
+          </view>
+        </scroll-view>
+        <view v-if="carouselConferences(component).length === 0" class="cms-empty">暂无可展示会议</view>
+      </view>
+
+      <view v-else-if="component.type === 'task-progress-card'" class="cms-section cms-task-card" @click="handleComponentAction(component)">
+        <view class="cms-task-card__head">
+          <image v-if="stringConfig(component, 'iconUrl')" class="cms-task-card__icon" :src="stringConfig(component, 'iconUrl')" mode="aspectFit" />
+          <view v-else class="cms-task-card__icon cms-entry-tile__icon--text"><text>任</text></view>
+          <view class="cms-task-card__copy">
+            <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "任务进度" }}</text>
+            <text v-if="stringConfig(component, 'subtitle')" class="cms-section__text">{{ stringConfig(component, "subtitle") }}</text>
+          </view>
+          <text class="cms-task-card__count">{{ taskCurrent(component) }}/{{ taskTarget(component) }}</text>
+        </view>
+        <view class="cms-task-card__bar"><view :style="{ width: `${taskPercent(component)}%` }" /></view>
+        <text v-if="stringConfig(component, 'ruleText') || stringConfig(component, 'description')" class="cms-section__text">{{ stringConfig(component, "ruleText") || stringConfig(component, "description") }}</text>
+      </view>
+
+      <view v-else-if="component.type === 'image-promo-card'" class="cms-section cms-image-promo" :style="imagePromoStyle(component)" @click="handleComponentAction(component)">
+        <image v-if="stringConfig(component, 'imageUrl')" class="cms-section__image" :src="stringConfig(component, 'imageUrl')" mode="aspectFill" />
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "活动推荐" }}</text>
+        <text v-if="stringConfig(component, 'subtitle')" class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "subtitle") }}</text>
+        <view v-if="stringConfig(component, 'buttonText')" class="cms-card__button"><text>{{ stringConfig(component, "buttonText") }}</text></view>
+      </view>
+
+      <view v-else-if="component.type === 'rich-content-block'" class="cms-section cms-rich-block">
+        <image v-if="stringConfig(component, 'imageUrl')" class="cms-section__image" :src="stringConfig(component, 'imageUrl')" mode="aspectFill" />
+        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "自定义图文" }}</text>
+        <text v-if="stringConfig(component, 'subtitle')" class="cms-section__text">{{ stringConfig(component, "subtitle") }}</text>
+        <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "content") || "请在后台填写图文内容。" }}</text>
+        <view v-if="stringConfig(component, 'buttonText')" class="cms-card__button" @click="handleComponentAction(component)"><text>{{ stringConfig(component, "buttonText") }}</text></view>
+      </view>
+
       <view v-else-if="component.type === 'registration-button'" class="cms-register">
         <button class="cms-button" :style="textStyle(component)" @click="handleComponentAction(component)">{{ stringConfig(component, "text") || "立即报名" }}</button>
       </view>
@@ -456,45 +542,19 @@ const rootClass = computed(() => ["cms-page"]);
 const showHeaderVideo = computed(() => props.theme.backgroundMode === "video" && Boolean(props.theme.backgroundVideoUrl) && props.theme.backgroundApplyTo === "header");
 
 async function handleComponentAction(component: CmsComponent) {
-  const target = stringConfig(component, "actionTargetType") || "register";
-  if (target === "page") {
-    const pageKey = stringConfig(component, "targetPageKey");
-    if (!pageKey) return showTargetMissing("请选择目标页面");
-    uni.navigateTo({ url: pagePath(pageKey) });
-    return;
-  }
-  if (target === "conference") {
-    const id = stringConfig(component, "targetConferenceId");
-    if (!id) return showTargetMissing("请选择目标会议");
-    emit("openConference", id);
-    return;
-  }
-  if (target === "product") {
-    const id = stringConfig(component, "targetProductId");
-    if (!id) return showTargetMissing("请选择目标商品");
-    uni.navigateTo({ url: `/pages/mall/detail?id=${encodeURIComponent(id)}` });
-    return;
-  }
-  if (target === "coupon") {
-    const campaignId = stringConfig(component, "targetCouponCampaignId");
-    if (!campaignId) return showTargetMissing("请选择目标券活动");
-    try {
-      const campaign = await getCouponCampaignPublic(campaignId);
-      uni.navigateTo({ url: `/pages/coupon/claim?claimCode=${encodeURIComponent(campaign.claimCode)}` });
-    } catch {
-      showTargetMissing("券活动不可用或已下线");
-    }
-    return;
-  }
-  emit("register");
+  await runAction(readComponentAction(component));
+}
+
+async function handleSecondaryComponentAction(component: CmsComponent) {
+  await runAction(readComponentAction(component, "secondary"));
 }
 
 function pagePath(pageKey: string) {
   const builtin: Record<string, string> = {
     home: "/pages/index/index",
     "conference-list": "/pages/index/index",
-    "conference-detail": "/pages/index/index",
-    "registration-form": "/pages/index/index",
+    "conference-detail": props.conference?.id ? `/pages/conference/detail?id=${encodeURIComponent(props.conference.id)}` : "/pages/index/index",
+    "registration-form": props.conference?.id ? `/pages/registration/form?conferenceId=${encodeURIComponent(props.conference.id)}` : "/pages/index/index",
     "registration-success": "/pages/registrations/my",
     "my-registrations": "/pages/registrations/my",
     cart: "/pages/cart/index",
@@ -502,7 +562,8 @@ function pagePath(pageKey: string) {
     mall: "/pages/mall/index",
     "mall-detail": "/pages/mall/index",
     "mall-orders": "/pages/mall/orders",
-    invoice: "/pages/invoice/index"
+    invoice: "/pages/invoice/index",
+    "ai-assistant": props.conference?.id ? `/pages/ai-assistant/index?conferenceId=${encodeURIComponent(props.conference.id)}` : "/pages/ai-assistant/index"
   };
   return builtin[pageKey] ?? `/pages/custom/index?pageKey=${encodeURIComponent(pageKey)}`;
 }
@@ -543,6 +604,12 @@ function numberConfig(component: CmsComponent, key: string, fallback: number): n
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function intConfig(component: CmsComponent, key: string, fallback: number): number {
+  const value = component.config?.[key];
+  const numeric = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(numeric) ? Math.round(numeric) : fallback;
+}
+
 function booleanConfig(component: CmsComponent, key: string, fallback = false): boolean {
   const value = component.config?.[key];
   return typeof value === "boolean" ? value : fallback;
@@ -571,7 +638,7 @@ function showHeaderDynamicBackground(index: number): boolean {
 
 function isGenericFullBleed(component: CmsComponent): boolean {
   if (!booleanConfig(component, "fullBleed", false)) return false;
-  return !["hero", "carousel", "floating-registration-button"].includes(component.type);
+  return !["hero", "hero-banner", "carousel", "floating-registration-button"].includes(component.type);
 }
 
 function arrayConfig(component: CmsComponent, key: string): unknown[] {
@@ -615,6 +682,29 @@ interface TagFilterItem {
   target: string;
 }
 
+interface HomeEntryItem {
+  title: string;
+  subtitle: string;
+  iconUrl: string;
+  targetType: string;
+  targetValue: string;
+}
+
+interface CmsActionConfig {
+  type: string;
+  pageKey: string;
+  conferenceId: string;
+  productId: string;
+  productCategoryId: string;
+  couponCampaignId: string;
+  externalUrl: string;
+  miniappAppId: string;
+  miniappPath: string;
+  miniappExtraData: string;
+  phone: string;
+  copyText: string;
+}
+
 interface DownloadItem {
   name: string;
   url: string;
@@ -630,6 +720,83 @@ interface TestimonialItem {
 
 function stringListConfig(component: CmsComponent, key: string): string[] {
   return arrayConfig(component, key).map((item) => String(item).trim()).filter(Boolean);
+}
+
+function homeEntries(component: CmsComponent): HomeEntryItem[] {
+  const items = arrayConfig(component, "items").map((item) => {
+    if (isRecord(item)) {
+      return {
+        title: firstString(item, ["title", "name", "label", "text"]) || "入口",
+        subtitle: firstString(item, ["subtitle", "description", "desc", "englishTitle"]) || "",
+        iconUrl: firstString(item, ["iconUrl", "imageUrl", "icon", "image"]) || "",
+        targetType: firstString(item, ["targetType", "actionTargetType", "actionType", "type"]) || "",
+        targetValue: firstString(item, ["targetValue", "target", "pageKey", "conferenceId", "productId", "url", "phone", "copyText"]) || ""
+      };
+    }
+    const parts = splitEntryLine(String(item));
+    return {
+      title: parts[0] || "入口",
+      subtitle: parts[1] || "",
+      iconUrl: looksLikeImageUrl(parts[2] || "") ? parts[2] : "",
+      targetType: parts[3] || (parts[2] && !looksLikeImageUrl(parts[2]) ? parts[2] : ""),
+      targetValue: parts[4] || ""
+    };
+  }).filter((item) => item.title);
+  if (items.length > 0) return items;
+  if (component.type === "service-shortcut-card") {
+    return [
+      { title: "我的报名", subtitle: "查看凭证", iconUrl: "", targetType: "page", targetValue: "my-registrations" },
+      { title: "商城订单", subtitle: "商品订单", iconUrl: "", targetType: "page", targetValue: "mall-orders" },
+      { title: "发票申请", subtitle: "提交发票", iconUrl: "", targetType: "invoice", targetValue: "" },
+      { title: "联系客服", subtitle: "复制信息", iconUrl: "", targetType: "copy", targetValue: "请联系会务组" }
+    ];
+  }
+  return [
+    { title: "会议报名", subtitle: "Registration", iconUrl: "", targetType: "page", targetValue: "conference-list" },
+    { title: "我的报名", subtitle: "My tickets", iconUrl: "", targetType: "page", targetValue: "my-registrations" },
+    { title: "商城", subtitle: "Shop", iconUrl: "", targetType: "page", targetValue: "mall" }
+  ];
+}
+
+async function handleEntryAction(component: CmsComponent, entry: HomeEntryItem): Promise<void> {
+  await runAction(actionFromEntry(component, entry));
+}
+
+function actionFromEntry(component: CmsComponent, entry: HomeEntryItem): CmsActionConfig {
+  const type = entry.targetType || stringConfig(component, "actionTargetType") || "none";
+  const targetValue = entry.targetValue;
+  return {
+    type,
+    pageKey: type === "page" ? targetValue : "",
+    conferenceId: type === "conference" || type === "registration" ? targetValue : "",
+    productId: type === "product" ? targetValue : "",
+    productCategoryId: type === "product-category" ? targetValue : "",
+    couponCampaignId: type === "coupon" ? targetValue : "",
+    externalUrl: type === "external-h5" ? targetValue : "",
+    miniappAppId: type === "external-miniapp" ? targetValue : "",
+    miniappPath: "",
+    miniappExtraData: "",
+    phone: type === "phone" ? targetValue : "",
+    copyText: type === "copy" ? targetValue : ""
+  };
+}
+
+function readComponentAction(component: CmsComponent, prefix = ""): CmsActionConfig {
+  const key = (name: string) => prefix ? `${prefix}${name.slice(0, 1).toUpperCase()}${name.slice(1)}` : name;
+  return {
+    type: stringConfig(component, key("actionTargetType")) || (prefix ? "none" : "register"),
+    pageKey: stringConfig(component, key("targetPageKey")),
+    conferenceId: stringConfig(component, key("targetConferenceId")),
+    productId: stringConfig(component, key("targetProductId")),
+    productCategoryId: stringConfig(component, key("targetProductCategoryId")),
+    couponCampaignId: stringConfig(component, key("targetCouponCampaignId")) || stringConfig(component, "couponCampaignId") || stringConfig(component, "campaignId"),
+    externalUrl: stringConfig(component, key("externalUrl")) || stringConfig(component, key("url")),
+    miniappAppId: stringConfig(component, key("externalMiniappAppId")),
+    miniappPath: stringConfig(component, key("externalMiniappPath")),
+    miniappExtraData: stringConfig(component, key("externalMiniappExtraData")),
+    phone: stringConfig(component, key("phone")),
+    copyText: stringConfig(component, key("copyText"))
+  };
 }
 
 function speakerItems(component: CmsComponent): SpeakerItem[] {
@@ -846,6 +1013,108 @@ async function goLoginPath(path: string): Promise<void> {
     goPath(path);
   } catch (error) {
     uni.showToast({ title: readErrorText(error, "请先登录"), icon: "none" });
+  }
+}
+
+async function runAction(action: CmsActionConfig): Promise<void> {
+  const type = action.type || "none";
+  if (type === "none") return;
+  if (type === "page") {
+    if (!action.pageKey) return showTargetMissing("请选择目标页面");
+    goPath(pagePath(action.pageKey));
+    return;
+  }
+  if (type === "conference") {
+    if (!action.conferenceId) return showTargetMissing("请选择目标会议");
+    emit("openConference", action.conferenceId);
+    return;
+  }
+  if (type === "register" || type === "registration") {
+    const conferenceId = action.conferenceId || props.conference?.id || "";
+    if (type === "registration" && conferenceId) {
+      goPath(`/pages/registration/form?conferenceId=${encodeURIComponent(conferenceId)}`);
+      return;
+    }
+    emit("register");
+    return;
+  }
+  if (type === "product") {
+    if (!action.productId) return showTargetMissing("请选择目标商品");
+    goPath(`/pages/mall/detail?id=${encodeURIComponent(action.productId)}`);
+    return;
+  }
+  if (type === "product-category") {
+    const query = stringifyQuery({ categoryId: action.productCategoryId });
+    goPath(`/pages/mall/index${query ? `?${query}` : ""}`);
+    return;
+  }
+  if (type === "coupon") {
+    if (!action.couponCampaignId) return showTargetMissing("请选择目标券活动");
+    try {
+      const campaign = await getCouponCampaignPublic(action.couponCampaignId);
+      goPath(`/pages/coupon/claim?claimCode=${encodeURIComponent(campaign.claimCode)}`);
+    } catch {
+      showTargetMissing("券活动不可用或已下线");
+    }
+    return;
+  }
+  if (type === "member") {
+    await goLoginPath("/pages/member/center");
+    return;
+  }
+  if (type === "invoice") {
+    await goLoginPath("/pages/invoice/index");
+    return;
+  }
+  if (type === "ai") {
+    const query = stringifyQuery({ conferenceId: action.conferenceId || props.conference?.id || undefined });
+    goPath(`/pages/ai-assistant/index${query ? `?${query}` : ""}`);
+    return;
+  }
+  if (type === "external-h5") {
+    openOrCopyLink(action.externalUrl, "外部链接");
+    return;
+  }
+  if (type === "external-miniapp") {
+    openMiniapp(action);
+    return;
+  }
+  if (type === "phone") {
+    callPhone(action.phone);
+    return;
+  }
+  if (type === "copy") {
+    copyText(action.copyText, "内容已复制");
+    return;
+  }
+  emit("register");
+}
+
+function openMiniapp(action: CmsActionConfig): void {
+  if (!action.miniappAppId) {
+    showTargetMissing("请配置外部小程序 AppID");
+    return;
+  }
+  // #ifdef MP-WEIXIN
+  uni.navigateToMiniProgram({
+    appId: action.miniappAppId,
+    path: action.miniappPath || undefined,
+    extraData: parseJsonRecord(action.miniappExtraData),
+    fail: () => copyText(`${action.miniappAppId}${action.miniappPath ? ` ${action.miniappPath}` : ""}`, "小程序信息已复制")
+  });
+  // #endif
+  // #ifndef MP-WEIXIN
+  copyText(`${action.miniappAppId}${action.miniappPath ? ` ${action.miniappPath}` : ""}`, "小程序信息已复制");
+  // #endif
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | undefined {
+  if (!value.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -1105,6 +1374,47 @@ function carouselImageMode(component: CmsComponent): string {
   return imageCoverMode(component, "imageMode");
 }
 
+function homeHeroStyle(component: CmsComponent): Record<string, string> {
+  const height = Math.max(260, intConfig(component, "height", 420));
+  const radius = Math.max(0, intConfig(component, "radius", 28));
+  return {
+    minHeight: `${height}rpx`,
+    borderRadius: `${radius}rpx`,
+    background: stringConfig(component, "backgroundColor") || "var(--cms-gradient-hero)"
+  };
+}
+
+function homeTitleStyle(component: CmsComponent): Record<string, string> {
+  return {
+    ...titleStyle(component),
+    ...(stringConfig(component, "textColor") ? { color: stringConfig(component, "textColor") } : {})
+  };
+}
+
+function homeTextStyle(component: CmsComponent): Record<string, string> {
+  return {
+    ...textStyle(component),
+    ...(stringConfig(component, "textColor") ? { color: stringConfig(component, "textColor") } : {})
+  };
+}
+
+function homePanelStyle(component: CmsComponent): Record<string, string> {
+  const background = stringConfig(component, "backgroundColor") || stringConfig(component, "cardBackground");
+  return background ? { background } : {};
+}
+
+function homeGridStyle(component: CmsComponent): Record<string, string> {
+  const columns = Math.min(4, Math.max(2, intConfig(component, "columns", component.type === "service-shortcut-card" ? 2 : 3)));
+  return {
+    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`
+  };
+}
+
+function homeEntryClass(component: CmsComponent): string[] {
+  const style = stringConfig(component, "cardStyle") || "soft";
+  return ["cms-entry-tile", `is-${style}`];
+}
+
 function conferenceImageMode(component: CmsComponent): string {
   return imageCoverMode(component, "cardImageMode");
 }
@@ -1193,6 +1503,37 @@ function conferenceImageStyle(component: CmsComponent): Record<string, string> {
   };
 }
 
+function carouselConferences(component: CmsComponent): ConferenceListItem[] {
+  const ids = new Set(stringListConfig(component, "conferenceIds"));
+  const category = stringConfig(component, "category").trim();
+  const source = ids.size > 0 ? conferences.value.filter((item) => ids.has(item.id)) : conferences.value;
+  const filtered = category
+    ? source.filter((item) => [item.title, item.summary, item.location].some((value) => value?.includes(category)))
+    : source;
+  return filtered.slice(0, Math.max(1, intConfig(component, "limit", 6)));
+}
+
+function eventCardClass(component: CmsComponent): string[] {
+  return ["cms-event-card", stringConfig(component, "cardSize") === "small" ? "is-small" : "is-large"];
+}
+
+function taskCurrent(component: CmsComponent): number {
+  return Math.max(0, intConfig(component, "current", 0));
+}
+
+function taskTarget(component: CmsComponent): number {
+  return Math.max(1, intConfig(component, "target", 8));
+}
+
+function taskPercent(component: CmsComponent): number {
+  return Math.min(100, Math.round((taskCurrent(component) / taskTarget(component)) * 100));
+}
+
+function imagePromoStyle(component: CmsComponent): Record<string, string> {
+  const radius = intConfig(component, "radius", 0);
+  return radius > 0 ? { borderRadius: `${radius}rpx` } : {};
+}
+
 function conferenceThumbSize(component: CmsComponent): { width: number; height: number } {
   const titleSize = numberConfig(component, "cardTitleFontSize", 28);
   const configuredWidth = numberConfig(component, "cardThumbWidth", 0);
@@ -1261,7 +1602,15 @@ function titleFor(type: string): string {
     "membership-benefits": "会员权益",
     "user-profile-card": "我的资料",
     "my-order-list": "我的订单",
-    "mall-product-grid": "商城商品"
+    "mall-product-grid": "商城商品",
+    "hero-banner": "顶部主视觉",
+    "quick-icon-grid": "快捷入口",
+    "member-promo-banner": "会员权益",
+    "event-card-carousel": "精选会议",
+    "service-shortcut-card": "服务中心",
+    "task-progress-card": "任务进度",
+    "image-promo-card": "活动推荐",
+    "rich-content-block": "自定义图文"
   };
   return map[type] ?? "内容";
 }
@@ -1283,12 +1632,16 @@ function splitConfigLine(value: string): string[] {
   return value.split(/[\n|｜,，;；]+/).map((item) => item.trim()).filter(Boolean);
 }
 
+function splitEntryLine(value: string): string[] {
+  return value.split(/[|｜]/).map((item) => item.trim());
+}
+
 function firstImageUrl(items: string[]): string {
   return items.find(looksLikeImageUrl) || "";
 }
 
 function looksLikeImageUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value) || /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(value);
+  return /^https?:\/\//i.test(value) || /\.(png|apng|jpe?g|webp|gif|svg)(\?|$)/i.test(value);
 }
 
 function sanitizeHtmlTag(match: string, tagName: string): string {
@@ -1998,6 +2351,269 @@ function readErrorText(error: unknown, fallback: string): string {
 
 .cms-contact .cms-button {
   margin-top: 18rpx;
+}
+
+.cms-home-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 42rpx;
+  box-sizing: border-box;
+  color: var(--cms-text-inverse);
+  box-shadow: var(--cms-shadow-lg);
+}
+
+.cms-home-hero__image,
+.cms-home-hero__shade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.cms-home-hero__shade {
+  z-index: 1;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(255, 255, 255, 0.28), transparent 26%),
+    linear-gradient(180deg, rgba(7, 18, 34, 0.08), rgba(7, 18, 34, 0.42));
+}
+
+.cms-home-hero__copy {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.cms-home-hero__subtitle {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.cms-home-hero__title {
+  display: block;
+  color: var(--cms-text-inverse);
+  font-size: 42rpx;
+  font-weight: 900;
+  line-height: 1.16;
+  overflow-wrap: anywhere;
+}
+
+.cms-home-hero__desc {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+.cms-home-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 8rpx;
+}
+
+.cms-home-hero__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 68rpx;
+  padding: 0 28rpx;
+  border-radius: var(--cms-radius-full);
+  background: var(--cms-text-inverse);
+  color: var(--cms-primary-strong);
+  font-size: 25rpx;
+  font-weight: 900;
+}
+
+.cms-home-hero__button.is-secondary {
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--cms-text-inverse);
+}
+
+.cms-entry-grid {
+  display: grid;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.cms-entry-tile {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  padding: 22rpx 14rpx;
+  border-radius: var(--cms-radius-lg);
+  background: var(--cms-surface-elevated);
+  text-align: center;
+  box-shadow: var(--cms-shadow-sm);
+}
+
+.cms-entry-tile.is-outline {
+  border: 1px solid var(--cms-border);
+  background: transparent;
+  box-shadow: none;
+}
+
+.cms-entry-tile.is-plain {
+  background: transparent;
+  box-shadow: none;
+}
+
+.cms-entry-tile__icon,
+.cms-task-card__icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 22rpx;
+  background: var(--ui-color-primary-soft);
+}
+
+.cms-entry-tile__icon--text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cms-primary);
+  font-size: 30rpx;
+  font-weight: 900;
+}
+
+.cms-entry-tile__title {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--cms-text-primary);
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-entry-tile__subtitle {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--cms-text-secondary);
+  font-size: 20rpx;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-member-promo {
+  position: relative;
+  overflow: hidden;
+  margin-top: 22rpx;
+  padding: 30rpx;
+  border: 1px solid var(--cms-border);
+  border-radius: var(--cms-radius-lg);
+  background:
+    radial-gradient(circle at 84% 18%, rgba(255, 255, 255, 0.72), transparent 26%),
+    linear-gradient(135deg, rgba(58, 143, 121, 0.18), rgba(181, 139, 71, 0.14)),
+    var(--cms-card);
+  box-shadow: var(--cms-shadow-md);
+}
+
+.cms-member-promo__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.18;
+}
+
+.cms-member-promo__copy {
+  position: relative;
+  z-index: 1;
+}
+
+.cms-event-carousel__rail {
+  width: 100%;
+  margin-top: 18rpx;
+  white-space: nowrap;
+}
+
+.cms-event-carousel__track {
+  display: inline-flex;
+  gap: 18rpx;
+  padding-right: 8rpx;
+}
+
+.cms-event-card {
+  width: 430rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  padding: 20rpx;
+  border: 1px solid var(--cms-border);
+  border-radius: var(--cms-radius-lg);
+  background: var(--cms-surface-elevated);
+  box-shadow: var(--cms-shadow-sm);
+  box-sizing: border-box;
+  white-space: normal;
+}
+
+.cms-event-card.is-small {
+  width: 330rpx;
+}
+
+.cms-event-card__image {
+  width: 100%;
+  height: 180rpx;
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-surface-muted);
+}
+
+.cms-event-card__title {
+  color: var(--cms-text-primary);
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.cms-event-card__text,
+.cms-event-card__meta {
+  color: var(--cms-text-secondary);
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.cms-task-card__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 18rpx;
+  align-items: center;
+}
+
+.cms-task-card__copy {
+  min-width: 0;
+}
+
+.cms-task-card__count {
+  color: var(--cms-primary);
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.cms-task-card__bar {
+  overflow: hidden;
+  height: 14rpx;
+  margin-top: 22rpx;
+  border-radius: var(--cms-radius-full);
+  background: var(--cms-surface-muted);
+}
+
+.cms-task-card__bar view {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--cms-primary), var(--cms-secondary));
+}
+
+.cms-image-promo {
+  overflow: hidden;
 }
 
 .cms-divider {
