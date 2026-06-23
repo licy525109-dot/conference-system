@@ -271,6 +271,7 @@ export interface Coupon {
   code: string;
   name: string;
   type: "AMOUNT" | "PERCENT";
+  scope: "CONFERENCE" | "MALL" | "BOTH";
   discountAmountCent: number | null;
   discountPercent: number | null;
   maxDiscountCent: number | null;

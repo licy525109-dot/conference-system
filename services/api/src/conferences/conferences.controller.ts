@@ -1,4 +1,6 @@
-import { Controller, Get, Param, Query } from "@nestjs/common";
+import { Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { RequestWithCurrentUser } from "../auth/current-user";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ConferencesService } from "./conferences.service";
 
 @Controller("conferences")
@@ -20,6 +22,12 @@ export class ConferencesController {
   @Get(":id")
   detail(@Param("id") id: string) {
     return this.conferencesService.detail(id);
+  }
+
+  @Post(":id/appointments")
+  @UseGuards(JwtAuthGuard)
+  reserveAppointment(@Param("id") id: string, @Req() request: RequestWithCurrentUser) {
+    return this.conferencesService.reserveAppointment(id, request.currentUser);
   }
 
   @Get(":id/form")

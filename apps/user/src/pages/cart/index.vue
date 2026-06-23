@@ -83,6 +83,13 @@
           <text class="section-title">履约信息</text>
           <text class="muted">当前商品均为虚拟/服务商品，无需填写收货地址。</text>
         </view>
+        <view class="coupon-card ui-card">
+          <view>
+            <text class="section-title">商品优惠券</text>
+            <text class="muted">{{ productCouponCode ? `已选择 ${productCouponCode}` : "选择已领取的商品券或通用券，结算时由后端重新计算抵扣。" }}</text>
+          </view>
+          <button class="ui-button-secondary ui-button-compact" @click="selectProductCoupon">{{ productCouponCode ? "更换" : "选择" }}</button>
+        </view>
         <view v-for="item in productItems" :key="item.id" class="card product-card ui-card">
           <image v-if="item.sku.product.coverImageUrl" class="product-cover" :src="item.sku.product.coverImageUrl" mode="aspectFill" />
           <view v-else class="product-cover empty-cover">商品</view>
@@ -136,6 +143,7 @@ import {
   type CartRegistrationItem
 } from "@/services/cart";
 import { ApiRequestError } from "@/services/request";
+import { getMyCoupons, type MyCouponItem } from "@/services/operations";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
 
@@ -146,15 +154,28 @@ const error = ref("");
 const removingId = ref("");
 const checkoutId = ref("");
 const receiver = ref({ name: "", phone: "", address: "" });
+const productCouponCode = ref("");
 const cmsPage = ref<PublishedPage | null>(null);
 const isEmpty = computed(() => registrationItems.value.length === 0 && productItems.value.length === 0);
 const hasPhysicalProduct = computed(() => productItems.value.some((item) => !["VIRTUAL", "SERVICE"].includes(String(item.sku.product.productType || "PHYSICAL"))));
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("cart");
 
 onShow(() => {
+  if (!productCouponCode.value) productCouponCode.value = readPendingProductCoupon();
   void refreshTheme();
   void loadCart();
 });
+
+function readPendingProductCoupon(): string {
+  const value = uni.getStorageSync("pendingCouponForUse");
+  if (!value || typeof value !== "object") return "";
+  const record = value as { code?: unknown; scope?: unknown; savedAt?: unknown };
+  const code = typeof record.code === "string" ? record.code.trim() : "";
+  const scope = typeof record.scope === "string" ? record.scope : "";
+  const savedAt = typeof record.savedAt === "number" ? record.savedAt : 0;
+  const fresh = Date.now() - savedAt < 30 * 60 * 1000;
+  return code && fresh && (scope === "MALL" || scope === "BOTH") ? code : "";
+}
 
 async function loadCart() {
   loading.value = true;
@@ -230,6 +251,7 @@ async function checkoutProduct(id: string) {
   try {
     const order = await checkoutProductCart({
       itemIds: [id],
+      couponCode: normalizedProductCouponCode(),
       receiverName: requiresReceiver ? receiver.value.name : undefined,
       receiverPhone: requiresReceiver ? receiver.value.phone : undefined,
       receiverAddress: requiresReceiver ? receiver.value.address : undefined
@@ -247,6 +269,45 @@ async function checkoutProduct(id: string) {
   } finally {
     checkoutId.value = "";
   }
+}
+
+async function selectProductCoupon() {
+  try {
+    const response = await getMyCoupons({ scope: "MALL" });
+    const usable = response.items.filter((item) => item.usable && couponFitsCart(item)).slice(0, 5);
+    if (usable.length === 0) {
+      uni.showToast({ title: "暂无可用于商品的优惠券", icon: "none" });
+      return;
+    }
+    uni.showActionSheet({
+      itemList: ["不使用优惠券", ...usable.map(formatCouponOption)],
+      success: ({ tapIndex }) => {
+        productCouponCode.value = tapIndex === 0 ? "" : usable[tapIndex - 1]?.coupon.code ?? "";
+      }
+    });
+  } catch (err) {
+    console.error("[CART_PRODUCT_COUPON_ERROR]", err);
+    uni.showToast({ title: "优惠券加载失败", icon: "none" });
+  }
+}
+
+function couponFitsCart(item: MyCouponItem) {
+  const allowed = item.coupon.allowedSkuIds ?? [];
+  return allowed.length === 0 || productItems.value.some((entry) => allowed.includes(entry.sku.id));
+}
+
+function formatCouponOption(item: MyCouponItem) {
+  const discount =
+    item.coupon.type === "AMOUNT"
+      ? `减 ¥${formatCent(item.coupon.discountAmountCent ?? 0)}`
+      : `${((item.coupon.discountPercent ?? 0) / 100).toFixed(2)} 折`;
+  const threshold = item.coupon.minAmountCent ? `，满 ¥${formatCent(item.coupon.minAmountCent)} 可用` : "";
+  return `${item.coupon.name}（${discount}${threshold}）`;
+}
+
+function normalizedProductCouponCode(): string | undefined {
+  const code = productCouponCode.value.trim();
+  return code ? code : undefined;
 }
 
 function checkoutMessage(err: unknown, fallback: string): string {
@@ -333,6 +394,14 @@ function checkoutMessage(err: unknown, fallback: string): string {
   display: flex;
   flex-direction: column;
   gap: 14rpx;
+  padding: 24rpx;
+}
+
+.coupon-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
   padding: 24rpx;
 }
 

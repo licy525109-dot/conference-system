@@ -36,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ensureLogin } from "@/services/auth";
 import { getWechatProfile, updateWechatProfile, uploadWechatAvatar } from "@/services/profile";
 
@@ -53,19 +53,34 @@ const displayAvatarUrl = computed(() => (avatarLoadFailed.value ? "" : pendingAv
 const previewName = computed(() => wechatNickname.value.trim() || "请选择头像并填写昵称");
 
 onMounted(() => {
+  uni.$on("wechat-profile:open", openProfilePrompt);
   // #ifdef MP-WEIXIN
   miniProgramEnabled.value = true;
   void checkProfile();
   // #endif
 });
 
-async function checkProfile() {
+onUnmounted(() => {
+  uni.$off("wechat-profile:open", openProfilePrompt);
+});
+
+async function openProfilePrompt() {
+  // #ifdef MP-WEIXIN
+  miniProgramEnabled.value = true;
+  await checkProfile({ forceOpen: true });
+  // #endif
+  // #ifndef MP-WEIXIN
+  uni.showToast({ title: "请在微信小程序内完善头像昵称", icon: "none" });
+  // #endif
+}
+
+async function checkProfile(options?: { forceOpen?: boolean }) {
   try {
     await ensureLogin();
     const profile = await getWechatProfile();
     wechatNickname.value = profile.wechatNickname || "";
     wechatAvatarUrl.value = profile.wechatAvatarUrl || "";
-    visible.value = !wechatNickname.value || !wechatAvatarUrl.value;
+    visible.value = options?.forceOpen ? true : !wechatNickname.value || !wechatAvatarUrl.value;
   } catch (err) {
     console.error("[WECHAT_PROFILE_PROMPT_LOAD_ERROR]", err);
   }
@@ -119,6 +134,7 @@ async function saveProfile() {
     wechatAvatarUrl.value = user.wechatAvatarUrl || "";
     pendingAvatarPath.value = "";
     visible.value = false;
+    uni.$emit("wechat-profile:updated", user);
     uni.showToast({ title: "微信资料已保存", icon: "success" });
   } catch (err) {
     console.error("[WECHAT_PROFILE_PROMPT_SAVE_ERROR]", err);

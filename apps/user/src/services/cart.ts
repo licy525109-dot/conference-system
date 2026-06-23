@@ -127,7 +127,7 @@ export async function checkoutRegistrationCart(itemIds: string[]): Promise<Creat
   });
 }
 
-export async function checkoutProductCart(input: { itemIds: string[]; receiverName?: string; receiverPhone?: string; receiverAddress?: string }): Promise<ProductCheckoutResult> {
+export async function checkoutProductCart(input: { itemIds: string[]; couponCode?: string; receiverName?: string; receiverPhone?: string; receiverAddress?: string }): Promise<ProductCheckoutResult> {
   await ensureLogin();
   return request<ProductCheckoutResult>("/cart/checkout/products", {
     method: "POST",

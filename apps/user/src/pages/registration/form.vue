@@ -58,6 +58,7 @@
         <view class="coupon-row">
           <input class="coupon-input" placeholder="输入优惠码" :value="couponCode" @input="setCouponCode" />
           <button class="ui-button-secondary ui-button-compact coupon-button" :disabled="quoteLoading" @click="loadQuote">使用</button>
+          <button class="ui-button-secondary ui-button-compact coupon-button" :disabled="couponSelectorLoading" @click="selectMyCoupon">我的券</button>
         </view>
         <PriceSummary
           :origin-amount-cent="quote?.originAmountCent ?? selectedAmountCent"
@@ -192,6 +193,7 @@ import {
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { addRegistrationCartItem } from "@/services/cart";
 import { createRegistrationOrder, quoteRegistration, type QuoteResponse, type RegistrationOrderItem } from "@/services/registration";
+import { getMyCoupons, type MyCouponItem } from "@/services/operations";
 import { ApiRequestError } from "@/services/request";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
@@ -211,6 +213,7 @@ const addingToCart = ref(false);
 const error = ref("");
 const quoteError = ref("");
 const couponCode = ref("");
+const couponSelectorLoading = ref(false);
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("registration-form");
 
 const selectedItems = computed<RegistrationOrderItem[]>(() =>
@@ -235,9 +238,29 @@ const attendeeSectionDescription = computed(() =>
 onLoad((query) => {
   conferenceId.value = String(query?.conferenceId || "");
   selectedSkuId.value = String(query?.skuId || "");
+  couponCode.value = readInitialCouponCode(query, "CONFERENCE");
   void refreshTheme();
   void loadPage();
 });
+
+function readInitialCouponCode(query: Record<string, unknown> | undefined, scope: "CONFERENCE" | "MALL"): string {
+  const direct = typeof query?.couponCode === "string" ? query.couponCode.trim() : "";
+  if (direct) return direct;
+  const pending = readPendingCoupon(scope);
+  return pending?.code ?? "";
+}
+
+function readPendingCoupon(scope: "CONFERENCE" | "MALL"): { code: string } | null {
+  const value = uni.getStorageSync("pendingCouponForUse");
+  if (!value || typeof value !== "object") return null;
+  const record = value as { code?: unknown; scope?: unknown; savedAt?: unknown };
+  const code = typeof record.code === "string" ? record.code.trim() : "";
+  const couponScope = typeof record.scope === "string" ? record.scope : "";
+  const savedAt = typeof record.savedAt === "number" ? record.savedAt : 0;
+  const fresh = Date.now() - savedAt < 30 * 60 * 1000;
+  if (!code || !fresh || (couponScope !== scope && couponScope !== "BOTH")) return null;
+  return { code };
+}
 
 async function loadPage() {
   if (!conferenceId.value) {
@@ -460,6 +483,47 @@ async function addSelectedToCart() {
 
 function setCouponCode(event: unknown) {
   couponCode.value = String(readEventValue(event) ?? "");
+}
+
+async function selectMyCoupon() {
+  couponSelectorLoading.value = true;
+  try {
+    await ensureLogin();
+    const response = await getMyCoupons({ scope: "CONFERENCE" });
+    const usable = response.items.filter((item) => item.usable && couponFitsSelectedSku(item)).slice(0, 6);
+    if (usable.length === 0) {
+      uni.showToast({ title: "暂无可用于本次报名的优惠券", icon: "none" });
+      return;
+    }
+    uni.showActionSheet({
+      itemList: usable.map(formatCouponOption),
+      success: async ({ tapIndex }) => {
+        const selected = usable[tapIndex];
+        if (!selected) return;
+        couponCode.value = selected.coupon.code;
+        await loadQuote();
+      }
+    });
+  } catch (err) {
+    console.error("[REGISTRATION_COUPON_SELECT_ERROR]", err);
+    uni.showToast({ title: "优惠券加载失败", icon: "none" });
+  } finally {
+    couponSelectorLoading.value = false;
+  }
+}
+
+function couponFitsSelectedSku(item: MyCouponItem) {
+  const allowedSkuIds = item.coupon.allowedSkuIds ?? [];
+  return allowedSkuIds.length === 0 || selectedItems.value.some((entry) => allowedSkuIds.includes(entry.skuId));
+}
+
+function formatCouponOption(item: MyCouponItem) {
+  const discount =
+    item.coupon.type === "AMOUNT"
+      ? `减 ¥${formatCent(item.coupon.discountAmountCent ?? 0)}`
+      : `${((item.coupon.discountPercent ?? 0) / 100).toFixed(2)} 折`;
+  const threshold = item.coupon.minAmountCent ? `，满 ¥${formatCent(item.coupon.minAmountCent)} 可用` : "";
+  return `${item.coupon.name}（${discount}${threshold}）`;
 }
 
 function normalizedCouponCode(): string | undefined {

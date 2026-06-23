@@ -117,6 +117,7 @@ import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
 
 const conferenceId = ref("");
+const couponCode = ref("");
 const conference = ref<ConferenceDetail | null>(null);
 const cmsPage = ref<PublishedPage | null>(null);
 const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
@@ -162,6 +163,7 @@ const registrationStatus = computed(() => {
 
 onLoad((query) => {
   conferenceId.value = String(query?.id || query?.conferenceId || "");
+  couponCode.value = typeof query?.couponCode === "string" ? query.couponCode : "";
   void loadDetail();
 });
 
@@ -201,8 +203,9 @@ async function loadDetail() {
 }
 
 function goRegister(skuId: string) {
+  const couponQuery = couponCode.value ? `&couponCode=${encodeURIComponent(couponCode.value)}` : "";
   uni.navigateTo({
-    url: `/pages/registration/form?conferenceId=${encodeURIComponent(conferenceId.value)}&skuId=${encodeURIComponent(skuId)}`
+    url: `/pages/registration/form?conferenceId=${encodeURIComponent(conferenceId.value)}&skuId=${encodeURIComponent(skuId)}${couponQuery}`
   });
 }
 

@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { AuditAction, PaymentProvider, PaymentStatus, Prisma } from "@prisma/client";
+import { AuditAction, CouponRedemptionStatus, PaymentProvider, PaymentStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 
 export interface MallPaymentCompletionInput {
@@ -29,6 +29,7 @@ export class MallPaymentCompletionService {
           where: { id: payment.id },
           data: buildPaymentCompletionData(input)
         });
+        await markMallCouponUsed(tx, payment.mallOrderId, input.paidAt);
         return payment.order;
       }
 
@@ -48,6 +49,7 @@ export class MallPaymentCompletionService {
         },
         include: { items: true }
       });
+      await markMallCouponUsed(tx, paidOrder.id, input.paidAt);
 
       for (const item of paidOrder.items) {
         await convertLockedStockToSold(tx, item.skuId, item.quantity, paidOrder.id);
@@ -80,6 +82,22 @@ export class MallPaymentCompletionService {
       paymentStatus: PaymentStatus.SUCCESS
     };
   }
+}
+
+async function markMallCouponUsed(tx: Prisma.TransactionClient, mallOrderId: string, usedAt: Date) {
+  const mallCouponRedemption = (tx as unknown as {
+    mallCouponRedemption?: {
+      updateMany: (args: {
+        where: { mallOrderId: string; status: CouponRedemptionStatus };
+        data: { status: CouponRedemptionStatus; usedAt: Date };
+      }) => Promise<unknown>;
+    };
+  }).mallCouponRedemption;
+  if (!mallCouponRedemption) return;
+  await mallCouponRedemption.updateMany({
+    where: { mallOrderId, status: CouponRedemptionStatus.PENDING },
+    data: { status: CouponRedemptionStatus.USED, usedAt }
+  });
 }
 
 function buildPaymentCompletionData(input: MallPaymentCompletionInput): Prisma.MallPaymentUpdateInput {

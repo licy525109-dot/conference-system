@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { ConferenceStatus, FormFieldType, Prisma, RegistrationSkuStatus } from "@prisma/client";
+import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 
 export interface ApiResponse<TData> {
@@ -45,9 +46,12 @@ export class ConferencesService {
           location: true,
           startsAt: true,
           endsAt: true,
+          registrationStartsAt: true,
+          registrationEndsAt: true,
           _count: {
             select: {
-              registrations: true
+              registrations: true,
+              appointments: true
             }
           }
         }
@@ -62,7 +66,10 @@ export class ConferencesService {
         ...conference,
         startsAt: conference.startsAt.toISOString(),
         endsAt: conference.endsAt.toISOString(),
-        registrationCount: conference._count?.registrations ?? 0
+        registrationStartsAt: conference.registrationStartsAt?.toISOString() ?? null,
+        registrationEndsAt: conference.registrationEndsAt?.toISOString() ?? null,
+        registrationCount: conference._count?.registrations ?? 0,
+        appointmentCount: conference._count?.appointments ?? 0
       })),
       total,
       page,
@@ -106,7 +113,8 @@ export class ConferencesService {
         },
         _count: {
           select: {
-            registrations: true
+            registrations: true,
+            appointments: true
           }
         }
       }
@@ -128,8 +136,66 @@ export class ConferencesService {
       registrationStartsAt: conference.registrationStartsAt?.toISOString() ?? null,
       registrationEndsAt: conference.registrationEndsAt?.toISOString() ?? null,
       registrationCount: conference._count?.registrations ?? 0,
+      appointmentCount: conference._count?.appointments ?? 0,
       contentJson: conference.page?.contentJson ?? null,
       skus: conference.skus
+    });
+  }
+
+  async reserveAppointment(id: string, currentUser: CurrentUser | undefined): Promise<ApiResponse<ConferenceAppointmentResponse>> {
+    if (!currentUser) {
+      throw new UnauthorizedException("Bearer token is required");
+    }
+    const conference = await this.prisma.conference.findFirst({
+      where: {
+        id,
+        status: ConferenceStatus.PUBLISHED
+      },
+      select: {
+        id: true,
+        title: true,
+        endsAt: true,
+        registrationStartsAt: true,
+        registrationEndsAt: true
+      }
+    });
+    if (!conference) {
+      throw new NotFoundException("Conference not found");
+    }
+    const now = new Date();
+    if (conference.endsAt < now) {
+      throw new ConflictException("会议已结束，无法预约");
+    }
+    const appointment = await this.prisma.conferenceAppointment.upsert({
+      where: {
+        conferenceId_userId: {
+          conferenceId: conference.id,
+          userId: currentUser.id
+        }
+      },
+      create: {
+        conferenceId: conference.id,
+        userId: currentUser.id,
+        status: "RESERVED",
+        source: "USER"
+      },
+      update: {
+        status: "RESERVED",
+        source: "USER"
+      }
+    });
+    const registrationOpen = Boolean(
+      (!conference.registrationStartsAt || conference.registrationStartsAt <= now) &&
+        (!conference.registrationEndsAt || conference.registrationEndsAt >= now)
+    );
+    return ok({
+      id: appointment.id,
+      conferenceId: conference.id,
+      conferenceTitle: conference.title,
+      status: appointment.status,
+      reservedAt: appointment.updatedAt.toISOString(),
+      registrationOpen,
+      message: registrationOpen ? "预约已记录；当前报名已开放，可直接报名。" : "预约成功，报名开放后请及时完成报名。"
     });
   }
 
@@ -265,7 +331,10 @@ export interface ConferenceListResponse {
     location: string | null;
     startsAt: string;
     endsAt: string;
+    registrationStartsAt: string | null;
+    registrationEndsAt: string | null;
     registrationCount: number;
+    appointmentCount: number;
   }>;
   total: number;
   page: number;
@@ -284,6 +353,7 @@ export interface ConferenceDetailResponse {
   registrationStartsAt: string | null;
   registrationEndsAt: string | null;
   registrationCount: number;
+  appointmentCount: number;
   contentJson: Prisma.JsonValue | null;
   skus: Array<{
     id: string;
@@ -293,6 +363,16 @@ export interface ConferenceDetailResponse {
     stock: number;
     soldCount: number;
   }>;
+}
+
+export interface ConferenceAppointmentResponse {
+  id: string;
+  conferenceId: string;
+  conferenceTitle: string;
+  status: string;
+  reservedAt: string;
+  registrationOpen: boolean;
+  message: string;
 }
 
 export interface ConferenceFormResponse {

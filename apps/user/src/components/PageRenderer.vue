@@ -65,8 +65,8 @@
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
             <text v-if="booleanConfig(component, 'showSummary', true)" class="cms-card__text" :style="conferenceTextStyle(component, 'summary')">{{ item.summary || summaryFallback(component) }}</text>
             <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-card__meta" :style="conferenceTextStyle(component, 'meta')">{{ line }}</text>
-            <view class="cms-card__button" @click.stop="$emit('openConference', item.id)">
-              <text>{{ detailButtonText(component) }}</text>
+            <view class="cms-card__button" @click.stop="handleConferenceAction(item, component)">
+              <text>{{ conferenceActionText(item, component) }}</text>
             </view>
           </view>
         </view>
@@ -105,8 +105,8 @@
             <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
             <text v-if="booleanConfig(component, 'showSummary', false)" class="cms-card__text" :style="conferenceTextStyle(component, 'summary')">{{ item.summary || summaryFallback(component) }}</text>
             <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-card__meta" :style="conferenceTextStyle(component, 'meta')">{{ line }}</text>
-            <view class="cms-card__button" @click.stop="$emit('openConference', item.id)">
-              <text>{{ detailButtonText(component) }}</text>
+            <view class="cms-card__button" @click.stop="handleConferenceAction(item, component)">
+              <text>{{ conferenceActionText(item, component) }}</text>
             </view>
           </view>
         </view>
@@ -144,6 +144,18 @@
               <text>{{ stringConfig(component, "secondaryButtonText") }}</text>
             </view>
           </view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'login-card'" class="cms-section cms-login-card" :style="homePanelStyle(component)">
+        <image v-if="loginCardAvatar(component)" class="cms-login-card__avatar" :src="loginCardAvatar(component)" mode="aspectFill" />
+        <view v-else class="cms-login-card__avatar cms-login-card__avatar--text">{{ storedUser ? profileInitial : loginCardInitial(component) }}</view>
+        <view class="cms-login-card__copy">
+          <text class="cms-login-card__title" :style="titleStyle(component)">{{ loginCardTitle(component) }}</text>
+          <text class="cms-login-card__subtitle" :style="textStyle(component)">{{ loginCardSubtitle(component) }}</text>
+        </view>
+        <view class="cms-login-card__button" @click="handleLoginCard(component)">
+          <text>{{ storedUser ? stringConfig(component, "loggedInButtonText") || "查看权益" : stringConfig(component, "buttonText") || "立即登录" }}</text>
         </view>
       </view>
 
@@ -189,13 +201,13 @@
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "精选会议" }}</text>
         <scroll-view scroll-x class="cms-event-carousel__rail">
           <view class="cms-event-carousel__track">
-            <view v-for="(item, index) in carouselConferences(component)" :key="item.id" :class="eventCardClass(component)" @click="$emit('openConference', item.id)">
+            <view v-for="(item, index) in carouselConferences(component)" :key="item.id" :class="eventCardClass(component)" @click="handleConferenceAction(item, component)">
               <image v-if="showConferenceCover(component, item)" class="cms-event-card__image" :src="conferenceCoverUrl(item)" :mode="conferenceImageMode(component)" @error="markConferenceCoverFailed(item.id)" />
               <view v-else class="cms-event-card__image cms-card__image--empty"><text>{{ conferenceCoverInitial(item) }}</text></view>
               <text class="cms-event-card__title">{{ item.title }}</text>
               <text v-if="booleanConfig(component, 'showSummary', true)" class="cms-event-card__text">{{ item.summary || summaryFallback(component) }}</text>
               <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-event-card__meta">{{ line }}</text>
-              <view class="cms-card__button"><text>{{ detailButtonText(component) }}</text></view>
+              <view class="cms-card__button"><text>{{ conferenceActionText(item, component) }}</text></view>
             </view>
           </view>
         </scroll-view>
@@ -320,14 +332,38 @@
         <view v-else class="cms-empty">倒计时时间待配置</view>
       </view>
 
-      <view v-else-if="component.type === 'notice' || component.type === 'promotion-bar'" class="cms-notice" :style="textStyle(component)">
+      <view v-else-if="component.type === 'notice'" class="cms-notice" :style="textStyle(component)">
         {{ stringConfig(component, "text") || "报名开放中" }}
+      </view>
+
+      <view v-else-if="component.type === 'promotion-bar'" class="cms-notice cms-link-bar" :style="promotionBarStyle(component)" @click="handleComponentAction(component)">
+        <view class="cms-link-bar__left">
+          <text class="cms-link-bar__icon">{{ stringConfig(component, "iconText") || "▰" }}</text>
+          <text class="cms-link-bar__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || stringConfig(component, "text") || "五大增量生态 × 五大垂类赛道" }}</text>
+        </view>
+        <view v-if="stringConfig(component, 'buttonText') || booleanConfig(component, 'showArrow', true)" class="cms-link-bar__action">
+          <text v-if="stringConfig(component, 'buttonText')">{{ stringConfig(component, "buttonText") }}</text>
+          <text v-if="booleanConfig(component, 'showArrow', true)" class="cms-link-bar__arrow">›</text>
+        </view>
       </view>
 
       <view v-else-if="component.type === 'stats-grid'" class="cms-section">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会议亮点" }}</text>
         <view class="cms-stats">
           <text v-for="item in arrayConfig(component, 'items')" :key="String(item)" class="cms-stat" :style="textStyle(component)">{{ item }}</text>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'dual-track-tags'" class="cms-section cms-track-tags" :style="homePanelStyle(component)">
+        <view v-for="(row, rowIndex) in dualTrackRows(component)" :key="row.title" class="cms-track-tags__row">
+          <text class="cms-track-tags__title" :style="titleStyle(component)">{{ row.title }}</text>
+          <view class="cms-track-tags__chips">
+            <text v-for="item in row.items" :key="item" class="cms-track-tags__chip" :style="textStyle(component)">{{ item }}</text>
+          </view>
+          <view v-if="row.buttonText" class="cms-track-tags__button" @click="handleDualTrackAction(component, rowIndex)">
+            <text>{{ row.buttonText }}</text>
+            <text>›</text>
+          </view>
         </view>
       </view>
 
@@ -518,7 +554,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { ensureLogin, getStoredUser } from "@/services/auth";
 import type { CmsComponent, ThemeConfig } from "@/services/cms";
-import type { ConferenceDetail, ConferenceListItem } from "@/services/conference";
+import { reserveConferenceAppointment, type ConferenceDetail, type ConferenceListItem } from "@/services/conference";
 import { getProducts, type Product } from "@/services/mall";
 import { claimCoupon, getCouponCampaignPublic } from "@/services/operations";
 import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
@@ -601,12 +637,14 @@ function showTargetMissing(title: string) {
 onMounted(() => {
   loadCustomFonts();
   refreshStoredUser();
+  uni.$on("wechat-profile:updated", handleWechatProfileUpdated);
   void loadMallProductComponents();
   countdownTimer = setInterval(() => {
     nowTimestamp.value = Date.now();
   }, 1000);
 });
 onUnmounted(() => {
+  uni.$off("wechat-profile:updated", handleWechatProfileUpdated);
   if (countdownTimer) {
     clearInterval(countdownTimer);
   }
@@ -767,6 +805,12 @@ interface CmsActionConfig {
   miniappExtraData: string;
   phone: string;
   copyText: string;
+}
+
+interface DualTrackRow {
+  title: string;
+  items: string[];
+  buttonText: string;
 }
 
 interface RichContentBlockItem {
@@ -1020,6 +1064,67 @@ function actionFromRichBlock(component: CmsComponent, block: RichContentBlockIte
   };
 }
 
+function loginCardAvatar(component: CmsComponent): string {
+  if (storedUser.value?.wechatAvatarUrl) return storedUser.value.wechatAvatarUrl;
+  return stringConfig(component, "logoUrl") || stringConfig(component, "imageUrl");
+}
+
+function loginCardInitial(component: CmsComponent): string {
+  return (stringConfig(component, "logoText") || stringConfig(component, "title") || "观").slice(0, 1);
+}
+
+function loginCardTitle(component: CmsComponent): string {
+  if (!storedUser.value) {
+    return stringConfig(component, "title") || "欢迎来到观潮会集";
+  }
+  const name = storedUser.value.wechatNickname || storedUser.value.nickname || "会员";
+  return stringConfig(component, "loggedInTitle") || `欢迎回来，${name}`;
+}
+
+function loginCardSubtitle(component: CmsComponent): string {
+  if (!storedUser.value) {
+    return stringConfig(component, "subtitle") || "欢迎光临，请登录成为会员，查看会议排期与报名权益";
+  }
+  return stringConfig(component, "loggedInSubtitle") || "可查看会议排期、报名权益和会员资料。";
+}
+
+async function handleLoginCard(component: CmsComponent): Promise<void> {
+  if (!storedUser.value) {
+    await promptWechatLogin();
+    return;
+  }
+  const action = readComponentAction(component);
+  await runAction({ ...action, type: action.type === "register" ? "member" : action.type || "member" });
+}
+
+function promotionBarStyle(component: CmsComponent): Record<string, string> {
+  const background = stringConfig(component, "backgroundColor") || stringConfig(component, "cardBackground");
+  return {
+    ...textStyle(component),
+    ...(background ? { background } : {})
+  };
+}
+
+function dualTrackRows(component: CmsComponent): DualTrackRow[] {
+  return [
+    {
+      title: stringConfig(component, "primaryTitle") || "五大增量生态",
+      items: stringListConfig(component, "primaryItems").length > 0 ? stringListConfig(component, "primaryItems") : ["自然", "银发", "赛事", "研学", "情绪"],
+      buttonText: stringConfig(component, "primaryButtonText")
+    },
+    {
+      title: stringConfig(component, "secondaryTitle") || "五大垂类赛道",
+      items: stringListConfig(component, "secondaryItems").length > 0 ? stringListConfig(component, "secondaryItems") : ["学前", "科创", "舞蹈", "美术", "自主学习"],
+      buttonText: stringConfig(component, "secondaryButtonText")
+    }
+  ];
+}
+
+async function handleDualTrackAction(component: CmsComponent, rowIndex: number): Promise<void> {
+  const action = rowIndex === 0 ? readComponentAction(component) : readComponentAction(component, "secondary");
+  await runAction(action);
+}
+
 function readComponentAction(component: CmsComponent, prefix = ""): CmsActionConfig {
   const key = (name: string) => prefix ? `${prefix}${name.slice(0, 1).toUpperCase()}${name.slice(1)}` : name;
   return {
@@ -1259,6 +1364,10 @@ function refreshStoredUser(): void {
   storedUser.value = getStoredUser();
 }
 
+function handleWechatProfileUpdated(): void {
+  refreshStoredUser();
+}
+
 function goPath(path: string) {
   if (!path) return;
   uni.navigateTo({
@@ -1279,12 +1388,31 @@ async function goLoginPath(path: string): Promise<void> {
   }
 }
 
+async function promptWechatLogin(): Promise<void> {
+  try {
+    await ensureLogin();
+    refreshStoredUser();
+    uni.$emit("wechat-profile:open");
+  } catch (error) {
+    uni.showToast({ title: readErrorText(error, "登录失败，请稍后重试"), icon: "none" });
+  }
+}
+
 async function runAction(action: CmsActionConfig): Promise<void> {
   const type = action.type || "none";
   if (type === "none") return;
+  if (type === "login") {
+    await promptWechatLogin();
+    return;
+  }
   if (type === "page") {
     if (!action.pageKey) return showTargetMissing("请选择目标页面");
-    goPath(pagePath(action.pageKey));
+    const path = pagePath(action.pageKey);
+    if (pageNeedsLogin(action.pageKey, path)) {
+      await goLoginPath(path);
+    } else {
+      goPath(path);
+    }
     return;
   }
   if (type === "conference") {
@@ -1363,6 +1491,12 @@ async function runAction(action: CmsActionConfig): Promise<void> {
     return;
   }
   emit("register");
+}
+
+function pageNeedsLogin(pageKey: string, path: string): boolean {
+  const protectedKeys = new Set(["my-registrations", "registration-success", "cart", "member-center", "mall-orders", "invoice"]);
+  if (protectedKeys.has(pageKey)) return true;
+  return ["/pages/registrations/my", "/pages/cart/index", "/pages/member/center", "/pages/mall/orders", "/pages/invoice/index"].some((item) => path.startsWith(item));
 }
 
 function openMiniapp(action: CmsActionConfig): void {
@@ -1584,6 +1718,34 @@ function detailButtonText(component: CmsComponent): string {
   return stringConfig(component, "detailButtonText") || "查看详情";
 }
 
+function conferenceActionText(item: ConferenceListItem, component: CmsComponent): string {
+  if (!shouldShowAppointmentAction(item, component)) return detailButtonText(component);
+  return stringConfig(component, "appointmentButtonText") || "提前预约";
+}
+
+function shouldShowAppointmentAction(item: ConferenceListItem, component: CmsComponent): boolean {
+  if (!booleanConfig(component, "showAppointmentButton", true)) return false;
+  const startAt = Date.parse(item.registrationStartsAt || "");
+  if (!Number.isFinite(startAt)) return false;
+  return nowTimestamp.value < startAt;
+}
+
+async function handleConferenceAction(item: ConferenceListItem, component: CmsComponent): Promise<void> {
+  if (!shouldShowAppointmentAction(item, component)) {
+    emit("openConference", item.id);
+    return;
+  }
+
+  try {
+    await ensureLogin();
+    refreshStoredUser();
+    const result = await reserveConferenceAppointment(item.id);
+    uni.showToast({ title: result.message || "预约成功", icon: "none" });
+  } catch (error) {
+    uni.showToast({ title: readErrorText(error, "预约失败，请稍后重试"), icon: "none" });
+  }
+}
+
 function heroKicker(component: CmsComponent): string {
   return stringConfig(component, "kicker") || stringConfig(component, "eyebrow") || "会议报名";
 }
@@ -1719,7 +1881,8 @@ function homeEntryStyle(component: CmsComponent, entry: HomeEntryItem): Record<s
 }
 
 function entryIconClass(component: CmsComponent): string[] {
-  return [stringConfig(component, "iconSize") === "small" ? "is-small" : "is-large"];
+  const size = stringConfig(component, "iconSize");
+  return [size === "small" ? "is-small" : size === "xlarge" ? "is-xlarge" : "is-large"];
 }
 
 function homeEntryTitleStyle(entry: HomeEntryItem): Record<string, string> {
@@ -2047,13 +2210,16 @@ function titleFor(type: string): string {
     "my-order-list": "我的订单",
     "mall-product-grid": "商城商品",
     "hero-banner": "顶部主视觉",
+    "login-card": "登录欢迎卡",
     "quick-icon-grid": "快捷入口",
     "member-promo-banner": "会员权益",
     "event-card-carousel": "精选会议",
     "service-shortcut-card": "服务中心",
     "task-progress-card": "任务进度",
     "image-promo-card": "活动推荐",
-    "rich-content-block": "自定义图文"
+    "rich-content-block": "自定义图文",
+    "promotion-bar": "运营引导条",
+    "dual-track-tags": "双赛道标签条"
   };
   return map[type] ?? "内容";
 }
@@ -2975,6 +3141,118 @@ function readErrorText(error: unknown, fallback: string): string {
   color: var(--cms-text-inverse);
 }
 
+.cms-login-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 22rpx;
+  align-items: center;
+  min-height: 132rpx;
+}
+
+.cms-login-card__avatar {
+  width: 92rpx;
+  height: 92rpx;
+  border-radius: 50%;
+  background: var(--cms-primary-soft);
+}
+
+.cms-login-card__avatar--text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cms-primary-strong);
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.cms-login-card__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.cms-login-card__title,
+.cms-login-card__subtitle {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.cms-login-card__title {
+  color: var(--cms-text-primary);
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.cms-login-card__subtitle {
+  color: var(--cms-text-secondary);
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.cms-login-card__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 150rpx;
+  min-height: 70rpx;
+  padding: 0 26rpx;
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-gradient-cta);
+  color: var(--cms-text-inverse);
+  font-size: 25rpx;
+  font-weight: 900;
+  box-shadow: 0 16rpx 32rpx rgba(31, 77, 122, 0.18);
+}
+
+.cms-link-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  min-height: 72rpx;
+  border-color: rgba(181, 139, 71, 0.2);
+  background: linear-gradient(135deg, rgba(181, 139, 71, 0.13), rgba(255, 255, 255, 0.84));
+  color: var(--cms-text-primary);
+}
+
+.cms-link-bar__left,
+.cms-link-bar__action {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  min-width: 0;
+}
+
+.cms-link-bar__icon {
+  color: var(--cms-secondary);
+  font-size: 28rpx;
+  line-height: 1;
+}
+
+.cms-link-bar__title {
+  overflow: hidden;
+  color: var(--cms-text-primary);
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-link-bar__action {
+  flex: 0 0 auto;
+  color: var(--cms-text-primary);
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.cms-link-bar__arrow {
+  font-size: 34rpx;
+  line-height: 1;
+}
+
 .cms-entry-grid {
   display: grid;
   gap: 14rpx;
@@ -3078,6 +3356,13 @@ function readErrorText(error: unknown, fallback: string): string {
   height: 78rpx;
 }
 
+.cms-entry-tile__icon.is-xlarge {
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 28rpx;
+  font-size: 42rpx;
+}
+
 .cms-entry-tile__title {
   max-width: 100%;
   overflow: hidden;
@@ -3096,6 +3381,58 @@ function readErrorText(error: unknown, fallback: string): string {
   font-size: 20rpx;
   line-height: 1.25;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-track-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.cms-track-tags__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14rpx;
+  align-items: center;
+}
+
+.cms-track-tags__title {
+  color: var(--cms-text-primary);
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.cms-track-tags__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.cms-track-tags__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56rpx;
+  padding: 0 24rpx;
+  border-radius: var(--cms-radius-full);
+  background: rgba(181, 139, 71, 0.12);
+  color: var(--cms-text-primary);
+  font-size: 24rpx;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.cms-track-tags__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4rpx;
+  color: var(--cms-text-primary);
+  font-size: 24rpx;
+  font-weight: 800;
   white-space: nowrap;
 }
 

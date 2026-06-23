@@ -128,6 +128,16 @@ export const ENABLED_COMPONENT_PRESETS = [
     height: 420,
     fullBleed: false
   }),
+  preset("login-card", "登录欢迎卡", "首页运营", "微信头像昵称登录引导，登录后展示头像和昵称", {
+    logoUrl: "",
+    title: "欢迎来到观潮会集",
+    subtitle: "欢迎光临，请登录成为会员，查看会议排期与报名权益",
+    buttonText: "立即登录",
+    loggedInTitle: "",
+    loggedInSubtitle: "可查看会议排期、报名权益和会员资料。",
+    loggedInButtonText: "查看权益",
+    actionTargetType: "member"
+  }),
   preset("quick-icon-grid", "图标入口宫格", "首页运营", "2 到 4 列快捷入口，支持图标、动态图标和跳转", {
     title: "快捷入口",
     showTitle: true,
@@ -219,6 +229,8 @@ export const ENABLED_COMPONENT_PRESETS = [
     showLocation: true,
     showRegistrationCount: true,
     detailButtonText: "查看详情",
+    showAppointmentButton: true,
+    appointmentButtonText: "提前预约",
     cardImageMode: "scaleToFill",
     cardImageLayout: "left",
     cardRadius: 14
@@ -235,7 +247,24 @@ export const ENABLED_COMPONENT_PRESETS = [
   preset("registration-button", "报名按钮", "报名", "普通报名入口", { text: "立即报名" }),
   preset("floating-registration-button", "悬浮报名按钮", "报名", "页面底部固定报名入口", { text: "立即报名" }),
   preset("coupon-card", "优惠券领取卡片", "营销", "展示优惠券信息", { title: "优惠券", description: "领取后报名可用", buttonText: "立即领取", couponCampaignId: "", claimCode: "" }),
-  preset("promotion-bar", "满减活动提示条", "营销", "展示满减活动", { text: "满减活动进行中" }),
+  preset("promotion-bar", "运营引导条", "营销", "一行展示重点主题、右侧按钮和跳转", {
+    iconText: "▰",
+    title: "五大增量生态 × 五大垂类赛道",
+    buttonText: "查看详情",
+    showArrow: true,
+    actionTargetType: "page",
+    targetPageKey: "conference-list"
+  }),
+  preset("dual-track-tags", "双赛道标签条", "营销", "双行标签展示，可分别配置右侧跳转按钮", {
+    primaryTitle: "五大增量生态",
+    primaryItems: ["自然", "银发", "赛事", "研学", "情绪"],
+    primaryButtonText: "",
+    actionTargetType: "none",
+    secondaryTitle: "五大垂类赛道",
+    secondaryItems: ["学前", "科创", "舞蹈", "美术", "自主学习"],
+    secondaryButtonText: "",
+    secondaryActionTargetType: "none"
+  }),
   preset("rich-text", "图文富文本", "内容", "结构化图文内容，不需要填写 HTML 代码", {
     html: "",
     blocks: [
@@ -379,6 +408,8 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
           limit: 6,
           cardSize: "large",
           detailButtonText: "查看详情",
+          showAppointmentButton: true,
+          appointmentButtonText: "提前预约",
           showSummary: true,
           showTime: true,
           showLocation: true
@@ -401,6 +432,8 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
           showLocation: true,
           showRegistrationCount: true,
           detailButtonText: "查看详情",
+          showAppointmentButton: true,
+          appointmentButtonText: "提前预约",
           cardImageMode: "scaleToFill",
           cardImageLayout: "left"
         }
@@ -918,6 +951,172 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       { id: "online-tabs", type: "conference-tabs", enabled: true, config: { title: "直播场次", tabs: ["全部", "主会场", "训练营", "回放"], limit: 5, showSummary: true, showTime: true, showLocation: false, detailButtonText: "查看场次", cardImageMode: "scaleToFill" } },
       { id: "online-download", type: "download-list", enabled: true, config: { title: "学习资料", items: ["直播议程", "课件资料", "报名须知", "回放说明"] } },
       { id: "online-faq", type: "faq", enabled: true, config: { title: "线上参会问题", items: ["如何观看直播｜报名成功后查看我的报名记录", "是否提供回放｜以主办方后续发布为准", "资料在哪里领取｜请关注页面资料下载区"] } }
+    ]
+  },
+  {
+    pageKey: "template:guanchao-home",
+    title: "观潮会集首页模板",
+    description: "参考品牌首页样式，包含主视觉、登录卡、快捷入口、赛道引导和会议推荐。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "tech-black-gold",
+      backgroundColor: "#f8f4ec",
+      cardBackground: "#fffdf8",
+      primaryColor: "#08172c",
+      secondaryColor: "#a98443",
+      accentColor: "#c29a57",
+      templateMeta: {
+        category: "观潮会集",
+        summary: "用于首页首屏运营、登录转化和会议报名导流。"
+      },
+      pageMeta: {
+        pageTitle: "观潮会集",
+        shareTitle: "欢迎来到观潮会集"
+      }
+    },
+    components: [
+      { id: "guanchao-home-hero", type: "hero-banner", enabled: true, config: { title: "观潮会集", subtitle: "潮起谋局  潮落定势", description: "行业会议与创始人社群平台", imageUrl: "", buttonText: "", secondaryButtonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 500, radius: 0 } },
+      { id: "guanchao-home-login", type: "login-card", enabled: true, config: { title: "欢迎光临，请登录成为会员", subtitle: "查看会议排期与报名权益", buttonText: "立即登录", loggedInSubtitle: "可查看会议排期、报名权益和优惠券。", loggedInButtonText: "我的优惠券", actionTargetType: "page", targetPageKey: "member-center", contentBackgroundStyle: "card" } },
+      { id: "guanchao-home-grid", type: "quick-icon-grid", enabled: true, config: { title: "", showTitle: false, columns: 3, iconSize: "xlarge", cardStyle: "outline", cardRadius: 24, cardGap: 18, showSubtitle: true, contentBackgroundStyle: "transparent", items: [entry("年度排期", "SCHEDULE", "calendar", "page", { targetPageKey: "conference-list" }), entry("会议报名", "REGISTRATION", "registration", "page", { targetPageKey: "conference-list" }), entry("赛道生态", "ECOSYSTEM", "team", "page", { targetPageKey: "custom:ecosystem" })] } },
+      { id: "guanchao-home-track-bar", type: "promotion-bar", enabled: true, config: { iconText: "▰", title: "五大增量生态 × 五大垂类赛道", buttonText: "查看详情", showArrow: true, actionTargetType: "page", targetPageKey: "custom:ecosystem", backgroundColor: "#efe7d8" } },
+      { id: "guanchao-home-stats", type: "stats-grid", enabled: true, config: { title: "观潮会集", items: ["1500+ 头部创始人", "20+ 覆盖城市业态", "5 大核心会议模型"] } },
+      { id: "guanchao-home-tracks", type: "dual-track-tags", enabled: true, config: { primaryTitle: "五大增量生态", primaryItems: ["自然", "银发", "赛事", "研学", "情绪"], primaryButtonText: "", secondaryTitle: "五大垂类赛道", secondaryItems: ["学前", "科创", "舞蹈", "美术", "自主学习"], secondaryButtonText: "", contentBackgroundStyle: "transparent" } },
+      { id: "guanchao-home-conferences", type: "conference-list", enabled: true, config: { title: "可报名会议", limit: 4, showSummary: true, showTime: true, showLocation: true, showRegistrationCount: true, detailButtonText: "立即报名", showAppointmentButton: true, appointmentButtonText: "提前预约", cardImageLayout: "left", cardImageMode: "scaleToFill", cardRadius: 18 } }
+    ]
+  },
+  {
+    pageKey: "template:guanchao-schedule",
+    title: "年度排期模板",
+    description: "参考年度排期页，支持月份、分类和即将开始会议的提前预约。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "tech-black-gold",
+      backgroundColor: "#f8f4ec",
+      cardBackground: "#fffdf8",
+      primaryColor: "#08172c",
+      secondaryColor: "#a98443",
+      accentColor: "#c29a57",
+      templateMeta: {
+        category: "观潮会集",
+        summary: "用于排期页或会议列表页，突出时间与分类筛选。"
+      },
+      pageMeta: {
+        pageTitle: "年度排期",
+        shareTitle: "观潮会集全年会议安排"
+      }
+    },
+    components: [
+      { id: "schedule-hero", type: "hero-banner", enabled: true, config: { title: "年度排期", subtitle: "观潮会集", description: "查看观潮会集全年会议安排", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
+      { id: "schedule-months", type: "tag-filter", enabled: true, config: { title: "", items: ["3 月｜3｜tag", "4 月｜4｜tag", "5 月｜5｜tag", "6 月｜6｜tag", "7 月｜7｜tag", "8 月｜8｜tag"], contentBackgroundStyle: "card" } },
+      { id: "schedule-categories", type: "conference-tabs", enabled: true, config: { title: "", tabs: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showSummary: true, showTime: true, showLocation: true, showRegistrationCount: true, detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", cardImageLayout: "left", cardImageMode: "scaleToFill" } }
+    ]
+  },
+  {
+    pageKey: "template:guanchao-registration",
+    title: "会议报名列表模板",
+    description: "参考会议报名页，突出推荐、即将开始、报名人数和按钮转化。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "tech-black-gold",
+      backgroundColor: "#f8f4ec",
+      cardBackground: "#fffdf8",
+      primaryColor: "#08172c",
+      secondaryColor: "#a98443",
+      accentColor: "#c29a57",
+      templateMeta: {
+        category: "观潮会集",
+        summary: "用于会议报名页，兼容提前预约和立即报名。"
+      },
+      pageMeta: {
+        pageTitle: "会议报名",
+        shareTitle: "选择感兴趣的会议，快速报名参与"
+      }
+    },
+    components: [
+      { id: "registration-hero", type: "hero-banner", enabled: true, config: { title: "会议报名", subtitle: "观潮会集", description: "选择感兴趣的会议，快速报名参与", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
+      { id: "registration-tabs", type: "conference-tabs", enabled: true, config: { title: "", tabs: ["全部", "推荐", "即将开始", "闭门会", "论坛", "沙龙", "参访"], limit: 8, showSummary: true, showTime: true, showLocation: true, showRegistrationCount: true, detailButtonText: "立即报名", showAppointmentButton: true, appointmentButtonText: "提前预约", cardImageLayout: "left", cardImageMode: "scaleToFill", cardRadius: 18 } }
+    ]
+  },
+  {
+    pageKey: "template:guanchao-member",
+    title: "会员中心模板",
+    description: "参考会员中心页，包含用户资料、数据入口、权益卡和我的优惠券入口。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "business-blue",
+      backgroundColor: "#f7f3ea",
+      cardBackground: "#ffffff",
+      primaryColor: "#071426",
+      secondaryColor: "#a98443",
+      accentColor: "#d2aa64",
+      templateMeta: {
+        category: "会员中心",
+        summary: "用于我的/会员中心页面，承接我的优惠券、报名和订单入口。"
+      },
+      pageMeta: {
+        pageTitle: "我的",
+        shareTitle: "观潮会集会员中心"
+      }
+    },
+    components: [
+      { id: "member-profile", type: "user-profile-card", enabled: true, config: { title: "我的资料", description: "登录后查看头像、昵称、手机号和会员状态。", target: "member" } },
+      { id: "member-stats", type: "stats-grid", enabled: true, config: { title: "", items: ["我的报名", "我的订单", "待参会", "优惠券"] } },
+      { id: "member-benefits", type: "membership-benefits", enabled: true, config: { title: "观潮会集会员权益", items: ["优先获取会议排期", "会员专享报名通道", "专属活动与服务特权"], buttonText: "查看权益" } },
+      { id: "member-orders", type: "my-order-list", enabled: true, config: { title: "常用入口", orderType: "both" } }
+    ]
+  },
+  {
+    pageKey: "template:guanchao-mall",
+    title: "会议周边商城模板",
+    description: "参考商城首页，包含品牌主视觉、分类标签和商品宫格。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "tech-black-gold",
+      backgroundColor: "#f8f4ec",
+      cardBackground: "#fffdf8",
+      primaryColor: "#08172c",
+      secondaryColor: "#a98443",
+      accentColor: "#c29a57",
+      templateMeta: {
+        category: "商城",
+        summary: "用于会议周边商城首页，商品数据由商城模块提供。"
+      },
+      pageMeta: {
+        pageTitle: "会议周边商城",
+        shareTitle: "精选会议周边与品牌物料"
+      }
+    },
+    components: [
+      { id: "mall-hero", type: "hero-banner", enabled: true, config: { title: "会议周边商城", subtitle: "观潮会集", description: "精选会议周边与品牌物料", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
+      { id: "mall-tabs", type: "tag-filter", enabled: true, config: { title: "", items: ["全部｜all｜category", "文创周边｜creative｜category", "办公用品｜office｜category", "伴手礼｜gift｜category", "服饰｜wear｜category", "限量礼盒｜limited｜category"], contentBackgroundStyle: "transparent" } },
+      { id: "mall-grid", type: "mall-product-grid", enabled: true, config: { title: "", limit: 8, buttonText: "去商城", contentBackgroundStyle: "transparent" } }
+    ]
+  },
+  {
+    pageKey: "template:guanchao-cart",
+    title: "购物车结算模板",
+    description: "参考购物车页，突出商品、商品优惠券和结算动线。",
+    pageType: "SYSTEM_TEMPLATE",
+    themeJson: {
+      visualPreset: "business-blue",
+      backgroundColor: "#f8f4ec",
+      cardBackground: "#fffdf8",
+      primaryColor: "#071426",
+      secondaryColor: "#a98443",
+      accentColor: "#c29a57",
+      templateMeta: {
+        category: "商城",
+        summary: "用于购物车/结算页，实际商品、优惠券和金额由业务页面读取。"
+      },
+      pageMeta: {
+        pageTitle: "购物车",
+        shareTitle: "观潮会集购物车"
+      }
+    },
+    components: [
+      { id: "cart-title", type: "title", enabled: true, config: { text: "购物车", fontSize: 36, textAlign: "center" } },
+      { id: "cart-coupon-notice", type: "notice", enabled: true, config: { text: "商品优惠券可在购物车中选择，结算金额以后端重新计算为准。" } },
+      { id: "cart-recommend", type: "mall-product-grid", enabled: true, config: { title: "为你推荐", limit: 4, buttonText: "加入购物车" } }
     ]
   }
 ] as const;

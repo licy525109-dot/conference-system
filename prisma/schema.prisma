@@ -50,6 +50,12 @@ enum CouponType {
   PERCENT
 }
 
+enum CouponScope {
+  CONFERENCE
+  MALL
+  BOTH
+}
+
 enum CouponRedemptionStatus {
   PENDING
   USED
@@ -182,6 +188,8 @@ model User {
   orders                    Order[]
   registrations             Registration[]
   couponRedemptions         CouponRedemption[]
+  mallCouponRedemptions     MallCouponRedemption[]
+  conferenceAppointments    ConferenceAppointment[]
   memberships               UserMembership[]
   cartItems                 CartItem[]
   registrationCartItems     RegistrationCartItem[]
@@ -359,6 +367,7 @@ model Conference {
   aiQuestionLogs           AiQuestionLog[]
   aiSuggestions            AiSuggestion[]
   couponCampaigns          CouponCampaign[]
+  appointments             ConferenceAppointment[]
   customerGroupTasks       CustomerGroupMessageTask[]
   wecomCustomerGroups      WecomCustomerGroup[]
   checkinStaffAssignments  CheckinStaffAssignment[]
@@ -1036,20 +1045,25 @@ model MallOrder {
   receiverAddress    String?
   fulfillmentType    String          @default("SHIPMENT")
   remark             String?
+  couponId           String?
+  couponCode         String?
   paidAt             DateTime?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
   user               User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  coupon             Coupon?         @relation(fields: [couponId], references: [id], onDelete: SetNull)
   items              MallOrderItem[]
   shipments          MallShipment[]
   afterSales         MallAfterSale[]
   inventoryLogs      MallInventoryLog[]
   payments           MallPayment[]
   refunds            MallRefund[]
+  couponRedemptions  MallCouponRedemption[]
 
   @@index([userId])
   @@index([status])
   @@index([fulfillmentType])
+  @@index([couponId])
   @@index([createdAt])
   @@map("mall_orders")
 }
@@ -1335,6 +1349,7 @@ model Coupon {
   code                   String                 @unique
   name                   String
   type                   CouponType
+  scope                  CouponScope            @default(CONFERENCE)
   discountAmountCent     Int?
   discountPercent        Int?
   maxDiscountCent        Int?
@@ -1353,10 +1368,13 @@ model Coupon {
   conference             Conference?            @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
   discounts              OrderDiscount[]
   redemptions            CouponRedemption[]
+  mallOrders             MallOrder[]
+  mallRedemptions        MallCouponRedemption[]
   campaigns              CouponCampaignCoupon[]
   claims                 CouponClaim[]
 
   @@index([enabled])
+  @@index([scope])
   @@index([conferenceId])
   @@index([createdAt])
   @@map("coupons")
@@ -1380,6 +1398,26 @@ model CouponRedemption {
   @@index([orderId])
   @@index([status])
   @@map("coupon_redemptions")
+}
+
+model MallCouponRedemption {
+  id          String                 @id @default(cuid())
+  couponId    String
+  userId      String?
+  mallOrderId String
+  status      CouponRedemptionStatus @default(PENDING)
+  usedAt      DateTime?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  coupon      Coupon                 @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user        User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  mallOrder   MallOrder              @relation(fields: [mallOrderId], references: [id], onDelete: Cascade)
+
+  @@index([couponId])
+  @@index([userId])
+  @@index([mallOrderId])
+  @@index([status])
+  @@map("mall_coupon_redemptions")
 }
 
 model PromotionRule {
@@ -1975,6 +2013,26 @@ model CouponClaim {
   @@index([userId])
   @@index([status])
   @@map("coupon_claims")
+}
+
+model ConferenceAppointment {
+  id           String     @id @default(cuid())
+  conferenceId String
+  userId       String
+  status       String     @default("RESERVED")
+  source       String     @default("USER")
+  note         String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  conference   Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conferenceId, userId])
+  @@index([conferenceId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("conference_appointments")
 }
 
 model CheckinLog {

@@ -1102,6 +1102,7 @@ interface BusinessPreviewContextModel {
 const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
   hero: { label: "已支持", status: "supported", description: "小程序/H5 已完整支持图片横幅展示" },
   "hero-banner": { label: "已支持", status: "supported", description: "小程序/H5 已支持首页主视觉、双按钮、背景图和统一跳转配置" },
+  "login-card": { label: "已支持", status: "supported", description: "小程序/H5 已支持微信头像昵称登录引导、登录后头像昵称展示和跳转配置" },
   "quick-icon-grid": { label: "已支持", status: "supported", description: "小程序/H5 已支持 2 到 4 列图标入口、动态图标图片和统一跳转配置" },
   "member-promo-banner": { label: "已支持", status: "supported", description: "小程序/H5 已支持会员、优惠券或活动横幅和统一跳转配置" },
   "event-card-carousel": { label: "已支持", status: "supported", description: "小程序/H5 已支持会议卡片横向滑动和详情跳转" },
@@ -1113,13 +1114,14 @@ const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
   "conference-tabs": { label: "已支持", status: "supported", description: "小程序/H5 支持分类标签筛选和会议卡片展示" },
   "registration-button": { label: "已支持", status: "supported", description: "小程序/H5 支持普通报名入口；会议详情页会隐藏以避免重复按钮" },
   "floating-registration-button": { label: "已支持", status: "supported", description: "小程序/H5 支持悬浮报名入口；会议详情页会隐藏以避免重复按钮" },
-  "promotion-bar": { label: "已支持", status: "supported", description: "小程序/H5 支持提示条展示" },
+  "promotion-bar": { label: "已支持", status: "supported", description: "小程序/H5 支持图标、标题、按钮和跳转的一行运营引导条" },
   "rich-text": { label: "已支持", status: "supported", description: "小程序/H5 已支持富文本片段展示" },
   "safe-html": { label: "已支持", status: "supported", description: "小程序/H5 已支持安全图文片段展示" },
   "image-grid": { label: "已支持", status: "supported", description: "小程序/H5 已支持图片宫格展示" },
   video: { label: "已支持", status: "supported", description: "小程序/H5 支持视频播放、封面和禁用自动播放" },
   notice: { label: "已支持", status: "supported", description: "小程序/H5 已支持公告提示展示" },
   "stats-grid": { label: "已支持", status: "supported", description: "小程序/H5 已支持数字亮点展示" },
+  "dual-track-tags": { label: "已支持", status: "supported", description: "小程序/H5 支持双行标签、右侧按钮和统一跳转配置" },
   "ticket-price-list": { label: "已支持", status: "supported", description: "小程序/H5 已支持票种价格文案展示" },
   "process-steps": { label: "已支持", status: "supported", description: "小程序/H5 已支持流程步骤展示" },
   "text-image": { label: "已支持", status: "supported", description: "小程序/H5 已支持图文介绍展示" },
@@ -2605,6 +2607,8 @@ function fieldsFor(type: string): ConfigField[] {
     { key: "showSummary", label: "显示会议简介", kind: "switch", fallback: "true" },
     { key: "summaryFallback", label: "无简介时默认文案", placeholder: "点击查看会议详情和报名信息。" },
     { key: "detailButtonText", label: "详情按钮文案", placeholder: "查看详情" },
+    { key: "showAppointmentButton", label: "未开放报名时显示提前预约", kind: "switch", fallback: "true" },
+    { key: "appointmentButtonText", label: "提前预约按钮文案", placeholder: "提前预约" },
     { key: "showTime", label: "显示会议时间", kind: "switch", fallback: "true" },
     { key: "showLocation", label: "显示会议地点", kind: "switch", fallback: "true" },
     { key: "showRegistrationCount", label: "显示报名人数", kind: "switch", fallback: "false" },
@@ -2681,6 +2685,9 @@ function fieldsFor(type: string): ConfigField[] {
     { key: "phone", label: "联系电话", placeholder: "用于电话动作" },
     { key: "copyText", label: "复制内容", kind: "textarea", rows: 2, placeholder: "用于复制文本动作" }
   ];
+  const loginActionTargetFields: ConfigField[] = actionTargetFields.map((field) =>
+    field.key === "actionTargetType" ? { ...field, fallback: "member", label: "登录后点击目标" } : field
+  );
   const secondaryActionTargetFields: ConfigField[] = [
     { key: "secondaryActionTargetType", label: "次按钮目标", kind: "select", fallback: "page", options: actionTargetOptions() },
     { key: "secondaryTargetPageKey", label: "次按钮目标页面", kind: "select", options: pageTargetOptions() },
@@ -2771,11 +2778,22 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "height", label: "高度", kind: "range", fallback: 420, min: 260, max: 720 },
       { key: "radius", label: "圆角", kind: "range", fallback: 28, min: 0, max: 48 }
     ], 26),
+    "login-card": withTextStyle([
+      { key: "logoUrl", label: "未登录 Logo / 头像图", placeholder: "建议 96×96 PNG/SVG/GIF，可从素材库选择" },
+      { key: "title", label: "未登录标题", placeholder: "欢迎来到观潮会集" },
+      { key: "subtitle", label: "未登录说明", kind: "textarea", rows: 2, placeholder: "欢迎光临，请登录成为会员，查看会议排期与报名权益" },
+      { key: "buttonText", label: "登录按钮文案", placeholder: "立即登录" },
+      { key: "loggedInTitle", label: "已登录标题", placeholder: "留空时自动显示欢迎回来 + 微信昵称" },
+      { key: "loggedInSubtitle", label: "已登录说明", kind: "textarea", rows: 2, placeholder: "可查看会议排期、报名权益和会员资料。" },
+      { key: "loggedInButtonText", label: "已登录按钮文案", placeholder: "查看权益" },
+      { key: "backgroundColor", label: "卡片背景色", kind: "color", fallback: "" },
+      ...loginActionTargetFields
+    ], 26),
     "quick-icon-grid": withTextStyle([
       ...commonTitle,
       { key: "columns", label: "列数", kind: "select", fallback: "3", options: [{ label: "2 列", value: "2" }, { label: "3 列", value: "3" }, { label: "4 列", value: "4" }] },
       { key: "layoutMode", label: "布局方式", kind: "select", fallback: "grid", options: [{ label: "宫格", value: "grid" }, { label: "横向滑动", value: "scroll" }] },
-      { key: "iconSize", label: "图标尺寸", kind: "select", fallback: "large", options: [{ label: "大图标", value: "large" }, { label: "小图标", value: "small" }] },
+      { key: "iconSize", label: "图标尺寸", kind: "select", fallback: "large", options: [{ label: "超大图标", value: "xlarge" }, { label: "大图标", value: "large" }, { label: "小图标", value: "small" }] },
       { key: "cardStyle", label: "卡片样式", kind: "select", fallback: "soft", options: [{ label: "柔和卡片", value: "soft" }, { label: "描边卡片", value: "outline" }, { label: "无边框", value: "plain" }] },
       { key: "cardRadius", label: "卡片圆角", kind: "range", fallback: 28, min: 0, max: 48 },
       { key: "cardGap", label: "入口间距", kind: "range", fallback: 14, min: 4, max: 40 },
@@ -2806,7 +2824,7 @@ function fieldsFor(type: string): ConfigField[] {
       ...commonTitle,
       { key: "columns", label: "列数", kind: "select", fallback: "2", options: [{ label: "2 列", value: "2" }, { label: "3 列", value: "3" }, { label: "4 列", value: "4" }] },
       { key: "layoutMode", label: "布局方式", kind: "select", fallback: "grid", options: [{ label: "宫格", value: "grid" }, { label: "横向滑动", value: "scroll" }] },
-      { key: "iconSize", label: "图标尺寸", kind: "select", fallback: "small", options: [{ label: "大图标", value: "large" }, { label: "小图标", value: "small" }] },
+      { key: "iconSize", label: "图标尺寸", kind: "select", fallback: "small", options: [{ label: "超大图标", value: "xlarge" }, { label: "大图标", value: "large" }, { label: "小图标", value: "small" }] },
       { key: "cardStyle", label: "卡片样式", kind: "select", fallback: "soft", options: [{ label: "柔和卡片", value: "soft" }, { label: "描边卡片", value: "outline" }, { label: "无边框", value: "plain" }] },
       { key: "cardRadius", label: "卡片圆角", kind: "range", fallback: 24, min: 0, max: 48 },
       { key: "cardGap", label: "入口间距", kind: "range", fallback: 14, min: 4, max: 40 },
@@ -2853,7 +2871,15 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "couponCampaignId", label: "关联券活动", kind: "select", options: couponCampaignSelectOptions() },
       { key: "claimCode", label: "领取码兜底", placeholder: "优先使用券活动选择器；仅兼容历史页面" }
     ], 26),
-    "promotion-bar": withTextStyle([{ key: "text", label: "提示文字", placeholder: "满减活动进行中" }], 28),
+    "promotion-bar": withTextStyle([
+      { key: "iconText", label: "左侧图标文字", placeholder: "可填符号或短字，如：▰" },
+      { key: "title", label: "引导标题", placeholder: "五大增量生态 × 五大垂类赛道" },
+      { key: "text", label: "兼容旧提示文字", placeholder: "旧配置兜底，可留空" },
+      { key: "buttonText", label: "右侧按钮文案", placeholder: "查看详情" },
+      { key: "showArrow", label: "显示右箭头", kind: "switch", fallback: "true" },
+      { key: "backgroundColor", label: "背景色", kind: "color", fallback: "" },
+      ...actionTargetFields
+    ], 28),
     "rich-text": withTextStyle([{ key: "blocks", label: "图文内容块", kind: "rich-blocks" }, ...richContentLayoutFields], 28),
     "safe-html": withTextStyle([{ key: "blocks", label: "图文内容块", kind: "rich-blocks" }, ...richContentLayoutFields], 28),
     "image-grid": [{ key: "images", label: "图片宫格", kind: "list", placeholder: "每行一个图片地址", rows: 5 }, ...layoutFields],
@@ -2877,6 +2903,17 @@ function fieldsFor(type: string): ConfigField[] {
     "sponsor-wall": withTextStyle([...commonTitle, { key: "sponsors", label: "赞助商", kind: "list", placeholder: "每行一个赞助商：名称｜Logo URL｜链接", rows: 4 }], 26),
     faq: withTextStyle([...commonTitle, { key: "items", label: "常见问题", kind: "list", placeholder: "每行一个问题和答案：问题｜答案", rows: 5 }], 26),
     "stats-grid": withTextStyle([...commonTitle, { key: "items", label: "数字亮点", kind: "list", placeholder: "例如：500+ 参会席位", rows: 4 }], 26),
+    "dual-track-tags": withTextStyle([
+      { key: "primaryTitle", label: "第一行标题", placeholder: "五大增量生态" },
+      { key: "primaryItems", label: "第一行标签", kind: "list", rows: 5, placeholder: "每行一个标签，例如：自然" },
+      { key: "primaryButtonText", label: "第一行按钮", placeholder: "查看" },
+      ...actionTargetFields,
+      { key: "secondaryTitle", label: "第二行标题", placeholder: "五大垂类赛道" },
+      { key: "secondaryItems", label: "第二行标签", kind: "list", rows: 5, placeholder: "每行一个标签，例如：学前" },
+      { key: "secondaryButtonText", label: "第二行按钮", placeholder: "查看" },
+      ...secondaryActionTargetFields,
+      { key: "backgroundColor", label: "模块背景色", kind: "color", fallback: "" }
+    ], 26),
     "ticket-price-list": withTextStyle([...commonTitle, { key: "items", label: "票种价格", kind: "list", placeholder: "例如：早鸟票 ¥299", rows: 4 }], 26),
     "process-steps": withTextStyle([...commonTitle, { key: "items", label: "流程步骤", kind: "list", placeholder: "每行一个步骤", rows: 4 }], 26),
     "text-image": withTextStyle([
@@ -2960,6 +2997,7 @@ function productCategorySelectOptions(): Array<{ label: string; value: string }>
 function actionTargetOptions(): Array<{ label: string; value: string }> {
   return [
     { label: "不跳转", value: "none" },
+    { label: "打开登录弹窗", value: "login" },
     { label: "默认报名动作", value: "register" },
     { label: "打开页面", value: "page" },
     { label: "打开会议", value: "conference" },
@@ -3044,7 +3082,7 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
 
   if (type === "conference-list" || type === "conference-tabs") {
     return compactGroups([
-      { key: "content", title: "基础内容", fields: fieldsByKeys(fields, ["title", "limit", "tabs", "summaryFallback", "detailButtonText"]) },
+      { key: "content", title: "基础内容", fields: fieldsByKeys(fields, ["title", "limit", "tabs", "summaryFallback", "detailButtonText", "showAppointmentButton", "appointmentButtonText"]) },
       {
         key: "display",
         title: "显示控制",
@@ -3535,7 +3573,7 @@ function isStandardEntryConfigItem(value: unknown): value is EntryConfigItem {
 }
 
 function isImageField(field: ConfigField): boolean {
-  return ["imageUrl", "images", "coverUrl", "iconUrl", "backgroundImageUrl"].includes(field.key);
+  return ["imageUrl", "images", "coverUrl", "iconUrl", "logoUrl", "backgroundImageUrl"].includes(field.key);
 }
 
 function isFontField(field: ConfigField): boolean {
@@ -3571,6 +3609,7 @@ function materialSpecKeyForField(componentType: string, field: ConfigField): Mat
   if (!isImageField(field)) return undefined;
   if (componentType === "hero") return "heroImage";
   if (componentType === "hero-banner") return "heroImage";
+  if (componentType === "login-card" && field.key === "logoUrl") return "topTitleLogo";
   if (componentType === "quick-icon-grid" && field.key === "iconUrl") return "tabbarIcon";
   if (componentType === "member-promo-banner") return "heroImage";
   if (componentType === "task-progress-card" && field.key === "iconUrl") return "tabbarIcon";
@@ -3949,6 +3988,17 @@ const ComponentPreview = defineComponent({
           ])
         ]);
       }
+      if (type === "login-card") {
+        const logo = value("logoUrl");
+        return h("div", { class: previewSectionClass(props.item, "preview-login-card"), style: previewSectionStyle(props.item) }, [
+          logo ? h("img", { class: "preview-login-card__avatar", src: logo, alt: "" }) : h("span", { class: "preview-login-card__avatar" }, "观"),
+          h("div", { class: "preview-login-card__copy" }, [
+            h("strong", { style: titleStyle() }, value("title", "欢迎来到观潮会集")),
+            h("small", { style: textStyle() }, value("subtitle", "欢迎光临，请登录成为会员，查看会议排期与报名权益"))
+          ]),
+          h("button", value("buttonText", "立即登录"))
+        ]);
+      }
       if (type === "quick-icon-grid" || type === "service-shortcut-card") {
         return h("div", { class: previewSectionClass(props.item, "preview-entry-grid"), style: previewSectionStyle(props.item) }, [
           h("div", { class: "preview-module-head", style: previewModuleHeadStyle(props.item) }, [
@@ -4189,6 +4239,21 @@ const ComponentPreview = defineComponent({
           h("div", { class: "preview-stats" }, list("items").map((item) => h("span", { style: textStyle() }, item)))
         ]);
       }
+      if (type === "dual-track-tags") {
+        const primary = list("primaryItems");
+        const secondary = list("secondaryItems");
+        const rows = [
+          { title: value("primaryTitle", "五大增量生态"), items: primary.length > 0 ? primary : ["自然", "银发", "赛事", "研学", "情绪"], button: value("primaryButtonText") },
+          { title: value("secondaryTitle", "五大垂类赛道"), items: secondary.length > 0 ? secondary : ["学前", "科创", "舞蹈", "美术", "自主学习"], button: value("secondaryButtonText") }
+        ];
+        return h("div", { class: previewSectionClass(props.item, "preview-track-tags"), style: previewSectionStyle(props.item) }, rows.map((row) =>
+          h("div", { class: "preview-track-tags__row" }, [
+            h("strong", { style: titleStyle() }, row.title),
+            h("div", { class: "preview-track-tags__chips" }, row.items.map((item) => h("span", { style: textStyle() }, item))),
+            row.button ? h("button", [row.button, h("span", "›")]) : null
+          ])
+        ));
+      }
       if (type === "ticket-price-list" || type === "process-steps" || type === "download-list" || type === "testimonial-list" || type === "tag-filter") {
         return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", props.name)),
@@ -4207,8 +4272,16 @@ const ComponentPreview = defineComponent({
         }
         return h("div", { class: "preview-image-grid" }, list("images").map((item) => h("img", { src: item, alt: "" })));
       }
-      if (type === "notice" || type === "promotion-bar") {
+      if (type === "notice") {
         return h("div", { class: "preview-notice", style: textStyle() }, value("text", "报名开放中"));
+      }
+      if (type === "promotion-bar") {
+        const background = value("backgroundColor");
+        return h("div", { class: "preview-notice preview-link-bar", style: { ...textStyle(), ...(background ? { background } : {}) } }, [
+          h("span", value("iconText", "▰")),
+          h("strong", { style: titleStyle() }, value("title") || value("text", "五大增量生态 × 五大垂类赛道")),
+          h("small", [value("buttonText", "查看详情"), booleanConfig(props.item, "showArrow", true) ? " ›" : ""])
+        ]);
       }
       if (type === "rich-text" || type === "safe-html") {
         return richContentPreview();
@@ -4445,7 +4518,7 @@ function previewEntryTileStyle(component: EditableComponent, entry: EntryConfigI
 }
 
 function previewEntryIconStyle(component: EditableComponent) {
-  const size = component.config.iconSize === "small" ? 30 : 40;
+  const size = component.config.iconSize === "small" ? 30 : component.config.iconSize === "xlarge" ? 52 : 40;
   return {
     width: `${size}px`,
     height: `${size}px`
@@ -6180,6 +6253,103 @@ function looksLikePreviewImage(value: string): boolean {
   padding: 12px;
   color: #8a4b00;
   background: #fff7ed;
+}
+
+.preview-login-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.preview-login-card__avatar {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--preview-primary) 12%, #ffffff);
+  color: var(--preview-primary);
+  font-weight: 900;
+  object-fit: cover;
+}
+
+.preview-login-card__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-login-card button {
+  min-width: 76px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--preview-primary);
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.preview-link-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.preview-link-bar strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #172033;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-link-bar small {
+  flex: 0 0 auto;
+  color: #172033;
+  font-weight: 800;
+}
+
+.preview-track-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-track-tags__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.preview-track-tags__row strong {
+  white-space: nowrap;
+}
+
+.preview-track-tags__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.preview-track-tags__chips span {
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #f1ebe1;
+  white-space: nowrap;
+}
+
+.preview-track-tags button {
+  border: 0;
+  background: transparent;
+  color: #172033;
+  font-weight: 800;
 }
 
 .preview-credential-card {

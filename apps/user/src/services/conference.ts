@@ -10,7 +10,10 @@ export interface ConferenceListItem {
   location: string | null;
   startsAt: string;
   endsAt: string;
+  registrationStartsAt: string | null;
+  registrationEndsAt: string | null;
   registrationCount?: number;
+  appointmentCount?: number;
 }
 
 export interface RegistrationSku {
@@ -78,6 +81,13 @@ export function getConferenceDetail(id: string): Promise<ConferenceDetail> {
 
 export function getConferenceForm(id: string): Promise<ConferenceForm> {
   return request<ConferenceForm>(`/conferences/${encodeURIComponent(id)}/form`);
+}
+
+export async function reserveConferenceAppointment(id: string): Promise<{ id: string; conferenceId: string; status: string; reservedAt: string; registrationOpen: boolean; message: string }> {
+  return request(`/conferences/${encodeURIComponent(id)}/appointments`, {
+    method: "POST",
+    auth: true
+  });
 }
 
 export function normalizeOptions(options: Array<string | FormOption>): FormOption[] {

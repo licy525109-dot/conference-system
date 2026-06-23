@@ -33,9 +33,44 @@ export async function claimCoupon(claimCode: string) {
   return request<CouponClaimResult>("/coupons/claim", { method: "POST", data: { claimCode } });
 }
 
-export async function getMyCoupons() {
+export type CouponScope = "CONFERENCE" | "MALL" | "BOTH";
+
+export interface MyCouponItem {
+  id: string;
+  status: string;
+  statusText?: string;
+  usable?: boolean;
+  businessType?: CouponScope;
+  scopeText?: string;
+  usePath?: string;
+  claimedAt?: string;
+  usedAt?: string | null;
+  coupon: {
+    id: string;
+    code: string;
+    name: string;
+    type: "AMOUNT" | "PERCENT";
+    scope: CouponScope;
+    discountAmountCent: number | null;
+    discountPercent: number | null;
+    minAmountCent: number | null;
+    minQuantity?: number | null;
+    conferenceId?: string | null;
+    allowedSkuIds?: string[];
+    enabled?: boolean;
+    startAt?: string | null;
+    endAt: string | null;
+  };
+  campaign?: {
+    id: string;
+    name: string;
+  };
+}
+
+export async function getMyCoupons(params: { scope?: CouponScope } = {}) {
   await ensureLogin();
-  return request<{ items: Array<Record<string, unknown>> }>("/my/coupons");
+  const query = params.scope ? `?scope=${encodeURIComponent(params.scope)}` : "";
+  return request<{ items: MyCouponItem[] }>(`/my/coupons${query}`);
 }
 
 export interface AiAnswerSource {
@@ -164,6 +199,7 @@ export interface FinanceRefund {
 
 export async function createMallOrder(input: {
   items: Array<{ skuId: string; quantity: number }>;
+  couponCode?: string;
   receiverName?: string;
   receiverPhone?: string;
   receiverAddress?: string;
