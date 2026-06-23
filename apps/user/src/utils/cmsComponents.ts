@@ -8,6 +8,14 @@ export interface CmsComponentSupportDefinition {
 
 export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportDefinition> = {
   hero: { label: "主视觉横幅", status: "supported", description: "用户端完整支持图片横幅展示" },
+  "hero-banner": { label: "顶部主视觉 Banner", status: "supported", description: "用户端支持首页主视觉、双按钮、背景图和统一跳转配置" },
+  "quick-icon-grid": { label: "图标入口宫格", status: "supported", description: "用户端支持 2 到 4 列图标入口、动态图标图片和统一跳转配置" },
+  "member-promo-banner": { label: "会员 / 优惠横幅", status: "supported", description: "用户端支持会员、优惠券或活动横幅和统一跳转配置" },
+  "event-card-carousel": { label: "活动 / 会议横滑", status: "supported", description: "用户端支持会议卡片横向滑动和详情跳转" },
+  "service-shortcut-card": { label: "订单中心 / 快捷服务", status: "supported", description: "用户端支持订单、发票、售后、客服等快捷入口" },
+  "task-progress-card": { label: "积分 / 任务进度", status: "supported", description: "用户端支持任务进度展示和统一跳转配置" },
+  "image-promo-card": { label: "自定义图片卡片", status: "supported", description: "用户端支持图片推广卡片和统一跳转配置" },
+  "rich-content-block": { label: "自定义图文模块", status: "supported", description: "用户端支持标题、正文、图片和按钮展示" },
   "conference-list": { label: "会议卡片列表", status: "supported", description: "用户端完整支持会议列表展示和详情跳转" },
   "conference-tabs": { label: "会议分类切换", status: "supported", description: "用户端支持分类标签筛选和会议卡片展示" },
   "registration-button": { label: "报名按钮", status: "supported", description: "用户端支持普通报名入口，会议详情页会避免重复 CTA" },

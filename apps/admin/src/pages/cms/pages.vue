@@ -35,6 +35,7 @@
               <span class="page-item__copy">
                 <strong>{{ pageDisplayTitle(page) }}</strong>
                 <small>{{ pageTypeLabel(page.pageType) }}{{ pageBindingLabel(page) ? ` · ${pageBindingLabel(page)}` : "" }}</small>
+                <small>{{ pageConfigurableText(page) }} · 更新 {{ formatShortDate(page.updatedAt) }}</small>
               </span>
               <span class="page-item__status">{{ page.publishedVersionId ? "已发布" : "草稿中" }}</span>
             </button>
@@ -315,6 +316,12 @@
                 <div class="business-module-card__head">
                   <strong>{{ businessModuleLabel(module.key) }}</strong>
                   <el-switch v-model="module.visible" active-text="显示" inactive-text="隐藏" />
+                </div>
+                <div class="business-module-card__guide">
+                  <span><b>数据来源：</b>{{ businessModuleGuide(module.key).source }}</span>
+                  <span><b>配置入口：</b>{{ businessModuleGuide(module.key).entry }}</span>
+                  <span><b>当前状态：</b>{{ businessModuleStatus(module) }}</span>
+                  <span><b>用户端效果：</b>{{ businessModuleGuide(module.key).effect }}</span>
                 </div>
                 <el-input v-model="module.title" size="small" placeholder="模块标题" />
                 <el-input
@@ -653,6 +660,13 @@ interface BusinessDisplayModule {
   style: string;
 }
 
+interface BusinessModuleGuide {
+  source: string;
+  entry: string;
+  effect: string;
+  defaultStatus?: "configured" | "default" | "unconfigured";
+}
+
 interface BusinessDisplayForm {
   modules: BusinessDisplayModule[];
   assistantMode: string;
@@ -680,6 +694,14 @@ interface BusinessPreviewContextModel {
 
 const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
   hero: { label: "已支持", status: "supported", description: "小程序/H5 已完整支持图片横幅展示" },
+  "hero-banner": { label: "已支持", status: "supported", description: "小程序/H5 已支持首页主视觉、双按钮、背景图和统一跳转配置" },
+  "quick-icon-grid": { label: "已支持", status: "supported", description: "小程序/H5 已支持 2 到 4 列图标入口、动态图标图片和统一跳转配置" },
+  "member-promo-banner": { label: "已支持", status: "supported", description: "小程序/H5 已支持会员、优惠券或活动横幅和统一跳转配置" },
+  "event-card-carousel": { label: "已支持", status: "supported", description: "小程序/H5 已支持会议卡片横向滑动和详情跳转" },
+  "service-shortcut-card": { label: "已支持", status: "supported", description: "小程序/H5 已支持订单、发票、售后、客服等快捷入口" },
+  "task-progress-card": { label: "已支持", status: "supported", description: "小程序/H5 已支持任务进度展示和统一跳转配置" },
+  "image-promo-card": { label: "已支持", status: "supported", description: "小程序/H5 已支持图片推广卡片和统一跳转配置" },
+  "rich-content-block": { label: "已支持", status: "supported", description: "小程序/H5 已支持标题、正文、图片和按钮展示" },
   "conference-list": { label: "已支持", status: "supported", description: "小程序/H5 已完整支持会议列表展示和详情跳转" },
   "conference-tabs": { label: "已支持", status: "supported", description: "小程序/H5 支持分类标签筛选和会议卡片展示" },
   "registration-button": { label: "已支持", status: "supported", description: "小程序/H5 支持普通报名入口；会议详情页会隐藏以避免重复按钮" },
@@ -774,6 +796,87 @@ const DEFAULT_BUSINESS_MODULES: BusinessDisplayModule[] = [
   { key: "registrationButton", title: "立即报名", content: "", visible: true, sort: 120, style: "accent" },
   { key: "shareButton", title: "分享会议", content: "分享给微信好友", visible: true, sort: 130, style: "compact" }
 ];
+
+const BUSINESS_MODULE_GUIDES: Record<string, BusinessModuleGuide> = {
+  conferenceInfo: {
+    source: "会议管理中的标题、时间、地点、状态和报名时间",
+    entry: "会议管理 -> 会议配置",
+    effect: "用户端始终展示真实会议基础信息，页面装修只控制标题和展示顺序。",
+    defaultStatus: "configured"
+  },
+  assistant: {
+    source: "AI 知识库、会议资料和当前页面助手显示开关",
+    entry: "AI 知识库 -> 会议知识库；或当前页面装修 -> 会议助手",
+    effect: "未启用 AI 时不展示无效入口；选择隐藏后用户端不显示。",
+    defaultStatus: "default"
+  },
+  speakers: {
+    source: "会议内容配置中的嘉宾介绍，或当前模块自定义说明",
+    entry: "会议管理 -> 内容维护；或当前页面装修模块",
+    effect: "未配置时显示主办方维护提示，也可在当前模块覆盖文案。",
+    defaultStatus: "default"
+  },
+  schedule: {
+    source: "会议内容配置中的日程安排，或当前模块自定义说明",
+    entry: "会议管理 -> 内容维护；或当前页面装修模块",
+    effect: "未配置时显示主办方维护提示，也可在当前模块覆盖文案。",
+    defaultStatus: "default"
+  },
+  location: {
+    source: "会议地点和当前模块说明",
+    entry: "会议管理 -> 会议配置 -> 会议地点；或当前页面装修模块",
+    effect: "用户端展示真实会议地点，未配置地点时显示待公布提示。",
+    defaultStatus: "configured"
+  },
+  skus: {
+    source: "会议票种、价格和报名库存",
+    entry: "会议管理 -> 票种规格",
+    effect: "用户端按后端实时票种和库存展示，页面装修不改金额。",
+    defaultStatus: "configured"
+  },
+  inventory: {
+    source: "票种剩余库存和当前页面库存展示方式",
+    entry: "会议管理 -> 票种规格；或当前页面装修 -> 库存展示方式",
+    effect: "可显示库存状态、精确库存或隐藏，真实库存仍来自后端。",
+    defaultStatus: "configured"
+  },
+  guide: {
+    source: "参会指南自定义内容或会议资料",
+    entry: "会议管理 -> 内容维护 -> 参会指南；或当前页面装修模块",
+    effect: "未配置时显示默认提示；运营可选择隐藏。",
+    defaultStatus: "default"
+  },
+  customerService: {
+    source: "客服手机号、客服链接或当前模块说明",
+    entry: "系统配置 / 会务联系方式；或当前页面装修模块",
+    effect: "默认隐藏，未配置联系方式时不会展示无效按钮。",
+    defaultStatus: "unconfigured"
+  },
+  customerGroup: {
+    source: "企微客户群绑定、自定义群二维码或自定义链接",
+    entry: "企微客户群 -> 群绑定会议；或当前页面装修模块",
+    effect: "默认隐藏，未绑定客户群时不展示无效入口。",
+    defaultStatus: "unconfigured"
+  },
+  calendar: {
+    source: "会议时间、地点和标题",
+    entry: "会议管理 -> 会议配置；或当前页面装修模块",
+    effect: "默认隐藏，启用后按真实会议信息生成日历提示。",
+    defaultStatus: "unconfigured"
+  },
+  registrationButton: {
+    source: "会议报名状态、票种库存和页面按钮文案",
+    entry: "会议管理 -> 报名配置；或当前页面装修 -> 底部报名按钮文案",
+    effect: "按钮会进入真实报名页，未到报名时间或售罄时显示后端状态。",
+    defaultStatus: "configured"
+  },
+  shareButton: {
+    source: "页面分享标题、分享封面和会议信息",
+    entry: "当前页面装修 -> 页面设置 -> 分享信息",
+    effect: "用户端使用小程序分享能力；不支持的端仅展示提示。",
+    defaultStatus: "default"
+  }
+};
 
 const pages = ref<PageTemplate[]>([]);
 const libraryTemplates = ref<PageLibraryTemplate[]>([]);
@@ -1440,6 +1543,19 @@ function pageContextText(page: PageTemplate) {
   return "普通业务页面";
 }
 
+function pageConfigurableText(page: PageTemplate): string {
+  if (!page.enabled) return "已停用";
+  if (page.pageType === "CUSTOM") return "自定义可配置";
+  return "业务页可配置";
+}
+
+function formatShortDate(value: string | null | undefined): string {
+  if (!value) return "未记录";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "未记录";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function isConferenceContextPage(page: PageTemplate): boolean {
   return (
     page.bindingType === "SPECIFIC_CONFERENCE" ||
@@ -1646,6 +1762,24 @@ function businessModuleAllowsContent(key: string): boolean {
   return ["speakers", "schedule", "location", "customerService", "customerGroup", "calendar", "shareButton"].includes(key);
 }
 
+function businessModuleGuide(key: string): BusinessModuleGuide {
+  return BUSINESS_MODULE_GUIDES[key] ?? {
+    source: "当前业务页真实接口和页面装修配置",
+    entry: "当前页面装修",
+    effect: "用户端按发布版本展示，未配置时使用业务页默认兜底。",
+    defaultStatus: "default"
+  };
+}
+
+function businessModuleStatus(module: BusinessDisplayModule): string {
+  if (!module.visible) return "已隐藏";
+  if (module.content.trim()) return "已配置";
+  const status = businessModuleGuide(module.key).defaultStatus;
+  if (status === "configured") return "已配置";
+  if (status === "unconfigured") return "未配置";
+  return "使用默认值";
+}
+
 function readString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1833,7 +1967,27 @@ function fieldsFor(type: string): ConfigField[] {
     { key: "targetPageKey", label: "目标页面", kind: "select", options: pageTargetOptions() },
     { key: "targetConferenceId", label: "目标会议", kind: "select", options: conferenceSelectOptions() },
     { key: "targetProductId", label: "目标商品", kind: "select", options: productSelectOptions() },
-    { key: "targetCouponCampaignId", label: "目标券活动", kind: "select", options: couponCampaignSelectOptions() }
+    { key: "targetProductCategoryId", label: "目标商品分类", kind: "select", options: productCategorySelectOptions() },
+    { key: "targetCouponCampaignId", label: "目标券活动", kind: "select", options: couponCampaignSelectOptions() },
+    { key: "externalUrl", label: "外部 H5 链接", placeholder: "https://example.com，小程序端会复制链接或打开 WebView 能力" },
+    { key: "externalMiniappAppId", label: "外部小程序 AppID", placeholder: "wx..." },
+    { key: "externalMiniappPath", label: "外部小程序路径", placeholder: "pages/index/index" },
+    { key: "externalMiniappExtraData", label: "外部小程序 extraData", kind: "textarea", rows: 2, placeholder: "JSON 字符串，可留空" },
+    { key: "phone", label: "联系电话", placeholder: "用于电话动作" },
+    { key: "copyText", label: "复制内容", kind: "textarea", rows: 2, placeholder: "用于复制文本动作" }
+  ];
+  const secondaryActionTargetFields: ConfigField[] = [
+    { key: "secondaryActionTargetType", label: "次按钮目标", kind: "select", fallback: "page", options: actionTargetOptions() },
+    { key: "secondaryTargetPageKey", label: "次按钮目标页面", kind: "select", options: pageTargetOptions() },
+    { key: "secondaryTargetConferenceId", label: "次按钮目标会议", kind: "select", options: conferenceSelectOptions() },
+    { key: "secondaryTargetProductId", label: "次按钮目标商品", kind: "select", options: productSelectOptions() },
+    { key: "secondaryTargetProductCategoryId", label: "次按钮目标商品分类", kind: "select", options: productCategorySelectOptions() },
+    { key: "secondaryTargetCouponCampaignId", label: "次按钮目标券活动", kind: "select", options: couponCampaignSelectOptions() },
+    { key: "secondaryExternalUrl", label: "次按钮外部 H5 链接", placeholder: "https://example.com" },
+    { key: "secondaryExternalMiniappAppId", label: "次按钮外部小程序 AppID", placeholder: "wx..." },
+    { key: "secondaryExternalMiniappPath", label: "次按钮外部小程序路径", placeholder: "pages/index/index" },
+    { key: "secondaryPhone", label: "次按钮联系电话", placeholder: "用于电话动作" },
+    { key: "secondaryCopyText", label: "次按钮复制内容", kind: "textarea", rows: 2 }
   ];
   const credentialFields = (extraFields: ConfigField[]): ConfigField[] => withTextStyle([
     ...commonTitle,
@@ -1898,6 +2052,78 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "autoplay", label: "自动轮播", kind: "switch", fallback: "true" },
       { key: "indicatorDots", label: "显示指示点", kind: "switch", fallback: "true" }
     ],
+    "hero-banner": withTextStyle([
+      { key: "title", label: "主标题", placeholder: "欢迎进入会务小程序" },
+      { key: "subtitle", label: "副标题", placeholder: "会议报名、签到和会务服务一站完成" },
+      { key: "description", label: "说明文字", kind: "textarea", rows: 2 },
+      { key: "imageUrl", label: "背景图片", placeholder: "从素材库选择或粘贴图片地址" },
+      { key: "backgroundColor", label: "背景色", kind: "color", fallback: "#315d7d" },
+      { key: "textColor", label: "文字颜色", kind: "color", fallback: "#ffffff" },
+      { key: "buttonText", label: "主按钮文案", placeholder: "查看会议" },
+      ...actionTargetFields,
+      { key: "secondaryButtonText", label: "次按钮文案", placeholder: "我的报名" },
+      ...secondaryActionTargetFields,
+      { key: "height", label: "高度", kind: "range", fallback: 420, min: 260, max: 720 },
+      { key: "radius", label: "圆角", kind: "range", fallback: 28, min: 0, max: 48 }
+    ], 26),
+    "quick-icon-grid": withTextStyle([
+      ...commonTitle,
+      { key: "columns", label: "列数", kind: "select", fallback: "3", options: [{ label: "2 列", value: "2" }, { label: "3 列", value: "3" }, { label: "4 列", value: "4" }] },
+      { key: "cardStyle", label: "卡片样式", kind: "select", fallback: "soft", options: [{ label: "柔和卡片", value: "soft" }, { label: "描边卡片", value: "outline" }, { label: "无边框", value: "plain" }] },
+      { key: "backgroundColor", label: "模块背景色", kind: "color", fallback: "" },
+      { key: "cardBackground", label: "卡片背景色", kind: "color", fallback: "" },
+      { key: "items", label: "入口配置", kind: "list", rows: 6, placeholder: "每行一个入口：标题｜英文副标题｜图标URL｜跳转类型｜目标值，例如：商城｜Shop｜https://.../shop.png｜page｜mall" }
+    ], 24),
+    "member-promo-banner": withTextStyle([
+      ...commonTitle,
+      { key: "subtitle", label: "副标题", placeholder: "查看会员价和专属权益" },
+      { key: "description", label: "说明文字", kind: "textarea", rows: 2 },
+      { key: "imageUrl", label: "背景图片", placeholder: "从素材库选择或粘贴图片地址" },
+      { key: "buttonText", label: "按钮文案", placeholder: "查看会员中心" },
+      { key: "backgroundColor", label: "背景色", kind: "color", fallback: "" },
+      ...actionTargetFields
+    ], 26),
+    "event-card-carousel": withTextStyle([
+      ...commonTitle,
+      { key: "limit", label: "展示数量", kind: "number", fallback: 6 },
+      { key: "cardSize", label: "卡片尺寸", kind: "select", fallback: "large", options: [{ label: "大图卡片", value: "large" }, { label: "小图卡片", value: "small" }] },
+      { key: "conferenceIds", label: "指定会议", kind: "list", rows: 3, placeholder: "可选，每行一个会议 ID；留空展示会议列表前 N 个" },
+      { key: "category", label: "分类/标签过滤", placeholder: "按会议标题、摘要或地点关键词过滤" },
+      { key: "detailButtonText", label: "详情按钮文案", placeholder: "查看详情" },
+      ...conferenceDisplayFields
+    ], 26),
+    "service-shortcut-card": withTextStyle([
+      ...commonTitle,
+      { key: "columns", label: "列数", kind: "select", fallback: "2", options: [{ label: "2 列", value: "2" }, { label: "3 列", value: "3" }, { label: "4 列", value: "4" }] },
+      { key: "items", label: "服务入口", kind: "list", rows: 6, placeholder: "每行一个入口：标题｜说明｜图标URL｜跳转类型｜目标值，例如：发票申请｜提交和查看发票｜｜invoice｜" }
+    ], 24),
+    "task-progress-card": withTextStyle([
+      ...commonTitle,
+      { key: "subtitle", label: "副标题", placeholder: "完成任务领取权益" },
+      { key: "description", label: "说明文字", kind: "textarea", rows: 2 },
+      { key: "iconUrl", label: "图标地址", placeholder: "从素材库选择或粘贴图标地址" },
+      { key: "current", label: "当前进度", kind: "number", fallback: 0 },
+      { key: "target", label: "目标进度", kind: "number", fallback: 8 },
+      { key: "unit", label: "进度单位", placeholder: "项" },
+      { key: "ruleText", label: "规则说明", placeholder: "完成 8 项任务可领取权益" },
+      ...actionTargetFields
+    ], 26),
+    "image-promo-card": withTextStyle([
+      ...commonTitle,
+      { key: "subtitle", label: "副标题", placeholder: "自定义活动卡片" },
+      { key: "imageUrl", label: "图片地址", placeholder: "从素材库选择或粘贴图片地址" },
+      { key: "buttonText", label: "按钮文案", placeholder: "查看详情" },
+      { key: "radius", label: "圆角", kind: "range", fallback: 24, min: 0, max: 48 },
+      ...actionTargetFields
+    ], 26),
+    "rich-content-block": withTextStyle([
+      ...commonTitle,
+      { key: "subtitle", label: "副标题", placeholder: "模块副标题" },
+      { key: "content", label: "正文内容", kind: "textarea", rows: 4, placeholder: "填写图文说明" },
+      { key: "imageUrl", label: "配图地址", placeholder: "从素材库选择或粘贴图片地址" },
+      { key: "buttonText", label: "按钮文案", placeholder: "留空则不显示按钮" },
+      ...actionTargetFields
+    ], 26),
     "conference-list": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 10 }, ...conferenceDisplayFields], 26),
     "conference-tabs": withTextStyle([...commonTitle, { key: "target", label: "筛选字段", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
     "speaker-cards": withTextStyle([...commonTitle, { key: "speakers", label: "嘉宾信息", kind: "list", placeholder: "每行一位嘉宾，例如：张三｜主讲嘉宾", rows: 5 }], 26),
@@ -2017,11 +2243,21 @@ function productCategorySelectOptions(): Array<{ label: string; value: string }>
 
 function actionTargetOptions(): Array<{ label: string; value: string }> {
   return [
+    { label: "不跳转", value: "none" },
     { label: "默认报名动作", value: "register" },
     { label: "打开页面", value: "page" },
     { label: "打开会议", value: "conference" },
+    { label: "打开报名页", value: "registration" },
     { label: "打开商品", value: "product" },
-    { label: "打开券活动", value: "coupon" }
+    { label: "打开商品分类", value: "product-category" },
+    { label: "打开券活动", value: "coupon" },
+    { label: "会员中心", value: "member" },
+    { label: "发票申请", value: "invoice" },
+    { label: "AI 助手", value: "ai" },
+    { label: "外部 H5", value: "external-h5" },
+    { label: "外部小程序", value: "external-miniapp" },
+    { label: "拨打电话", value: "phone" },
+    { label: "复制文本", value: "copy" }
   ];
 }
 
@@ -2178,7 +2414,7 @@ function setConfig(component: EditableComponent, key: string, value: unknown) {
 }
 
 function isImageField(field: ConfigField): boolean {
-  return ["imageUrl", "images", "coverUrl"].includes(field.key);
+  return ["imageUrl", "images", "coverUrl", "iconUrl", "backgroundImageUrl"].includes(field.key);
 }
 
 function isFontField(field: ConfigField): boolean {
@@ -2212,6 +2448,12 @@ function materialSpecKeyForField(componentType: string, field: ConfigField): Mat
   if (componentType === "sponsor-wall" && field.key === "sponsors") return "sponsorLogo";
   if (!isImageField(field)) return undefined;
   if (componentType === "hero") return "heroImage";
+  if (componentType === "hero-banner") return "heroImage";
+  if (componentType === "quick-icon-grid" && field.key === "iconUrl") return "tabbarIcon";
+  if (componentType === "member-promo-banner") return "heroImage";
+  if (componentType === "task-progress-card" && field.key === "iconUrl") return "tabbarIcon";
+  if (componentType === "image-promo-card") return "contentImage";
+  if (componentType === "rich-content-block") return "contentImage";
   if (componentType === "carousel") return "carouselImage";
   if (componentType === "image-grid") return "imageGrid";
   if (componentType === "text-image") return "contentImage";
@@ -2460,6 +2702,12 @@ const ComponentPreview = defineComponent({
     const textStyle = () => buildPreviewTextStyle(props.item);
     const titleStyle = () => buildPreviewTitleStyle(props.item);
     const parsedList = (key: string) => list(key).map(splitPreviewLine).filter((item) => item.length > 0);
+    const entryItems = () =>
+      (list("items").length > 0 ? list("items").map(splitPreviewEntryLine) : [["会议报名", "Registration"], ["我的报名", "My tickets"], ["商城", "Shop"]]).map((parts) => ({
+        title: parts[0] || "入口",
+        subtitle: parts[1] || "",
+        iconUrl: parts.find((part) => looksLikePreviewImage(part)) || ""
+      }));
     const meetings = () =>
       (previewContextConferences.value.length > 0 ? previewContextConferences.value : sampleConferences).map((item, index) => ({
         id: item.id,
@@ -2499,6 +2747,77 @@ const ComponentPreview = defineComponent({
                 booleanConfig(props.item, "showButton", true) ? h("button", value("buttonText", "立即报名")) : null
               ])
             : null
+        ]);
+      }
+      if (type === "hero-banner") {
+        return h("div", { class: "preview-home-hero", style: previewHomeHeroStyle(props.item) }, [
+          value("imageUrl") ? h("img", { src: value("imageUrl"), alt: "顶部主视觉", style: previewImageModeStyle(props.item) }) : null,
+          h("div", { class: "preview-home-hero__copy" }, [
+            h("span", value("subtitle", "会议报名、签到和会务服务一站完成")),
+            h("strong", { style: { ...titleStyle(), color: value("textColor", "#ffffff") } }, value("title", "欢迎进入会务小程序")),
+            h("p", { style: { ...textStyle(), color: value("textColor", "#ffffff") } }, value("description", "选择会议并完成报名缴费，后续可在我的报名中查看凭证。")),
+            h("div", { class: "preview-home-hero__actions" }, [
+              value("buttonText") ? h("button", value("buttonText")) : null,
+              value("secondaryButtonText") ? h("button", { class: "is-secondary" }, value("secondaryButtonText")) : null
+            ])
+          ])
+        ]);
+      }
+      if (type === "quick-icon-grid" || type === "service-shortcut-card") {
+        return h("div", { class: ["preview-section", "preview-entry-grid"], style: previewPanelStyle(props.item) }, [
+          h("strong", { style: titleStyle() }, value("title", type === "quick-icon-grid" ? "快捷入口" : "服务中心")),
+          h("div", { class: "preview-entry-grid__items", style: previewGridColumnsStyle(props.item) }, entryItems().map((entry) =>
+            h("div", { class: "preview-entry-tile" }, [
+              entry.iconUrl ? h("img", { src: entry.iconUrl, alt: entry.title }) : h("span", entry.title.slice(0, 1)),
+              h("b", entry.title),
+              entry.subtitle ? h("small", entry.subtitle) : null
+            ])
+          ))
+        ]);
+      }
+      if (type === "member-promo-banner") {
+        return h("div", { class: "preview-promo-banner", style: previewPanelStyle(props.item) }, [
+          value("imageUrl") ? h("img", { src: value("imageUrl"), alt: "" }) : null,
+          h("div", [
+            h("strong", { style: titleStyle() }, value("title", "会员权益")),
+            h("p", { style: textStyle() }, value("subtitle", "查看会员价和专属权益")),
+            h("small", value("description", "会员价以创建订单时后端计价为准。"))
+          ]),
+          h("button", value("buttonText", "查看会员中心"))
+        ]);
+      }
+      if (type === "event-card-carousel") {
+        return h("div", { class: "preview-section preview-event-carousel" }, [
+          h("strong", { style: titleStyle() }, value("title", "精选会议")),
+          h("div", { class: "preview-event-carousel__rail" }, meetings().slice(0, numberValue(props.item, "limit", 6)).map((meeting) =>
+            h("div", { class: `preview-event-card is-${value("cardSize", "large")}` }, [
+              meeting.image ? h("img", { src: meeting.image, alt: meeting.title }) : h("span", { class: "preview-event-card__empty" }, meeting.title.slice(0, 1) || "会"),
+              h("b", meeting.title),
+              h("small", meeting.location),
+              h("button", detailButtonText(props.item))
+            ])
+          ))
+        ]);
+      }
+      if (type === "task-progress-card") {
+        const current = numberValue(props.item, "current", 0);
+        const target = Math.max(1, numberValue(props.item, "target", 8));
+        return h("div", { class: "preview-section preview-task-card" }, [
+          h("div", { class: "preview-task-card__head" }, [
+            value("iconUrl") ? h("img", { src: value("iconUrl"), alt: "" }) : h("span", "任"),
+            h("div", [h("strong", { style: titleStyle() }, value("title", "任务进度")), h("small", value("subtitle", "完成任务领取权益"))]),
+            h("b", `${current}/${target}`)
+          ]),
+          h("div", { class: "preview-task-card__bar" }, h("i", { style: { width: `${Math.min(100, Math.round((current / target) * 100))}%` } })),
+          h("p", { style: textStyle() }, value("ruleText", "完成 8 项任务可领取权益"))
+        ]);
+      }
+      if (type === "image-promo-card" || type === "rich-content-block") {
+        return h("div", { class: ["preview-section", type === "image-promo-card" ? "preview-image-promo" : "preview-rich-block"] }, [
+          value("imageUrl") ? h("img", { class: "preview-cover", src: value("imageUrl"), alt: "" }) : null,
+          h("strong", { style: titleStyle() }, value("title", type === "image-promo-card" ? "活动推荐" : "品牌故事")),
+          h("p", { style: textStyle() }, value(type === "image-promo-card" ? "subtitle" : "content", type === "image-promo-card" ? "自定义活动卡片" : "请在后台填写图文内容。")),
+          value("buttonText") ? h("button", { class: "preview-detail-button" }, value("buttonText")) : null
         ]);
       }
       if (type === "conference-list") {
@@ -2843,6 +3162,27 @@ function previewHeroCardStyle(component: EditableComponent) {
   };
 }
 
+function previewHomeHeroStyle(component: EditableComponent) {
+  return {
+    minHeight: `${Math.max(150, Math.round(numberValue(component, "height", 420) / 2.35))}px`,
+    borderRadius: `${numberValue(component, "radius", 28) / 2}px`,
+    background: String(component.config.backgroundColor || "var(--preview-primary)")
+  };
+}
+
+function previewPanelStyle(component: EditableComponent) {
+  return {
+    background: String(component.config.backgroundColor || "")
+  };
+}
+
+function previewGridColumnsStyle(component: EditableComponent) {
+  const columns = Math.min(4, Math.max(2, Number(component.config.columns) || 3));
+  return {
+    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`
+  };
+}
+
 function previewCarouselStyle(component: EditableComponent) {
   return {
     height: `${Math.max(88, Math.round(numberValue(component, "height", 320) / 2.35))}px`
@@ -2919,6 +3259,14 @@ function formatPreviewDate(value: string | undefined) {
 
 function splitPreviewLine(value: string): string[] {
   return value.split(/[\n|｜,，;；]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function splitPreviewEntryLine(value: string): string[] {
+  return value.split(/[|｜]/).map((item) => item.trim());
+}
+
+function looksLikePreviewImage(value: string): boolean {
+  return /^https?:\/\//i.test(value) || /\.(png|jpe?g|webp|gif|svg|apng)(\?|$)/i.test(value);
 }
 </script>
 
@@ -4730,6 +5078,260 @@ function splitPreviewLine(value: string): string[] {
 .business-module-card__head strong {
   color: #172033;
   font-size: 13px;
+}
+
+.business-module-card__guide {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #5f6b7a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.business-module-card__guide span {
+  min-width: 0;
+}
+
+.business-module-card__guide b {
+  color: #172033;
+}
+
+.preview-home-hero,
+.preview-promo-banner {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 178px;
+  padding: 18px;
+  color: #ffffff;
+  background: var(--preview-primary);
+  box-shadow: 0 14px 34px rgb(15 23 42 / 12%);
+}
+
+.preview-home-hero > img,
+.preview-promo-banner > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.48;
+}
+
+.preview-home-hero__copy,
+.preview-promo-banner > div {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.preview-home-hero__copy span,
+.preview-promo-banner small {
+  font-size: 12px;
+  opacity: 0.86;
+}
+
+.preview-home-hero__copy strong {
+  color: inherit;
+  font-size: 22px;
+  line-height: 1.16;
+}
+
+.preview-home-hero__copy p,
+.preview-promo-banner p {
+  margin: 0;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  opacity: 0.9;
+}
+
+.preview-home-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.preview-home-hero__actions button,
+.preview-promo-banner button,
+.preview-detail-button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--preview-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.preview-home-hero__actions button.is-secondary {
+  border: 1px solid rgb(255 255 255 / 70%);
+  background: rgb(255 255 255 / 16%);
+  color: #ffffff;
+}
+
+.preview-entry-grid__items {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.preview-entry-tile {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  text-align: center;
+}
+
+.preview-entry-tile img,
+.preview-entry-tile > span {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--preview-primary) 12%, #ffffff);
+}
+
+.preview-entry-tile > span {
+  display: grid;
+  place-items: center;
+  color: var(--preview-primary);
+  font-weight: 900;
+}
+
+.preview-entry-tile b {
+  max-width: 100%;
+  overflow: hidden;
+  color: #172033;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-entry-tile small {
+  max-width: 100%;
+  overflow: hidden;
+  color: #8a94a6;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-promo-banner {
+  min-height: 108px;
+  color: #172033;
+  background: linear-gradient(135deg, #edf7ef, #ffffff);
+}
+
+.preview-promo-banner button {
+  position: relative;
+  z-index: 1;
+  align-self: flex-start;
+  color: #315d7d;
+}
+
+.preview-event-carousel__rail {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.preview-event-card {
+  flex: 0 0 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.preview-event-card.is-small {
+  flex-basis: 126px;
+}
+
+.preview-event-card img,
+.preview-event-card__empty {
+  width: 100%;
+  height: 82px;
+  border-radius: 10px;
+  background: #eef4ff;
+  object-fit: cover;
+}
+
+.preview-event-card__empty {
+  display: grid;
+  place-items: center;
+  color: var(--preview-primary);
+  font-weight: 900;
+}
+
+.preview-event-card b {
+  color: #172033;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.preview-event-card small {
+  color: #8a94a6;
+  font-size: 11px;
+}
+
+.preview-task-card__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.preview-task-card__head img,
+.preview-task-card__head > span {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--preview-primary) 12%, #ffffff);
+}
+
+.preview-task-card__head > span {
+  display: grid;
+  place-items: center;
+  color: var(--preview-primary);
+  font-weight: 900;
+}
+
+.preview-task-card__head small {
+  color: #8a94a6;
+  font-size: 11px;
+}
+
+.preview-task-card__bar {
+  overflow: hidden;
+  height: 8px;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: #edf2f7;
+}
+
+.preview-task-card__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--preview-primary);
 }
 
 .preview-block.is-selected {
