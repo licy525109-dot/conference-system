@@ -422,6 +422,148 @@
                       inactive-text="隐藏"
                       @update:model-value="setConfig(selectedComponent, field.key, $event)"
                     />
+                    <div v-else-if="field.kind === 'rich-blocks'" class="rich-block-editor">
+                      <div class="rich-block-editor__head">
+                        <p>用内容块组合标题、正文、图片、引用、按钮和分割线；不需要填写 HTML 代码，发布后小程序按同一结构渲染。</p>
+                        <div class="rich-block-editor__actions">
+                          <el-button size="small" plain @click="addRichBlock(selectedComponent, 'heading')">标题</el-button>
+                          <el-button size="small" plain @click="addRichBlock(selectedComponent, 'paragraph')">正文</el-button>
+                          <el-button size="small" plain @click="addRichBlock(selectedComponent, 'image')">图片</el-button>
+                          <el-button size="small" plain @click="addRichBlock(selectedComponent, 'quote')">引用</el-button>
+                          <el-button size="small" plain @click="addRichBlock(selectedComponent, 'button')">按钮</el-button>
+                        </div>
+                      </div>
+                      <div
+                        v-for="(block, blockIndex) in richBlocksFor(selectedComponent)"
+                        :key="block.id"
+                        class="rich-block-card"
+                        :class="{ 'is-expanded': isRichBlockExpanded(block.id), 'is-disabled': !block.enabled }"
+                      >
+                        <div class="rich-block-card__top">
+                          <div class="rich-block-card__summary">
+                            <span class="rich-block-card__type">{{ richBlockTypeLabel(block.type) }}</span>
+                            <span>
+                              <strong>{{ blockIndex + 1 }}. {{ richBlockSummary(block) }}</strong>
+                              <small>{{ block.enabled ? "正在展示" : "已隐藏" }}</small>
+                            </span>
+                          </div>
+                          <div class="rich-block-card__actions">
+                            <el-switch v-model="block.enabled" active-text="展示" inactive-text="隐藏" />
+                            <el-button size="small" type="primary" plain @click="toggleRichBlockExpanded(block.id)">
+                              {{ isRichBlockExpanded(block.id) ? "收起" : "编辑" }}
+                            </el-button>
+                            <el-button size="small" plain @click="duplicateRichBlock(selectedComponent, blockIndex)">复制</el-button>
+                            <el-button size="small" :disabled="blockIndex === 0" @click="moveRichBlock(selectedComponent, blockIndex, -1)">上移</el-button>
+                            <el-button size="small" :disabled="blockIndex === richBlocksFor(selectedComponent).length - 1" @click="moveRichBlock(selectedComponent, blockIndex, 1)">下移</el-button>
+                            <el-button size="small" type="danger" plain @click="removeRichBlock(selectedComponent, blockIndex)">删除</el-button>
+                          </div>
+                        </div>
+
+                        <div v-if="isRichBlockExpanded(block.id)" class="rich-block-card__grid">
+                          <label>
+                            <span>内容类型</span>
+                            <el-select v-model="block.type">
+                              <el-option label="标题" value="heading" />
+                              <el-option label="正文段落" value="paragraph" />
+                              <el-option label="图片" value="image" />
+                              <el-option label="引用/重点提示" value="quote" />
+                              <el-option label="分割线" value="divider" />
+                              <el-option label="按钮" value="button" />
+                            </el-select>
+                          </label>
+                          <label v-if="block.type === 'heading'">
+                            <span>标题文字</span>
+                            <el-input v-model="block.title" placeholder="例如 大会介绍" />
+                          </label>
+                          <label v-if="block.type === 'paragraph' || block.type === 'quote'" class="rich-block-card__wide">
+                            <span>{{ block.type === "quote" ? "提示内容" : "正文内容" }}</span>
+                            <el-input v-model="block.text" type="textarea" :rows="4" placeholder="可直接粘贴多段文本，避免粘贴外部 HTML 代码" />
+                          </label>
+                          <label v-if="block.type === 'image'" class="rich-block-card__wide">
+                            <span>图片地址 <MaterialSpecHelp spec-key="contentImage" /></span>
+                            <div class="field-row">
+                              <el-input v-model="block.imageUrl" placeholder="从素材库选择或粘贴图片地址" />
+                              <el-button @click="openRichBlockMaterialPicker(selectedComponent, block)">素材库</el-button>
+                            </div>
+                            <small>图文配图建议宽度 750px，JPG/PNG/WebP，单张不超过 2MB。可连续添加多张图片块。</small>
+                          </label>
+                          <label v-if="block.type === 'image'">
+                            <span>图片显示方式</span>
+                            <el-select v-model="block.imageMode">
+                              <el-option label="宽度自适应" value="widthFix" />
+                              <el-option label="等比裁切" value="aspectFill" />
+                              <el-option label="完整显示" value="aspectFit" />
+                            </el-select>
+                          </label>
+                          <label v-if="block.type === 'image'">
+                            <span>图片说明</span>
+                            <el-input v-model="block.caption" placeholder="可选，显示在图片下方" />
+                          </label>
+                          <label v-if="block.type !== 'divider' && block.type !== 'image'">
+                            <span>对齐方式</span>
+                            <el-select v-model="block.align">
+                              <el-option label="居左" value="left" />
+                              <el-option label="居中" value="center" />
+                              <el-option label="居右" value="right" />
+                            </el-select>
+                          </label>
+                          <template v-if="block.type === 'button'">
+                            <label>
+                              <span>按钮文字</span>
+                              <el-input v-model="block.buttonText" placeholder="例如 立即查看" />
+                            </label>
+                            <label>
+                              <span>点击动作</span>
+                              <el-select v-model="block.actionTargetType">
+                                <el-option v-for="option in actionTargetOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                              </el-select>
+                            </label>
+                            <label v-if="block.actionTargetType === 'page'">
+                              <span>内部页面</span>
+                              <el-select v-model="block.targetPageKey" filterable>
+                                <el-option v-for="option in pageTargetOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                              </el-select>
+                            </label>
+                            <label v-if="block.actionTargetType === 'conference' || block.actionTargetType === 'registration' || block.actionTargetType === 'ai'">
+                              <span>目标会议</span>
+                              <el-select v-model="block.targetConferenceId" filterable>
+                                <el-option v-for="option in conferenceSelectOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                              </el-select>
+                            </label>
+                            <label v-if="block.actionTargetType === 'product'">
+                              <span>目标商品</span>
+                              <el-select v-model="block.targetProductId" filterable>
+                                <el-option v-for="option in productSelectOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                              </el-select>
+                            </label>
+                            <label v-if="block.actionTargetType === 'product-category'">
+                              <span>商品分类</span>
+                              <el-select v-model="block.targetProductCategoryId" filterable>
+                                <el-option v-for="option in productCategorySelectOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                              </el-select>
+                            </label>
+                            <label v-if="block.actionTargetType === 'coupon'">
+                              <span>券活动</span>
+                              <el-select v-model="block.targetCouponCampaignId" filterable>
+                                <el-option v-for="option in couponCampaignSelectOptions()" :key="option.value" :label="option.label" :value="option.value" />
+                              </el-select>
+                            </label>
+                            <label v-if="block.actionTargetType === 'external-h5'">
+                              <span>外部 H5 URL</span>
+                              <el-input v-model="block.externalUrl" placeholder="https://example.com" />
+                            </label>
+                            <label v-if="block.actionTargetType === 'phone'">
+                              <span>电话</span>
+                              <el-input v-model="block.phone" placeholder="用于一键拨打" />
+                            </label>
+                            <label v-if="block.actionTargetType === 'copy'">
+                              <span>复制内容</span>
+                              <el-input v-model="block.copyText" placeholder="用户点击后复制这段文本" />
+                            </label>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
                     <div v-else-if="field.kind === 'entry-list'" class="entry-editor">
                       <div class="entry-editor__head">
                         <p>每个入口独立配置图标、文案、颜色和跳转动作；保存后小程序按相同字段渲染。</p>
@@ -828,7 +970,7 @@ interface EditableComponent {
 interface ConfigField {
   key: string;
   label: string;
-  kind?: "text" | "textarea" | "number" | "range" | "list" | "entry-list" | "color" | "select" | "switch";
+  kind?: "text" | "textarea" | "number" | "range" | "list" | "entry-list" | "rich-blocks" | "color" | "select" | "switch";
   placeholder?: string;
   rows?: number;
   fallback?: number | string;
@@ -902,6 +1044,31 @@ interface EntryConfigItem {
   phone: string;
   copyText: string;
   copySuccessText: string;
+}
+
+interface RichContentBlockItem {
+  id: string;
+  enabled: boolean;
+  sort: number;
+  type: "heading" | "paragraph" | "image" | "quote" | "divider" | "button";
+  title: string;
+  text: string;
+  imageUrl: string;
+  caption: string;
+  imageMode: string;
+  align: string;
+  buttonText: string;
+  actionTargetType: string;
+  targetPageKey: string;
+  targetConferenceId: string;
+  targetProductId: string;
+  targetProductCategoryId: string;
+  targetCouponCampaignId: string;
+  externalUrl: string;
+  externalMiniappAppId: string;
+  externalMiniappPath: string;
+  phone: string;
+  copyText: string;
 }
 
 interface CmsComponentSupportMeta {
@@ -1229,6 +1396,7 @@ const presetKeyword = ref("");
 const activePresetGroup = ref("");
 const selectedComponentId = ref("");
 const expandedEntryIds = ref<string[]>([]);
+const expandedRichBlockIds = ref<string[]>([]);
 const draggingComponentId = ref("");
 const templateKeyword = ref("");
 const templateCategory = ref("全部");
@@ -1240,6 +1408,7 @@ const materialAssets = ref<MaterialAsset[]>([]);
 const materialTarget = ref<{ component: EditableComponent; field: ConfigField } | null>(null);
 const materialPageTarget = ref<keyof PageMetaForm | null>(null);
 const materialEntryTarget = ref<{ component: EditableComponent; entry: EntryConfigItem; key: "iconUrl" | "dynamicIconUrl" } | null>(null);
+const materialRichBlockTarget = ref<{ component: EditableComponent; block: RichContentBlockItem } | null>(null);
 const previewConferences = ref<Conference[]>([]);
 const previewTabbar = ref<TabBarConfig | null>(null);
 const couponCampaignOptions = ref<CouponCampaign[]>([]);
@@ -1264,6 +1433,7 @@ const pageTypeOptions = [
 ];
 const loadedPreviewFonts = new Set<string>();
 const materialPickerSpecKey = computed<MaterialSpecKey>(() => {
+  if (materialRichBlockTarget.value) return "contentImage";
   if (materialEntryTarget.value) return "tabbarIcon";
   if (materialPageTarget.value) return pageMetaMaterialSpecKey(materialPageTarget.value);
   const target = materialTarget.value;
@@ -1271,6 +1441,7 @@ const materialPickerSpecKey = computed<MaterialSpecKey>(() => {
 });
 const materialPickerSpecText = computed(() => materialSpecText(materialSpecs[materialPickerSpecKey.value]));
 const materialPickerKind = computed<"image" | "video" | "file" | "font">(() => {
+  if (materialRichBlockTarget.value) return "image";
   if (materialEntryTarget.value) return "image";
   if (materialPageTarget.value) return "image";
   const target = materialTarget.value;
@@ -2063,7 +2234,20 @@ function toPayloadComponents(): CmsComponent[] {
 
 function normalizeConfig(config: Record<string, unknown>, componentType?: string): Record<string, unknown> {
   const next: Record<string, unknown> = {};
+  if (componentType && isRichContentComponentType(componentType)) {
+    const component: EditableComponent = {
+      id: "normalizing",
+      type: componentType,
+      enabled: true,
+      sortOrder: 0,
+      config
+    };
+    next.blocks = normalizeRichBlocks(config.blocks, component);
+  }
   for (const [key, value] of Object.entries(config)) {
+    if (key === "blocks" && componentType && isRichContentComponentType(componentType)) {
+      continue;
+    }
     if ((componentType === "quick-icon-grid" || componentType === "service-shortcut-card") && key === "items") {
       next[key] = normalizeEntryItems(value, componentType);
     } else if (typeof value === "string") {
@@ -2073,6 +2257,10 @@ function normalizeConfig(config: Record<string, unknown>, componentType?: string
     }
   }
   return next;
+}
+
+function isRichContentComponentType(type: string): boolean {
+  return ["rich-content-block", "rich-text", "safe-html", "text-image"].includes(type);
 }
 
 function applyPageMeta(themeJson: Record<string, unknown> | null | undefined, fallbackTitle?: string | null) {
@@ -2613,10 +2801,7 @@ function fieldsFor(type: string): ConfigField[] {
     "rich-content-block": withTextStyle([
       ...commonTitle,
       { key: "subtitle", label: "副标题", placeholder: "模块副标题" },
-      { key: "content", label: "正文内容", kind: "textarea", rows: 4, placeholder: "填写图文说明" },
-      { key: "imageUrl", label: "配图地址", placeholder: "从素材库选择或粘贴图片地址" },
-      { key: "buttonText", label: "按钮文案", placeholder: "留空则不显示按钮" },
-      ...actionTargetFields
+      { key: "blocks", label: "图文内容块", kind: "rich-blocks" }
     ], 26),
     "conference-list": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 10 }, ...conferenceDisplayFields], 26),
     "conference-tabs": withTextStyle([...commonTitle, { key: "target", label: "筛选字段", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
@@ -2632,8 +2817,8 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "claimCode", label: "领取码兜底", placeholder: "优先使用券活动选择器；仅兼容历史页面" }
     ], 26),
     "promotion-bar": withTextStyle([{ key: "text", label: "提示文字", placeholder: "满减活动进行中" }], 28),
-    "rich-text": withTextStyle([{ key: "html", label: "图文内容", kind: "textarea", rows: 6, placeholder: "填写图文内容，可使用简单段落和换行" }], 28),
-    "safe-html": withTextStyle([{ key: "html", label: "图文内容", kind: "textarea", rows: 6, placeholder: "填写安全图文内容" }], 28),
+    "rich-text": withTextStyle([{ key: "blocks", label: "图文内容块", kind: "rich-blocks" }], 28),
+    "safe-html": withTextStyle([{ key: "blocks", label: "图文内容块", kind: "rich-blocks" }], 28),
     "image-grid": [{ key: "images", label: "图片宫格", kind: "list", placeholder: "每行一个图片地址", rows: 5 }, ...layoutFields],
     video: withTextStyle([...commonTitle, { key: "url", label: "视频地址", placeholder: "请输入视频地址" }, { key: "coverUrl", label: "视频封面", placeholder: "从素材库选择视频封面" }], 26),
     countdown: withTextStyle([...commonTitle, { key: "targetAt", label: "目标时间", placeholder: "例如 2026-08-01 09:00" }, { key: "endedText", label: "结束文案", placeholder: "活动已开始" }], 26),
@@ -2659,8 +2844,7 @@ function fieldsFor(type: string): ConfigField[] {
     "process-steps": withTextStyle([...commonTitle, { key: "items", label: "流程步骤", kind: "list", placeholder: "每行一个步骤", rows: 4 }], 26),
     "text-image": withTextStyle([
       ...commonTitle,
-      { key: "text", label: "介绍内容", kind: "textarea", rows: 3 },
-      { key: "imageUrl", label: "配图地址", placeholder: "从素材库复制图片地址" }
+      { key: "blocks", label: "图文内容块", kind: "rich-blocks" }
     ], 26),
     "download-list": withTextStyle([...commonTitle, { key: "items", label: "资料文件", kind: "list", placeholder: "每行一份资料：名称｜文件 URL｜说明", rows: 4 }], 26),
     "live-card": withTextStyle([
@@ -3044,6 +3228,221 @@ function duplicateEntryItem(component: EditableComponent, index: number) {
   expandEntry(nextEntry.id);
 }
 
+function richBlocksFor(component: EditableComponent): RichContentBlockItem[] {
+  const current = component.config.blocks;
+  if (Array.isArray(current) && current.every(isStandardRichBlockItem)) {
+    return current as RichContentBlockItem[];
+  }
+  const blocks = normalizeRichBlocks(current, component);
+  setConfig(component, "blocks", blocks);
+  return blocks;
+}
+
+function isRichBlockExpanded(id: string): boolean {
+  return expandedRichBlockIds.value.includes(id);
+}
+
+function toggleRichBlockExpanded(id: string) {
+  expandedRichBlockIds.value = isRichBlockExpanded(id)
+    ? expandedRichBlockIds.value.filter((item) => item !== id)
+    : [...expandedRichBlockIds.value, id];
+}
+
+function expandRichBlock(id: string) {
+  if (!isRichBlockExpanded(id)) expandedRichBlockIds.value = [...expandedRichBlockIds.value, id];
+}
+
+function addRichBlock(component: EditableComponent, type: RichContentBlockItem["type"]) {
+  const items = richBlocksFor(component);
+  const block = normalizeRichBlock(
+    {
+      id: `rich-${Date.now()}`,
+      type,
+      title: type === "heading" ? "新标题" : "",
+      text: type === "paragraph" ? "请输入正文内容" : type === "quote" ? "请输入重点提示" : "",
+      buttonText: type === "button" ? "查看详情" : "",
+      actionTargetType: type === "button" ? "page" : "none"
+    },
+    items.length
+  );
+  setConfig(component, "blocks", [...items, block]);
+  expandRichBlock(block.id);
+}
+
+function removeRichBlock(component: EditableComponent, index: number) {
+  const items = [...richBlocksFor(component)];
+  const removed = items[index];
+  items.splice(index, 1);
+  setConfig(component, "blocks", resequenceRichBlocks(items));
+  if (removed) expandedRichBlockIds.value = expandedRichBlockIds.value.filter((id) => id !== removed.id);
+}
+
+function moveRichBlock(component: EditableComponent, index: number, offset: number) {
+  const items = [...richBlocksFor(component)];
+  const target = index + offset;
+  if (target < 0 || target >= items.length) return;
+  const [item] = items.splice(index, 1);
+  items.splice(target, 0, item);
+  setConfig(component, "blocks", resequenceRichBlocks(items));
+}
+
+function duplicateRichBlock(component: EditableComponent, index: number) {
+  const items = [...richBlocksFor(component)];
+  const source = items[index];
+  if (!source) return;
+  const nextBlock = normalizeRichBlock({ ...source, id: `rich-${Date.now()}` }, index + 1);
+  items.splice(index + 1, 0, nextBlock);
+  setConfig(component, "blocks", resequenceRichBlocks(items));
+  expandRichBlock(nextBlock.id);
+}
+
+function resequenceRichBlocks(items: RichContentBlockItem[]): RichContentBlockItem[] {
+  return items.map((item, index) => ({ ...item, sort: index * 10 + 10 }));
+}
+
+function normalizeRichBlocks(value: unknown, component: EditableComponent): RichContentBlockItem[] {
+  const rawItems = Array.isArray(value) && value.length > 0 ? value : legacyRichBlocks(component);
+  return rawItems
+    .map((item, index) => normalizeRichBlock(item, index))
+    .filter((item) => item.type === "divider" || item.title || item.text || item.imageUrl || item.buttonText)
+    .sort((a, b) => a.sort - b.sort)
+    .map((item, index) => ({ ...item, sort: index * 10 + 10 }));
+}
+
+function legacyRichBlocks(component: EditableComponent): Array<Record<string, unknown>> {
+  const config = component.config;
+  const blocks: Array<Record<string, unknown>> = [];
+  const title = readString(config.title);
+  const subtitle = readString(config.subtitle);
+  const imageUrl = readString(config.imageUrl);
+  const html = readString(config.html);
+  const content = readString(config.content ?? config.text);
+  const buttonText = readString(config.buttonText);
+
+  if (imageUrl) blocks.push({ type: "image", imageUrl, caption: subtitle });
+  for (const url of imageUrlsFromHtml(html).filter((url) => url !== imageUrl)) {
+    blocks.push({ type: "image", imageUrl: url });
+  }
+  if (title) blocks.push({ type: "heading", title });
+  if (subtitle && !imageUrl) blocks.push({ type: "paragraph", text: subtitle });
+  for (const paragraph of htmlToPlainText(html || content).split(/\n{2,}/).map((item) => item.trim()).filter(Boolean)) {
+    blocks.push({ type: "paragraph", text: paragraph });
+  }
+  if (buttonText) {
+    blocks.push({
+      type: "button",
+      buttonText,
+      actionTargetType: readString(config.actionTargetType) || "none",
+      targetPageKey: readString(config.targetPageKey),
+      targetConferenceId: readString(config.targetConferenceId),
+      targetProductId: readString(config.targetProductId),
+      targetProductCategoryId: readString(config.targetProductCategoryId),
+      targetCouponCampaignId: readString(config.targetCouponCampaignId),
+      externalUrl: readString(config.externalUrl),
+      phone: readString(config.phone),
+      copyText: readString(config.copyText)
+    });
+  }
+  return blocks.length > 0 ? blocks : [{ type: "paragraph", text: "请输入图文内容" }];
+}
+
+function normalizeRichBlock(value: unknown, index: number): RichContentBlockItem {
+  const record = readRecord(value);
+  const typeValue = readString(record.type);
+  const type = ["heading", "paragraph", "image", "quote", "divider", "button"].includes(typeValue)
+    ? (typeValue as RichContentBlockItem["type"])
+    : "paragraph";
+  const targetType = readString(record.actionTargetType ?? record.targetType ?? record.actionType) || (type === "button" ? "page" : "none");
+  return {
+    id: readString(record.id) || `rich-${Date.now()}-${index}`,
+    enabled: typeof record.enabled === "boolean" ? record.enabled : true,
+    sort: Number.isFinite(Number(record.sort)) ? Number(record.sort) : index * 10 + 10,
+    type,
+    title: readString(record.title ?? record.heading ?? record.text),
+    text: readString(record.text ?? record.content ?? record.description),
+    imageUrl: readString(record.imageUrl ?? record.url ?? record.src),
+    caption: readString(record.caption ?? record.alt),
+    imageMode: readString(record.imageMode) || "widthFix",
+    align: readString(record.align) || "left",
+    buttonText: readString(record.buttonText ?? record.label) || (type === "button" ? "查看详情" : ""),
+    actionTargetType: targetType,
+    targetPageKey: readString(record.targetPageKey ?? record.pageKey),
+    targetConferenceId: readString(record.targetConferenceId ?? record.conferenceId),
+    targetProductId: readString(record.targetProductId ?? record.productId),
+    targetProductCategoryId: readString(record.targetProductCategoryId ?? record.productCategoryId),
+    targetCouponCampaignId: readString(record.targetCouponCampaignId ?? record.couponCampaignId),
+    externalUrl: readString(record.externalUrl ?? record.url),
+    externalMiniappAppId: readString(record.externalMiniappAppId ?? record.miniappAppId),
+    externalMiniappPath: readString(record.externalMiniappPath ?? record.miniappPath),
+    phone: readString(record.phone),
+    copyText: readString(record.copyText)
+  };
+}
+
+function isStandardRichBlockItem(value: unknown): value is RichContentBlockItem {
+  return (
+    isEntryConfigRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.enabled === "boolean" &&
+    ["heading", "paragraph", "image", "quote", "divider", "button"].includes(String(value.type))
+  );
+}
+
+function richBlockTypeLabel(type: RichContentBlockItem["type"]): string {
+  return {
+    heading: "标题",
+    paragraph: "正文",
+    image: "图片",
+    quote: "引用",
+    divider: "分割",
+    button: "按钮"
+  }[type];
+}
+
+function richBlockSummary(block: RichContentBlockItem): string {
+  if (block.type === "heading") return block.title || "未命名标题";
+  if (block.type === "paragraph" || block.type === "quote") return block.text || "未填写内容";
+  if (block.type === "image") return block.caption || block.imageUrl || "未选择图片";
+  if (block.type === "button") return `${block.buttonText || "按钮"} · ${richBlockActionLabel(block)}`;
+  return "内容分割线";
+}
+
+function richBlockActionLabel(block: RichContentBlockItem): string {
+  const option = actionTargetOptions().find((item) => item.value === block.actionTargetType);
+  if (block.actionTargetType === "page") return `${option?.label || "打开页面"}：${pageTargetOptions().find((item) => item.value === block.targetPageKey)?.label || block.targetPageKey || "未选择"}`;
+  if (block.actionTargetType === "conference" || block.actionTargetType === "registration") return `${option?.label || "会议"}：${conferenceSelectOptions().find((item) => item.value === block.targetConferenceId)?.label || "未选择"}`;
+  if (block.actionTargetType === "product") return `${option?.label || "商品"}：${productSelectOptions().find((item) => item.value === block.targetProductId)?.label || "未选择"}`;
+  if (block.actionTargetType === "coupon") return `${option?.label || "券活动"}：${couponCampaignSelectOptions().find((item) => item.value === block.targetCouponCampaignId)?.label || "未选择"}`;
+  if (block.actionTargetType === "external-h5") return `${option?.label || "外部 H5"}：${block.externalUrl || "未填写"}`;
+  if (block.actionTargetType === "phone") return `${option?.label || "电话"}：${block.phone || "未填写"}`;
+  if (block.actionTargetType === "copy") return `${option?.label || "复制"}：${block.copyText || "未填写"}`;
+  return option?.label || "无跳转";
+}
+
+function htmlToPlainText(value: string): string {
+  return value
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function imageUrlsFromHtml(value: string): string[] {
+  const urls: string[] = [];
+  value.replace(/<img\b[^>]*\bsrc\s*=\s*(['"])(.*?)\1[^>]*>/gi, (_match, _quote: string, src: string) => {
+    const url = src.trim();
+    if (/^https?:\/\//i.test(url) && !urls.includes(url)) urls.push(url);
+    return "";
+  });
+  return urls;
+}
+
 function entryActionLabel(entry: EntryConfigItem): string {
   const option = actionTargetOptions().find((item) => item.value === entry.actionTargetType);
   if (entry.actionTargetType === "page") return `${option?.label || "打开页面"}：${pageTargetOptions().find((item) => item.value === entry.targetPageKey)?.label || entry.targetPageKey || "未选择"}`;
@@ -3114,6 +3513,7 @@ function materialSpecKeyForField(componentType: string, field: ConfigField): Mat
   if (componentType === "download-list" && field.key === "items") return "downloadFile";
   if (componentType === "testimonial-list" && field.key === "items") return "testimonialAvatar";
   if (componentType === "sponsor-wall" && field.key === "sponsors") return "sponsorLogo";
+  if (field.kind === "rich-blocks") return "contentImage";
   if (!isImageField(field)) return undefined;
   if (componentType === "hero") return "heroImage";
   if (componentType === "hero-banner") return "heroImage";
@@ -3134,6 +3534,7 @@ async function openMaterialPicker(component: EditableComponent, field: ConfigFie
   materialTarget.value = { component, field };
   materialPageTarget.value = null;
   materialEntryTarget.value = null;
+  materialRichBlockTarget.value = null;
   materialVisible.value = true;
   await loadMaterials();
 }
@@ -3142,6 +3543,7 @@ async function openPageMetaImagePicker(key: keyof PageMetaForm = "shareImageUrl"
   materialTarget.value = null;
   materialPageTarget.value = key;
   materialEntryTarget.value = null;
+  materialRichBlockTarget.value = null;
   materialVisible.value = true;
   await loadMaterials();
 }
@@ -3150,6 +3552,16 @@ async function openEntryMaterialPicker(component: EditableComponent, entry: Entr
   materialTarget.value = null;
   materialPageTarget.value = null;
   materialEntryTarget.value = { component, entry, key };
+  materialRichBlockTarget.value = null;
+  materialVisible.value = true;
+  await loadMaterials();
+}
+
+async function openRichBlockMaterialPicker(component: EditableComponent, block: RichContentBlockItem) {
+  materialTarget.value = null;
+  materialPageTarget.value = null;
+  materialEntryTarget.value = null;
+  materialRichBlockTarget.value = { component, block };
   materialVisible.value = true;
   await loadMaterials();
 }
@@ -3171,6 +3583,14 @@ async function loadMaterials() {
 }
 
 function chooseMaterial(asset: MaterialAsset) {
+  if (materialRichBlockTarget.value) {
+    materialRichBlockTarget.value.block.imageUrl = asset.url;
+    setConfig(materialRichBlockTarget.value.component, "blocks", [...richBlocksFor(materialRichBlockTarget.value.component)]);
+    materialVisible.value = false;
+    materialRichBlockTarget.value = null;
+    ElMessage.success("已应用图文图片");
+    return;
+  }
   if (materialEntryTarget.value) {
     materialEntryTarget.value.entry[materialEntryTarget.value.key] = asset.url;
     setConfig(materialEntryTarget.value.component, "items", [...entryItemsFor(materialEntryTarget.value.component)]);
@@ -3398,6 +3818,22 @@ const ComponentPreview = defineComponent({
     const titleStyle = () => buildPreviewTitleStyle(props.item);
     const parsedList = (key: string) => list(key).map(splitPreviewLine).filter((item) => item.length > 0);
     const entryItems = () => normalizeEntryItems(props.item.config.items, props.item.type).filter((entry) => entry.enabled !== false);
+    const richBlocks = () => normalizeRichBlocks(props.item.config.blocks, props.item).filter((block) => block.enabled !== false);
+    const richContentPreview = () =>
+      h("div", { class: "preview-section preview-rich-content" }, richBlocks().map((block) => {
+        const alignStyle = { textAlign: block.align || "left" };
+        if (block.type === "heading") return h("strong", { class: "preview-rich-content__heading", style: { ...titleStyle(), ...alignStyle } }, block.title || "图文标题");
+        if (block.type === "paragraph") return h("p", { class: "preview-rich-content__paragraph", style: { ...textStyle(), ...alignStyle } }, block.text || "请填写正文内容");
+        if (block.type === "quote") return h("blockquote", { class: "preview-rich-content__quote", style: { ...textStyle(), ...alignStyle } }, block.text || "请填写重点提示");
+        if (block.type === "image") {
+          return h("figure", { class: "preview-rich-content__figure" }, [
+            block.imageUrl ? h("img", { src: block.imageUrl, alt: block.caption || "" }) : h("div", { class: "preview-rich-content__image-empty" }, "请选择图片"),
+            block.caption ? h("figcaption", block.caption) : null
+          ]);
+        }
+        if (block.type === "button") return h("button", { class: "preview-rich-content__button" }, block.buttonText || "查看详情");
+        return h("div", { class: "preview-rich-content__divider" });
+      }));
     const meetings = () =>
       (previewContextConferences.value.length > 0 ? previewContextConferences.value : sampleConferences).map((item, index) => ({
         id: item.id,
@@ -3511,6 +3947,7 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "image-promo-card" || type === "rich-content-block") {
+        if (type === "rich-content-block") return richContentPreview();
         return h("div", { class: ["preview-section", type === "image-promo-card" ? "preview-image-promo" : "preview-rich-block"] }, [
           value("imageUrl") ? h("img", { class: "preview-cover", src: value("imageUrl"), alt: "" }) : null,
           h("strong", { style: titleStyle() }, value("title", type === "image-promo-card" ? "活动推荐" : "品牌故事")),
@@ -3699,11 +4136,7 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "text-image") {
-        return h("div", { class: "preview-section" }, [
-          value("imageUrl") ? h("img", { class: "preview-cover", src: value("imageUrl"), alt: "" }) : null,
-          h("strong", { style: titleStyle() }, value("title", "大会介绍")),
-          h("p", { style: textStyle() }, value("text", "聚焦行业趋势、案例实践和高质量连接。"))
-        ]);
+        return richContentPreview();
       }
       if (type === "image-grid" || type === "carousel") {
         if (type === "carousel") {
@@ -3718,7 +4151,7 @@ const ComponentPreview = defineComponent({
         return h("div", { class: "preview-notice", style: textStyle() }, value("text", "报名开放中"));
       }
       if (type === "rich-text" || type === "safe-html") {
-        return h("div", { class: "preview-section", innerHTML: value("html", "请输入图文内容") });
+        return richContentPreview();
       }
       if (type === "divider") return h("div", { class: "preview-divider" });
       if (type === "spacer") return h("div", { style: { height: `${numberValue(props.item, "height", 24)}px` } });
@@ -5162,6 +5595,79 @@ function looksLikePreviewImage(value: string): boolean {
   line-height: 1.55;
 }
 
+.preview-rich-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preview-rich-content__heading {
+  margin: 0;
+  color: #172033;
+  font-size: 22px;
+  line-height: 1.22;
+}
+
+.preview-rich-content__paragraph {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.preview-rich-content__quote {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f4f7fb;
+  color: #43536a;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.preview-rich-content__figure {
+  margin: 0;
+}
+
+.preview-rich-content__figure img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  border-radius: var(--preview-radius);
+  background: #eef3fb;
+}
+
+.preview-rich-content__image-empty {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  border: 1px dashed #cbd5e1;
+  border-radius: var(--preview-radius);
+  color: #64748b;
+  background: #f8fbff;
+}
+
+.preview-rich-content__figure figcaption {
+  margin-top: 6px;
+  color: #768399;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.preview-rich-content__button {
+  align-self: flex-start;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 16px;
+  background: var(--admin-color-primary);
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.preview-rich-content__divider {
+  height: 1px;
+  background: #d8e1ef;
+}
+
 .preview-support-warning {
   display: flex;
   flex-direction: column;
@@ -5790,6 +6296,126 @@ function looksLikePreviewImage(value: string): boolean {
   flex: 1;
   height: 1px;
   background: rgb(213 224 239 / 96%);
+}
+
+.rich-block-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.rich-block-editor__head {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgb(205 218 236 / 86%);
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.rich-block-editor__head p {
+  margin: 0;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.rich-block-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rich-block-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.rich-block-card.is-disabled {
+  opacity: 0.64;
+}
+
+.rich-block-card__top,
+.rich-block-card__actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rich-block-card__summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.rich-block-card__summary strong,
+.rich-block-card__summary small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rich-block-card__summary small {
+  color: var(--admin-color-muted);
+  font-size: 12px;
+}
+
+.rich-block-card__type {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 32px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: var(--admin-color-primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.rich-block-card__actions {
+  flex: 0 0 142px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.rich-block-card__actions :deep(.el-switch) {
+  flex-basis: 100%;
+  justify-content: flex-end;
+}
+
+.rich-block-card__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgb(213 224 239 / 96%);
+}
+
+.rich-block-card__grid label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--admin-color-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rich-block-card__grid label small {
+  color: var(--admin-color-muted);
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.rich-block-card__wide {
+  grid-column: 1 / -1;
 }
 
 .settings-footer {

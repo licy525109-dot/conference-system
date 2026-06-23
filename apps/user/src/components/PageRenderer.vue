@@ -223,12 +223,28 @@
         <view v-if="stringConfig(component, 'buttonText')" class="cms-card__button"><text>{{ stringConfig(component, "buttonText") }}</text></view>
       </view>
 
-      <view v-else-if="component.type === 'rich-content-block'" class="cms-section cms-rich-block">
-        <image v-if="stringConfig(component, 'imageUrl')" class="cms-section__image" :src="stringConfig(component, 'imageUrl')" mode="aspectFill" />
-        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "自定义图文" }}</text>
-        <text v-if="stringConfig(component, 'subtitle')" class="cms-section__text">{{ stringConfig(component, "subtitle") }}</text>
-        <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "content") || "请在后台填写图文内容。" }}</text>
-        <view v-if="stringConfig(component, 'buttonText')" class="cms-card__button" @click="handleComponentAction(component)"><text>{{ stringConfig(component, "buttonText") }}</text></view>
+      <view v-else-if="isRichContentComponent(component)" class="cms-section cms-rich-content">
+        <view
+          v-for="block in richContentBlocks(component)"
+          :key="block.id"
+          :class="richBlockClass(block)"
+          :style="richBlockStyle(block)"
+        >
+          <text v-if="block.type === 'heading'" class="cms-rich-content__heading" :style="richBlockHeadingStyle(component, block)">{{ block.title || "图文标题" }}</text>
+          <text v-else-if="block.type === 'paragraph'" class="cms-rich-content__paragraph" :style="richBlockTextStyle(component, block)">{{ block.text || "请填写正文内容" }}</text>
+          <view v-else-if="block.type === 'quote'" class="cms-rich-content__quote" :style="richBlockTextStyle(component, block)">
+            <text>{{ block.text || "请填写重点提示" }}</text>
+          </view>
+          <view v-else-if="block.type === 'image'" class="cms-rich-content__figure">
+            <image v-if="block.imageUrl" class="cms-rich-content__image" :src="block.imageUrl" :mode="richBlockImageMode(block)" />
+            <view v-else class="cms-rich-content__image cms-rich-content__image--empty"><text>图片未配置</text></view>
+            <text v-if="block.caption" class="cms-rich-content__caption">{{ block.caption }}</text>
+          </view>
+          <view v-else-if="block.type === 'button'" class="cms-rich-content__button" @click.stop="runRichBlockAction(component, block)">
+            <text>{{ block.buttonText || "查看详情" }}</text>
+          </view>
+          <view v-else class="cms-rich-content__divider" />
+        </view>
       </view>
 
       <view v-else-if="component.type === 'registration-button'" class="cms-register">
@@ -238,10 +254,6 @@
       <button v-else-if="component.type === 'floating-registration-button'" class="cms-floating" :style="textStyle(component)" @click="handleComponentAction(component)">
         {{ stringConfig(component, "text") || "立即报名" }}
       </button>
-
-      <view v-else-if="component.type === 'rich-text' || component.type === 'safe-html'" class="cms-section" :style="textStyle(component)">
-        <rich-text :nodes="safeHtml(component)" />
-      </view>
 
       <view v-else-if="component.type === 'image-grid'" class="cms-grid">
         <image v-for="image in arrayConfig(component, 'images')" :key="String(image)" class="cms-grid__image" :src="String(image)" mode="aspectFill" />
@@ -424,12 +436,6 @@
         <view class="cms-list-lines">
           <text v-for="item in arrayConfig(component, 'items')" :key="String(item)" class="cms-list-line" :style="textStyle(component)">{{ item }}</text>
         </view>
-      </view>
-
-      <view v-else-if="component.type === 'text-image'" class="cms-section">
-        <image v-if="stringConfig(component, 'imageUrl')" class="cms-section__image" :src="stringConfig(component, 'imageUrl')" mode="aspectFill" />
-        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "大会介绍" }}</text>
-        <text class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "text") || "聚焦行业趋势、案例实践和高质量连接。" }}</text>
       </view>
 
       <view v-else-if="component.type === 'live-card'" class="cms-section cms-live">
@@ -741,6 +747,31 @@ interface CmsActionConfig {
   copyText: string;
 }
 
+interface RichContentBlockItem {
+  id: string;
+  enabled: boolean;
+  sort: number;
+  type: "heading" | "paragraph" | "image" | "quote" | "divider" | "button";
+  title: string;
+  text: string;
+  imageUrl: string;
+  caption: string;
+  imageMode: string;
+  align: string;
+  buttonText: string;
+  actionTargetType: string;
+  targetPageKey: string;
+  targetConferenceId: string;
+  targetProductId: string;
+  targetProductCategoryId: string;
+  targetCouponCampaignId: string;
+  externalUrl: string;
+  externalMiniappAppId: string;
+  externalMiniappPath: string;
+  phone: string;
+  copyText: string;
+}
+
 interface DownloadItem {
   name: string;
   url: string;
@@ -830,6 +861,89 @@ function normalizeHomeEntry(value: unknown, index: number): HomeEntryItem {
   );
 }
 
+function isRichContentComponent(component: CmsComponent): boolean {
+  return ["rich-content-block", "rich-text", "safe-html", "text-image"].includes(component.type);
+}
+
+function richContentBlocks(component: CmsComponent): RichContentBlockItem[] {
+  const configured = arrayConfig(component, "blocks");
+  const source = configured.length > 0 ? configured : legacyRichContentBlocks(component);
+  return source
+    .map((item, index) => normalizeRichContentBlock(item, index))
+    .filter((item) => item.enabled !== false)
+    .filter((item) => item.type === "divider" || item.title || item.text || item.imageUrl || item.buttonText)
+    .sort((a, b) => a.sort - b.sort);
+}
+
+function legacyRichContentBlocks(component: CmsComponent): Array<Record<string, unknown>> {
+  const blocks: Array<Record<string, unknown>> = [];
+  const imageUrl = stringConfig(component, "imageUrl");
+  const title = stringConfig(component, "title");
+  const subtitle = stringConfig(component, "subtitle");
+  const html = stringConfig(component, "html");
+  const content = stringConfig(component, "content") || stringConfig(component, "text");
+  const buttonText = stringConfig(component, "buttonText");
+
+  if (imageUrl) blocks.push({ type: "image", imageUrl, caption: subtitle });
+  for (const url of imageUrlsFromHtml(html).filter((url) => url !== imageUrl)) {
+    blocks.push({ type: "image", imageUrl: url });
+  }
+  if (title) blocks.push({ type: "heading", title });
+  if (subtitle && !imageUrl) blocks.push({ type: "paragraph", text: subtitle });
+  for (const paragraph of htmlToPlainText(html || content).split(/\n{2,}/).map((item) => item.trim()).filter(Boolean)) {
+    blocks.push({ type: "paragraph", text: paragraph });
+  }
+  if (buttonText) {
+    blocks.push({
+      type: "button",
+      buttonText,
+      actionTargetType: stringConfig(component, "actionTargetType") || "none",
+      targetPageKey: stringConfig(component, "targetPageKey"),
+      targetConferenceId: stringConfig(component, "targetConferenceId"),
+      targetProductId: stringConfig(component, "targetProductId"),
+      targetProductCategoryId: stringConfig(component, "targetProductCategoryId"),
+      targetCouponCampaignId: stringConfig(component, "targetCouponCampaignId"),
+      externalUrl: stringConfig(component, "externalUrl"),
+      phone: stringConfig(component, "phone"),
+      copyText: stringConfig(component, "copyText")
+    });
+  }
+  return blocks.length > 0 ? blocks : [{ type: "paragraph", text: "请在后台填写图文内容。" }];
+}
+
+function normalizeRichContentBlock(value: unknown, index: number): RichContentBlockItem {
+  const record = isRecord(value) ? value : { type: "paragraph", text: String(value || "") };
+  const typeValue = firstString(record, ["type"]);
+  const type = ["heading", "paragraph", "image", "quote", "divider", "button"].includes(typeValue)
+    ? (typeValue as RichContentBlockItem["type"])
+    : "paragraph";
+  const actionType = firstString(record, ["actionTargetType", "targetType", "actionType"]) || (type === "button" ? "page" : "none");
+  return {
+    id: firstString(record, ["id"]) || `rich-${index}`,
+    enabled: typeof record.enabled === "boolean" ? record.enabled : true,
+    sort: Number.isFinite(Number(record.sort)) ? Number(record.sort) : index * 10 + 10,
+    type,
+    title: firstString(record, ["title", "heading", "text"]),
+    text: firstString(record, ["text", "content", "description"]),
+    imageUrl: firstString(record, ["imageUrl", "url", "src"]),
+    caption: firstString(record, ["caption", "alt"]),
+    imageMode: firstString(record, ["imageMode"]) || "widthFix",
+    align: firstString(record, ["align"]) || "left",
+    buttonText: firstString(record, ["buttonText", "label"]) || (type === "button" ? "查看详情" : ""),
+    actionTargetType: actionType,
+    targetPageKey: firstString(record, ["targetPageKey", "pageKey"]),
+    targetConferenceId: firstString(record, ["targetConferenceId", "conferenceId"]),
+    targetProductId: firstString(record, ["targetProductId", "productId"]),
+    targetProductCategoryId: firstString(record, ["targetProductCategoryId", "productCategoryId"]),
+    targetCouponCampaignId: firstString(record, ["targetCouponCampaignId", "couponCampaignId"]),
+    externalUrl: firstString(record, ["externalUrl", "url"]),
+    externalMiniappAppId: firstString(record, ["externalMiniappAppId", "miniappAppId"]),
+    externalMiniappPath: firstString(record, ["externalMiniappPath", "miniappPath"]),
+    phone: firstString(record, ["phone"]),
+    copyText: firstString(record, ["copyText"])
+  };
+}
+
 async function handleEntryAction(component: CmsComponent, entry: HomeEntryItem): Promise<void> {
   await runAction(actionFromEntry(component, entry));
 }
@@ -850,6 +964,28 @@ function actionFromEntry(component: CmsComponent, entry: HomeEntryItem): CmsActi
     miniappExtraData: entry.miniappExtraData,
     phone: entry.phone || (type === "phone" ? targetValue : ""),
     copyText: entry.copyText || (type === "copy" ? targetValue : "")
+  };
+}
+
+async function runRichBlockAction(component: CmsComponent, block: RichContentBlockItem): Promise<void> {
+  await runAction(actionFromRichBlock(component, block));
+}
+
+function actionFromRichBlock(component: CmsComponent, block: RichContentBlockItem): CmsActionConfig {
+  const type = block.actionTargetType || stringConfig(component, "actionTargetType") || "none";
+  return {
+    type,
+    pageKey: block.targetPageKey,
+    conferenceId: block.targetConferenceId || ((type === "registration" || type === "conference" || type === "ai") ? props.conference?.id || "" : ""),
+    productId: block.targetProductId,
+    productCategoryId: block.targetProductCategoryId,
+    couponCampaignId: block.targetCouponCampaignId,
+    externalUrl: block.externalUrl,
+    miniappAppId: block.externalMiniappAppId,
+    miniappPath: block.externalMiniappPath,
+    miniappExtraData: "",
+    phone: block.phone,
+    copyText: block.copyText
   };
 }
 
@@ -1044,6 +1180,30 @@ function safeHtml(component: CmsComponent): string {
     .replace(/javascript\s*:/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<\/?([a-z][a-z0-9-]*)(\s[^>]*)?>/gi, sanitizeHtmlTag);
+}
+
+function htmlToPlainText(value: string): string {
+  return value
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function imageUrlsFromHtml(value: string): string[] {
+  const urls: string[] = [];
+  value.replace(/<img\b[^>]*\bsrc\s*=\s*(['"])(.*?)\1[^>]*>/gi, (_match, _quote: string, src: string) => {
+    const url = src.trim();
+    if (/^https?:\/\//i.test(url) && !urls.includes(url)) urls.push(url);
+    return "";
+  });
+  return urls;
 }
 
 function toggleFaq(component: CmsComponent, index: number): void {
@@ -1614,6 +1774,34 @@ function textStyle(component: CmsComponent): Record<string, string> {
   };
 }
 
+function richBlockClass(block: RichContentBlockItem): string[] {
+  return ["cms-rich-content__block", `is-${block.type}`];
+}
+
+function richBlockStyle(block: RichContentBlockItem): Record<string, string> {
+  return block.align ? { textAlign: block.align } : {};
+}
+
+function richBlockHeadingStyle(component: CmsComponent, block: RichContentBlockItem): Record<string, string> {
+  return {
+    ...titleStyle(component),
+    ...(block.align ? { textAlign: block.align } : {})
+  };
+}
+
+function richBlockTextStyle(component: CmsComponent, block: RichContentBlockItem): Record<string, string> {
+  return {
+    ...textStyle(component),
+    ...(block.align ? { textAlign: block.align } : {})
+  };
+}
+
+function richBlockImageMode(block: RichContentBlockItem): string {
+  if (block.imageMode === "aspectFill") return "aspectFill";
+  if (block.imageMode === "aspectFit") return "aspectFit";
+  return "widthFix";
+}
+
 function titleStyle(component: CmsComponent): Record<string, string> {
   const fontSize = numberConfig(component, "titleFontSize", 0);
   const fontFamily = stringConfig(component, "titleFontFamily") || stringConfig(component, "fontFamily");
@@ -1988,6 +2176,91 @@ function readErrorText(error: unknown, fallback: string): string {
   height: 260rpx;
   margin-bottom: 18rpx;
   border-radius: var(--cms-radius);
+}
+
+.cms-rich-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.cms-rich-content__block {
+  display: block;
+}
+
+.cms-rich-content__heading {
+  display: block;
+  color: var(--ui-color-text);
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1.24;
+}
+
+.cms-rich-content__paragraph {
+  display: block;
+  color: var(--ui-color-muted);
+  font-size: 26rpx;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.cms-rich-content__quote {
+  display: block;
+  padding: 20rpx 22rpx;
+  border-radius: 18rpx;
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-muted);
+  font-size: 25rpx;
+  line-height: 1.6;
+}
+
+.cms-rich-content__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.cms-rich-content__image {
+  width: 100%;
+  min-height: 180rpx;
+  border-radius: var(--cms-radius);
+  background: var(--ui-color-surface-muted);
+}
+
+.cms-rich-content__image--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-color-muted);
+  font-size: 24rpx;
+}
+
+.cms-rich-content__caption {
+  display: block;
+  color: var(--ui-color-muted);
+  font-size: 22rpx;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.cms-rich-content__button {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  justify-content: center;
+  min-height: 68rpx;
+  padding: 0 28rpx;
+  border-radius: 999rpx;
+  background: var(--cms-gradient-cta);
+  color: var(--cms-text-inverse);
+  font-size: 26rpx;
+  font-weight: 800;
+  box-shadow: 0 16rpx 32rpx rgba(31, 77, 122, 0.18);
+}
+
+.cms-rich-content__divider {
+  height: 1px;
+  background: var(--ui-color-border);
 }
 
 .cms-card {
