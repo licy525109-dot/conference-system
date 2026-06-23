@@ -30,7 +30,7 @@
         @register="scrollToForm"
       />
 
-      <FormSection title="选择报名规格" description="可选择多个票种，系统会为每张票生成一份参会人信息。" step="1">
+      <FormSection v-if="isRegistrationModuleVisible('skuSelector')" :title="registrationModuleTitle('skuSelector', '选择报名规格')" description="可选择多个票种，系统会为每张票生成一份参会人信息。" step="1">
         <view class="sku-list">
           <view
             v-for="sku in conference.skus"
@@ -54,7 +54,7 @@
         </view>
       </FormSection>
 
-      <FormSection title="优惠与费用" description="可输入优惠码试算，最终应付金额以下单时后端重新计算为准。" step="2">
+      <FormSection v-if="isRegistrationModuleVisible('couponFee')" :title="registrationModuleTitle('couponFee', '优惠与费用')" description="可输入优惠码试算，最终应付金额以下单时后端重新计算为准。" step="2">
         <view class="coupon-row">
           <input class="coupon-input" placeholder="输入优惠码" :value="couponCode" @input="setCouponCode" />
           <button class="ui-button-secondary ui-button-compact coupon-button" :disabled="quoteLoading" @click="loadQuote">使用</button>
@@ -71,7 +71,7 @@
         />
       </FormSection>
 
-      <FormSection title="参会人信息" :description="attendeeSectionDescription" step="3">
+      <FormSection v-if="isRegistrationModuleVisible('attendeeForm')" :title="registrationModuleTitle('attendeeForm', '参会人信息')" :description="attendeeSectionDescription" step="3">
         <EmptyState v-if="attendeeForms.length === 0" title="请先选择报名票数" description="选择票数后，这里会自动生成参会人表单。" mark="人" />
         <view v-for="attendee in attendeeForms" :key="attendee.key" class="attendee-card">
           <text class="attendee-title">{{ attendee.skuName }} 第 {{ attendee.index + 1 }} 位参会人</text>
@@ -148,12 +148,12 @@
     </view>
     <WechatProfilePrompt />
     <FixedBottomActionBar
-      v-if="conference && form"
+      v-if="conference && form && isRegistrationModuleVisible('submitOrder')"
       amount-label="合计"
       :amount-value="`¥${formatCent(payableAmountCent)}`"
       note="金额以提交订单时系统计算结果为准"
-      primary-text="提交订单"
-      :secondary-text="addingToCart ? '加入中...' : '加入购物车'"
+      :primary-text="registrationModuleContent('submitOrder', '提交订单')"
+      :secondary-text="isRegistrationModuleVisible('addCartButton') ? (addingToCart ? '加入中...' : registrationModuleContent('addCartButton', '加入购物车')) : ''"
       :loading="submitting"
       loading-text="提交中..."
       :primary-disabled="submitting || totalTickets === 0"
@@ -646,14 +646,53 @@ function normalizeDetailDisplay(value: unknown, cmsDisplay: Record<string, unkno
   const mode = String(source.inventoryDisplayMode || "STATUS").toUpperCase();
   return {
     inventoryDisplayMode: mode === "EXACT" || mode === "HIDDEN" ? mode : "STATUS",
-    lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : 10
+    lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : 10,
+    modules: normalizeRegistrationModules(source)
   };
 }
 
 function readCmsBusinessDisplay(page: PublishedPage | null): Record<string, unknown> {
   const themeJson = readRecord(page?.version.themeJson);
   const businessDisplay = readRecord(themeJson.businessDisplay);
-  return readRecord(businessDisplay.conferenceDetail ?? themeJson.detailDisplay);
+  return readRecord(businessDisplay.registrationForm ?? businessDisplay.conferenceDetail ?? themeJson.detailDisplay);
+}
+
+function normalizeRegistrationModules(source: Record<string, unknown>) {
+  const defaults = [
+    { key: "skuSelector", title: "选择报名规格", content: "", visible: true, sort: 20 },
+    { key: "couponFee", title: "优惠与费用", content: "", visible: true, sort: 30 },
+    { key: "attendeeForm", title: "参会人信息", content: "", visible: true, sort: 40 },
+    { key: "inventory", title: "库存展示", content: "", visible: true, sort: 50 },
+    { key: "addCartButton", title: "加入购物车", content: "加入购物车", visible: true, sort: 60 },
+    { key: "submitOrder", title: "提交订单", content: "提交订单", visible: true, sort: 70 }
+  ];
+  const rawModules = Array.isArray(source.modules) ? source.modules : [];
+  return defaults.map((item) => {
+    const record = readRecord(rawModules.find((raw) => readRecord(raw).key === item.key));
+    return {
+      ...item,
+      visible: typeof record.visible === "boolean" ? record.visible : item.visible,
+      title: typeof record.title === "string" && record.title.trim() ? record.title.trim() : item.title,
+      content: typeof record.content === "string" && record.content.trim() ? record.content.trim() : item.content,
+      sort: Number.isFinite(Number(record.sort)) ? Number(record.sort) : item.sort
+    };
+  });
+}
+
+function registrationModule(key: string) {
+  return displaySettings.value.modules.find((item) => item.key === key);
+}
+
+function isRegistrationModuleVisible(key: string): boolean {
+  return registrationModule(key)?.visible !== false;
+}
+
+function registrationModuleTitle(key: string, fallback: string): string {
+  return registrationModule(key)?.title || fallback;
+}
+
+function registrationModuleContent(key: string, fallback: string): string {
+  return registrationModule(key)?.content || fallback;
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

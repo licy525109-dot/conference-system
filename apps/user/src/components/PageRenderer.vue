@@ -148,13 +148,29 @@
       </view>
 
       <view v-else-if="component.type === 'quick-icon-grid' || component.type === 'service-shortcut-card'" class="cms-section cms-entry-section" :style="homePanelStyle(component)">
-        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || (component.type === "quick-icon-grid" ? "快捷入口" : "服务中心") }}</text>
-        <view class="cms-entry-grid" :style="homeGridStyle(component)">
-          <view v-for="entry in homeEntries(component)" :key="entry.title + entry.targetType + entry.targetValue" :class="homeEntryClass(component)" @click="handleEntryAction(component, entry)">
-            <image v-if="entry.iconUrl" class="cms-entry-tile__icon" :src="entry.iconUrl" mode="aspectFit" />
-            <view v-else class="cms-entry-tile__icon cms-entry-tile__icon--text"><text>{{ entry.title.slice(0, 1) || "入" }}</text></view>
-            <text class="cms-entry-tile__title">{{ entry.title }}</text>
-            <text v-if="entry.subtitle" class="cms-entry-tile__subtitle">{{ entry.subtitle }}</text>
+        <view v-if="moduleTitleVisible(component)" class="cms-module-head" :style="moduleHeadStyle(component)">
+          <view class="cms-module-head__copy">
+            <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || (component.type === "quick-icon-grid" ? "快捷入口" : "服务中心") }}</text>
+            <text v-if="moduleSubtitle(component)" class="cms-module-head__subtitle" :style="subtitleStyle(component)">{{ moduleSubtitle(component) }}</text>
+          </view>
+          <text v-if="booleanConfig(component, 'showMore', false)" class="cms-module-head__more" @click="handleMoreAction(component)">{{ stringConfig(component, "moreText") || "查看更多" }}</text>
+        </view>
+        <scroll-view v-if="entryLayoutMode(component) === 'scroll'" scroll-x class="cms-entry-scroll">
+          <view class="cms-entry-grid is-scroll" :style="homeGridStyle(component)">
+            <view v-for="entry in homeEntries(component)" :key="entry.id || entry.title + entry.targetType + entry.targetValue" :class="homeEntryClass(component, entry)" :style="homeEntryStyle(component, entry)" @click="handleEntryAction(component, entry)">
+              <image v-if="entry.dynamicIconUrl || entry.iconUrl" class="cms-entry-tile__icon" :class="entryIconClass(component)" :src="entry.dynamicIconUrl || entry.iconUrl" mode="aspectFit" />
+              <view v-else class="cms-entry-tile__icon cms-entry-tile__icon--text" :class="entryIconClass(component)"><text>{{ builtinIconLabel(entry) }}</text></view>
+              <text class="cms-entry-tile__title" :style="homeEntryTitleStyle(entry)">{{ entry.title }}</text>
+              <text v-if="entry.subtitle && booleanConfig(component, 'showSubtitle', true)" class="cms-entry-tile__subtitle" :style="homeEntrySubtitleStyle(entry)">{{ entry.subtitle }}</text>
+            </view>
+          </view>
+        </scroll-view>
+        <view v-else class="cms-entry-grid" :style="homeGridStyle(component)">
+          <view v-for="entry in homeEntries(component)" :key="entry.id || entry.title + entry.targetType + entry.targetValue" :class="homeEntryClass(component, entry)" :style="homeEntryStyle(component, entry)" @click="handleEntryAction(component, entry)">
+            <image v-if="entry.dynamicIconUrl || entry.iconUrl" class="cms-entry-tile__icon" :class="entryIconClass(component)" :src="entry.dynamicIconUrl || entry.iconUrl" mode="aspectFit" />
+            <view v-else class="cms-entry-tile__icon cms-entry-tile__icon--text" :class="entryIconClass(component)"><text>{{ builtinIconLabel(entry) }}</text></view>
+            <text class="cms-entry-tile__title" :style="homeEntryTitleStyle(entry)">{{ entry.title }}</text>
+            <text v-if="entry.subtitle && booleanConfig(component, 'showSubtitle', true)" class="cms-entry-tile__subtitle" :style="homeEntrySubtitleStyle(entry)">{{ entry.subtitle }}</text>
           </view>
         </view>
       </view>
@@ -683,11 +699,31 @@ interface TagFilterItem {
 }
 
 interface HomeEntryItem {
+  id: string;
+  enabled: boolean;
+  sort: number;
   title: string;
   subtitle: string;
   iconUrl: string;
+  dynamicIconUrl: string;
+  builtinIcon: string;
+  backgroundColor: string;
+  textColor: string;
+  cardStyle: string;
   targetType: string;
   targetValue: string;
+  pageKey: string;
+  conferenceId: string;
+  productId: string;
+  productCategoryId: string;
+  couponCampaignId: string;
+  externalUrl: string;
+  miniappAppId: string;
+  miniappPath: string;
+  miniappExtraData: string;
+  phone: string;
+  copyText: string;
+  copySuccessText: string;
 }
 
 interface CmsActionConfig {
@@ -723,39 +759,75 @@ function stringListConfig(component: CmsComponent, key: string): string[] {
 }
 
 function homeEntries(component: CmsComponent): HomeEntryItem[] {
-  const items = arrayConfig(component, "items").map((item) => {
-    if (isRecord(item)) {
-      return {
-        title: firstString(item, ["title", "name", "label", "text"]) || "入口",
-        subtitle: firstString(item, ["subtitle", "description", "desc", "englishTitle"]) || "",
-        iconUrl: firstString(item, ["iconUrl", "imageUrl", "icon", "image"]) || "",
-        targetType: firstString(item, ["targetType", "actionTargetType", "actionType", "type"]) || "",
-        targetValue: firstString(item, ["targetValue", "target", "pageKey", "conferenceId", "productId", "url", "phone", "copyText"]) || ""
-      };
-    }
-    const parts = splitEntryLine(String(item));
-    return {
-      title: parts[0] || "入口",
-      subtitle: parts[1] || "",
-      iconUrl: looksLikeImageUrl(parts[2] || "") ? parts[2] : "",
-      targetType: parts[3] || (parts[2] && !looksLikeImageUrl(parts[2]) ? parts[2] : ""),
-      targetValue: parts[4] || ""
-    };
-  }).filter((item) => item.title);
+  const items = arrayConfig(component, "items")
+    .map((item, index) => normalizeHomeEntry(item, index))
+    .filter((item) => item.enabled !== false && item.title)
+    .sort((a, b) => a.sort - b.sort);
   if (items.length > 0) return items;
   if (component.type === "service-shortcut-card") {
     return [
-      { title: "我的报名", subtitle: "查看凭证", iconUrl: "", targetType: "page", targetValue: "my-registrations" },
-      { title: "商城订单", subtitle: "商品订单", iconUrl: "", targetType: "page", targetValue: "mall-orders" },
-      { title: "发票申请", subtitle: "提交发票", iconUrl: "", targetType: "invoice", targetValue: "" },
-      { title: "联系客服", subtitle: "复制信息", iconUrl: "", targetType: "copy", targetValue: "请联系会务组" }
+      normalizeHomeEntry({ title: "我的报名", subtitle: "查看凭证", builtinIcon: "registration", actionTargetType: "page", targetPageKey: "my-registrations" }, 0),
+      normalizeHomeEntry({ title: "商城订单", subtitle: "商品订单", builtinIcon: "order", actionTargetType: "page", targetPageKey: "mall-orders" }, 1),
+      normalizeHomeEntry({ title: "发票申请", subtitle: "提交发票", builtinIcon: "invoice", actionTargetType: "invoice" }, 2),
+      normalizeHomeEntry({ title: "联系客服", subtitle: "复制信息", builtinIcon: "service", actionTargetType: "copy", copyText: "请联系会务组" }, 3)
     ];
   }
   return [
-    { title: "会议报名", subtitle: "Registration", iconUrl: "", targetType: "page", targetValue: "conference-list" },
-    { title: "我的报名", subtitle: "My tickets", iconUrl: "", targetType: "page", targetValue: "my-registrations" },
-    { title: "商城", subtitle: "Shop", iconUrl: "", targetType: "page", targetValue: "mall" }
+    normalizeHomeEntry({ title: "会议报名", subtitle: "Registration", builtinIcon: "registration", actionTargetType: "page", targetPageKey: "conference-list" }, 0),
+    normalizeHomeEntry({ title: "我的报名", subtitle: "My tickets", builtinIcon: "order", actionTargetType: "page", targetPageKey: "my-registrations" }, 1),
+    normalizeHomeEntry({ title: "商城", subtitle: "Shop", builtinIcon: "shop", actionTargetType: "page", targetPageKey: "mall" }, 2)
   ];
+}
+
+function normalizeHomeEntry(value: unknown, index: number): HomeEntryItem {
+  if (isRecord(value)) {
+    const type = firstString(value, ["actionTargetType", "targetType", "actionType", "type"]) || "none";
+    const fallbackTarget = firstString(value, ["targetValue", "target"]);
+    return {
+      id: firstString(value, ["id"]) || `entry-${index}`,
+      enabled: typeof value.enabled === "boolean" ? value.enabled : true,
+      sort: Number.isFinite(Number(value.sort)) ? Number(value.sort) : index * 10 + 10,
+      title: firstString(value, ["title", "name", "label", "text"]) || "入口",
+      subtitle: firstString(value, ["subtitle", "description", "desc", "englishTitle"]) || "",
+      iconUrl: firstString(value, ["iconUrl", "imageUrl", "icon", "image"]) || "",
+      dynamicIconUrl: firstString(value, ["dynamicIconUrl", "animatedIconUrl"]) || "",
+      builtinIcon: firstString(value, ["builtinIcon"]) || "",
+      backgroundColor: firstString(value, ["backgroundColor"]) || "",
+      textColor: firstString(value, ["textColor"]) || "",
+      cardStyle: firstString(value, ["cardStyle"]) || "",
+      targetType: type,
+      targetValue: fallbackTarget,
+      pageKey: firstString(value, ["targetPageKey", "pageKey"]) || (type === "page" ? fallbackTarget : ""),
+      conferenceId: firstString(value, ["targetConferenceId", "conferenceId"]) || (type === "conference" || type === "registration" || type === "ai" ? fallbackTarget : ""),
+      productId: firstString(value, ["targetProductId", "productId"]) || (type === "product" ? fallbackTarget : ""),
+      productCategoryId: firstString(value, ["targetProductCategoryId", "productCategoryId"]) || (type === "product-category" ? fallbackTarget : ""),
+      couponCampaignId: firstString(value, ["targetCouponCampaignId", "couponCampaignId"]) || (type === "coupon" ? fallbackTarget : ""),
+      externalUrl: firstString(value, ["externalUrl", "url"]) || (type === "external-h5" ? fallbackTarget : ""),
+      miniappAppId: firstString(value, ["externalMiniappAppId", "miniappAppId"]) || (type === "external-miniapp" ? fallbackTarget : ""),
+      miniappPath: firstString(value, ["externalMiniappPath", "miniappPath"]) || "",
+      miniappExtraData: firstString(value, ["externalMiniappExtraData", "miniappExtraData"]) || "",
+      phone: firstString(value, ["phone"]) || (type === "phone" ? fallbackTarget : ""),
+      copyText: firstString(value, ["copyText"]) || (type === "copy" ? fallbackTarget : ""),
+      copySuccessText: firstString(value, ["copySuccessText"]) || "内容已复制"
+    };
+  }
+
+  const parts = splitEntryLine(String(value));
+  const type = parts[3] || (parts[2] && !looksLikeImageUrl(parts[2]) ? parts[2] : "none");
+  const targetValue = parts[4] || "";
+  return normalizeHomeEntry(
+    {
+      id: `entry-${index}`,
+      enabled: true,
+      sort: index * 10 + 10,
+      title: parts[0] || "入口",
+      subtitle: parts[1] || "",
+      iconUrl: looksLikeImageUrl(parts[2] || "") ? parts[2] : "",
+      actionTargetType: type,
+      targetValue
+    },
+    index
+  );
 }
 
 async function handleEntryAction(component: CmsComponent, entry: HomeEntryItem): Promise<void> {
@@ -767,17 +839,17 @@ function actionFromEntry(component: CmsComponent, entry: HomeEntryItem): CmsActi
   const targetValue = entry.targetValue;
   return {
     type,
-    pageKey: type === "page" ? targetValue : "",
-    conferenceId: type === "conference" || type === "registration" ? targetValue : "",
-    productId: type === "product" ? targetValue : "",
-    productCategoryId: type === "product-category" ? targetValue : "",
-    couponCampaignId: type === "coupon" ? targetValue : "",
-    externalUrl: type === "external-h5" ? targetValue : "",
-    miniappAppId: type === "external-miniapp" ? targetValue : "",
-    miniappPath: "",
-    miniappExtraData: "",
-    phone: type === "phone" ? targetValue : "",
-    copyText: type === "copy" ? targetValue : ""
+    pageKey: entry.pageKey || (type === "page" ? targetValue : ""),
+    conferenceId: entry.conferenceId || (type === "conference" || type === "registration" ? targetValue : ""),
+    productId: entry.productId || (type === "product" ? targetValue : ""),
+    productCategoryId: entry.productCategoryId || (type === "product-category" ? targetValue : ""),
+    couponCampaignId: entry.couponCampaignId || (type === "coupon" ? targetValue : ""),
+    externalUrl: entry.externalUrl || (type === "external-h5" ? targetValue : ""),
+    miniappAppId: entry.miniappAppId || (type === "external-miniapp" ? targetValue : ""),
+    miniappPath: entry.miniappPath,
+    miniappExtraData: entry.miniappExtraData,
+    phone: entry.phone || (type === "phone" ? targetValue : ""),
+    copyText: entry.copyText || (type === "copy" ? targetValue : "")
   };
 }
 
@@ -1062,8 +1134,20 @@ async function runAction(action: CmsActionConfig): Promise<void> {
     await goLoginPath("/pages/member/center");
     return;
   }
+  if (type === "cart") {
+    await goLoginPath("/pages/cart/index");
+    return;
+  }
+  if (type === "mall-orders") {
+    await goLoginPath("/pages/mall/orders");
+    return;
+  }
   if (type === "invoice") {
     await goLoginPath("/pages/invoice/index");
+    return;
+  }
+  if (type === "aftersale") {
+    await goLoginPath("/pages/mall/orders?tab=aftersale");
     return;
   }
   if (type === "ai") {
@@ -1405,14 +1489,103 @@ function homePanelStyle(component: CmsComponent): Record<string, string> {
 
 function homeGridStyle(component: CmsComponent): Record<string, string> {
   const columns = Math.min(4, Math.max(2, intConfig(component, "columns", component.type === "service-shortcut-card" ? 2 : 3)));
+  const gap = Math.max(4, intConfig(component, "cardGap", 14));
+  if (entryLayoutMode(component) === "scroll") {
+    return {
+      gap: `${gap}rpx`
+    };
+  }
   return {
-    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`
+    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+    gap: `${gap}rpx`
   };
 }
 
-function homeEntryClass(component: CmsComponent): string[] {
-  const style = stringConfig(component, "cardStyle") || "soft";
+function entryLayoutMode(component: CmsComponent): "grid" | "scroll" {
+  return stringConfig(component, "layoutMode") === "scroll" ? "scroll" : "grid";
+}
+
+function homeEntryClass(component: CmsComponent, entry: HomeEntryItem): string[] {
+  const style = entry.cardStyle || stringConfig(component, "cardStyle") || "soft";
   return ["cms-entry-tile", `is-${style}`];
+}
+
+function homeEntryStyle(component: CmsComponent, entry: HomeEntryItem): Record<string, string> {
+  const radius = Math.max(0, intConfig(component, "cardRadius", 28));
+  return {
+    ...(entry.backgroundColor || stringConfig(component, "cardBackground") ? { background: entry.backgroundColor || stringConfig(component, "cardBackground") } : {}),
+    ...(entry.textColor ? { color: entry.textColor } : {}),
+    borderRadius: `${radius}rpx`
+  };
+}
+
+function entryIconClass(component: CmsComponent): string[] {
+  return [stringConfig(component, "iconSize") === "small" ? "is-small" : "is-large"];
+}
+
+function homeEntryTitleStyle(entry: HomeEntryItem): Record<string, string> {
+  return entry.textColor ? { color: entry.textColor } : {};
+}
+
+function homeEntrySubtitleStyle(entry: HomeEntryItem): Record<string, string> {
+  return entry.textColor ? { color: entry.textColor, opacity: "0.72" } : {};
+}
+
+function builtinIconLabel(entry: HomeEntryItem): string {
+  const map: Record<string, string> = {
+    conference: "会",
+    registration: "报",
+    order: "单",
+    shop: "商",
+    member: "员",
+    invoice: "票",
+    service: "客"
+  };
+  return map[entry.builtinIcon] || entry.title.slice(0, 1) || "入";
+}
+
+function moduleTitleVisible(component: CmsComponent): boolean {
+  return booleanConfig(component, "showTitle", true);
+}
+
+function moduleSubtitle(component: CmsComponent): string {
+  return stringConfig(component, "subtitle");
+}
+
+function moduleHeadStyle(component: CmsComponent): Record<string, string> {
+  const align = stringConfig(component, "titleTextAlign") || stringConfig(component, "textAlign") || "left";
+  return {
+    textAlign: align,
+    marginBottom: `${Math.max(0, intConfig(component, "titleBottomGap", 18))}rpx`
+  };
+}
+
+function subtitleStyle(component: CmsComponent): Record<string, string> {
+  const color = stringConfig(component, "subtitleTextColor");
+  const size = numberConfig(component, "subtitleFontSize", 0);
+  const align = stringConfig(component, "titleTextAlign") || stringConfig(component, "textAlign");
+  return {
+    ...(color ? { color } : {}),
+    ...(size > 0 ? { fontSize: `${size}rpx` } : {}),
+    ...(align ? { textAlign: align } : {})
+  };
+}
+
+async function handleMoreAction(component: CmsComponent) {
+  await runAction({
+    type: stringConfig(component, "moreActionTargetType") || "none",
+    pageKey: stringConfig(component, "moreTargetPageKey"),
+    conferenceId: stringConfig(component, "moreTargetConferenceId"),
+    productId: stringConfig(component, "moreTargetProductId"),
+    productCategoryId: stringConfig(component, "moreTargetProductCategoryId"),
+    couponCampaignId: stringConfig(component, "moreTargetCouponCampaignId"),
+    externalUrl: stringConfig(component, "moreExternalUrl"),
+    miniappAppId: stringConfig(component, "moreExternalMiniappAppId"),
+    miniappPath: stringConfig(component, "moreExternalMiniappPath"),
+    miniappExtraData: stringConfig(component, "moreExternalMiniappExtraData"),
+    phone: stringConfig(component, "morePhone"),
+    copyText: stringConfig(component, "moreCopyText")
+  });
 }
 
 function conferenceImageMode(component: CmsComponent): string {
@@ -1448,11 +1621,12 @@ function titleStyle(component: CmsComponent): Record<string, string> {
   const textColor = stringConfig(component, "titleTextColor") || stringConfig(component, "textColor");
   const customFontKey = stringConfig(component, "titleFontAssetUrl") ? "titleFontAssetUrl" : "fontAssetUrl";
   return {
+    ...(booleanConfig(component, "showTitle", true) ? {} : { display: "none" }),
     ...(fontSize > 0 ? { fontSize: `${fontSize}rpx` } : {}),
     ...(textColor ? { color: textColor } : {}),
     ...(textAlign ? { textAlign } : {}),
     ...(fontFamily ? { fontFamily: fontFamilyValue(fontFamily, component, customFontKey) } : {}),
-    ...(fontFamily === "bold-sans" ? { fontWeight: "800" } : {})
+    fontWeight: stringConfig(component, "titleFontWeight") || (fontFamily === "bold-sans" ? "800" : "800")
   };
 }
 
@@ -2441,6 +2615,45 @@ function readErrorText(error: unknown, fallback: string): string {
   margin-top: 18rpx;
 }
 
+.cms-entry-grid.is-scroll {
+  display: flex;
+}
+
+.cms-entry-scroll {
+  width: 100%;
+  margin-top: 18rpx;
+  white-space: nowrap;
+}
+
+.cms-module-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.cms-module-head__copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.cms-module-head__subtitle {
+  color: var(--cms-text-secondary);
+  font-size: 22rpx;
+  line-height: 1.35;
+}
+
+.cms-module-head__more {
+  flex: 0 0 auto;
+  color: var(--cms-primary);
+  font-size: 22rpx;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
 .cms-entry-tile {
   display: flex;
   min-width: 0;
@@ -2452,6 +2665,11 @@ function readErrorText(error: unknown, fallback: string): string {
   background: var(--cms-surface-elevated);
   text-align: center;
   box-shadow: var(--cms-shadow-sm);
+}
+
+.cms-entry-grid.is-scroll .cms-entry-tile {
+  width: 190rpx;
+  flex: 0 0 190rpx;
 }
 
 .cms-entry-tile.is-outline {
@@ -2480,6 +2698,18 @@ function readErrorText(error: unknown, fallback: string): string {
   color: var(--cms-primary);
   font-size: 30rpx;
   font-weight: 900;
+}
+
+.cms-entry-tile__icon.is-small {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 18rpx;
+  font-size: 24rpx;
+}
+
+.cms-entry-tile__icon.is-large {
+  width: 78rpx;
+  height: 78rpx;
 }
 
 .cms-entry-tile__title {

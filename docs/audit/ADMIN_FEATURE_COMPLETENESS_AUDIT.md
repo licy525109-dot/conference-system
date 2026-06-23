@@ -249,3 +249,20 @@ P7B-13 补齐页面装修运营化能力：
 - 通知中心中的微信订阅消息、短信配置保留 `辅助`：后台配置已接入，但真实发送依赖外部模板、供应商账号和发送 adapter，未配置时必须记录 `SKIPPED`。
 - AI 配置保留 `辅助`：后台 provider 配置和 apiKey 加密保存已接入，但默认仍可降级到 `LOCAL_FALLBACK` 本地关键词检索，真实 LLM 调用需外部 provider 联调。
 - 系统角色权限保留 `高级`：错误配置会影响后台可见范围，应由少数管理员操作。
+
+## P7B-14 首页入口宫格与固定业务页配置化审计
+
+本轮只处理页面装修运营体验，不改支付、退款、签到、会员计价、企微、AI、通知和自动部署主链路。
+
+- 首页 `quick-icon-grid` 和 `service-shortcut-card` 不再默认使用管道符文本配置。后台改为结构化入口卡片，支持启用/停用、排序、中文标题、英文副标题、静态图标、动态图标、内置图标、背景色、文字色、卡片样式和结构化跳转动作。
+- 入口跳转动作支持内部页面、会议详情、报名页、商品详情、商品分类、券活动、会员中心、购物车、商城订单、发票、售后、AI、外部 H5、外部小程序、电话、复制文本和无跳转。运营端不需要手写 `page | xxx`。
+- 后台预览和小程序 `PageRenderer` 共用 `items` 对象数组协议，并继续兼容历史字符串配置。列数、横向滑动、图标大小、卡片圆角、入口间距、卡片背景、模块背景和副标题显示在两端使用同名字段。
+- 模块标题补齐统一字段：`showTitle`、`title`、`subtitle`、`titleTextAlign`、`titleFontSize`、`titleFontWeight`、`titleTextColor`、`subtitleFontSize`、`subtitleTextColor`、`titleBottomGap`、`showMore`、`moreText` 和 `more*` 跳转字段。
+- 固定业务模块配置从会议详情扩展为按页面 key 保存：`conferenceDetail`、`registrationForm`、`registrationCredential`、`myRegistrations`、`mallHome`、`productDetail`、`cartCheckout`、`mallOrders`、`memberCenter`、`invoice`、`aftersale`。会议详情旧 `conferenceDetail` 和历史 `detailDisplay` 仍保留兼容。
+- 小程序真实消费增强：报名页读取 `businessDisplay.registrationForm` 控制报名规格、优惠费用、参会人模块和底部按钮文案；商品详情读取 `businessDisplay.productDetail` 控制商品头部、规格、说明和底部按钮；我的报名页加载 `my-registrations` 发布页面组件。
+- 后台页面列表继续展示页面名称、类型、绑定对象、发布时间/更新信息和发布状态；指定会议/指定商品页仍按 `conferenceId` / `productId` 优先匹配，未命中时回退通用模板。
+
+仍需人工验收：
+
+- 不同会议绑定不同详情/报名/凭证页面后，小程序需在微信开发者工具中按真实 `conferenceId` 逐个进入验证。
+- 横向滑动入口、动态图标和外部小程序跳转受微信小程序运行环境限制，需体验版真机确认格式和域名配置。

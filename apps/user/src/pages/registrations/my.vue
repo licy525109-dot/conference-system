@@ -12,6 +12,8 @@
       <button class="ui-button-secondary ui-button-compact" @click="loadRegistrations">刷新</button>
     </view>
 
+    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+
     <LoadingState v-if="loading" title="加载报名记录中" description="正在同步你的报名凭证。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="loadRegistrations" />
     <EmptyState
@@ -72,10 +74,12 @@ import CustomTabbar from "@/components/CustomTabbar.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
+import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
+import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getMyRegistrations } from "@/services/registration";
 import type { MyRegistrationItem } from "@/services/registration-types";
@@ -86,12 +90,18 @@ import { goHome } from "@/utils/navigation";
 const items = ref<MyRegistrationItem[]>([]);
 const loading = ref(false);
 const error = ref("");
+const cmsPage = ref<PublishedPage | null>(null);
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("my-registrations");
 
 onMounted(() => {
   void refreshTheme();
+  void loadCmsPage();
   void loadRegistrations();
 });
+
+async function loadCmsPage() {
+  cmsPage.value = await getPublishedPage("my-registrations").catch(() => null);
+}
 
 async function loadRegistrations() {
   loading.value = true;
