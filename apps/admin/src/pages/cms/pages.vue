@@ -132,7 +132,7 @@
               <el-option v-for="option in componentOptions" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
           </div>
-          <el-scrollbar v-if="components.length > 0" class="preview-component-rail">
+          <div v-if="components.length > 0" class="preview-component-rail">
             <div class="preview-component-rail__inner">
               <button
                 v-for="(component, index) in components"
@@ -146,7 +146,7 @@
                 <strong>{{ presetName(component.type) }}</strong>
               </button>
             </div>
-          </el-scrollbar>
+          </div>
           <el-alert
             v-if="previewContextHint"
             class="preview-context-alert"
@@ -4790,11 +4790,15 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .preview-component-rail {
+  flex: 0 0 auto;
+  max-height: 64px;
   margin-top: 14px;
   padding: 8px;
   border: 1px solid var(--admin-color-border);
   border-radius: 12px;
   background: #f8fbff;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .preview-component-rail__inner {
