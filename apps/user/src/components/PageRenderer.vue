@@ -223,12 +223,12 @@
         <view v-if="stringConfig(component, 'buttonText')" class="cms-card__button"><text>{{ stringConfig(component, "buttonText") }}</text></view>
       </view>
 
-      <view v-else-if="isRichContentComponent(component)" class="cms-section cms-rich-content">
+      <view v-else-if="isRichContentComponent(component)" :class="richContentClass(component)" :style="richContentStyle(component)">
         <view
           v-for="block in richContentBlocks(component)"
           :key="block.id"
           :class="richBlockClass(block)"
-          :style="richBlockStyle(block)"
+          :style="richBlockStyle(component, block)"
           @click.stop="handleRichBlockAction(component, block)"
         >
           <text v-if="block.type === 'heading'" class="cms-rich-content__heading" :style="richBlockHeadingStyle(component, block)">{{ block.title || "图文标题" }}</text>
@@ -237,8 +237,8 @@
             <text>{{ block.text || "请填写重点提示" }}</text>
           </view>
           <view v-else-if="block.type === 'image'" class="cms-rich-content__figure">
-            <image v-if="block.imageUrl" class="cms-rich-content__image" :src="block.imageUrl" :mode="richBlockImageMode(block)" />
-            <view v-else class="cms-rich-content__image cms-rich-content__image--empty"><text>图片未配置</text></view>
+            <image v-if="block.imageUrl" class="cms-rich-content__image" :style="richBlockImageStyle(component)" :src="block.imageUrl" :mode="richBlockImageMode(block)" />
+            <view v-else class="cms-rich-content__image cms-rich-content__image--empty" :style="richBlockImageStyle(component)"><text>图片未配置</text></view>
             <text v-if="block.caption" class="cms-rich-content__caption">{{ block.caption }}</text>
           </view>
           <view v-else-if="block.type === 'button'" class="cms-rich-content__button">
@@ -1791,8 +1791,51 @@ function richBlockClass(block: RichContentBlockItem): string[] {
   return ["cms-rich-content__block", `is-${block.type}`, richBlockHasAction(block) ? "is-clickable" : ""];
 }
 
-function richBlockStyle(block: RichContentBlockItem): Record<string, string> {
+function richBlockStyle(_component: CmsComponent, block: RichContentBlockItem): Record<string, string> {
   return block.align ? { textAlign: block.align } : {};
+}
+
+function richContentClass(component: CmsComponent): string[] {
+  return [
+    "cms-section",
+    "cms-rich-content",
+    richContentContainerStyle(component) === "card" ? "is-card" : "is-transparent",
+    richContentImageOnly(component) ? "is-image-stack" : ""
+  ].filter(Boolean);
+}
+
+function richContentStyle(component: CmsComponent): Record<string, string> {
+  const card = richContentContainerStyle(component) === "card";
+  const gap = Math.max(0, intConfig(component, "blockGap", richContentImageOnly(component) ? 0 : 18));
+  const padding = Math.max(0, intConfig(component, "contentPadding", 0));
+  return {
+    gap: `${gap}rpx`,
+    padding: `${padding}rpx`,
+    ...(card
+      ? {}
+      : {
+          background: "transparent",
+          border: "0",
+          boxShadow: "none"
+        })
+  };
+}
+
+function richContentContainerStyle(component: CmsComponent): string {
+  const value = stringConfig(component, "contentBackgroundStyle") || stringConfig(component, "containerStyle");
+  return value === "card" ? "card" : "transparent";
+}
+
+function richContentImageOnly(component: CmsComponent): boolean {
+  const blocks = richContentBlocks(component).filter((block) => block.enabled !== false && block.type !== "divider");
+  return blocks.length > 0 && blocks.every((block) => block.type === "image");
+}
+
+function richBlockImageStyle(component: CmsComponent): Record<string, string> {
+  const radius = Math.max(0, intConfig(component, "imageRadius", richContentImageOnly(component) ? 0 : 18));
+  return {
+    borderRadius: `${radius}rpx`
+  };
 }
 
 function richBlockHeadingStyle(component: CmsComponent, block: RichContentBlockItem): Record<string, string> {
@@ -2163,7 +2206,7 @@ function readErrorText(error: unknown, fallback: string): string {
 .cms-card,
 .cms-notice,
 .cms-title {
-  margin-top: 22rpx;
+  margin-top: 0;
   padding: 26rpx;
   background: var(--cms-card);
   border: 1px solid var(--ui-color-border);
@@ -2194,7 +2237,10 @@ function readErrorText(error: unknown, fallback: string): string {
 .cms-rich-content {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .cms-rich-content__block {
@@ -2240,12 +2286,12 @@ function readErrorText(error: unknown, fallback: string): string {
   display: flex;
   flex-direction: column;
   gap: 10rpx;
+  margin: 0;
 }
 
 .cms-rich-content__image {
+  display: block;
   width: 100%;
-  min-height: 180rpx;
-  border-radius: var(--cms-radius);
   background: var(--ui-color-surface-muted);
 }
 

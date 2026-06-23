@@ -2547,6 +2547,21 @@ function fieldsFor(type: string): ConfigField[] {
   const layoutFields: ConfigField[] = [
     { key: "fullBleed", label: "组件铺满屏幕宽度", kind: "switch", fallback: "false" }
   ];
+  const richContentLayoutFields: ConfigField[] = [
+    {
+      key: "contentBackgroundStyle",
+      label: "组件背景",
+      kind: "select",
+      fallback: "transparent",
+      options: [
+        { label: "透明背景", value: "transparent" },
+        { label: "卡片背景", value: "card" }
+      ]
+    },
+    { key: "contentPadding", label: "内容内边距", kind: "range", fallback: 0, min: 0, max: 60 },
+    { key: "blockGap", label: "内容块间距", kind: "range", fallback: 0, min: 0, max: 80 },
+    { key: "imageRadius", label: "图片圆角", kind: "range", fallback: 0, min: 0, max: 48 }
+  ];
   const uniqueFields = (fields: ConfigField[]) => fields.filter((field, index, list) => list.findIndex((item) => item.key === field.key) === index);
   const withTextStyle = (fields: ConfigField[], fontSize = 26) =>
     uniqueFields([...fields, ...layoutFields, ...moduleHeadingFields, ...titleStyleFields, { ...textStyleFields[0], fallback: fontSize }, ...textStyleFields.slice(1)]);
@@ -2812,7 +2827,8 @@ function fieldsFor(type: string): ConfigField[] {
     "rich-content-block": withTextStyle([
       ...commonTitle,
       { key: "subtitle", label: "副标题", placeholder: "模块副标题" },
-      { key: "blocks", label: "图文内容块", kind: "rich-blocks" }
+      { key: "blocks", label: "图文内容块", kind: "rich-blocks" },
+      ...richContentLayoutFields
     ], 26),
     "conference-list": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 10 }, ...conferenceDisplayFields], 26),
     "conference-tabs": withTextStyle([...commonTitle, { key: "target", label: "筛选字段", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
@@ -2828,8 +2844,8 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "claimCode", label: "领取码兜底", placeholder: "优先使用券活动选择器；仅兼容历史页面" }
     ], 26),
     "promotion-bar": withTextStyle([{ key: "text", label: "提示文字", placeholder: "满减活动进行中" }], 28),
-    "rich-text": withTextStyle([{ key: "blocks", label: "图文内容块", kind: "rich-blocks" }], 28),
-    "safe-html": withTextStyle([{ key: "blocks", label: "图文内容块", kind: "rich-blocks" }], 28),
+    "rich-text": withTextStyle([{ key: "blocks", label: "图文内容块", kind: "rich-blocks" }, ...richContentLayoutFields], 28),
+    "safe-html": withTextStyle([{ key: "blocks", label: "图文内容块", kind: "rich-blocks" }, ...richContentLayoutFields], 28),
     "image-grid": [{ key: "images", label: "图片宫格", kind: "list", placeholder: "每行一个图片地址", rows: 5 }, ...layoutFields],
     video: withTextStyle([...commonTitle, { key: "url", label: "视频地址", placeholder: "请输入视频地址" }, { key: "coverUrl", label: "视频封面", placeholder: "从素材库选择视频封面" }], 26),
     countdown: withTextStyle([...commonTitle, { key: "targetAt", label: "目标时间", placeholder: "例如 2026-08-01 09:00" }, { key: "endedText", label: "结束文案", placeholder: "活动已开始" }], 26),
@@ -2855,7 +2871,8 @@ function fieldsFor(type: string): ConfigField[] {
     "process-steps": withTextStyle([...commonTitle, { key: "items", label: "流程步骤", kind: "list", placeholder: "每行一个步骤", rows: 4 }], 26),
     "text-image": withTextStyle([
       ...commonTitle,
-      { key: "blocks", label: "图文内容块", kind: "rich-blocks" }
+      { key: "blocks", label: "图文内容块", kind: "rich-blocks" },
+      ...richContentLayoutFields
     ], 26),
     "download-list": withTextStyle([...commonTitle, { key: "items", label: "资料文件", kind: "list", placeholder: "每行一份资料：名称｜文件 URL｜说明", rows: 4 }], 26),
     "live-card": withTextStyle([
@@ -3046,6 +3063,15 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
       { key: "card-meta", title: "时间地点人数样式", fields: fieldsByKeys(fields, ["cardMetaFontSize", "cardMetaColor", "cardMetaAlign"]) },
       { key: "card-font", title: "卡片字体", fields: fieldsByKeys(fields, ["fontFamily", "fontAssetUrl"]) },
       { key: "module-title", title: "模块标题样式", fields: fieldsByKeys(fields, ["showTitle", "title", "subtitle", "titleBottomGap", "showMore", "moreText", "moreActionTargetType", "moreTargetPageKey", "moreTargetConferenceId", "moreTargetProductId", "moreExternalUrl", "titleFontSize", "titleFontWeight", "titleFontFamily", "titleFontAssetUrl", "titleTextColor", "subtitleFontSize", "subtitleTextColor", "titleTextAlign"]) }
+    ]);
+  }
+
+  if (isRichContentComponentType(type)) {
+    return compactGroups([
+      { key: "content", title: "图文内容", fields: fieldsByKeys(fields, ["blocks"]) },
+      { key: "layout", title: "铺满与间距", fields: fieldsByKeys(fields, ["fullBleed", "contentBackgroundStyle", "contentPadding", "blockGap", "imageRadius"]) },
+      { key: "module-title", title: "模块标题样式", fields: fieldsByKeys(fields, ["showTitle", "title", "subtitle", "titleBottomGap", "showMore", "moreText", "moreActionTargetType", "moreTargetPageKey", "moreTargetConferenceId", "moreTargetProductId", "moreExternalUrl", "titleFontSize", "titleFontWeight", "titleFontFamily", "titleFontAssetUrl", "titleTextColor", "subtitleFontSize", "subtitleTextColor", "titleTextAlign"]) },
+      { key: "text-style", title: "内容文字样式", fields: fieldsByKeys(fields, ["fontSize", "fontFamily", "fontAssetUrl", "textColor", "textAlign"]) }
     ]);
   }
 
@@ -3843,14 +3869,14 @@ const ComponentPreview = defineComponent({
     const wrapRichPreviewBlock = (block: RichContentBlockItem, children: PreviewNode | PreviewNode[]) =>
       h("div", { class: richPreviewBlockClass(block), title: richPreviewBlockTitle(block) }, children);
     const richContentPreview = () =>
-      h("div", { class: "preview-section preview-rich-content" }, richBlocks().map((block) => {
+      h("div", { class: previewRichContentClass(props.item), style: previewRichContentStyle(props.item) }, richBlocks().map((block) => {
         const alignStyle = { textAlign: block.align || "left" };
         if (block.type === "heading") return wrapRichPreviewBlock(block, h("strong", { class: "preview-rich-content__heading", style: { ...titleStyle(), ...alignStyle } }, block.title || "图文标题"));
         if (block.type === "paragraph") return wrapRichPreviewBlock(block, h("p", { class: "preview-rich-content__paragraph", style: { ...textStyle(), ...alignStyle } }, block.text || "请填写正文内容"));
         if (block.type === "quote") return wrapRichPreviewBlock(block, h("blockquote", { class: "preview-rich-content__quote", style: { ...textStyle(), ...alignStyle } }, block.text || "请填写重点提示"));
         if (block.type === "image") {
           const imageChildren: PreviewNode[] = [
-            block.imageUrl ? h("img", { src: block.imageUrl, alt: block.caption || "" }) : h("div", { class: "preview-rich-content__image-empty" }, "请选择图片")
+            block.imageUrl ? h("img", { src: block.imageUrl, alt: block.caption || "", style: previewRichImageStyle(props.item, block) }) : h("div", { class: "preview-rich-content__image-empty", style: previewRichImageStyle(props.item, block) }, "请选择图片")
           ];
           if (block.caption) imageChildren.push(h("figcaption", block.caption));
           return wrapRichPreviewBlock(block, h("figure", { class: "preview-rich-content__figure" }, imageChildren));
@@ -4417,6 +4443,45 @@ function previewCarouselStyle(component: EditableComponent) {
 function previewImageModeStyle(component: EditableComponent) {
   return {
     objectFit: previewObjectFit(component.config.imageMode)
+  };
+}
+
+function previewRichContentClass(component: EditableComponent): string[] {
+  return [
+    "preview-section",
+    "preview-rich-content",
+    booleanConfig(component, "fullBleed", false) ? "is-full-bleed" : "",
+    previewRichContentContainerStyle(component) === "card" ? "is-card" : "is-transparent",
+    previewRichContentImageOnly(component) ? "is-image-stack" : ""
+  ].filter(Boolean);
+}
+
+function previewRichContentStyle(component: EditableComponent) {
+  const card = previewRichContentContainerStyle(component) === "card";
+  const gap = numberValue(component, "blockGap", previewRichContentImageOnly(component) ? 0 : 18);
+  const padding = numberValue(component, "contentPadding", 0);
+  return {
+    gap: `${Math.max(0, Math.round(gap / 2))}px`,
+    padding: `${Math.max(0, Math.round(padding / 2))}px`,
+    ...(card ? {} : { background: "transparent", boxShadow: "none", border: "0" })
+  };
+}
+
+function previewRichContentContainerStyle(component: EditableComponent): string {
+  const value = String(component.config.contentBackgroundStyle || component.config.containerStyle || "");
+  return value === "card" ? "card" : "transparent";
+}
+
+function previewRichContentImageOnly(component: EditableComponent): boolean {
+  const blocks = normalizeRichBlocks(component.config.blocks, component).filter((block) => block.enabled !== false && block.type !== "divider");
+  return blocks.length > 0 && blocks.every((block) => block.type === "image");
+}
+
+function previewRichImageStyle(component: EditableComponent, block: RichContentBlockItem) {
+  const radius = numberValue(component, "imageRadius", previewRichContentImageOnly(component) ? 0 : 18);
+  return {
+    borderRadius: `${Math.max(0, Math.round(radius / 2))}px`,
+    objectFit: previewObjectFit(block.imageMode)
   };
 }
 
@@ -5665,9 +5730,8 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .preview-rich-content__figure img {
+  display: block;
   width: 100%;
-  max-height: 280px;
-  object-fit: cover;
   border-radius: var(--preview-radius);
   background: #eef3fb;
 }
