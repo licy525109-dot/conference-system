@@ -631,12 +631,12 @@
                             <small>建议 96x96 PNG/SVG，单张不超过 200KB。</small>
                           </label>
                           <label>
-                            <span>动态图标</span>
+                            <span>动态图标 <MaterialSpecHelp spec-key="animatedIcon" /></span>
                             <div class="field-row">
                               <el-input v-model="entry.dynamicIconUrl" placeholder="可填写 GIF/APNG 动图地址；不填则使用静态图标" />
                               <el-button @click="openEntryMaterialPicker(selectedComponent, entry, 'dynamicIconUrl')">素材库</el-button>
                             </div>
-                            <small>如小程序端不支持动效格式，会回退为静态图片或文字占位。</small>
+                            <small>建议 96x96 或 128x128，GIF/APNG/WebP/PNG/SVG，单张不超过 500KB。</small>
                           </label>
                           <label>
                             <span>内置图标</span>
@@ -1445,7 +1445,7 @@ const pageTypeOptions = [
 const loadedPreviewFonts = new Set<string>();
 const materialPickerSpecKey = computed<MaterialSpecKey>(() => {
   if (materialRichBlockTarget.value) return "contentImage";
-  if (materialEntryTarget.value) return "tabbarIcon";
+  if (materialEntryTarget.value) return materialEntryTarget.value.key === "dynamicIconUrl" ? "animatedIcon" : "tabbarIcon";
   if (materialPageTarget.value) return pageMetaMaterialSpecKey(materialPageTarget.value);
   const target = materialTarget.value;
   return target ? materialSpecKeyForField(target.component.type, target.field) ?? "materialUpload" : "materialUpload";
@@ -3679,7 +3679,7 @@ function chooseMaterial(asset: MaterialAsset) {
 }
 
 function isImageAsset(asset: MaterialAsset) {
-  return asset.fileType.startsWith("image/") || /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(asset.url);
+  return asset.fileType.startsWith("image/") || /\.(png|apng|jpe?g|webp|gif|svg)(\?|$)/i.test(asset.url);
 }
 
 function isFontAsset(asset: MaterialAsset) {
