@@ -4126,6 +4126,7 @@ function looksLikePreviewImage(value: string): boolean {
 .component-stack {
   min-width: 0;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 16px;
 }
@@ -4408,13 +4409,16 @@ function looksLikePreviewImage(value: string): boolean {
   top: 0;
   right: auto;
   width: auto;
+  min-height: 760px;
+  flex: 0 0 auto;
   z-index: 5;
-  max-height: calc(100vh - 100px);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .phone-shell {
+  display: block;
   width: 320px;
+  min-height: 690px;
   margin: 14px auto 0;
   padding: 10px;
   border-radius: 34px;
@@ -4423,6 +4427,7 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .phone-window {
+  min-height: 642px;
   overflow: hidden;
   border-radius: 24px;
   background: var(--preview-bg);
@@ -4572,6 +4577,7 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .phone-screen {
+  display: block;
   position: relative;
   min-height: 560px;
   max-height: 620px;
@@ -4592,6 +4598,7 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .phone-tabbar {
+  flex: 0 0 auto;
   min-height: 56px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
