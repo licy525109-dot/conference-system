@@ -250,7 +250,8 @@ interface HomeConferenceDetailText {
 <style scoped>
 .page {
   position: relative;
-  padding-bottom: calc(228rpx + env(safe-area-inset-bottom));
+  padding-top: 0;
+  padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
   overflow: visible;
 }
 

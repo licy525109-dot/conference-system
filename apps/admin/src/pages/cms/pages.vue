@@ -2545,7 +2545,17 @@ function fieldsFor(type: string): ConfigField[] {
     }
   ];
   const layoutFields: ConfigField[] = [
-    { key: "fullBleed", label: "组件铺满屏幕宽度", kind: "switch", fallback: "false" }
+    { key: "fullBleed", label: "组件铺满屏幕宽度", kind: "switch", fallback: "false" },
+    {
+      key: "contentBackgroundStyle",
+      label: "组件背景",
+      kind: "select",
+      fallback: "card",
+      options: [
+        { label: "卡片背景", value: "card" },
+        { label: "透明背景", value: "transparent" }
+      ]
+    }
   ];
   const richContentLayoutFields: ConfigField[] = [
     {
@@ -3940,7 +3950,7 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "quick-icon-grid" || type === "service-shortcut-card") {
-        return h("div", { class: ["preview-section", "preview-entry-grid"], style: previewPanelStyle(props.item) }, [
+        return h("div", { class: previewSectionClass(props.item, "preview-entry-grid"), style: previewSectionStyle(props.item) }, [
           h("div", { class: "preview-module-head", style: previewModuleHeadStyle(props.item) }, [
             h("div", [
               h("strong", { style: titleStyle() }, value("title", type === "quick-icon-grid" ? "快捷入口" : "服务中心")),
@@ -3971,7 +3981,7 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "event-card-carousel") {
-        return h("div", { class: "preview-section preview-event-carousel" }, [
+        return h("div", { class: previewSectionClass(props.item, "preview-event-carousel"), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "精选会议")),
           h("div", { class: "preview-event-carousel__rail" }, meetings().slice(0, numberValue(props.item, "limit", 6)).map((meeting) =>
             h("div", { class: `preview-event-card is-${value("cardSize", "large")}` }, [
@@ -3986,7 +3996,7 @@ const ComponentPreview = defineComponent({
       if (type === "task-progress-card") {
         const current = numberValue(props.item, "current", 0);
         const target = Math.max(1, numberValue(props.item, "target", 8));
-        return h("div", { class: "preview-section preview-task-card" }, [
+        return h("div", { class: previewSectionClass(props.item, "preview-task-card"), style: previewSectionStyle(props.item) }, [
           h("div", { class: "preview-task-card__head" }, [
             value("iconUrl") ? h("img", { src: value("iconUrl"), alt: "" }) : h("span", "任"),
             h("div", [h("strong", { style: titleStyle() }, value("title", "任务进度")), h("small", value("subtitle", "完成任务领取权益"))]),
@@ -3998,7 +4008,7 @@ const ComponentPreview = defineComponent({
       }
       if (type === "image-promo-card" || type === "rich-content-block") {
         if (type === "rich-content-block") return richContentPreview();
-        return h("div", { class: ["preview-section", type === "image-promo-card" ? "preview-image-promo" : "preview-rich-block"] }, [
+        return h("div", { class: previewSectionClass(props.item, type === "image-promo-card" ? "preview-image-promo" : "preview-rich-block"), style: previewSectionStyle(props.item) }, [
           value("imageUrl") ? h("img", { class: "preview-cover", src: value("imageUrl"), alt: "" }) : null,
           h("strong", { style: titleStyle() }, value("title", type === "image-promo-card" ? "活动推荐" : "品牌故事")),
           h("p", { style: textStyle() }, value(type === "image-promo-card" ? "subtitle" : "content", type === "image-promo-card" ? "自定义活动卡片" : "请在后台填写图文内容。")),
@@ -4007,7 +4017,7 @@ const ComponentPreview = defineComponent({
       }
       if (type === "conference-list") {
         const limit = numberValue(props.item, "limit", 10);
-        return h("div", { class: ["preview-section", booleanConfig(props.item, "fullBleed", false) ? "is-full-bleed" : ""] }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "可报名会议")),
           ...meetings()
             .slice(0, limit)
@@ -4031,7 +4041,7 @@ const ComponentPreview = defineComponent({
       if (type === "conference-tabs") {
         const tabs = list("tabs");
         const nextTabs = tabs.length > 0 ? tabs : Array.from(new Set(meetings().map((meeting) => meeting.location))).slice(0, 4);
-        return h("div", { class: ["preview-section", booleanConfig(props.item, "fullBleed", false) ? "is-full-bleed" : ""] }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "会议分类切换")),
           h("div", { class: "preview-tabs" }, nextTabs.map((item, index) => h("span", { class: index === 0 ? "active" : "" }, item))),
           ...meetings()
@@ -4122,7 +4132,7 @@ const ComponentPreview = defineComponent({
       }
       if (type === "speaker-cards") {
         const items = parsedList("speakers");
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "嘉宾阵容")),
           h("div", { class: "preview-speakers" }, (items.length > 0 ? items : [["嘉宾", "信息待公布"]]).map((item) =>
             h("div", { class: "preview-person" }, [
@@ -4134,7 +4144,7 @@ const ComponentPreview = defineComponent({
       }
       if (type === "schedule-timeline") {
         const items = parsedList("items");
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "会议日程")),
           h("div", { class: "preview-timeline" }, (items.length > 0 ? items : [["待定", "日程安排待公布"]]).map((item) =>
             h("div", { class: "preview-timeline-item" }, [
@@ -4145,13 +4155,13 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "countdown") {
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "距离开始")),
           h("div", { class: "preview-countdown" }, ["天", "时", "分", "秒"].map((item, index) => h("span", [h("b", index === 0 ? "00" : "12"), h("small", item)])))
         ]);
       }
       if (type === "map-contact") {
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "会场与联系")),
           h("p", { style: textStyle() }, value("address", "会议地址待公布")),
           value("phone") ? h("button", { class: "preview-outline-button" }, `联系会务组：${value("phone")}`) : null
@@ -4159,14 +4169,14 @@ const ComponentPreview = defineComponent({
       }
       if (type === "sponsor-wall") {
         const items = list("sponsors");
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "合作伙伴")),
           h("div", { class: "preview-sponsors" }, (items.length > 0 ? items : ["合作伙伴"]).map((item) => h("span", item)))
         ]);
       }
       if (type === "faq") {
         const items = parsedList("items");
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "常见问题")),
           h("div", { class: "preview-faq" }, (items.length > 0 ? items : [["常见问题", "答案待补充"]]).map((item) =>
             h("div", [h("b", item[0] || "常见问题"), item[1] ? h("span", item.slice(1).join(" ")) : null])
@@ -4174,13 +4184,13 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "stats-grid") {
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", "会议亮点")),
           h("div", { class: "preview-stats" }, list("items").map((item) => h("span", { style: textStyle() }, item)))
         ]);
       }
       if (type === "ticket-price-list" || type === "process-steps" || type === "download-list" || type === "testimonial-list" || type === "tag-filter") {
-        return h("div", { class: "preview-section" }, [
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", props.name)),
           h("div", { class: "preview-list" }, list("items").map((item) => h("span", { style: textStyle() }, item)))
         ]);
@@ -4205,7 +4215,7 @@ const ComponentPreview = defineComponent({
       }
       if (type === "divider") return h("div", { class: "preview-divider" });
       if (type === "spacer") return h("div", { style: { height: `${numberValue(props.item, "height", 24)}px` } });
-      return h("div", { class: "preview-section" }, [h("strong", { style: titleStyle() }, props.name), h("p", { style: textStyle() }, value("text", "组件内容预览"))]);
+      return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [h("strong", { style: titleStyle() }, props.name), h("p", { style: textStyle() }, value("text", "组件内容预览"))]);
     };
   }
 });
@@ -4362,9 +4372,36 @@ function previewHomeHeroStyle(component: EditableComponent) {
 }
 
 function previewPanelStyle(component: EditableComponent) {
+  if (previewComponentContainerStyle(component) === "transparent") {
+    return {
+      background: "transparent",
+      borderColor: "transparent",
+      boxShadow: "none"
+    };
+  }
   return {
     background: String(component.config.backgroundColor || "")
   };
+}
+
+function previewComponentContainerStyle(component: EditableComponent): "card" | "transparent" {
+  const value = String(component.config.contentBackgroundStyle || component.config.containerStyle || "");
+  if (value === "transparent") return "transparent";
+  if (value === "card") return "card";
+  return isRichContentComponentType(component.type) ? "transparent" : "card";
+}
+
+function previewSectionClass(component: EditableComponent, ...extra: string[]): string[] {
+  return [
+    "preview-section",
+    previewComponentContainerStyle(component) === "transparent" ? "is-transparent" : "",
+    booleanConfig(component, "fullBleed", false) ? "is-full-bleed" : "",
+    ...extra
+  ].filter(Boolean);
+}
+
+function previewSectionStyle(component: EditableComponent) {
+  return previewPanelStyle(component);
 }
 
 function previewGridColumnsStyle(component: EditableComponent) {
@@ -4398,9 +4435,11 @@ function previewEntryTileClass(component: EditableComponent, entry: EntryConfigI
 }
 
 function previewEntryTileStyle(component: EditableComponent, entry: EntryConfigItem) {
+  const isTransparentContainer = previewComponentContainerStyle(component) === "transparent";
+  const background = entry.backgroundColor || String(component.config.cardBackground || "");
   return {
     borderRadius: `${numberValue(component, "cardRadius", 28) / 2}px`,
-    background: entry.backgroundColor || String(component.config.cardBackground || ""),
+    ...(background ? { background } : isTransparentContainer ? { background: "transparent", borderColor: "transparent", boxShadow: "none" } : {}),
     color: entry.textColor || String(component.config.textColor || "")
   };
 }
@@ -5670,6 +5709,12 @@ function looksLikePreviewImage(value: string): boolean {
 .preview-section {
   padding: 14px;
   background: var(--preview-card);
+}
+
+.preview-section.is-transparent {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .phone-screen :deep(.preview-section.is-full-bleed) {
@@ -7006,12 +7051,23 @@ function looksLikePreviewImage(value: string): boolean {
   box-shadow: none;
 }
 
+.preview-section.is-transparent .preview-entry-tile {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
 .preview-entry-tile img,
 .preview-entry-tile > span {
   width: 32px;
   height: 32px;
   border-radius: 10px;
   background: color-mix(in srgb, var(--preview-primary) 12%, #ffffff);
+}
+
+.preview-section.is-transparent .preview-entry-tile img,
+.preview-section.is-transparent .preview-entry-tile > span {
+  background: transparent;
 }
 
 .preview-entry-tile > span {

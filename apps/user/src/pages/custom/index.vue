@@ -147,8 +147,9 @@ function extensionNoticeFor(key: string):
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
-  padding-bottom: calc(228rpx + env(safe-area-inset-bottom));
+  gap: 0;
+  padding-top: 0;
+  padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
   overflow: visible;
 }
 
