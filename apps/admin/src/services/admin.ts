@@ -628,6 +628,12 @@ export function updatePage(id: string, input: Record<string, unknown>) {
   });
 }
 
+export function deletePage(id: string) {
+  return apiRequest<{ id: string; deleted: boolean }>(`/admin/pages/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
 export function rollbackPage(id: string, input: Record<string, unknown> = {}) {
   return apiRequest<PageVersion>(`/admin/pages/${encodeURIComponent(id)}/rollback`, {
     method: "POST",

@@ -25,11 +25,13 @@
             <el-button link type="primary" @click="createVisible = true">新增</el-button>
           </div>
           <div class="page-list">
-            <button
+            <div
               v-for="page in pages"
               :key="page.id"
               class="page-item"
               :class="{ active: selectedPage?.id === page.id }"
+              role="button"
+              tabindex="0"
               @click="selectPage(page)"
             >
               <span class="page-item__copy">
@@ -37,8 +39,14 @@
                 <small>{{ pageTypeLabel(page.pageType) }}{{ pageBindingLabel(page) ? ` · ${pageBindingLabel(page)}` : "" }}</small>
                 <small>{{ pageConfigurableText(page) }} · 更新 {{ formatShortDate(page.updatedAt) }}</small>
               </span>
-              <span class="page-item__status">{{ page.publishedVersionId ? "已发布" : "草稿中" }}</span>
-            </button>
+              <span class="page-item__side">
+                <span class="page-item__status">{{ page.publishedVersionId ? "已发布" : "草稿中" }}</span>
+                <span class="page-item__actions">
+                  <button type="button" @click.stop="duplicatePage(page)">复制</button>
+                  <button v-if="canDeletePage(page)" type="button" class="danger" @click.stop="deletePageTemplate(page)">删除</button>
+                </span>
+              </span>
+            </div>
           </div>
         </section>
 
@@ -937,6 +945,7 @@ import ThemeDynamicBackgroundPreview from "../../components/ThemeDynamicBackgrou
 import {
   createPage,
   createPageLibraryTemplate,
+  deletePage,
   getTheme,
   getProductCategoryOptions,
   getProductOptions,
@@ -1161,6 +1170,20 @@ const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
 const ADDABLE_SUPPORT_STATUSES: CmsComponentSupportStatus[] = ["supported", "basic"];
 const REGISTRATION_CTA_TYPES = ["registration-button", "floating-registration-button"];
 const PAGE_TYPES_REQUIRING_CONFERENCE_UI = ["CONFERENCE_DETAIL_PAGE", "REGISTRATION_FORM_PAGE", "REGISTRATION_CREDENTIAL_PAGE"];
+const FIXED_BUSINESS_PAGE_KEYS = new Set([
+  "home",
+  "conference-list",
+  "conference-detail",
+  "registration-form",
+  "registration-success",
+  "my-registrations",
+  "cart",
+  "member-center",
+  "mall",
+  "mall-detail",
+  "mall-orders",
+  "invoice"
+]);
 const DEFAULT_PREVIEW_THEME: ThemeConfig = {
   visualPreset: "business-blue",
   primaryColor: "#315d7d",
@@ -2082,6 +2105,53 @@ async function createCustomPage() {
   await loadPages();
 }
 
+function canDeletePage(page: PageTemplate): boolean {
+  return !page.publishedVersionId && !FIXED_BUSINESS_PAGE_KEYS.has(page.pageKey) && !page.pageKey.startsWith("template:") && page.pageType !== "SYSTEM_TEMPLATE";
+}
+
+async function duplicatePage(page: PageTemplate) {
+  const latest = page.versions[0];
+  if (!latest) {
+    ElMessage.warning("该页面还没有可复制的版本");
+    return;
+  }
+  const source = await getPageVersion(latest.id);
+  const copyTitle = `${pageDisplayTitle(page)} 副本`;
+  const copySlug = `copy-${Date.now().toString(36)}`;
+  const created = await createPage({
+    pageKey: `custom:${copySlug}`,
+    title: copyTitle,
+    description: page.description || `复制自 ${pageDisplayTitle(page)}`,
+    pageType: "CUSTOM",
+    components: source.components,
+    themeJson: source.themeJson || undefined
+  });
+  await loadPages();
+  const target = pages.value.find((item) => item.id === created.id);
+  if (target) await selectPage(target);
+  ElMessage.success("已复制为新的自定义页面");
+}
+
+async function deletePageTemplate(page: PageTemplate) {
+  try {
+    await ElMessageBox.confirm(`确定删除“${pageDisplayTitle(page)}”吗？仅未发布的自定义页面可以删除，删除后不可恢复。`, "删除页面", {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
+  await deletePage(page.id);
+  if (selectedPage.value?.id === page.id) {
+    selectedPage.value = null;
+    version.value = null;
+    components.value = [];
+  }
+  await loadPages();
+  ElMessage.success("页面已删除");
+}
+
 function syncCreateSlug() {
   if (!PAGE_TYPES_REQUIRING_CONFERENCE_UI.includes(createForm.pageType)) createForm.conferenceId = "";
   if (createForm.pageType !== "PRODUCT_DETAIL_PAGE") createForm.productId = "";
@@ -2870,8 +2940,8 @@ function fieldsFor(type: string): ConfigField[] {
       ...commonTitle,
       { key: "categories", label: "分类筛选", kind: "list", placeholder: "每行一个分类，例如：全部、闭门会、论坛、沙龙", rows: 5 },
       { key: "limit", label: "展示数量", kind: "number", fallback: 8 },
-      { key: "showCalendarButton", label: "显示日历按钮", kind: "switch", fallback: "true" },
-      { key: "calendarText", label: "日历按钮文案", placeholder: "日历" },
+      { key: "showCalendarButton", label: "显示日历入口", kind: "switch", fallback: "true" },
+      { key: "calendarText", label: "日历入口文案", placeholder: "日历 / 保存日程" },
       ...conferenceDisplayFields
     ], 26),
     "conference-tabs": withTextStyle([...commonTitle, { key: "target", label: "筛选字段", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
@@ -2961,11 +3031,11 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "phone", label: "联系电话", placeholder: "请输入电话" },
       { key: "text", label: "咨询说明", kind: "textarea", rows: 2 }
     ], 26),
-    "tag-filter": withTextStyle([...commonTitle, { key: "target", label: "筛选字段", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "items", label: "标签名称", kind: "list", placeholder: "每行一个标签；可写：显示名｜筛选值｜tag/location/category", rows: 4 }], 26),
+    "tag-filter": withTextStyle([...commonTitle, { key: "target", label: "筛选/跳转对象", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "items", label: "标签按钮", kind: "list", placeholder: "每行一个按钮：显示名｜筛选值｜对象；商城可写：文创周边｜分类ID｜product-category", rows: 4 }], 26),
     "membership-benefits": withTextStyle([...commonTitle, { key: "items", label: "权益项", kind: "list", placeholder: "每行一个会员权益", rows: 5 }, { key: "buttonText", label: "按钮文案", placeholder: "查看会员中心" }], 26),
     "user-profile-card": withTextStyle([...commonTitle, { key: "description", label: "未登录提示", kind: "textarea", rows: 2 }, { key: "target", label: "点击目标", kind: "select", fallback: "member", options: profileTargetOptions() }], 26),
     "my-order-list": withTextStyle([...commonTitle, { key: "orderType", label: "展示类型", kind: "select", fallback: "both", options: orderTypeOptions() }], 26),
-    "mall-product-grid": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 4 }, { key: "keyword", label: "商品关键词", placeholder: "按商品标题过滤" }, { key: "productCategoryId", label: "商品分类", kind: "select", options: productCategorySelectOptions() }, { key: "buttonText", label: "按钮文案", placeholder: "查看商城" }], 26),
+    "mall-product-grid": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 4 }, { key: "keyword", label: "商品关键词", placeholder: "按商品标题过滤" }, { key: "productCategoryId", label: "商品分类", kind: "select", options: productCategorySelectOptions() }, { key: "buttonText", label: "加购按钮文案", placeholder: "加入购物车" }, { key: "cartSuccessText", label: "加购成功提示", placeholder: "已加入购物车" }, { key: "showMoreButton", label: "显示查看更多按钮", kind: "switch", fallback: "false" }, { key: "moreButtonText", label: "查看更多文案", placeholder: "查看更多" }], 26),
     "credential-header": credentialFields([
       { key: "statusText", label: "状态文案", placeholder: "报名成功" }
     ]),
@@ -3057,9 +3127,11 @@ function productSelectOptions(): Array<{ label: string; value: string }> {
 
 function filterTargetOptions(): Array<{ label: string; value: string }> {
   return [
-    { label: "按标签关键词", value: "tag" },
-    { label: "按地点", value: "location" },
-    { label: "按分类关键词", value: "category" }
+    { label: "会议标签关键词", value: "tag" },
+    { label: "会议地点", value: "location" },
+    { label: "会议分类关键词", value: "category" },
+    { label: "商城商品分类", value: "product-category" },
+    { label: "商城商品关键词", value: "productKeyword" }
   ];
 }
 
@@ -4319,7 +4391,14 @@ const ComponentPreview = defineComponent({
           ])
         ));
       }
-      if (type === "ticket-price-list" || type === "process-steps" || type === "download-list" || type === "testimonial-list" || type === "tag-filter") {
+      if (type === "tag-filter") {
+        const tags = list("items").map((item) => splitPreviewLine(item)[0] || item).filter(Boolean);
+        return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
+          value("title") ? h("strong", { style: titleStyle() }, value("title")) : null,
+          h("div", { class: "preview-tag-list" }, tags.map((item, index) => h("span", { class: index === 0 ? "active" : "", style: textStyle() }, item)))
+        ]);
+      }
+      if (type === "ticket-price-list" || type === "process-steps" || type === "download-list" || type === "testimonial-list") {
         return h("div", { class: previewSectionClass(props.item), style: previewSectionStyle(props.item) }, [
           h("strong", { style: titleStyle() }, value("title", props.name)),
           h("div", { class: "preview-list" }, list("items").map((item) => h("span", { style: textStyle() }, item)))
@@ -4911,6 +4990,7 @@ function looksLikePreviewImage(value: string): boolean {
 .page-item__status {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 26px;
   padding: 0 10px;
   border-radius: 999px;
@@ -4918,6 +4998,39 @@ function looksLikePreviewImage(value: string): boolean {
   color: var(--admin-color-primary);
   font-size: 12px;
   font-weight: 700;
+}
+
+.page-item__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.page-item__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.page-item__actions button {
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.page-item__actions button:hover {
+  color: var(--admin-color-primary);
+  border-color: rgb(20 99 255 / 35%);
+}
+
+.page-item__actions button.danger {
+  color: #ef4444;
+  border-color: rgb(239 68 68 / 24%);
 }
 
 .page-item span,
@@ -6378,6 +6491,26 @@ function looksLikePreviewImage(value: string): boolean {
 
 .preview-stats {
   grid-template-columns: repeat(3, 1fr);
+}
+
+.preview-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.preview-tag-list span {
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: #f4efe6;
+  color: #8a6427;
+  font-weight: 800;
+}
+
+.preview-tag-list span.active {
+  background: #071426;
+  color: #fff;
 }
 
 .preview-stats span,

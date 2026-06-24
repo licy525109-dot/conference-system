@@ -4,7 +4,7 @@
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
 
-    <view class="topbar ui-card">
+    <view v-if="!hasCmsContent" class="topbar ui-card">
       <view>
         <text class="eyebrow">会员</text>
         <text class="title">会员中心</text>
@@ -14,6 +14,7 @@
     </view>
 
     <ExtensionStatusNotice
+      v-if="!hasCmsContent"
       status="运营中"
       title="会员购买支付暂未开放"
       :description="purchaseMessage"
@@ -22,7 +23,11 @@
 
     <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
 
-    <view class="profile-card ui-card">
+    <view v-if="user" class="session-actions ui-card">
+      <button class="ui-button-secondary" @click="logout">退出登录</button>
+    </view>
+
+    <view v-if="!hasCmsContent" class="profile-card ui-card">
       <image v-if="user?.wechatAvatarUrl" class="avatar" :src="user.wechatAvatarUrl" mode="aspectFill" />
       <view v-else class="avatar placeholder">{{ displayName.slice(0, 1) }}</view>
       <view>
@@ -31,12 +36,12 @@
       </view>
     </view>
 
-    <view v-if="hasStaffCheckinAccess || hasAdminAccess" class="staff-tools ui-card">
+    <view v-if="!hasCmsContent && (hasStaffCheckinAccess || hasAdminAccess)" class="staff-tools ui-card">
       <button v-if="hasStaffCheckinAccess" class="ui-button-primary" @click="goPage('/pages/checkin/scan')">扫码核销</button>
       <button v-if="hasAdminAccess" class="ui-button-secondary" @click="goAdminNotifications">工作人员工具</button>
       <text class="muted tool-tip">扫码核销用于工作人员扫描参会人报名凭证二维码完成签到。</text>
     </view>
-    <view class="quick-links ui-card">
+    <view v-if="!hasCmsContent" class="quick-links ui-card">
       <button class="ui-button-secondary" @click="goPage('/pages/registrations/my')">我的报名</button>
       <button class="ui-button-secondary" @click="goPage('/pages/coupon/my')">我的优惠券</button>
       <button class="ui-button-secondary" @click="goPage('/pages/mall/orders')">商城订单</button>
@@ -44,10 +49,10 @@
       <button class="ui-button-secondary" @click="goPage('/pages/invoice/index')">发票申请</button>
     </view>
 
-    <LoadingState v-if="loading" title="加载会员信息中" description="正在读取会员等级、权益和发放记录。" />
-    <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="load" @secondary="goHome" />
+    <LoadingState v-if="!hasCmsContent && loading" title="加载会员信息中" description="正在读取会员等级、权益和发放记录。" />
+    <ErrorState v-else-if="!hasCmsContent && error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="load" @secondary="goHome" />
 
-    <view v-else class="section">
+    <view v-else-if="!hasCmsContent" class="section">
       <view class="member-card ui-card">
         <view class="section-head">
           <text class="section-title">当前会员</text>
@@ -125,7 +130,7 @@ import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { createMobileAdminSession, getCheckinStaffMe } from "@/services/admin-mobile";
-import { ensureLogin, getStoredUser, type CurrentUser } from "@/services/auth";
+import { clearAuthSession, ensureLogin, getStoredUser, type CurrentUser } from "@/services/auth";
 import { getMemberCenter, type CurrentMembership, type MemberBenefitGrant, type MemberLevel } from "@/services/member";
 import { goHome } from "@/utils/navigation";
 
@@ -141,6 +146,7 @@ const hasAdminAccess = ref(false);
 const hasStaffCheckinAccess = ref(false);
 const displayName = computed(() => user.value?.wechatNickname || user.value?.nickname || "微信用户");
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("member-center");
+const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.components?.length));
 
 onMounted(() => {
   void refreshTheme();
@@ -193,6 +199,14 @@ function goAdminNotifications() {
 
 function goPage(url: string) {
   uni.navigateTo({ url });
+}
+
+function logout() {
+  clearAuthSession();
+  user.value = null;
+  membership.value = null;
+  grants.value = [];
+  uni.showToast({ title: "已退出登录", icon: "success" });
 }
 
 function formatCent(value: number) {
@@ -280,6 +294,12 @@ function grantStatusText(value: string) {
   flex-direction: column;
   gap: 14rpx;
   padding: 24rpx;
+}
+
+.session-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 18rpx 24rpx;
 }
 
 .quick-links {

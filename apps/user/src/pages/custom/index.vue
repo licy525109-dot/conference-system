@@ -58,6 +58,20 @@ const pageClass = computed(() => ["page", "ui-page"]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
 const showBodyDynamicBackground = computed(() => theme.value.backgroundMode === "dynamic-gradient" && theme.value.backgroundApplyTo !== "header");
 const extensionNotice = computed(() => extensionNoticeFor(pageKey.value));
+const BUILTIN_PAGE_KEYS = new Set([
+  "home",
+  "conference-list",
+  "conference-detail",
+  "registration-form",
+  "registration-success",
+  "my-registrations",
+  "cart",
+  "member-center",
+  "mall",
+  "mall-detail",
+  "mall-orders",
+  "invoice"
+]);
 
 onLoad((query) => {
   pageKey.value = normalizeCustomPageKey(query?.pageKey);
@@ -71,6 +85,7 @@ onShareAppMessage(() =>
 function normalizeCustomPageKey(value: unknown): string {
   const raw = decodeRouteValue(value).trim();
   if (!raw || raw === "custom:") return "custom:";
+  if (BUILTIN_PAGE_KEYS.has(raw)) return raw;
   return raw.startsWith("custom:") ? raw : `custom:${raw}`;
 }
 

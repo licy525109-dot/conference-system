@@ -3,7 +3,7 @@
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
-    <view class="topbar ui-card">
+    <view v-if="!hasCmsContent" class="topbar ui-card">
       <view>
         <text class="eyebrow">会议报名优先</text>
         <text class="title">购物车</text>
@@ -13,6 +13,7 @@
     </view>
 
     <ExtensionStatusNotice
+      v-if="!hasCmsContent"
       status="主线提醒"
       title="第一版优先完成会议报名缴费"
       description="购物车中的商品可创建商城待支付订单，金额由后端按 SKU 当前价格重算，支付以订单页后端状态为准。"
@@ -41,7 +42,10 @@
           </view>
           <StatusTag label="已可用" tone="success" />
         </view>
-        <view v-for="item in registrationItems" :key="item.id" class="card ui-card">
+        <view v-for="item in registrationItems" :key="item.id" class="card selectable-card ui-card">
+          <view class="select-dot" :class="{ active: selectedRegistrationIds.includes(item.id) }" @click="toggleRegistration(item.id)">
+            <text>{{ selectedRegistrationIds.includes(item.id) ? "✓" : "" }}</text>
+          </view>
           <view class="card-head">
             <view class="card-main">
               <text class="card-title">{{ item.conference.title }}</text>
@@ -49,6 +53,14 @@
               <text class="muted" v-if="item.conference.location">{{ item.conference.location }}</text>
             </view>
             <text class="price">¥{{ formatCent(item.subtotalCent) }}</text>
+          </view>
+          <view class="quantity-row">
+            <text class="muted">数量</text>
+            <view class="quantity-stepper">
+              <button @click="changeRegistrationQuantity(item, -1)">−</button>
+              <text>{{ item.quantity }}</text>
+              <button @click="changeRegistrationQuantity(item, 1)">＋</button>
+            </view>
           </view>
           <view class="card-actions">
             <button class="ui-button-secondary action-button" :disabled="removingId === item.id" @click="removeRegistration(item.id)">删除</button>
@@ -90,9 +102,12 @@
           </view>
           <button class="ui-button-secondary ui-button-compact" @click="selectProductCoupon">{{ productCouponCode ? "更换" : "选择" }}</button>
         </view>
-        <view v-for="item in productItems" :key="item.id" class="card product-card ui-card">
-          <image v-if="item.sku.product.coverImageUrl" class="product-cover" :src="item.sku.product.coverImageUrl" mode="aspectFill" />
-          <view v-else class="product-cover empty-cover">商品</view>
+        <view v-for="item in productItems" :key="item.id" class="card product-card selectable-card ui-card">
+          <view class="select-dot" :class="{ active: selectedProductIds.includes(item.id) }" @click="toggleProduct(item.id)">
+            <text>{{ selectedProductIds.includes(item.id) ? "✓" : "" }}</text>
+          </view>
+          <image v-if="item.sku.product.coverImageUrl" class="product-cover" :src="item.sku.product.coverImageUrl" mode="aspectFill" @click="goProductDetail(item.sku.product.id)" />
+          <view v-else class="product-cover empty-cover" @click="goProductDetail(item.sku.product.id)">商品</view>
           <view class="product-body">
             <view class="card-head">
               <view class="card-main">
@@ -108,10 +123,30 @@
                 {{ checkoutId === item.id ? "处理中..." : "创建订单" }}
               </button>
             </view>
+            <view class="quantity-row">
+              <text class="muted">数量</text>
+              <view class="quantity-stepper">
+                <button @click="changeProductQuantity(item, -1)">−</button>
+                <text>{{ item.quantity }}</text>
+                <button @click="changeProductQuantity(item, 1)">＋</button>
+              </view>
+            </view>
           </view>
         </view>
       </view>
     </template>
+
+    <view v-if="!isEmpty" class="settlement-bar">
+      <view class="settlement-select" @click="toggleAll">
+        <view class="select-dot" :class="{ active: allSelected }"><text>{{ allSelected ? "✓" : "" }}</text></view>
+        <text>全选</text>
+      </view>
+      <view class="settlement-total">
+        <text>合计：¥{{ formatCent(selectedTotalCent) }}</text>
+        <text class="muted">已选 {{ selectedCount }} 项</text>
+      </view>
+      <button class="settlement-button" :disabled="selectedCount === 0 || Boolean(checkoutId)" @click="checkoutSelected">去结算</button>
+    </view>
 
     <CustomTabbar active-page-key="cart" />
     <WechatProfilePrompt />
@@ -139,6 +174,8 @@ import {
   getCart,
   removeProductCartItem,
   removeRegistrationCartItem,
+  updateProductCartItem,
+  updateRegistrationCartItem,
   type CartProductItem,
   type CartRegistrationItem
 } from "@/services/cart";
@@ -156,9 +193,22 @@ const checkoutId = ref("");
 const receiver = ref({ name: "", phone: "", address: "" });
 const productCouponCode = ref("");
 const cmsPage = ref<PublishedPage | null>(null);
+const selectedRegistrationIds = ref<string[]>([]);
+const selectedProductIds = ref<string[]>([]);
 const isEmpty = computed(() => registrationItems.value.length === 0 && productItems.value.length === 0);
 const hasPhysicalProduct = computed(() => productItems.value.some((item) => !["VIRTUAL", "SERVICE"].includes(String(item.sku.product.productType || "PHYSICAL"))));
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("cart");
+const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.components?.length));
+const selectedCount = computed(() => selectedRegistrationIds.value.length + selectedProductIds.value.length);
+const selectedTotalCent = computed(() => {
+  const registrations = registrationItems.value.filter((item) => selectedRegistrationIds.value.includes(item.id)).reduce((sum, item) => sum + item.subtotalCent, 0);
+  const products = productItems.value.filter((item) => selectedProductIds.value.includes(item.id)).reduce((sum, item) => sum + item.subtotalCent, 0);
+  return registrations + products;
+});
+const allSelected = computed(() => {
+  const total = registrationItems.value.length + productItems.value.length;
+  return total > 0 && selectedCount.value === total;
+});
 
 onShow(() => {
   if (!productCouponCode.value) productCouponCode.value = readPendingProductCoupon();
@@ -186,6 +236,7 @@ async function loadCart() {
     registrationItems.value = data.registrationItems;
     productItems.value = data.productItems;
     cmsPage.value = page;
+    syncSelections();
   } catch (err) {
     console.error("[CART_LOAD_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
@@ -199,11 +250,41 @@ async function loadCart() {
   }
 }
 
+function syncSelections() {
+  const registrationIds = new Set(registrationItems.value.map((item) => item.id));
+  const productIds = new Set(productItems.value.map((item) => item.id));
+  selectedRegistrationIds.value = selectedRegistrationIds.value.filter((id) => registrationIds.has(id));
+  selectedProductIds.value = selectedProductIds.value.filter((id) => productIds.has(id));
+  if (selectedRegistrationIds.value.length === 0 && selectedProductIds.value.length === 0) {
+    selectedRegistrationIds.value = registrationItems.value.map((item) => item.id);
+    selectedProductIds.value = productItems.value.map((item) => item.id);
+  }
+}
+
+function toggleRegistration(id: string) {
+  selectedRegistrationIds.value = selectedRegistrationIds.value.includes(id) ? selectedRegistrationIds.value.filter((item) => item !== id) : [...selectedRegistrationIds.value, id];
+}
+
+function toggleProduct(id: string) {
+  selectedProductIds.value = selectedProductIds.value.includes(id) ? selectedProductIds.value.filter((item) => item !== id) : [...selectedProductIds.value, id];
+}
+
+function toggleAll() {
+  if (allSelected.value) {
+    selectedRegistrationIds.value = [];
+    selectedProductIds.value = [];
+    return;
+  }
+  selectedRegistrationIds.value = registrationItems.value.map((item) => item.id);
+  selectedProductIds.value = productItems.value.map((item) => item.id);
+}
+
 async function removeRegistration(id: string) {
   removingId.value = id;
   try {
     await removeRegistrationCartItem(id);
     registrationItems.value = registrationItems.value.filter((item) => item.id !== id);
+    selectedRegistrationIds.value = selectedRegistrationIds.value.filter((item) => item !== id);
     uni.showToast({ title: "已删除", icon: "success" });
   } catch (err) {
     console.error("[CART_REMOVE_REGISTRATION_ERROR]", err);
@@ -218,12 +299,43 @@ async function removeProduct(id: string) {
   try {
     await removeProductCartItem(id);
     productItems.value = productItems.value.filter((item) => item.id !== id);
+    selectedProductIds.value = selectedProductIds.value.filter((item) => item !== id);
     uni.showToast({ title: "已删除", icon: "success" });
   } catch (err) {
     console.error("[CART_REMOVE_PRODUCT_ERROR]", err);
     uni.showToast({ title: "删除失败，请重试", icon: "none" });
   } finally {
     removingId.value = "";
+  }
+}
+
+async function changeRegistrationQuantity(item: CartRegistrationItem, delta: number) {
+  const next = item.quantity + delta;
+  if (next <= 0) {
+    await removeRegistration(item.id);
+    return;
+  }
+  try {
+    await updateRegistrationCartItem(item.id, next);
+    await loadCart();
+  } catch (err) {
+    console.error("[CART_REGISTRATION_QUANTITY_ERROR]", err);
+    uni.showToast({ title: checkoutMessage(err, "数量更新失败"), icon: "none" });
+  }
+}
+
+async function changeProductQuantity(item: CartProductItem, delta: number) {
+  const next = item.quantity + delta;
+  if (next <= 0) {
+    await removeProduct(item.id);
+    return;
+  }
+  try {
+    await updateProductCartItem(item.id, next);
+    await loadCart();
+  } catch (err) {
+    console.error("[CART_PRODUCT_QUANTITY_ERROR]", err);
+    uni.showToast({ title: checkoutMessage(err, "数量更新失败"), icon: "none" });
   }
 }
 
@@ -269,6 +381,65 @@ async function checkoutProduct(id: string) {
   } finally {
     checkoutId.value = "";
   }
+}
+
+async function checkoutSelected() {
+  if (selectedRegistrationIds.value.length > 0 && selectedProductIds.value.length > 0) {
+    uni.showToast({ title: "请分别结算报名和商品", icon: "none" });
+    return;
+  }
+  if (selectedRegistrationIds.value.length > 0) {
+    checkoutId.value = "selected-registration";
+    try {
+      const order = await checkoutRegistrationCart(selectedRegistrationIds.value);
+      uni.navigateTo({ url: `/pages/payment/result?orderNo=${encodeURIComponent(order.orderNo)}` });
+    } catch (err) {
+      console.error("[CART_CHECKOUT_SELECTED_REGISTRATION_ERROR]", err);
+      uni.showToast({ title: checkoutMessage(err, "报名结算失败，请重试"), icon: "none" });
+    } finally {
+      checkoutId.value = "";
+    }
+    return;
+  }
+  if (selectedProductIds.value.length > 0) {
+    await checkoutProductGroup(selectedProductIds.value);
+  }
+}
+
+async function checkoutProductGroup(ids: string[]) {
+  const selectedItems = productItems.value.filter((item) => ids.includes(item.id));
+  const requiresReceiver = selectedItems.some((item) => !["VIRTUAL", "SERVICE"].includes(String(item.sku.product.productType || "PHYSICAL")));
+  if (requiresReceiver && (!receiver.value.name || !receiver.value.phone || !receiver.value.address)) {
+    uni.showToast({ title: "请先填写收货信息", icon: "none" });
+    return;
+  }
+  checkoutId.value = "selected-product";
+  try {
+    const order = await checkoutProductCart({
+      itemIds: ids,
+      couponCode: normalizedProductCouponCode(),
+      receiverName: requiresReceiver ? receiver.value.name : undefined,
+      receiverPhone: requiresReceiver ? receiver.value.phone : undefined,
+      receiverAddress: requiresReceiver ? receiver.value.address : undefined
+    });
+    productItems.value = productItems.value.filter((item) => !ids.includes(item.id));
+    selectedProductIds.value = selectedProductIds.value.filter((id) => !ids.includes(id));
+    uni.showModal({
+      title: "商城订单已创建",
+      content: `订单号：${order.orderNo}\n${order.paymentNotice || "请前往我的商城订单完成支付。"}`,
+      showCancel: false,
+      success: () => uni.navigateTo({ url: "/pages/mall/orders" })
+    });
+  } catch (err) {
+    console.error("[CART_CHECKOUT_SELECTED_PRODUCT_ERROR]", err);
+    uni.showToast({ title: checkoutMessage(err, "商城订单创建失败，请重试"), icon: "none" });
+  } finally {
+    checkoutId.value = "";
+  }
+}
+
+function goProductDetail(id: string) {
+  uni.navigateTo({ url: `/pages/mall/detail?id=${encodeURIComponent(id)}` });
 }
 
 async function selectProductCoupon() {
@@ -323,6 +494,7 @@ function checkoutMessage(err: unknown, fallback: string): string {
   display: flex;
   flex-direction: column;
   gap: 22rpx;
+  padding-bottom: 180rpx;
 }
 
 .topbar,
@@ -390,6 +562,36 @@ function checkoutMessage(err: unknown, fallback: string): string {
   padding: 24rpx;
 }
 
+.selectable-card {
+  position: relative;
+  padding-left: 76rpx;
+}
+
+.select-dot {
+  width: 42rpx;
+  height: 42rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx solid rgba(8, 23, 44, 0.22);
+  border-radius: 50%;
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.selectable-card > .select-dot {
+  position: absolute;
+  left: 22rpx;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.select-dot.active {
+  border-color: var(--ui-color-primary);
+  background: var(--ui-color-primary);
+}
+
 .receiver-card {
   display: flex;
   flex-direction: column;
@@ -435,6 +637,40 @@ function checkoutMessage(err: unknown, fallback: string): string {
   justify-content: flex-end;
 }
 
+.quantity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-top: 18rpx;
+}
+
+.quantity-stepper {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1rpx solid var(--ui-color-border);
+  border-radius: 999rpx;
+  background: #fff;
+}
+
+.quantity-stepper button {
+  width: 62rpx;
+  height: 56rpx;
+  border: 0;
+  background: transparent;
+  color: var(--ui-color-primary);
+  font-size: 30rpx;
+  line-height: 56rpx;
+}
+
+.quantity-stepper text {
+  min-width: 54rpx;
+  text-align: center;
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
 .product-card {
   display: flex;
   gap: 20rpx;
@@ -467,5 +703,58 @@ function checkoutMessage(err: unknown, fallback: string): string {
 
 .reserve-button {
   color: var(--ui-color-warning);
+}
+
+.settlement-bar {
+  position: fixed;
+  right: 24rpx;
+  bottom: calc(118rpx + env(safe-area-inset-bottom));
+  left: 24rpx;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding: 18rpx 22rpx;
+  border: 1rpx solid rgba(8, 23, 44, 0.08);
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18rpx 50rpx rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(14px);
+}
+
+.settlement-select {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  color: var(--ui-color-text);
+  font-size: 25rpx;
+}
+
+.settlement-total {
+  flex: 1;
+  min-width: 0;
+}
+
+.settlement-total > text:first-child {
+  display: block;
+  color: var(--ui-color-text);
+  font-size: 30rpx;
+  font-weight: 900;
+}
+
+.settlement-button {
+  min-width: 180rpx;
+  height: 72rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: var(--ui-color-primary);
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 72rpx;
+}
+
+.settlement-button[disabled] {
+  opacity: 0.55;
 }
 </style>
