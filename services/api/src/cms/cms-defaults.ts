@@ -241,6 +241,7 @@ export const ENABLED_COMPONENT_PRESETS = [
     limit: 8,
     showHeroMonths: true,
     showCalendarButton: true,
+    showItemCalendarButton: false,
     calendarText: "日历",
     detailButtonText: "查看详情",
     showAppointmentButton: true,
@@ -457,7 +458,7 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
   if (pageKey === "custom:about-paiqi" || pageKey === "custom:annual-schedule") {
     return [
       { id: "schedule-hero", type: "hero-banner", enabled: true, config: { title: "年度排期", subtitle: "观潮会集", description: "查看观潮会集全年会议安排", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
-      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCalendarButton: true, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
+      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCalendarButton: true, showItemCalendarButton: false, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
     ];
   }
 
@@ -1048,7 +1049,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     },
     components: [
       { id: "schedule-hero", type: "hero-banner", enabled: true, config: { title: "年度排期", subtitle: "观潮会集", description: "查看观潮会集全年会议安排", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
-      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCover: true, showCalendarButton: true, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
+      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCover: true, showCalendarButton: true, showItemCalendarButton: false, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
     ]
   },
   {
@@ -1099,8 +1100,8 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       }
     },
     components: [
-      { id: "member-profile", type: "user-profile-card", enabled: true, config: { title: "我的资料", description: "登录后查看头像、昵称、手机号和会员状态。", target: "member" } },
-      { id: "member-stats", type: "quick-icon-grid", enabled: true, config: { title: "", showTitle: false, columns: 4, cardStyle: "minimal", contentBackgroundStyle: "card", items: [entry("我的报名", "6", "registration", "page", { targetPageKey: "my-registrations" }), entry("商城订单", "3", "order", "page", { targetPageKey: "mall-orders" }), entry("待参会", "2", "calendar", "page", { targetPageKey: "my-registrations" }), entry("优惠券", "3", "coupon", "page", { targetPageKey: "custom:coupon-center" })] } },
+      { id: "member-profile", type: "user-profile-card", enabled: true, config: { title: "潮起东方", description: "观潮会集会员 · 成长值 2568", target: "member" } },
+      { id: "member-stats", type: "quick-icon-grid", enabled: true, config: { title: "", showTitle: false, columns: 4, iconSize: "large", cardStyle: "plain", contentBackgroundStyle: "card", cardRadius: 24, items: [entry("我的报名", "6", "registration", "page", { targetPageKey: "my-registrations" }), entry("我的订单", "3", "order", "page", { targetPageKey: "mall-orders" }), entry("待参会", "2", "calendar", "page", { targetPageKey: "my-registrations" }), entry("优惠券", "3", "coupon", "page", { targetPageKey: "custom:coupon-center" })] } },
       { id: "member-benefits", type: "member-promo-banner", enabled: true, config: { title: "观潮会集会员权益", subtitle: "尊享会员专属特权，助力思想与机遇的深度链接", items: ["查看排期", "会议报名", "会员专属权益"], buttonText: "查看权益", actionTargetType: "page", targetPageKey: "member-center", backgroundColor: "#071426", textColor: "#f8e4b2" } },
       { id: "member-orders", type: "my-order-list", enabled: true, config: { title: "常用入口", orderType: "both" } }
     ]

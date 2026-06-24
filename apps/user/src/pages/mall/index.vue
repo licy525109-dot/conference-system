@@ -58,6 +58,7 @@
       </view>
     </view>
 
+    <WechatProfilePrompt />
     <CustomTabbar active-page-key="mall" />
   </view>
 </template>
@@ -73,6 +74,7 @@ import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
+import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { getProductCategories, getProducts, type Product, type ProductCategory } from "@/services/mall";

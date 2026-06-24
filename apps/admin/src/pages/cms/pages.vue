@@ -246,6 +246,7 @@
               </div>
               <div class="inline-actions" @click.stop>
                 <el-switch v-model="component.enabled" active-text="展示" inactive-text="隐藏" />
+                <el-button size="small" @click="duplicateComponent(index)">复制</el-button>
                 <el-button size="small" :disabled="index === 0" @click="moveComponent(index, -1)">上移</el-button>
                 <el-button size="small" :disabled="index === components.length - 1" @click="moveComponent(index, 1)">下移</el-button>
                 <el-button size="small" type="danger" plain @click="removeComponent(index)">删除</el-button>
@@ -378,6 +379,7 @@
                 <el-button size="small" plain @click="selectedComponent.enabled = !selectedComponent.enabled">
                   {{ selectedComponent.enabled ? "隐藏模块" : "显示模块" }}
                 </el-button>
+                <el-button size="small" plain @click="duplicateSelectedComponent">复制当前模块</el-button>
                 <el-button size="small" type="danger" plain @click="removeSelectedComponent">删除当前模块</el-button>
               </div>
             </div>
@@ -1170,20 +1172,6 @@ const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
 const ADDABLE_SUPPORT_STATUSES: CmsComponentSupportStatus[] = ["supported", "basic"];
 const REGISTRATION_CTA_TYPES = ["registration-button", "floating-registration-button"];
 const PAGE_TYPES_REQUIRING_CONFERENCE_UI = ["CONFERENCE_DETAIL_PAGE", "REGISTRATION_FORM_PAGE", "REGISTRATION_CREDENTIAL_PAGE"];
-const FIXED_BUSINESS_PAGE_KEYS = new Set([
-  "home",
-  "conference-list",
-  "conference-detail",
-  "registration-form",
-  "registration-success",
-  "my-registrations",
-  "cart",
-  "member-center",
-  "mall",
-  "mall-detail",
-  "mall-orders",
-  "invoice"
-]);
 const DEFAULT_PREVIEW_THEME: ThemeConfig = {
   visualPreset: "business-blue",
   primaryColor: "#315d7d",
@@ -1906,6 +1894,34 @@ function removeComponent(index: number) {
   }
 }
 
+function duplicateComponent(index: number) {
+  const source = components.value[index];
+  if (!source) return;
+  const id = `${source.type}-${Date.now()}`;
+  const copy: EditableComponent = {
+    id,
+    type: source.type,
+    enabled: source.enabled,
+    sortOrder: index + 1,
+    config: deepCloneConfig(source.config)
+  };
+  components.value.splice(index + 1, 0, copy);
+  selectedComponentId.value = id;
+  expandedConfigGroupIds[id] = defaultExpandedConfigGroups(copy.type);
+  void nextTick(() => scrollToComponent(id));
+  ElMessage.success("已复制模块，请保存草稿或发布页面");
+}
+
+function duplicateSelectedComponent() {
+  const index = selectedComponentIndex.value;
+  if (index < 0) return;
+  duplicateComponent(index);
+}
+
+function deepCloneConfig(config: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(config ?? {})) as Record<string, unknown>;
+}
+
 async function removeSelectedComponent() {
   const index = selectedComponentIndex.value;
   const target = selectedComponent.value;
@@ -2106,7 +2122,7 @@ async function createCustomPage() {
 }
 
 function canDeletePage(page: PageTemplate): boolean {
-  return !page.publishedVersionId && !FIXED_BUSINESS_PAGE_KEYS.has(page.pageKey) && !page.pageKey.startsWith("template:") && page.pageType !== "SYSTEM_TEMPLATE";
+  return !page.publishedVersionId && !page.pageKey.startsWith("template:") && page.pageType !== "SYSTEM_TEMPLATE";
 }
 
 async function duplicatePage(page: PageTemplate) {
@@ -2134,7 +2150,7 @@ async function duplicatePage(page: PageTemplate) {
 
 async function deletePageTemplate(page: PageTemplate) {
   try {
-    await ElMessageBox.confirm(`确定删除“${pageDisplayTitle(page)}”吗？仅未发布的自定义页面可以删除，删除后不可恢复。`, "删除页面", {
+    await ElMessageBox.confirm(`确定删除“${pageDisplayTitle(page)}”吗？仅未发布、非固定模板页面可以删除。内置业务草稿会从页面列表隐藏。`, "删除页面", {
       confirmButtonText: "删除",
       cancelButtonText: "取消",
       type: "warning"
@@ -2941,6 +2957,7 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "categories", label: "分类筛选", kind: "list", placeholder: "每行一个分类，例如：全部、闭门会、论坛、沙龙", rows: 5 },
       { key: "limit", label: "展示数量", kind: "number", fallback: 8 },
       { key: "showCalendarButton", label: "显示日历入口", kind: "switch", fallback: "true" },
+      { key: "showItemCalendarButton", label: "每条会议显示日历按钮", kind: "switch", fallback: "false" },
       { key: "calendarText", label: "日历入口文案", placeholder: "日历 / 保存日程" },
       ...conferenceDisplayFields
     ], 26),
@@ -3170,7 +3187,7 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
 
   if (type === "conference-list" || type === "conference-tabs" || type === "conference-schedule") {
     return compactGroups([
-      { key: "content", title: "基础内容", fields: fieldsByKeys(fields, ["title", "limit", "tabs", "categories", "showCalendarButton", "calendarText", "summaryFallback", "detailButtonText", "showAppointmentButton", "appointmentButtonText"]) },
+      { key: "content", title: "基础内容", fields: fieldsByKeys(fields, ["title", "limit", "tabs", "categories", "showCalendarButton", "showItemCalendarButton", "calendarText", "summaryFallback", "detailButtonText", "showAppointmentButton", "appointmentButtonText"]) },
       {
         key: "display",
         title: "显示控制",
@@ -4244,7 +4261,7 @@ const ComponentPreview = defineComponent({
                     h("small", meeting.summary || summaryFallbackText(props.item)),
                     h("p", `时间：${previewScheduleTime(meeting.startAt, meeting.endAt)} ｜ 已报名 ${meeting.registrationCount} 人`)
                   ]),
-                  h("button", index === 0 && booleanConfig(props.item, "showAppointmentButton", true) ? value("appointmentButtonText", "提前预约") : detailButtonText(props.item))
+                  h("button", schedulePreviewActionText(meeting, props.item))
                 ])
               )
             : [h("div", { class: "preview-empty" }, "暂无该月份会议")])
@@ -4869,6 +4886,19 @@ function previewDate(value: string | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function schedulePreviewActionText(meeting: { startAt?: string; endAt?: string }, component: EditableComponent): string {
+  if (!booleanConfig(component, "showAppointmentButton", true)) return detailButtonText(component);
+  const now = Date.now();
+  const start = previewDate(meeting.startAt)?.getTime();
+  const end = previewDate(meeting.endAt)?.getTime();
+  if (Number.isFinite(end) && typeof end === "number" && now > end) return detailButtonText(component);
+  if (Number.isFinite(start) && typeof start === "number" && now < start) {
+    const value = component.config.appointmentButtonText;
+    return typeof value === "string" && value.trim() ? value.trim() : "提前预约";
+  }
+  return detailButtonText(component);
+}
+
 function splitPreviewLine(value: string): string[] {
   return value.split(/[\n|｜,，;；]+/).map((item) => item.trim()).filter(Boolean);
 }
@@ -5033,8 +5063,9 @@ function looksLikePreviewImage(value: string): boolean {
   border-color: rgb(239 68 68 / 24%);
 }
 
-.page-item span,
-.page-item small {
+.page-item__copy span,
+.page-item__copy small,
+.page-item__status {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -24,7 +24,15 @@
     <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
 
     <view v-if="user" class="session-actions ui-card">
+      <button class="ui-button-secondary" @click="openProfileEditor">编辑资料</button>
       <button class="ui-button-secondary" @click="logout">退出登录</button>
+    </view>
+    <view v-else class="session-actions session-actions--login ui-card">
+      <view>
+        <text class="section-title">登录后查看会员权益</text>
+        <text class="muted">点击后使用微信登录，并可授权头像和昵称。</text>
+      </view>
+      <button class="ui-button-primary" @click="loginAgain">立即登录</button>
     </view>
 
     <view v-if="!hasCmsContent" class="profile-card ui-card">
@@ -111,13 +119,38 @@
       </view>
     </view>
 
+    <view v-if="profileEditorVisible" class="profile-editor-mask">
+      <view class="profile-editor-dialog">
+        <view class="section-head">
+          <text class="section-title">编辑常用资料</text>
+          <button class="ui-button-secondary ui-button-compact" @click="profileEditorVisible = false">关闭</button>
+        </view>
+        <button class="ui-button-secondary profile-wechat-button" @click="openWechatProfilePrompt">更新微信头像和昵称</button>
+        <view class="profile-form">
+          <text class="form-label">姓名</text>
+          <input v-model="profileForm.name" class="profile-field" placeholder="请输入常用姓名" />
+          <text class="form-label">收货手机号</text>
+          <input v-model="profileForm.phone" class="profile-field" placeholder="请输入收货手机号" />
+          <text class="form-label">收货地址</text>
+          <input v-model="profileForm.address" class="profile-field" placeholder="请输入常用收货地址" />
+          <text class="form-label">发票抬头</text>
+          <input v-model="profileForm.invoiceTitle" class="profile-field" placeholder="请输入发票抬头" />
+          <text class="form-label">税号</text>
+          <input v-model="profileForm.taxNo" class="profile-field" placeholder="企业税号，可选" />
+          <text class="form-label">发票邮箱</text>
+          <input v-model="profileForm.invoiceEmail" class="profile-field" placeholder="接收电子发票邮箱，可选" />
+        </view>
+        <button class="ui-button-primary profile-save-button" @click="saveCommonProfile">保存资料</button>
+      </view>
+    </view>
+
     <WechatProfilePrompt />
     <CustomTabbar active-page-key="member-center" />
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
@@ -132,7 +165,10 @@ import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { createMobileAdminSession, getCheckinStaffMe } from "@/services/admin-mobile";
 import { clearAuthSession, ensureLogin, getStoredUser, type CurrentUser } from "@/services/auth";
 import { getMemberCenter, type CurrentMembership, type MemberBenefitGrant, type MemberLevel } from "@/services/member";
+import { getMyInvoiceProfile, saveMyInvoiceProfile } from "@/services/operations";
 import { goHome } from "@/utils/navigation";
+
+const COMMON_PROFILE_STORAGE_KEY = "conference_user_common_profile";
 
 const loading = ref(false);
 const error = ref("");
@@ -144,15 +180,30 @@ const cmsPage = ref<PublishedPage | null>(null);
 const purchaseMessage = ref("会员购买支付暂未开放，可联系会务组或等待后台授予。");
 const hasAdminAccess = ref(false);
 const hasStaffCheckinAccess = ref(false);
+const profileEditorVisible = ref(false);
+const profileForm = ref({
+  name: "",
+  phone: "",
+  address: "",
+  invoiceTitle: "",
+  taxNo: "",
+  invoiceEmail: ""
+});
 const displayName = computed(() => user.value?.wechatNickname || user.value?.nickname || "微信用户");
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("member-center");
 const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.components?.length));
 
 onMounted(() => {
+  uni.$on("wechat-profile:updated", handleProfileUpdated);
   void refreshTheme();
+  loadCommonProfile();
   void load();
   void checkAdminAccess();
   void checkStaffAccess();
+});
+
+onUnmounted(() => {
+  uni.$off("wechat-profile:updated", handleProfileUpdated);
 });
 
 async function load() {
@@ -206,7 +257,80 @@ function logout() {
   user.value = null;
   membership.value = null;
   grants.value = [];
+  uni.$emit("wechat-profile:updated");
   uni.showToast({ title: "已退出登录", icon: "success" });
+}
+
+async function loginAgain() {
+  try {
+    await ensureLogin();
+    user.value = getStoredUser();
+    uni.$emit("wechat-profile:open");
+    await load();
+  } catch (err) {
+    console.error("[MEMBER_LOGIN_ERROR]", err);
+    uni.showToast({ title: "登录失败，请稍后重试", icon: "none" });
+  }
+}
+
+function handleProfileUpdated() {
+  user.value = getStoredUser();
+}
+
+async function openProfileEditor() {
+  loadCommonProfile();
+  profileEditorVisible.value = true;
+  try {
+    await ensureLogin();
+    const invoice = await getMyInvoiceProfile();
+    if (invoice.item) {
+      profileForm.value.invoiceTitle = invoice.item.title || profileForm.value.invoiceTitle;
+      profileForm.value.taxNo = invoice.item.taxNo || profileForm.value.taxNo;
+      profileForm.value.invoiceEmail = invoice.item.email || profileForm.value.invoiceEmail;
+      profileForm.value.phone = invoice.item.phone || profileForm.value.phone;
+      profileForm.value.address = invoice.item.address || profileForm.value.address;
+    }
+  } catch {
+    // 发票资料不是打开编辑器的必要条件，失败时保留本地常用资料。
+  }
+}
+
+function openWechatProfilePrompt() {
+  uni.$emit("wechat-profile:open");
+}
+
+function loadCommonProfile() {
+  const stored = uni.getStorageSync(COMMON_PROFILE_STORAGE_KEY);
+  if (!stored || typeof stored !== "object") return;
+  const value = stored as Partial<typeof profileForm.value>;
+  profileForm.value = {
+    name: typeof value.name === "string" ? value.name : "",
+    phone: typeof value.phone === "string" ? value.phone : "",
+    address: typeof value.address === "string" ? value.address : "",
+    invoiceTitle: typeof value.invoiceTitle === "string" ? value.invoiceTitle : "",
+    taxNo: typeof value.taxNo === "string" ? value.taxNo : "",
+    invoiceEmail: typeof value.invoiceEmail === "string" ? value.invoiceEmail : ""
+  };
+}
+
+async function saveCommonProfile() {
+  uni.setStorageSync(COMMON_PROFILE_STORAGE_KEY, profileForm.value);
+  try {
+    if (profileForm.value.invoiceTitle.trim()) {
+      await saveMyInvoiceProfile({
+        title: profileForm.value.invoiceTitle.trim(),
+        taxNo: profileForm.value.taxNo.trim() || undefined,
+        phone: profileForm.value.phone.trim() || undefined,
+        email: profileForm.value.invoiceEmail.trim() || undefined,
+        address: profileForm.value.address.trim() || undefined
+      });
+    }
+    profileEditorVisible.value = false;
+    uni.showToast({ title: "资料已保存", icon: "success" });
+  } catch (err) {
+    console.error("[MEMBER_PROFILE_SAVE_ERROR]", err);
+    uni.showToast({ title: "发票资料保存失败，本地资料已保存", icon: "none" });
+  }
 }
 
 function formatCent(value: number) {
@@ -298,8 +422,14 @@ function grantStatusText(value: string) {
 
 .session-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 16rpx;
   padding: 18rpx 24rpx;
+}
+
+.session-actions--login {
+  justify-content: space-between;
 }
 
 .quick-links {
@@ -422,5 +552,52 @@ function grantStatusText(value: string) {
 .discount {
   margin-top: 6rpx;
   font-size: 22rpx;
+}
+
+.profile-editor-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 998;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.profile-editor-dialog {
+  width: 100%;
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 32rpx;
+  border-radius: 36rpx 36rpx 0 0;
+  background: var(--ui-color-surface);
+  box-shadow: 0 -20rpx 60rpx rgba(15, 23, 42, 0.18);
+}
+
+.profile-wechat-button,
+.profile-save-button {
+  width: 100%;
+  margin-top: 18rpx;
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.form-label {
+  color: var(--ui-color-muted);
+  font-size: 24rpx;
+}
+
+.profile-field {
+  min-height: 76rpx;
+  padding: 0 22rpx;
+  border: 1rpx solid var(--ui-color-border);
+  border-radius: var(--ui-radius-md);
+  background: #fff;
+  color: var(--ui-color-text);
+  font-size: 26rpx;
 }
 </style>

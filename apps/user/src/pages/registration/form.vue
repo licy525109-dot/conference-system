@@ -282,6 +282,12 @@ async function loadPage() {
     form.value = formResponse;
     cmsPage.value = page;
 
+    const availability = getRegistrationAvailability(detail);
+    if (availability !== "OPEN") {
+      error.value = availability === "NOT_STARTED" ? "报名尚未开始，请先在会议详情或排期页预约报名。" : "报名已截止，不能继续提交报名。";
+      return;
+    }
+
     if (!selectedSkuId.value && detail.skus[0]) {
       selectedSkuId.value = detail.skus[0].id;
     }
@@ -391,6 +397,12 @@ async function loadQuote() {
 }
 
 async function submitOrder() {
+  const availability = getRegistrationAvailability(conference.value);
+  if (availability !== "OPEN") {
+    uni.showToast({ title: availability === "NOT_STARTED" ? "报名尚未开始" : "报名已截止", icon: "none" });
+    return;
+  }
+
   if (selectedItems.value.length === 0) {
     uni.showToast({ title: "请选择报名票数", icon: "none" });
     return;
@@ -440,6 +452,12 @@ async function submitOrder() {
 }
 
 async function addSelectedToCart() {
+  const availability = getRegistrationAvailability(conference.value);
+  if (availability !== "OPEN") {
+    uni.showToast({ title: availability === "NOT_STARTED" ? "报名尚未开始" : "报名已截止", icon: "none" });
+    return;
+  }
+
   if (selectedItems.value.length === 0) {
     uni.showToast({ title: "请选择报名票数", icon: "none" });
     return;
@@ -761,6 +779,21 @@ function registrationModuleContent(key: string, fallback: string): string {
 
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function getRegistrationAvailability(detail: ConferenceDetail | null): "OPEN" | "NOT_STARTED" | "ENDED" {
+  if (!detail) return "OPEN";
+  const now = Date.now();
+  const regStart = parseDateTime(detail.registrationStartsAt || detail.startsAt);
+  const regEnd = parseDateTime(detail.registrationEndsAt || detail.endsAt);
+  if (Number.isFinite(regEnd) && now > regEnd) return "ENDED";
+  if (Number.isFinite(regStart) && now < regStart) return "NOT_STARTED";
+  return "OPEN";
+}
+
+function parseDateTime(value: string | null | undefined): number {
+  const timestamp = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(timestamp) ? timestamp : Number.NaN;
 }
 
 interface AttendeeFormState {

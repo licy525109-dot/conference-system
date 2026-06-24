@@ -61,7 +61,7 @@
               </view>
               <view class="sku-side">
                 <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
-                <button v-if="showRegistrationAction" class="ui-button-primary ui-button-compact sku-button" @click="goRegister(sku.id)">{{ displaySettings.primaryButtonText }}</button>
+                <button v-if="showRegistrationAction" class="ui-button-primary ui-button-compact sku-button" :disabled="registrationAvailability === 'ENDED'" @click="goRegister(sku.id)">{{ registrationPrimaryText }}</button>
               </view>
             </view>
           </view>
@@ -87,8 +87,8 @@
       amount-label="报名费用"
       :amount-value="priceRangeText"
       note="金额以提交订单时系统计算结果为准"
-      :primary-text="displaySettings.primaryButtonText"
-      :primary-disabled="conference.skus.length === 0"
+      :primary-text="registrationPrimaryText"
+      :primary-disabled="conference.skus.length === 0 || registrationAvailability === 'ENDED'"
       tabbar-offset
       @primary="goRegisterFirst"
     />
@@ -110,7 +110,8 @@ import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
-import { getConferenceDetail, type ConferenceDetail, type RegistrationSku } from "@/services/conference";
+import { getConferenceDetail, reserveConferenceAppointment, type ConferenceDetail, type RegistrationSku } from "@/services/conference";
+import { ensureLogin } from "@/services/auth";
 import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
@@ -149,16 +150,15 @@ const priceRangeText = computed(() => {
   return min === max ? `¥${formatCent(min)}` : `¥${formatCent(min)} 起`;
 });
 const registrationStatus = computed(() => {
-  const detail = conference.value;
-  if (!detail) {
-    return { label: "报名中", tone: "success" as const };
-  }
-  const now = Date.now();
-  const regStart = detail.registrationStartsAt ? new Date(detail.registrationStartsAt).getTime() : 0;
-  const regEnd = detail.registrationEndsAt ? new Date(detail.registrationEndsAt).getTime() : 0;
-  if (regStart && now < regStart) return { label: "即将报名", tone: "warning" as const };
-  if (regEnd && now > regEnd) return { label: "报名截止", tone: "neutral" as const };
+  if (registrationAvailability.value === "NOT_STARTED") return { label: "即将报名", tone: "warning" as const };
+  if (registrationAvailability.value === "ENDED") return { label: "报名截止", tone: "neutral" as const };
   return { label: "报名中", tone: "success" as const };
+});
+const registrationAvailability = computed<"OPEN" | "NOT_STARTED" | "ENDED">(() => getRegistrationAvailability(conference.value));
+const registrationPrimaryText = computed(() => {
+  if (registrationAvailability.value === "NOT_STARTED") return displaySettings.value.appointmentButtonText || "预约报名";
+  if (registrationAvailability.value === "ENDED") return "报名已截止";
+  return displaySettings.value.primaryButtonText;
 });
 
 onLoad((query) => {
@@ -202,20 +202,48 @@ async function loadDetail() {
   }
 }
 
-function goRegister(skuId: string) {
+async function goRegister(skuId: string) {
+  if (registrationAvailability.value === "ENDED") {
+    uni.showToast({ title: "报名已截止", icon: "none" });
+    return;
+  }
+  if (registrationAvailability.value === "NOT_STARTED") {
+    await reserveAppointment();
+    return;
+  }
   const couponQuery = couponCode.value ? `&couponCode=${encodeURIComponent(couponCode.value)}` : "";
   uni.navigateTo({
     url: `/pages/registration/form?conferenceId=${encodeURIComponent(conferenceId.value)}&skuId=${encodeURIComponent(skuId)}${couponQuery}`
   });
 }
 
-function goRegisterFirst() {
+async function goRegisterFirst() {
+  if (registrationAvailability.value === "ENDED") {
+    uni.showToast({ title: "报名已截止", icon: "none" });
+    return;
+  }
+  if (registrationAvailability.value === "NOT_STARTED") {
+    await reserveAppointment();
+    return;
+  }
   const sku = conference.value?.skus.find((item) => remainingStock(item) > 0) ?? conference.value?.skus[0];
   if (!sku) {
     uni.showToast({ title: "暂无可报名规格", icon: "none" });
     return;
   }
   goRegister(sku.id);
+}
+
+async function reserveAppointment() {
+  if (!conferenceId.value) return;
+  try {
+    await ensureLogin();
+    const result = await reserveConferenceAppointment(conferenceId.value);
+    uni.showToast({ title: result.message || "预约成功", icon: "none" });
+  } catch (err) {
+    console.error("[CONFERENCE_APPOINTMENT_ERROR]", err);
+    uni.showToast({ title: "预约失败，请稍后重试", icon: "none" });
+  }
 }
 
 function remainingStock(sku: RegistrationSku): number {
@@ -273,6 +301,7 @@ function normalizeDetailDisplay(value: unknown, cmsDisplay: Record<string, unkno
     skusTitle: "报名规格",
     guideTitle: "会议详情",
     primaryButtonText: "立即报名",
+    appointmentButtonText: "预约报名",
     inventoryDisplayMode: "STATUS" as "EXACT" | "STATUS" | "HIDDEN",
     lowStockThreshold: 10
   };
@@ -292,9 +321,25 @@ function normalizeDetailDisplay(value: unknown, cmsDisplay: Record<string, unkno
     skusTitle: moduleTitle(modules, "skus", defaults.skusTitle),
     guideTitle: moduleTitle(modules, "guide", defaults.guideTitle),
     primaryButtonText: typeof source.primaryButtonText === "string" && source.primaryButtonText.trim() ? source.primaryButtonText.trim() : defaults.primaryButtonText,
+    appointmentButtonText: typeof source.appointmentButtonText === "string" && source.appointmentButtonText.trim() ? source.appointmentButtonText.trim() : defaults.appointmentButtonText,
     inventoryDisplayMode: mode === "EXACT" || mode === "HIDDEN" ? mode : "STATUS",
     lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : defaults.lowStockThreshold
   };
+}
+
+function getRegistrationAvailability(detail: ConferenceDetail | null): "OPEN" | "NOT_STARTED" | "ENDED" {
+  if (!detail) return "OPEN";
+  const now = Date.now();
+  const regStart = parseDateTime(detail.registrationStartsAt || detail.startsAt);
+  const regEnd = parseDateTime(detail.registrationEndsAt || detail.endsAt);
+  if (Number.isFinite(regEnd) && now > regEnd) return "ENDED";
+  if (Number.isFinite(regStart) && now < regStart) return "NOT_STARTED";
+  return "OPEN";
+}
+
+function parseDateTime(value: string | null | undefined): number {
+  const timestamp = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(timestamp) ? timestamp : Number.NaN;
 }
 
 function readCmsBusinessDisplay(page: PublishedPage | null): Record<string, unknown> {

@@ -25,6 +25,7 @@
       </template>
       <EmptyState v-else title="页面尚未发布" description="该页面内容暂未开放，请返回首页查看会议。" mark="页" action-text="返回首页" @action="goHome" />
     </view>
+    <WechatProfilePrompt />
     <CustomTabbar :active-page-key="pageKey" />
   </view>
 </template>
@@ -39,6 +40,7 @@ import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
+import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { applyPageTitle, buildPageShare, DEFAULT_THEME, getAppTheme, getPublishedPage, type PublishedPage, type ThemeConfig } from "@/services/cms";
 import { getConferences, type ConferenceListItem } from "@/services/conference";
 import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
