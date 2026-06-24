@@ -12,6 +12,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { getAppTabbar, type AppTabbar, type TabbarItem } from "@/services/cms";
+import { ensureLogin } from "@/services/auth";
 import { getToken } from "@/services/session";
 import { stringifyQuery } from "@/utils/query";
 
@@ -44,24 +45,38 @@ function fallbackGlyph(item: TabbarItem): string {
   return title.slice(0, 1);
 }
 
-function go(item: TabbarItem) {
+async function go(item: TabbarItem) {
+  let openProfileAfterNavigate = false;
   if (item.requireLogin && !getToken()) {
-    uni.showToast({ title: "请先授权登录", icon: "none" });
-    return;
+    try {
+      await ensureLogin();
+      openProfileAfterNavigate = true;
+    } catch {
+      uni.showToast({ title: "登录失败，请稍后重试", icon: "none" });
+      return;
+    }
   }
   const url = item.path.startsWith("/") ? item.path : `/${item.path}`;
   if (url === currentUrl()) {
+    if (openProfileAfterNavigate) emitProfilePromptSoon();
     return;
   }
   if (url === "/pages/index/index") {
     uni.reLaunch({ url });
+    if (openProfileAfterNavigate) emitProfilePromptSoon();
     return;
   }
   if (isTabbarLikePage(url)) {
     uni.reLaunch({ url });
+    if (openProfileAfterNavigate) emitProfilePromptSoon();
     return;
   }
   uni.navigateTo({ url });
+  if (openProfileAfterNavigate) emitProfilePromptSoon();
+}
+
+function emitProfilePromptSoon() {
+  setTimeout(() => uni.$emit("wechat-profile:open"), 260);
 }
 
 function currentUrl(): string {

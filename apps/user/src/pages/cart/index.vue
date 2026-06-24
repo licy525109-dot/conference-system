@@ -35,7 +35,7 @@
 
     <template v-else>
       <view v-if="registrationItems.length > 0" class="section">
-        <view class="section-head">
+        <view v-if="!hasCmsContent" class="section-head">
           <view>
             <text class="section-title">会议报名</text>
             <text class="muted">报名支付沿用现有安全订单链路</text>
@@ -72,7 +72,7 @@
       </view>
 
       <view v-if="productItems.length > 0" class="section">
-        <view class="section-head">
+        <view v-if="!hasCmsContent" class="section-head">
           <view>
             <text class="section-title">商品</text>
             <text class="muted">商品可创建待支付订单，订单页完成支付</text>
@@ -80,6 +80,7 @@
           <StatusTag label="待支付订单" tone="info" />
         </view>
         <ExtensionStatusNotice
+          v-if="!hasCmsContent"
           status="商城订单"
           title="商品项可创建待支付订单"
           description="后端会重新计算金额并锁定库存。订单创建后前往我的商城订单完成支付。"
@@ -90,6 +91,10 @@
           <input v-model="receiver.name" class="field" placeholder="收货人" />
           <input v-model="receiver.phone" class="field" placeholder="手机号" />
           <input v-model="receiver.address" class="field" placeholder="收货地址" />
+          <view class="receiver-actions">
+            <button class="ui-button-secondary ui-button-compact" @click="loadSavedReceiver">使用常用信息</button>
+            <button class="ui-button-secondary ui-button-compact" @click="saveReceiverProfile()">保存为常用</button>
+          </view>
         </view>
         <view v-else class="receiver-card ui-card">
           <text class="section-title">履约信息</text>
@@ -209,9 +214,11 @@ const allSelected = computed(() => {
   const total = registrationItems.value.length + productItems.value.length;
   return total > 0 && selectedCount.value === total;
 });
+const COMMON_PROFILE_STORAGE_KEY = "conference_user_common_profile";
 
 onShow(() => {
   if (!productCouponCode.value) productCouponCode.value = readPendingProductCoupon();
+  loadSavedReceiver();
   void refreshTheme();
   void loadCart();
 });
@@ -361,6 +368,7 @@ async function checkoutProduct(id: string) {
   }
   checkoutId.value = id;
   try {
+    if (requiresReceiver) saveReceiverProfile(false);
     const order = await checkoutProductCart({
       itemIds: [id],
       couponCode: normalizedProductCouponCode(),
@@ -415,6 +423,7 @@ async function checkoutProductGroup(ids: string[]) {
   }
   checkoutId.value = "selected-product";
   try {
+    if (requiresReceiver) saveReceiverProfile(false);
     const order = await checkoutProductCart({
       itemIds: ids,
       couponCode: normalizedProductCouponCode(),
@@ -481,6 +490,29 @@ function normalizedProductCouponCode(): string | undefined {
   return code ? code : undefined;
 }
 
+function loadSavedReceiver() {
+  const stored = uni.getStorageSync(COMMON_PROFILE_STORAGE_KEY);
+  if (!stored || typeof stored !== "object") return;
+  const value = stored as { name?: unknown; phone?: unknown; address?: unknown };
+  receiver.value = {
+    name: typeof value.name === "string" ? value.name : receiver.value.name,
+    phone: typeof value.phone === "string" ? value.phone : receiver.value.phone,
+    address: typeof value.address === "string" ? value.address : receiver.value.address
+  };
+}
+
+function saveReceiverProfile(showToast = true) {
+  const current = uni.getStorageSync(COMMON_PROFILE_STORAGE_KEY);
+  const base = current && typeof current === "object" ? (current as Record<string, unknown>) : {};
+  uni.setStorageSync(COMMON_PROFILE_STORAGE_KEY, {
+    ...base,
+    name: receiver.value.name,
+    phone: receiver.value.phone,
+    address: receiver.value.address
+  });
+  if (showToast) uni.showToast({ title: "已保存常用收货信息", icon: "success" });
+}
+
 function checkoutMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiRequestError && typeof err.responseMessage === "string" && err.responseMessage.length > 0) {
     return err.responseMessage;
@@ -494,7 +526,7 @@ function checkoutMessage(err: unknown, fallback: string): string {
   display: flex;
   flex-direction: column;
   gap: 22rpx;
-  padding-bottom: 180rpx;
+  padding-bottom: calc(420rpx + env(safe-area-inset-bottom));
 }
 
 .topbar,
@@ -559,7 +591,7 @@ function checkoutMessage(err: unknown, fallback: string): string {
 }
 
 .card {
-  padding: 24rpx;
+  padding: 26rpx;
 }
 
 .selectable-card {
@@ -597,6 +629,12 @@ function checkoutMessage(err: unknown, fallback: string): string {
   flex-direction: column;
   gap: 14rpx;
   padding: 24rpx;
+}
+
+.receiver-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14rpx;
 }
 
 .coupon-card {
@@ -673,14 +711,18 @@ function checkoutMessage(err: unknown, fallback: string): string {
 
 .product-card {
   display: flex;
+  align-items: flex-start;
   gap: 20rpx;
+  border-radius: 26rpx;
+  padding-top: 30rpx;
+  padding-bottom: 30rpx;
 }
 
 .product-cover {
-  width: 144rpx;
-  height: 144rpx;
-  flex: 0 0 144rpx;
-  border-radius: var(--ui-radius);
+  width: 176rpx;
+  height: 176rpx;
+  flex: 0 0 176rpx;
+  border-radius: 20rpx;
   background: var(--ui-color-primary-soft);
 }
 
@@ -697,6 +739,18 @@ function checkoutMessage(err: unknown, fallback: string): string {
   min-width: 0;
 }
 
+.product-body .card-head {
+  align-items: flex-start;
+}
+
+.product-body .card-actions {
+  margin-top: 18rpx;
+}
+
+.product-body .quantity-row {
+  margin-top: 20rpx;
+}
+
 .action-button {
   min-width: 164rpx;
 }
@@ -708,15 +762,15 @@ function checkoutMessage(err: unknown, fallback: string): string {
 .settlement-bar {
   position: fixed;
   right: 24rpx;
-  bottom: calc(118rpx + env(safe-area-inset-bottom));
+  bottom: calc(220rpx + env(safe-area-inset-bottom));
   left: 24rpx;
   z-index: 20;
   display: flex;
   align-items: center;
   gap: 18rpx;
-  padding: 18rpx 22rpx;
+  padding: 20rpx 24rpx;
   border: 1rpx solid rgba(8, 23, 44, 0.08);
-  border-radius: 999rpx;
+  border-radius: 34rpx;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 18rpx 50rpx rgba(15, 23, 42, 0.14);
   backdrop-filter: blur(14px);
@@ -743,7 +797,7 @@ function checkoutMessage(err: unknown, fallback: string): string {
 }
 
 .settlement-button {
-  min-width: 180rpx;
+  min-width: 206rpx;
   height: 72rpx;
   border: 0;
   border-radius: 999rpx;

@@ -123,14 +123,14 @@
             <text v-if="item.summary" class="cms-schedule-card__summary">{{ item.summary }}</text>
             <view class="cms-schedule-card__meta">
               <text>已报名 {{ item.registrationCount || 0 }} 人</text>
-              <text>{{ shouldShowAppointmentAction(item, component) ? "即将开始" : "开放报名" }}</text>
+              <text>{{ conferenceStatusText(item, component) }}</text>
             </view>
           </view>
           <view class="cms-schedule-card__actions">
             <view class="cms-schedule-card__button" @click.stop="handleConferenceAction(item, component)">
               <text>{{ conferenceActionText(item, component) }}</text>
             </view>
-            <view v-if="booleanConfig(component, 'showCalendarButton', true)" class="cms-schedule-card__calendar" @click.stop="addConferenceToCalendar(item)">
+            <view v-if="booleanConfig(component, 'showItemCalendarButton', false)" class="cms-schedule-card__calendar" @click.stop="addConferenceToCalendar(item)">
               <text>日历</text>
             </view>
           </view>
@@ -1466,6 +1466,9 @@ async function goLoginPath(path: string): Promise<void> {
   try {
     await ensureLogin();
     refreshStoredUser();
+    if (!storedUser.value?.wechatNickname || !storedUser.value?.wechatAvatarUrl) {
+      setTimeout(() => uni.$emit("wechat-profile:open"), 120);
+    }
     goPath(path);
   } catch (error) {
     uni.showToast({ title: readErrorText(error, "请先登录"), icon: "none" });
@@ -1965,15 +1968,26 @@ function detailButtonText(component: CmsComponent): string {
 }
 
 function conferenceActionText(item: ConferenceListItem, component: CmsComponent): string {
+  if (isConferenceEnded(item)) return stringConfig(component, "endedButtonText") || "查看详情";
   if (!shouldShowAppointmentAction(item, component)) return detailButtonText(component);
   return stringConfig(component, "appointmentButtonText") || "提前预约";
 }
 
+function conferenceStatusText(item: ConferenceListItem, component: CmsComponent): string {
+  if (isConferenceEnded(item)) return stringConfig(component, "endedStatusText") || "已结束";
+  return shouldShowAppointmentAction(item, component) ? "即将开始" : "开放报名";
+}
+
 function shouldShowAppointmentAction(item: ConferenceListItem, component: CmsComponent): boolean {
   if (!booleanConfig(component, "showAppointmentButton", true)) return false;
-  const startAt = Date.parse(item.registrationStartsAt || "");
-  if (!Number.isFinite(startAt)) return false;
-  return nowTimestamp.value < startAt;
+  if (isConferenceEnded(item)) return false;
+  const startAt = Date.parse(item.registrationStartsAt || item.startsAt || "");
+  return Number.isFinite(startAt) && nowTimestamp.value < startAt;
+}
+
+function isConferenceEnded(item: ConferenceListItem): boolean {
+  const endAt = Date.parse(item.registrationEndsAt || item.endsAt || "");
+  return Number.isFinite(endAt) && nowTimestamp.value > endAt;
 }
 
 async function handleConferenceAction(item: ConferenceListItem, component: CmsComponent): Promise<void> {
@@ -1985,6 +1999,9 @@ async function handleConferenceAction(item: ConferenceListItem, component: CmsCo
   try {
     await ensureLogin();
     refreshStoredUser();
+    if (!storedUser.value?.wechatNickname || !storedUser.value?.wechatAvatarUrl) {
+      setTimeout(() => uni.$emit("wechat-profile:open"), 120);
+    }
     const result = await reserveConferenceAppointment(item.id);
     uni.showToast({ title: result.message || "预约成功", icon: "none" });
   } catch (error) {
@@ -3105,16 +3122,16 @@ function readErrorText(error: unknown, fallback: string): string {
 .cms-profile__body,
 .cms-testimonial {
   display: flex;
-  align-items: flex-start;
-  gap: 18rpx;
+  align-items: center;
+  gap: 24rpx;
   margin-top: 18rpx;
 }
 
 .cms-profile__avatar,
 .cms-testimonial__avatar {
-  width: 88rpx;
-  height: 88rpx;
-  flex: 0 0 88rpx;
+  width: 118rpx;
+  height: 118rpx;
+  flex: 0 0 118rpx;
   border-radius: 50%;
   background: var(--ui-color-primary-soft);
 }
@@ -3890,14 +3907,14 @@ function readErrorText(error: unknown, fallback: string): string {
   position: relative;
   overflow: hidden;
   margin-top: 22rpx;
-  padding: 30rpx;
-  border: 1px solid var(--cms-border);
-  border-radius: var(--cms-radius-lg);
+  padding: 34rpx;
+  border: 1px solid rgba(248, 228, 178, 0.18);
+  border-radius: 28rpx;
   background:
-    radial-gradient(circle at 84% 18%, rgba(255, 255, 255, 0.72), transparent 26%),
-    linear-gradient(135deg, rgba(58, 143, 121, 0.18), rgba(181, 139, 71, 0.14)),
-    var(--cms-card);
-  box-shadow: var(--cms-shadow-md);
+    radial-gradient(circle at 88% 12%, rgba(210, 170, 100, 0.34), transparent 30%),
+    linear-gradient(135deg, #071426, #10233d 64%, #071426);
+  color: #f8e4b2;
+  box-shadow: 0 20rpx 44rpx rgba(7, 20, 38, 0.22);
 }
 
 .cms-member-promo__image {
@@ -4325,8 +4342,13 @@ function readErrorText(error: unknown, fallback: string): string {
 }
 
 .cms-profile {
-  border-color: rgba(31, 77, 122, 0.16);
-  background: linear-gradient(135deg, var(--cms-surface-elevated), var(--cms-primary-soft));
+  padding: 34rpx;
+  border-color: rgba(181, 139, 71, 0.14);
+  border-radius: 28rpx;
+  background:
+    radial-gradient(circle at 92% 20%, rgba(210, 170, 100, 0.14), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(250, 246, 238, 0.92));
+  box-shadow: 0 18rpx 44rpx rgba(15, 23, 42, 0.08);
 }
 
 .cms-action-grid,
@@ -4341,14 +4363,15 @@ function readErrorText(error: unknown, fallback: string): string {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 132rpx;
+  min-height: 142rpx;
   padding: 20rpx;
   border: 1px solid var(--cms-border);
-  border-radius: var(--cms-radius-md);
-  background: var(--cms-surface-soft);
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.86);
   color: var(--cms-text-primary);
   font-size: 26rpx;
   font-weight: 800;
+  box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.06);
 }
 
 .cms-action-tile {

@@ -41,6 +41,7 @@ export class AdminCmsService {
     await this.ensureCmsDefaults();
     const items = await this.prisma.pageTemplate.findMany({
       where: {
+        enabled: true,
         NOT: {
           pageKey: { startsWith: PAGE_LIBRARY_PREFIX }
         }
@@ -202,11 +203,19 @@ export class AdminCmsService {
       }
     });
     if (!template) throw new NotFoundException("页面不存在");
-    if (template.pageKey.startsWith(PAGE_LIBRARY_PREFIX) || KNOWN_PAGE_KEYS.has(template.pageKey) || template.pageType === "SYSTEM_TEMPLATE") {
-      throw new BadRequestException("固定模板或系统业务页不能删除");
-    }
     if (template.publishedVersionId) {
       throw new BadRequestException("已发布页面不能删除，请先新建草稿替代或停用发布入口");
+    }
+    if (template.pageKey.startsWith(PAGE_LIBRARY_PREFIX) || template.pageType === "SYSTEM_TEMPLATE") {
+      throw new BadRequestException("固定模板不能删除");
+    }
+    if (KNOWN_PAGE_KEYS.has(template.pageKey)) {
+      await this.prisma.pageTemplate.update({ where: { id }, data: { enabled: false } });
+      await this.writeAudit(admin, AuditAction.DELETE, "PageTemplate", id, "Disable built-in draft page template", {
+        pageKey: template.pageKey,
+        title: template.title
+      });
+      return ok({ id, deleted: true, disabled: true });
     }
     await this.prisma.pageTemplate.delete({ where: { id } });
     await this.writeAudit(admin, AuditAction.DELETE, "PageTemplate", id, "Delete page template", {
@@ -620,7 +629,6 @@ export class AdminCmsService {
           title: page.title,
           pageType: page.pageType,
           bindingType: page.pageKey === "mall-detail" ? "PRODUCT_TEMPLATE" : page.pageKey === "conference-detail" ? "CONFERENCE_TEMPLATE" : null,
-          enabled: true,
           sortOrder: page.sortOrder
         },
         create: {
