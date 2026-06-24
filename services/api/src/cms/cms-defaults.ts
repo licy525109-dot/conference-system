@@ -235,6 +235,19 @@ export const ENABLED_COMPONENT_PRESETS = [
     cardImageLayout: "left",
     cardRadius: 14
   }),
+  preset("conference-schedule", "年度排期", "会议", "按真实会议日期展示月份、分类、排期卡和日历添加", {
+    title: "",
+    categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"],
+    limit: 8,
+    showHeroMonths: true,
+    showCalendarButton: true,
+    calendarText: "日历",
+    detailButtonText: "查看详情",
+    showAppointmentButton: true,
+    appointmentButtonText: "提前预约",
+    contentBackgroundStyle: "transparent",
+    cardImageMode: "scaleToFill"
+  }),
   preset("conference-tabs", "会议分类切换", "会议", "会议分类切换入口", { title: "会议分类", tabs: ["全部", "主论坛", "闭门会", "训练营"], limit: 6 }),
   preset("speaker-cards", "嘉宾卡片", "内容", "展示嘉宾头像和简介", {
     title: "嘉宾阵容",
@@ -438,6 +451,13 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
           cardImageLayout: "left"
         }
       }
+    ];
+  }
+
+  if (pageKey === "custom:about-paiqi" || pageKey === "custom:annual-schedule") {
+    return [
+      { id: "schedule-hero", type: "hero-banner", enabled: true, config: { title: "年度排期", subtitle: "观潮会集", description: "查看观潮会集全年会议安排", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
+      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCalendarButton: true, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
     ];
   }
 
@@ -977,8 +997,8 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     components: [
       { id: "guanchao-home-hero", type: "hero-banner", enabled: true, config: { title: "观潮会集", subtitle: "潮起谋局  潮落定势", description: "行业会议与创始人社群平台", imageUrl: "", buttonText: "", secondaryButtonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 500, radius: 0 } },
       { id: "guanchao-home-login", type: "login-card", enabled: true, config: { title: "欢迎光临，请登录成为会员", subtitle: "查看会议排期与报名权益", buttonText: "立即登录", loggedInSubtitle: "可查看会议排期、报名权益和优惠券。", loggedInButtonText: "我的优惠券", actionTargetType: "page", targetPageKey: "member-center", contentBackgroundStyle: "card" } },
-      { id: "guanchao-home-grid", type: "quick-icon-grid", enabled: true, config: { title: "", showTitle: false, columns: 3, iconSize: "xlarge", cardStyle: "outline", cardRadius: 24, cardGap: 18, showSubtitle: true, contentBackgroundStyle: "transparent", items: [entry("年度排期", "SCHEDULE", "calendar", "page", { targetPageKey: "conference-list" }), entry("会议报名", "REGISTRATION", "registration", "page", { targetPageKey: "conference-list" }), entry("赛道生态", "ECOSYSTEM", "team", "page", { targetPageKey: "custom:ecosystem" })] } },
-      { id: "guanchao-home-track-bar", type: "promotion-bar", enabled: true, config: { iconText: "▰", title: "五大增量生态 × 五大垂类赛道", buttonText: "查看详情", showArrow: true, actionTargetType: "page", targetPageKey: "custom:ecosystem", backgroundColor: "#efe7d8" } },
+      { id: "guanchao-home-grid", type: "quick-icon-grid", enabled: true, config: { title: "", showTitle: false, columns: 3, iconSize: "xlarge", cardStyle: "outline", cardRadius: 24, cardGap: 18, showSubtitle: true, contentBackgroundStyle: "transparent", items: [entry("年度排期", "SCHEDULE", "calendar", "page", { targetPageKey: "custom:about-paiqi" }), entry("会议报名", "REGISTRATION", "registration", "page", { targetPageKey: "conference-list" }), entry("赛道生态", "ECOSYSTEM", "team", "page", { targetPageKey: "custom:ecosystem" })] } },
+      { id: "guanchao-home-track-bar", type: "promotion-bar", enabled: true, config: { iconText: "▰", title: "五大增量生态 × 五大垂类赛道", buttonText: "查看详情", showArrow: true, actionTargetType: "page", targetPageKey: "custom:ecosystem", backgroundColor: "#efe7d8", barHeight: 76, moduleOpacity: 100 } },
       { id: "guanchao-home-stats", type: "stats-grid", enabled: true, config: { title: "观潮会集", items: ["1500+ 头部创始人", "20+ 覆盖城市业态", "5 大核心会议模型"] } },
       { id: "guanchao-home-tracks", type: "dual-track-tags", enabled: true, config: { primaryTitle: "五大增量生态", primaryItems: ["自然", "银发", "赛事", "研学", "情绪"], primaryButtonText: "", secondaryTitle: "五大垂类赛道", secondaryItems: ["学前", "科创", "舞蹈", "美术", "自主学习"], secondaryButtonText: "", contentBackgroundStyle: "transparent" } },
       { id: "guanchao-home-conferences", type: "conference-list", enabled: true, config: { title: "可报名会议", limit: 4, showSummary: true, showTime: true, showLocation: true, showRegistrationCount: true, detailButtonText: "立即报名", showAppointmentButton: true, appointmentButtonText: "提前预约", cardImageLayout: "left", cardImageMode: "scaleToFill", cardRadius: 18 } }
@@ -1007,8 +1027,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     },
     components: [
       { id: "schedule-hero", type: "hero-banner", enabled: true, config: { title: "年度排期", subtitle: "观潮会集", description: "查看观潮会集全年会议安排", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
-      { id: "schedule-months", type: "tag-filter", enabled: true, config: { title: "", items: ["3 月｜3｜tag", "4 月｜4｜tag", "5 月｜5｜tag", "6 月｜6｜tag", "7 月｜7｜tag", "8 月｜8｜tag"], contentBackgroundStyle: "card" } },
-      { id: "schedule-categories", type: "conference-tabs", enabled: true, config: { title: "", tabs: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showSummary: true, showTime: true, showLocation: true, showRegistrationCount: true, detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", cardImageLayout: "left", cardImageMode: "scaleToFill" } }
+      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCalendarButton: true, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
     ]
   },
   {

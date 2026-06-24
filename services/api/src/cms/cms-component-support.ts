@@ -38,6 +38,7 @@ export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMet
   "image-promo-card": supported("自定义图片卡片", "H5/小程序完整支持图片推广卡片和统一跳转配置。"),
   "rich-content-block": supported("自定义图文模块", "H5/小程序完整支持标题、正文、图片和按钮展示。"),
   "conference-list": supported("会议卡片列表", "H5/小程序完整支持会议列表展示、封面兜底和详情跳转。"),
+  "conference-schedule": supported("年度排期", "H5/小程序支持按真实会议日期生成月份、分类、排期卡和系统日历添加。"),
   "conference-tabs": supported("会议分类切换", "H5/小程序支持分类标签点击并按 location/category/tag 参数筛选会议。"),
   "speaker-cards": supported("嘉宾卡片", "H5/小程序支持嘉宾头像、姓名、角色和介绍展示。"),
   "schedule-timeline": supported("日程时间轴", "H5/小程序支持日程时间、主题和说明展示。"),

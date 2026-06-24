@@ -18,6 +18,7 @@ export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportDef
   "image-promo-card": { label: "自定义图片卡片", status: "supported", description: "用户端支持图片推广卡片和统一跳转配置" },
   "rich-content-block": { label: "自定义图文模块", status: "supported", description: "用户端支持标题、正文、图片和按钮展示" },
   "conference-list": { label: "会议卡片列表", status: "supported", description: "用户端完整支持会议列表展示和详情跳转" },
+  "conference-schedule": { label: "年度排期", status: "supported", description: "用户端支持按真实会议日期展示排期和添加系统日历" },
   "conference-tabs": { label: "会议分类切换", status: "supported", description: "用户端支持分类标签筛选和会议卡片展示" },
   "registration-button": { label: "报名按钮", status: "supported", description: "用户端支持普通报名入口，会议详情页会避免重复 CTA" },
   "floating-registration-button": { label: "悬浮报名按钮", status: "supported", description: "用户端支持悬浮报名入口，会议详情页会避免重复 CTA" },

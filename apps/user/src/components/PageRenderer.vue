@@ -4,7 +4,7 @@
       v-for="(component, index) in visibleComponents"
       :key="component.id"
       :class="blockClass(component, index)"
-      :style="blockStyle(index)"
+      :style="blockStyle(component, index)"
     >
       <ThemeDynamicBackground v-if="showHeaderDynamicBackground(index)" :theme="props.theme" placement="absolute" />
       <video
@@ -67,6 +67,61 @@
             <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-card__meta" :style="conferenceTextStyle(component, 'meta')">{{ line }}</text>
             <view class="cms-card__button" @click.stop="handleConferenceAction(item, component)">
               <text>{{ conferenceActionText(item, component) }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="component.type === 'conference-schedule'" class="cms-section cms-schedule-page">
+        <view class="cms-schedule-months">
+          <view class="cms-schedule-months__rail">
+            <view
+              v-for="month in scheduleMonths(component)"
+              :key="month.key"
+              :class="['cms-schedule-month', activeScheduleMonth(component) === month.key ? 'active' : '']"
+              @click="setScheduleMonth(component, month.key)"
+            >
+              <text>{{ month.year }}</text>
+              <text>{{ month.label }}</text>
+            </view>
+          </view>
+          <view v-if="booleanConfig(component, 'showCalendarButton', true)" class="cms-schedule-calendar" @click="addFirstScheduleToCalendar(component)">
+            <text>▦</text>
+            <text>{{ stringConfig(component, "calendarText") || "日历" }}</text>
+          </view>
+        </view>
+        <view class="cms-schedule-categories">
+          <text
+            v-for="category in scheduleCategories(component)"
+            :key="category"
+            :class="['cms-schedule-category', activeScheduleCategory(component) === category ? 'active' : '']"
+            @click="setScheduleCategory(component, category)"
+          >
+            {{ category }}
+          </text>
+        </view>
+        <view v-if="scheduleConferences(component).length === 0" class="cms-empty">暂无该月份会议</view>
+        <view v-for="item in scheduleConferences(component)" :key="item.id" class="cms-schedule-card">
+          <view class="cms-schedule-card__date">
+            <text class="cms-schedule-card__day">{{ scheduleDay(item.startsAt) }}</text>
+            <text>{{ scheduleWeekday(item.startsAt) }} {{ scheduleTimeRange(item.startsAt, item.endsAt) }}</text>
+            <text class="cms-schedule-card__location">{{ item.location || "地点待定" }}</text>
+          </view>
+          <view class="cms-schedule-card__body">
+            <view class="cms-schedule-card__tag">{{ scheduleCardTag(item, component) }}</view>
+            <text class="cms-schedule-card__title">{{ item.title }}</text>
+            <text v-if="item.summary" class="cms-schedule-card__summary">{{ item.summary }}</text>
+            <view class="cms-schedule-card__meta">
+              <text>已报名 {{ item.registrationCount || 0 }} 人</text>
+              <text>{{ shouldShowAppointmentAction(item, component) ? "即将开始" : "开放报名" }}</text>
+            </view>
+          </view>
+          <view class="cms-schedule-card__actions">
+            <view class="cms-schedule-card__button" @click.stop="handleConferenceAction(item, component)">
+              <text>{{ conferenceActionText(item, component) }}</text>
+            </view>
+            <view class="cms-schedule-card__calendar" @click.stop="addConferenceToCalendar(item)">
+              <text>日历</text>
             </view>
           </view>
         </view>
@@ -583,6 +638,8 @@ const faqOpenMap = ref<Record<string, boolean>>({});
 const mallProductMap = ref<Record<string, Product[]>>({});
 const mallProductLoading = ref<Record<string, boolean>>({});
 const couponStatusMap = ref<Record<string, string>>({});
+const scheduleMonthMap = ref<Record<string, string>>({});
+const scheduleCategoryMap = ref<Record<string, string>>({});
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
 const visibleComponents = computed(() =>
@@ -693,9 +750,18 @@ function blockClass(component: CmsComponent, index: number): string[] {
   ].filter(Boolean);
 }
 
-function blockStyle(index: number): Record<string, string> {
-  if (index !== 0 || props.theme.backgroundApplyTo !== "header") return {};
-  return headerBackgroundStyle();
+function blockStyle(component: CmsComponent, index: number): Record<string, string> {
+  const style: Record<string, string> = {};
+  const marginTop = numberConfig(component, "moduleSpacingTop", 0);
+  const minHeight = numberConfig(component, "moduleHeight", 0);
+  const opacity = numberConfig(component, "moduleOpacity", 100);
+  if (index > 0) style.marginTop = `${marginTop}rpx`;
+  if (minHeight > 0) style.minHeight = `${minHeight}rpx`;
+  if (opacity >= 0 && opacity < 100) style.opacity = `${Math.max(0, Math.min(100, opacity)) / 100}`;
+  if (index === 0 && props.theme.backgroundApplyTo === "header") {
+    Object.assign(style, headerBackgroundStyle());
+  }
+  return style;
 }
 
 function showHeaderDynamicBackground(index: number): boolean {
@@ -1099,8 +1165,10 @@ async function handleLoginCard(component: CmsComponent): Promise<void> {
 
 function promotionBarStyle(component: CmsComponent): Record<string, string> {
   const background = stringConfig(component, "backgroundColor") || stringConfig(component, "cardBackground");
+  const height = numberConfig(component, "barHeight", 0) || numberConfig(component, "moduleHeight", 0);
   return {
     ...textStyle(component),
+    ...(height > 0 ? { minHeight: `${height}rpx`, paddingTop: "0", paddingBottom: "0" } : {}),
     ...(background ? { background } : {})
   };
 }
@@ -1676,6 +1744,145 @@ function fallbackList(component: CmsComponent, fallback: string[]): string[] {
 
 function limitedConferences(component: CmsComponent): ConferenceListItem[] {
   return conferences.value.slice(0, Math.max(1, numberConfig(component, "limit", 10)));
+}
+
+function scheduleMonths(component: CmsComponent): Array<{ key: string; year: string; label: string }> {
+  const months = new Map<string, { key: string; year: string; label: string; timestamp: number }>();
+  conferences.value.forEach((item) => {
+    const date = parseDate(item.startsAt);
+    if (!date) return;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    if (!months.has(key)) {
+      months.set(key, {
+        key,
+        year: String(date.getFullYear()),
+        label: `${date.getMonth() + 1} 月`,
+        timestamp: date.getTime()
+      });
+    }
+  });
+  const result = Array.from(months.values()).sort((a, b) => a.timestamp - b.timestamp);
+  if (result.length > 0) return result;
+  const today = new Date();
+  return Array.from({ length: 6 }).map((_, index) => {
+    const date = new Date(today.getFullYear(), today.getMonth() + index, 1);
+    return {
+      key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+      year: String(date.getFullYear()),
+      label: `${date.getMonth() + 1} 月`
+    };
+  });
+}
+
+function activeScheduleMonth(component: CmsComponent): string {
+  return scheduleMonthMap.value[component.id] || scheduleMonths(component)[0]?.key || "";
+}
+
+function setScheduleMonth(component: CmsComponent, monthKey: string): void {
+  scheduleMonthMap.value = { ...scheduleMonthMap.value, [component.id]: monthKey };
+}
+
+function scheduleCategories(component: CmsComponent): string[] {
+  const configured = stringListConfig(component, "categories");
+  if (configured.length > 0) return configured.includes("全部") ? configured : ["全部", ...configured];
+  const fromTabs = stringListConfig(component, "tabs");
+  if (fromTabs.length > 0) return fromTabs.includes("全部") ? fromTabs : ["全部", ...fromTabs];
+  return ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"];
+}
+
+function activeScheduleCategory(component: CmsComponent): string {
+  return scheduleCategoryMap.value[component.id] || scheduleCategories(component)[0] || "全部";
+}
+
+function setScheduleCategory(component: CmsComponent, category: string): void {
+  scheduleCategoryMap.value = { ...scheduleCategoryMap.value, [component.id]: category };
+}
+
+function scheduleConferences(component: CmsComponent): ConferenceListItem[] {
+  const monthKey = activeScheduleMonth(component);
+  const category = activeScheduleCategory(component);
+  const limit = Math.max(1, numberConfig(component, "limit", 8));
+  return conferences.value
+    .filter((item) => {
+      const date = parseDate(item.startsAt);
+      if (!date) return false;
+      const itemMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const monthMatched = !monthKey || itemMonth === monthKey;
+      const categoryMatched = !category || category === "全部" || [item.title, item.summary, item.location].some((value) => value?.includes(category));
+      return monthMatched && categoryMatched;
+    })
+    .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
+    .slice(0, limit);
+}
+
+function scheduleCardTag(item: ConferenceListItem, component: CmsComponent): string {
+  const categories = scheduleCategories(component).filter((item) => item !== "全部");
+  return categories.find((category) => [item.title, item.summary, item.location].some((value) => value?.includes(category))) || categories[0] || "会议";
+}
+
+function scheduleDay(value: string): string {
+  const date = parseDate(value);
+  return date ? `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}` : "待定";
+}
+
+function scheduleWeekday(value: string): string {
+  const date = parseDate(value);
+  if (!date) return "";
+  return ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][date.getDay()];
+}
+
+function scheduleTime(value: string): string {
+  const date = parseDate(value);
+  if (!date) return "";
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function scheduleTimeRange(startsAt: string, endsAt?: string | null): string {
+  const start = scheduleTime(startsAt);
+  const end = endsAt ? scheduleTime(endsAt) : "";
+  if (!start) return "";
+  if (!end || end === start) return start;
+  return `${start}-${end}`;
+}
+
+function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function addFirstScheduleToCalendar(component: CmsComponent): void {
+  const item = scheduleConferences(component)[0] || conferences.value[0];
+  if (!item) {
+    uni.showToast({ title: "暂无可添加的会议", icon: "none" });
+    return;
+  }
+  addConferenceToCalendar(item);
+}
+
+function addConferenceToCalendar(item: ConferenceListItem): void {
+  const start = parseDate(item.startsAt);
+  if (!start) {
+    uni.showToast({ title: "会议时间未配置", icon: "none" });
+    return;
+  }
+  const end = parseDate(item.endsAt) || new Date(start.getTime() + 2 * 60 * 60 * 1000);
+  const addPhoneCalendar = (uni as unknown as {
+    addPhoneCalendar?: (options: Record<string, unknown>) => void;
+  }).addPhoneCalendar;
+  if (typeof addPhoneCalendar === "function") {
+    addPhoneCalendar({
+      title: item.title,
+      startTime: Math.floor(start.getTime() / 1000),
+      endTime: Math.floor(end.getTime() / 1000),
+      location: item.location || "",
+      notes: item.summary || "观潮会集会议",
+      success: () => uni.showToast({ title: "已添加到日历", icon: "none" }),
+      fail: () => uni.showToast({ title: "添加失败，请检查权限", icon: "none" })
+    });
+    return;
+  }
+  copyText(`${item.title} ${formatDateTime(item.startsAt)} ${item.location || ""}`, "会议日程已复制");
 }
 
 function showConferenceCover(component: CmsComponent, item: ConferenceListItem): boolean {
@@ -3253,6 +3460,203 @@ function readErrorText(error: unknown, fallback: string): string {
   line-height: 1;
 }
 
+.cms-schedule-page {
+  display: flex;
+  flex-direction: column;
+  gap: 26rpx;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.cms-schedule-months {
+  display: flex;
+  align-items: stretch;
+  gap: 14rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 28rpx;
+  background: var(--cms-surface-elevated);
+  box-shadow: var(--cms-shadow-sm);
+}
+
+.cms-schedule-months__rail {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 16rpx;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.cms-schedule-month {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 86rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3rpx;
+  color: var(--cms-text-secondary);
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.cms-schedule-month text:last-child {
+  color: var(--cms-text-primary);
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.cms-schedule-month.active::after {
+  content: "";
+  width: 34rpx;
+  height: 5rpx;
+  border-radius: 999rpx;
+  background: var(--cms-secondary);
+}
+
+.cms-schedule-calendar {
+  flex: 0 0 auto;
+  width: 88rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2rpx;
+  border-left: 1px solid var(--cms-border-strong);
+  color: var(--cms-text-primary);
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.cms-schedule-categories {
+  display: flex;
+  gap: 16rpx;
+  overflow-x: auto;
+  padding: 0 4rpx;
+  white-space: nowrap;
+}
+
+.cms-schedule-category {
+  flex: 0 0 auto;
+  min-width: 108rpx;
+  padding: 18rpx 28rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.64);
+  color: var(--cms-text-primary);
+  text-align: center;
+  font-size: 25rpx;
+  font-weight: 800;
+}
+
+.cms-schedule-category.active {
+  background: var(--cms-primary);
+  color: var(--cms-text-inverse);
+}
+
+.cms-schedule-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 150rpx minmax(0, 1fr);
+  gap: 24rpx;
+  padding: 28rpx;
+  border: 1px solid var(--cms-border);
+  border-radius: 26rpx;
+  background: var(--cms-surface-elevated);
+  box-shadow: var(--cms-shadow-sm);
+}
+
+.cms-schedule-card__date {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8rpx;
+  padding-right: 22rpx;
+  border-right: 1px solid var(--cms-border-strong);
+  color: var(--cms-text-secondary);
+  font-size: 23rpx;
+  line-height: 1.35;
+}
+
+.cms-schedule-card__day {
+  color: var(--cms-secondary);
+  font-size: 48rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.cms-schedule-card__location {
+  color: var(--cms-text-primary);
+  font-weight: 800;
+}
+
+.cms-schedule-card__body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.cms-schedule-card__tag {
+  align-self: flex-start;
+  padding: 6rpx 16rpx;
+  border-radius: 12rpx;
+  background: rgba(181, 139, 71, 0.12);
+  color: var(--cms-secondary);
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.cms-schedule-card__title {
+  color: var(--cms-text-primary);
+  font-size: 30rpx;
+  font-weight: 900;
+  line-height: 1.28;
+}
+
+.cms-schedule-card__summary,
+.cms-schedule-card__meta {
+  color: var(--cms-text-secondary);
+  font-size: 23rpx;
+  line-height: 1.45;
+}
+
+.cms-schedule-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.cms-schedule-card__actions {
+  grid-column: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12rpx;
+}
+
+.cms-schedule-card__button,
+.cms-schedule-card__calendar {
+  min-width: 124rpx;
+  height: 58rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.cms-schedule-card__button {
+  background: var(--cms-primary);
+  color: var(--cms-text-inverse);
+}
+
+.cms-schedule-card__calendar {
+  border: 1px solid var(--cms-border-strong);
+  color: var(--cms-text-primary);
+}
+
 .cms-entry-grid {
   display: grid;
   gap: 14rpx;
@@ -3752,6 +4156,16 @@ function readErrorText(error: unknown, fallback: string): string {
 
 .cms-block.is-entry-tiles-transparent .cms-entry-tile__icon,
 .cms-block.is-entry-tiles-transparent .cms-entry-tile__icon--text {
+  background: transparent;
+}
+
+.cms-block.is-component-transparent .cms-section__image,
+.cms-block.is-component-transparent .cms-rich-content__image,
+.cms-block.is-component-transparent .cms-link-bar,
+.cms-block.is-component-transparent .cms-image-promo,
+.cms-block.is-component-transparent .cms-card__image,
+.cms-block.is-component-transparent .cms-mini-card__image,
+.cms-block.is-component-transparent .cms-event-card__image {
   background: transparent;
 }
 
