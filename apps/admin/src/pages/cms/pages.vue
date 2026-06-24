@@ -1111,6 +1111,7 @@ const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
   "image-promo-card": { label: "已支持", status: "supported", description: "小程序/H5 已支持图片推广卡片和统一跳转配置" },
   "rich-content-block": { label: "已支持", status: "supported", description: "小程序/H5 已支持标题、正文、图片和按钮展示" },
   "conference-list": { label: "已支持", status: "supported", description: "小程序/H5 已完整支持会议列表展示和详情跳转" },
+  "conference-schedule": { label: "已支持", status: "supported", description: "小程序/H5 支持按真实会议日期生成年度排期和添加日历" },
   "conference-tabs": { label: "已支持", status: "supported", description: "小程序/H5 支持分类标签筛选和会议卡片展示" },
   "registration-button": { label: "已支持", status: "supported", description: "小程序/H5 支持普通报名入口；会议详情页会隐藏以避免重复按钮" },
   "floating-registration-button": { label: "已支持", status: "supported", description: "小程序/H5 支持悬浮报名入口；会议详情页会隐藏以避免重复按钮" },
@@ -2557,7 +2558,10 @@ function fieldsFor(type: string): ConfigField[] {
         { label: "卡片背景", value: "card" },
         { label: "透明背景", value: "transparent" }
       ]
-    }
+    },
+    { key: "moduleHeight", label: "模块最小高度（0 为自适应）", kind: "range", fallback: 0, min: 0, max: 900 },
+    { key: "moduleOpacity", label: "模块透明度", kind: "range", fallback: 100, min: 0, max: 100 },
+    { key: "moduleSpacingTop", label: "与上个模块间距", kind: "range", fallback: 0, min: 0, max: 160 }
   ];
   const richContentLayoutFields: ConfigField[] = [
     {
@@ -2572,7 +2576,10 @@ function fieldsFor(type: string): ConfigField[] {
     },
     { key: "contentPadding", label: "内容内边距", kind: "range", fallback: 0, min: 0, max: 60 },
     { key: "blockGap", label: "内容块间距", kind: "range", fallback: 0, min: 0, max: 80 },
-    { key: "imageRadius", label: "图片圆角", kind: "range", fallback: 0, min: 0, max: 48 }
+    { key: "imageRadius", label: "图片圆角", kind: "range", fallback: 0, min: 0, max: 48 },
+    { key: "moduleHeight", label: "模块最小高度（0 为自适应）", kind: "range", fallback: 0, min: 0, max: 900 },
+    { key: "moduleOpacity", label: "模块透明度", kind: "range", fallback: 100, min: 0, max: 100 },
+    { key: "moduleSpacingTop", label: "与上个模块间距", kind: "range", fallback: 0, min: 0, max: 160 }
   ];
   const uniqueFields = (fields: ConfigField[]) => fields.filter((field, index, list) => list.findIndex((item) => item.key === field.key) === index);
   const withTextStyle = (fields: ConfigField[], fontSize = 26) =>
@@ -2859,6 +2866,14 @@ function fieldsFor(type: string): ConfigField[] {
       ...richContentLayoutFields
     ], 26),
     "conference-list": withTextStyle([...commonTitle, { key: "limit", label: "展示数量", kind: "number", fallback: 10 }, ...conferenceDisplayFields], 26),
+    "conference-schedule": withTextStyle([
+      ...commonTitle,
+      { key: "categories", label: "分类筛选", kind: "list", placeholder: "每行一个分类，例如：全部、闭门会、论坛、沙龙", rows: 5 },
+      { key: "limit", label: "展示数量", kind: "number", fallback: 8 },
+      { key: "showCalendarButton", label: "显示日历按钮", kind: "switch", fallback: "true" },
+      { key: "calendarText", label: "日历按钮文案", placeholder: "日历" },
+      ...conferenceDisplayFields
+    ], 26),
     "conference-tabs": withTextStyle([...commonTitle, { key: "target", label: "筛选字段", kind: "select", fallback: "tag", options: filterTargetOptions() }, { key: "tabs", label: "分类名称", kind: "list", placeholder: "每行一个分类名称；留空时自动取会议地点", rows: 4 }, ...conferenceDisplayFields], 26),
     "speaker-cards": withTextStyle([...commonTitle, { key: "speakers", label: "嘉宾信息", kind: "list", placeholder: "每行一位嘉宾，例如：张三｜主讲嘉宾", rows: 5 }], 26),
     "schedule-timeline": withTextStyle([...commonTitle, { key: "items", label: "日程安排", kind: "list", placeholder: "每行一项日程", rows: 5 }], 26),
@@ -2877,6 +2892,7 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "text", label: "兼容旧提示文字", placeholder: "旧配置兜底，可留空" },
       { key: "buttonText", label: "右侧按钮文案", placeholder: "查看详情" },
       { key: "showArrow", label: "显示右箭头", kind: "switch", fallback: "true" },
+      { key: "barHeight", label: "导引条高度", kind: "range", fallback: 72, min: 48, max: 180 },
       { key: "backgroundColor", label: "背景色", kind: "color", fallback: "" },
       ...actionTargetFields
     ], 28),
@@ -3080,9 +3096,9 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
     ]);
   }
 
-  if (type === "conference-list" || type === "conference-tabs") {
+  if (type === "conference-list" || type === "conference-tabs" || type === "conference-schedule") {
     return compactGroups([
-      { key: "content", title: "基础内容", fields: fieldsByKeys(fields, ["title", "limit", "tabs", "summaryFallback", "detailButtonText", "showAppointmentButton", "appointmentButtonText"]) },
+      { key: "content", title: "基础内容", fields: fieldsByKeys(fields, ["title", "limit", "tabs", "categories", "showCalendarButton", "calendarText", "summaryFallback", "detailButtonText", "showAppointmentButton", "appointmentButtonText"]) },
       {
         key: "display",
         title: "显示控制",
@@ -3098,7 +3114,11 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
           "showRegistrationCount",
           "registrationCountMode",
           "virtualRegistrationBase",
-          "virtualRegistrationStep"
+          "virtualRegistrationStep",
+          "contentBackgroundStyle",
+          "moduleHeight",
+          "moduleOpacity",
+          "moduleSpacingTop"
         ])
       },
       {
@@ -3117,7 +3137,7 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
   if (isRichContentComponentType(type)) {
     return compactGroups([
       { key: "content", title: "图文内容", fields: fieldsByKeys(fields, ["blocks"]) },
-      { key: "layout", title: "铺满与间距", fields: fieldsByKeys(fields, ["fullBleed", "contentBackgroundStyle", "contentPadding", "blockGap", "imageRadius"]) },
+      { key: "layout", title: "铺满与间距", fields: fieldsByKeys(fields, ["fullBleed", "contentBackgroundStyle", "contentPadding", "blockGap", "imageRadius", "moduleHeight", "moduleOpacity", "moduleSpacingTop"]) },
       { key: "module-title", title: "模块标题样式", fields: fieldsByKeys(fields, ["showTitle", "title", "subtitle", "titleBottomGap", "showMore", "moreText", "moreActionTargetType", "moreTargetPageKey", "moreTargetConferenceId", "moreTargetProductId", "moreExternalUrl", "titleFontSize", "titleFontWeight", "titleFontFamily", "titleFontAssetUrl", "titleTextColor", "subtitleFontSize", "subtitleTextColor", "titleTextAlign"]) },
       { key: "text-style", title: "内容文字样式", fields: fieldsByKeys(fields, ["fontSize", "fontFamily", "fontAssetUrl", "textColor", "textAlign"]) }
     ]);
@@ -3125,9 +3145,11 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
 
   const titleKeys = ["showTitle", "title", "subtitle", "titleBottomGap", "showMore", "moreText", "moreActionTargetType", "moreTargetPageKey", "moreTargetConferenceId", "moreTargetProductId", "moreExternalUrl", "titleFontSize", "titleFontWeight", "titleFontFamily", "titleFontAssetUrl", "titleTextColor", "subtitleFontSize", "subtitleTextColor", "titleTextAlign"];
   const textKeys = ["fontSize", "fontFamily", "fontAssetUrl", "textColor", "textAlign"];
-  const contentFields = fields.filter((field) => !titleKeys.includes(field.key) && !textKeys.includes(field.key));
+  const layoutKeys = ["moduleHeight", "moduleOpacity", "moduleSpacingTop", "contentBackgroundStyle"];
+  const contentFields = fields.filter((field) => !titleKeys.includes(field.key) && !textKeys.includes(field.key) && !layoutKeys.includes(field.key));
   return compactGroups([
     { key: "content", title: "基础内容", fields: contentFields },
+    { key: "layout", title: "模块尺寸与透明度", fields: fieldsByKeys(fields, layoutKeys) },
     { key: "module-title", title: "模块标题样式", fields: fieldsByKeys(fields, titleKeys) },
     { key: "text-style", title: "内容文字样式", fields: fieldsByKeys(fields, textKeys) }
   ]);
@@ -3817,7 +3839,7 @@ function isRenderableSupport(type: string): boolean {
 function thumbClass(type: string): string {
   if (type === "hero") return "is-hero";
   if (type === "carousel" || type === "image-grid") return "is-carousel";
-  if (type === "conference-list" || type === "conference-tabs") return "is-conference";
+  if (type === "conference-list" || type === "conference-tabs" || type === "conference-schedule") return "is-conference";
   if (type.includes("button") || type.includes("contact")) return "is-action";
   if (type.includes("image") || type.includes("carousel") || type.includes("video") || type.includes("hero")) return "is-media";
   if (type.includes("list") || type.includes("timeline") || type.includes("steps")) return "is-list";
@@ -3940,6 +3962,8 @@ const ComponentPreview = defineComponent({
         summary: "summary" in item && typeof item.summary === "string" ? item.summary : summaryFallbackText(props.item),
         image: readConferenceCover(item),
         location: item.location || "会议中心",
+        startAt: item.startAt,
+        endAt: "endAt" in item && typeof item.endAt === "string" ? item.endAt : item.startAt,
         time: formatPreviewDate(item.startAt),
         registrationCount: registrationCountForPreview(item, props.item, index)
       }));
@@ -4111,6 +4135,47 @@ const ComponentPreview = defineComponent({
                 ])
               ])
             )
+        ]);
+      }
+      if (type === "conference-schedule") {
+        const limit = numberValue(props.item, "limit", 8);
+        const rows = meetings().slice(0, Math.max(1, limit));
+        const months = previewScheduleMonths(rows);
+        const activeMonth = months[0]?.key || "";
+        const categories = list("categories").length > 0 ? list("categories") : ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"];
+        const activeCategory = categories[0] || "全部";
+        const filteredRows = rows
+          .filter((meeting) => !activeMonth || previewScheduleMonthKey(meeting.startAt) === activeMonth)
+          .filter((meeting) => activeCategory === "全部" || previewScheduleTag(meeting, props.item) === activeCategory || meeting.title.includes(activeCategory) || meeting.summary.includes(activeCategory))
+          .slice(0, Math.max(1, limit));
+        return h("div", { class: previewSectionClass(props.item, "preview-schedule"), style: previewSectionStyle(props.item) }, [
+          h("div", { class: "preview-schedule-months" }, [
+            h("div", { class: "preview-schedule-months__rail" }, months.map((month, index) =>
+              h("span", { class: index === 0 ? "active" : "" }, [h("small", month.year), h("b", month.label)])
+            )),
+            booleanConfig(props.item, "showCalendarButton", true) ? h("button", { class: "preview-schedule-calendar" }, value("calendarText", "日历")) : null
+          ]),
+          h("div", { class: "preview-schedule-categories" }, categories.map((category, index) =>
+            h("span", { class: index === 0 ? "active" : "" }, category)
+          )),
+          ...(filteredRows.length > 0
+            ? filteredRows.map((meeting, index) =>
+                h("div", { class: "preview-schedule-card" }, [
+                  h("div", { class: "preview-schedule-card__date" }, [
+                    h("b", previewScheduleDay(meeting.startAt)),
+                    h("span", previewScheduleWeekday(meeting.startAt)),
+                    h("small", meeting.location)
+                  ]),
+                  h("div", { class: "preview-schedule-card__body" }, [
+                    h("span", { class: "preview-schedule-card__tag" }, previewScheduleTag(meeting, props.item)),
+                    h("strong", meeting.title),
+                    h("small", meeting.summary || summaryFallbackText(props.item)),
+                    h("p", `时间：${previewScheduleTime(meeting.startAt, meeting.endAt)} ｜ 已报名 ${meeting.registrationCount} 人`)
+                  ]),
+                  h("button", index === 0 && booleanConfig(props.item, "showAppointmentButton", true) ? value("appointmentButtonText", "提前预约") : detailButtonText(props.item))
+                ])
+              )
+            : [h("div", { class: "preview-empty" }, "暂无该月份会议")])
         ]);
       }
       if (type === "registration-button" || type === "floating-registration-button") {
@@ -4322,7 +4387,8 @@ const sampleConferences = [
     summary: "增长案例与实战方法",
     coverImage: "",
     location: "上海会议中心",
-    startAt: "2026-08-18T09:00:00.000Z"
+    startAt: "2026-08-18T09:00:00.000Z",
+    endAt: "2026-08-18T12:00:00.000Z"
   },
   {
     id: "sample-2",
@@ -4330,7 +4396,8 @@ const sampleConferences = [
     summary: "数字化运营与组织增长",
     coverImage: "",
     location: "深圳",
-    startAt: "2026-09-06T09:00:00.000Z"
+    startAt: "2026-09-06T09:00:00.000Z",
+    endAt: "2026-09-06T17:00:00.000Z"
   }
 ];
 
@@ -4445,16 +4512,30 @@ function previewHomeHeroStyle(component: EditableComponent) {
 }
 
 function previewPanelStyle(component: EditableComponent) {
+  const layout = previewModuleLayoutStyle(component);
   if (previewComponentContainerStyle(component) === "transparent") {
     return {
       background: "transparent",
       borderColor: "transparent",
-      boxShadow: "none"
+      boxShadow: "none",
+      ...layout
     };
   }
   return {
-    background: String(component.config.backgroundColor || "")
+    background: String(component.config.backgroundColor || ""),
+    ...layout
   };
+}
+
+function previewModuleLayoutStyle(component: EditableComponent) {
+  const style: Record<string, string> = {};
+  const minHeight = numberValue(component, "moduleHeight", 0);
+  const opacity = numberValue(component, "moduleOpacity", 100);
+  const marginTop = numberValue(component, "moduleSpacingTop", 0);
+  if (minHeight > 0) style.minHeight = `${Math.round(minHeight / 2)}px`;
+  if (opacity >= 0 && opacity < 100) style.opacity = String(Math.max(0, Math.min(100, opacity)) / 100);
+  if (marginTop > 0) style.marginTop = `${Math.round(marginTop / 2)}px`;
+  return style;
 }
 
 function previewComponentContainerStyle(component: EditableComponent): "card" | "transparent" {
@@ -4575,6 +4656,7 @@ function previewRichContentStyle(component: EditableComponent) {
   return {
     gap: `${Math.max(0, Math.round(gap / 2))}px`,
     padding: `${Math.max(0, Math.round(padding / 2))}px`,
+    ...previewModuleLayoutStyle(component),
     ...(card ? {} : { background: "transparent", boxShadow: "none", border: "0" })
   };
 }
@@ -4657,6 +4739,55 @@ function formatPreviewDate(value: string | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "待定";
   return `${String(date.getMonth() + 1).padStart(2, "0")} 月 ${String(date.getDate()).padStart(2, "0")} 日`;
+}
+
+function previewScheduleMonths(items: Array<{ startAt?: string }>): Array<{ key: string; year: string; label: string }> {
+  const lookup = new Map<string, { key: string; year: string; label: string }>();
+  items.forEach((item) => {
+    const date = previewDate(item.startAt);
+    if (!date) return;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    if (!lookup.has(key)) {
+      lookup.set(key, { key, year: String(date.getFullYear()), label: `${date.getMonth() + 1} 月` });
+    }
+  });
+  return Array.from(lookup.values()).slice(0, 6);
+}
+
+function previewScheduleMonthKey(value: string | undefined): string {
+  const date = previewDate(value);
+  return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}` : "";
+}
+
+function previewScheduleTag(meeting: { title: string; summary?: string }, component: EditableComponent): string {
+  const categories = Array.isArray(component.config.categories) ? (component.config.categories as unknown[]).map(String).filter((item) => item && item !== "全部") : [];
+  return categories.find((category) => meeting.title.includes(category) || meeting.summary?.includes(category)) || categories[0] || "会议";
+}
+
+function previewScheduleDay(value: string | undefined): string {
+  const date = previewDate(value);
+  return date ? String(date.getDate()).padStart(2, "0") : "--";
+}
+
+function previewScheduleWeekday(value: string | undefined): string {
+  const date = previewDate(value);
+  if (!date) return "待定";
+  return ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][date.getDay()];
+}
+
+function previewScheduleTime(startAt: string | undefined, endAt: string | undefined): string {
+  const start = previewDate(startAt);
+  const end = previewDate(endAt);
+  if (!start) return "时间待定";
+  const startText = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
+  if (!end) return startText;
+  return `${startText}-${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
+}
+
+function previewDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function splitPreviewLine(value: string): string[] {
@@ -5980,6 +6111,167 @@ function looksLikePreviewImage(value: string): boolean {
   font-size: 11px;
   font-weight: 800;
   line-height: 26px;
+}
+
+.phone-screen :deep(.preview-schedule) {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.phone-screen :deep(.preview-schedule-months) {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 86%);
+}
+
+.phone-screen :deep(.preview-schedule-months__rail) {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: 1;
+  gap: 6px;
+}
+
+.phone-screen :deep(.preview-schedule-months span) {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  border-radius: 10px;
+  color: #172033;
+}
+
+.phone-screen :deep(.preview-schedule-months span.active) {
+  color: var(--preview-primary);
+  background: #f6efe2;
+}
+
+.phone-screen :deep(.preview-schedule-months span.active::after) {
+  position: absolute;
+  right: 18px;
+  bottom: 4px;
+  left: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--preview-primary);
+  content: "";
+}
+
+.phone-screen :deep(.preview-schedule-months small) {
+  color: #64748b;
+  font-size: 9px;
+}
+
+.phone-screen :deep(.preview-schedule-months b) {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.phone-screen :deep(.preview-schedule-calendar) {
+  width: 46px;
+  border: 0;
+  border-left: 1px solid #e5daca;
+  background: transparent;
+  color: #172033;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.phone-screen :deep(.preview-schedule-categories) {
+  display: flex;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.phone-screen :deep(.preview-schedule-categories span) {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: #f4efe7;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.phone-screen :deep(.preview-schedule-categories span.active) {
+  background: #071426;
+  color: #ffffff;
+}
+
+.phone-screen :deep(.preview-schedule-card) {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgb(214 202 182 / 72%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 10px 22px rgb(15 23 42 / 8%);
+}
+
+.phone-screen :deep(.preview-schedule-card__date) {
+  display: grid;
+  gap: 4px;
+  padding-right: 10px;
+  border-right: 1px solid #e6dccd;
+  color: var(--preview-primary);
+}
+
+.phone-screen :deep(.preview-schedule-card__date b) {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.phone-screen :deep(.preview-schedule-card__date span),
+.phone-screen :deep(.preview-schedule-card__date small) {
+  color: #172033;
+  font-size: 12px;
+}
+
+.phone-screen :deep(.preview-schedule-card__body) {
+  min-width: 0;
+}
+
+.phone-screen :deep(.preview-schedule-card__tag) {
+  display: inline-flex;
+  margin-bottom: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f4ead8;
+  color: var(--preview-primary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.phone-screen :deep(.preview-schedule-card strong) {
+  color: #172033;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.phone-screen :deep(.preview-schedule-card small),
+.phone-screen :deep(.preview-schedule-card p) {
+  display: block;
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.phone-screen :deep(.preview-schedule-card button) {
+  grid-column: 2;
+  justify-self: end;
+  min-width: 76px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: #071426;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .phone-screen :deep(.preview-hero-card) {

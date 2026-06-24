@@ -574,6 +574,7 @@ export class AdminCmsService {
     for (const page of [
       { pageKey: "home", title: "首页", pageType: "HOME", sortOrder: 0 },
       { pageKey: "conference-list", title: "会议列表页", pageType: "CONFERENCE_LIST", sortOrder: 10 },
+      { pageKey: "custom:about-paiqi", title: "年度排期", pageType: "CUSTOM", sortOrder: 15 },
       { pageKey: "conference-detail", title: "会议详情页", pageType: "CONFERENCE_DETAIL_TEMPLATE", sortOrder: 20 },
       { pageKey: "registration-form", title: "会议报名页", pageType: "REGISTRATION_FORM", sortOrder: 30 },
       { pageKey: "registration-success", title: "报名凭证页", pageType: "REGISTRATION_CREDENTIAL", sortOrder: 40 },
