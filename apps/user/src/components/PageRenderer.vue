@@ -102,6 +102,16 @@
         </view>
         <view v-if="scheduleConferences(component).length === 0" class="cms-empty">暂无该月份会议</view>
         <view v-for="item in scheduleConferences(component)" :key="item.id" class="cms-schedule-card">
+          <image
+            v-if="showConferenceCover(component, item)"
+            class="cms-schedule-card__cover"
+            :src="conferenceCoverUrl(item)"
+            :mode="conferenceImageMode(component)"
+            @error="markConferenceCoverFailed(item.id)"
+          />
+          <view v-else-if="booleanConfig(component, 'showCover', true)" class="cms-schedule-card__cover cms-card__image--empty">
+            <text>{{ conferenceCoverInitial(item) }}</text>
+          </view>
           <view class="cms-schedule-card__date">
             <text class="cms-schedule-card__day">{{ scheduleDay(item.startsAt) }}</text>
             <text>{{ scheduleWeekday(item.startsAt) }} {{ scheduleTimeRange(item.startsAt, item.endsAt) }}</text>
@@ -120,7 +130,7 @@
             <view class="cms-schedule-card__button" @click.stop="handleConferenceAction(item, component)">
               <text>{{ conferenceActionText(item, component) }}</text>
             </view>
-            <view class="cms-schedule-card__calendar" @click.stop="addConferenceToCalendar(item)">
+            <view v-if="booleanConfig(component, 'showCalendarButton', true)" class="cms-schedule-card__calendar" @click.stop="addConferenceToCalendar(item)">
               <text>日历</text>
             </view>
           </view>
@@ -483,10 +493,15 @@
             <image v-if="item.coverImageUrl" class="cms-product-card__image" :src="item.coverImageUrl" mode="aspectFill" />
             <view v-else class="cms-product-card__image"><text>{{ item.title.slice(0, 1) }}</text></view>
             <text class="cms-product-card__title">{{ item.title }}</text>
-            <text class="cms-product-card__meta">{{ item.availableStock > 0 ? mallProductPriceText(item) : "售罄" }}</text>
+            <view class="cms-product-card__footer">
+              <text class="cms-product-card__meta">{{ item.availableStock > 0 ? mallProductPriceText(item) : "售罄" }}</text>
+              <view class="cms-product-card__cart" @click.stop="addMallProductToCart(item, component)">
+                <text>{{ stringConfig(component, "buttonText") || "加入购物车" }}</text>
+              </view>
+            </view>
           </view>
         </view>
-        <view class="cms-card__button" @click="goPath(mallListPath(component))"><text>{{ stringConfig(component, "buttonText") || "查看商城" }}</text></view>
+        <view v-if="booleanConfig(component, 'showMoreButton', false)" class="cms-card__button" @click="goPath(mallListPath(component))"><text>{{ stringConfig(component, "moreButtonText") || "查看更多" }}</text></view>
       </view>
 
       <view v-else-if="component.type === 'tag-filter'" class="cms-section cms-tags">
@@ -612,6 +627,7 @@ import type { CmsComponent, ThemeConfig } from "@/services/cms";
 import { reserveConferenceAppointment, type ConferenceDetail, type ConferenceListItem } from "@/services/conference";
 import { getProducts, type Product } from "@/services/mall";
 import { claimCoupon, getCouponCampaignPublic } from "@/services/operations";
+import { addProductCartItem } from "@/services/cart";
 import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
 import { getCmsComponentSupport, isCmsRegistrationCta } from "@/utils/cmsComponents";
 import { formatDateTime } from "@/utils/date";
@@ -668,7 +684,7 @@ async function handleSecondaryComponentAction(component: CmsComponent) {
 function pagePath(pageKey: string) {
   const builtin: Record<string, string> = {
     home: "/pages/index/index",
-    "conference-list": "/pages/index/index",
+    "conference-list": "/pages/custom/index?pageKey=conference-list",
     "conference-detail": props.conference?.id ? `/pages/conference/detail?id=${encodeURIComponent(props.conference.id)}` : "/pages/index/index",
     "registration-form": props.conference?.id ? `/pages/registration/form?conferenceId=${encodeURIComponent(props.conference.id)}` : "/pages/index/index",
     "registration-success": "/pages/registrations/my",
@@ -1625,6 +1641,15 @@ function submitSearch(component: CmsComponent): void {
 
 function submitTag(component: CmsComponent, item: TagFilterItem): void {
   const target = item.target || stringConfig(component, "target") || "tag";
+  if (["product-category", "mall-category", "productKeyword"].includes(target) || stringConfig(component, "scope") === "mall") {
+    const value = item.value === "all" ? "" : item.value;
+    const query = stringifyQuery({
+      categoryId: target === "product-category" || target === "mall-category" ? value : undefined,
+      keyword: target === "productKeyword" ? value : undefined
+    });
+    goPath(`/pages/mall/index${query ? `?${query}` : ""}`);
+    return;
+  }
   const query = stringifyQuery({
     tag: target === "tag" ? item.value : undefined,
     location: target === "location" ? item.value : undefined,
@@ -1674,6 +1699,20 @@ function showMallOrders(component: CmsComponent): boolean {
 
 function mallProducts(component: CmsComponent): Product[] {
   return mallProductMap.value[component.id] ?? [];
+}
+
+async function addMallProductToCart(item: Product, component: CmsComponent): Promise<void> {
+  const sku = item.skus.find((entry) => entry.availableStock > 0) ?? item.skus[0];
+  if (!sku) {
+    uni.showToast({ title: "该商品暂无可售规格", icon: "none" });
+    return;
+  }
+  try {
+    await addProductCartItem(sku.id, 1);
+    uni.showToast({ title: stringConfig(component, "cartSuccessText") || "已加入购物车", icon: "success" });
+  } catch (err) {
+    uni.showToast({ title: readErrorText(err, "加入购物车失败"), icon: "none" });
+  }
 }
 
 function mallListPath(component: CmsComponent): string {
@@ -3558,13 +3597,20 @@ function readErrorText(error: unknown, fallback: string): string {
 .cms-schedule-card {
   position: relative;
   display: grid;
-  grid-template-columns: 150rpx minmax(0, 1fr);
+  grid-template-columns: 144rpx 132rpx minmax(0, 1fr);
   gap: 24rpx;
   padding: 28rpx;
   border: 1px solid var(--cms-border);
   border-radius: 26rpx;
   background: var(--cms-surface-elevated);
   box-shadow: var(--cms-shadow-sm);
+}
+
+.cms-schedule-card__cover {
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 18rpx;
+  background: var(--cms-primary-soft);
 }
 
 .cms-schedule-card__date {
@@ -3629,7 +3675,7 @@ function readErrorText(error: unknown, fallback: string): string {
 }
 
 .cms-schedule-card__actions {
-  grid-column: 2;
+  grid-column: 3;
   display: flex;
   justify-content: flex-end;
   gap: 12rpx;
@@ -4311,18 +4357,52 @@ function readErrorText(error: unknown, fallback: string): string {
 
 .cms-product-card {
   gap: 14rpx;
+  justify-content: flex-start;
+  padding: 0;
+  overflow: hidden;
+  background: var(--cms-surface-elevated);
 }
 
 .cms-product-card__image {
   display: grid;
   place-items: center;
   width: 100%;
-  height: 148rpx;
-  border-radius: var(--cms-radius-md);
+  height: 260rpx;
+  border-radius: 0;
   background: var(--cms-primary-soft);
   color: var(--cms-primary-strong);
   font-size: 30rpx;
   font-weight: 900;
+}
+
+.cms-product-card__title,
+.cms-product-card__footer {
+  padding-right: 18rpx;
+  padding-left: 18rpx;
+}
+
+.cms-product-card__title {
+  min-height: 72rpx;
+  line-height: 1.35;
+}
+
+.cms-product-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10rpx;
+  padding-bottom: 18rpx;
+}
+
+.cms-product-card__cart {
+  min-width: 72rpx;
+  padding: 10rpx 14rpx;
+  border-radius: 999rpx;
+  background: var(--cms-primary);
+  color: var(--cms-text-inverse);
+  font-size: 20rpx;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .cms-tabs {

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { AdminCmsService } from "./admin-cms.service";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminPermissionGuard } from "./admin-permission.guard";
@@ -38,6 +38,12 @@ export class AdminCmsController {
   @RequireAdminPermissions("page:write")
   updatePage(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.cmsService.updatePage(id, body, request.currentAdmin!);
+  }
+
+  @Delete("pages/:id")
+  @RequireAdminPermissions("page:write")
+  deletePage(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.cmsService.deletePage(id, request.currentAdmin!);
   }
 
   @Post("pages/:id/rollback")

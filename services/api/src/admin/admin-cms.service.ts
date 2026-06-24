@@ -60,7 +60,8 @@ export class AdminCmsService {
     const binding = await this.normalizePageBinding(pageType, body);
     const templateVersion = await this.loadPageLibraryTemplateVersion(readOptionalString(body, "templateId"));
     const components = parseComponents(body.components ?? templateVersion?.components ?? defaultPageComponents(defaultComponentPageKey(pageType, pageKey)));
-    const themeJson = cloneTemplateThemeForPage(templateVersion?.themeJson, title);
+    const bodyThemeJson = typeof body.themeJson === "undefined" ? null : readNullableJsonObject(body.themeJson);
+    const themeJson = cloneTemplateThemeForPage(templateVersion?.themeJson ?? bodyThemeJson, title);
     const template = await catchUniqueConstraint(
       this.prisma.pageTemplate.create({
         data: {
@@ -186,6 +187,33 @@ export class AdminCmsService {
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "PageTemplate", id, "Update page template", { pageKey: template.pageKey });
     return ok(formatPageTemplate(template));
+  }
+
+  async deletePage(id: string, admin: CurrentAdmin) {
+    await this.ensureCmsDefaults();
+    const template = await this.prisma.pageTemplate.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        pageKey: true,
+        title: true,
+        pageType: true,
+        publishedVersionId: true
+      }
+    });
+    if (!template) throw new NotFoundException("页面不存在");
+    if (template.pageKey.startsWith(PAGE_LIBRARY_PREFIX) || KNOWN_PAGE_KEYS.has(template.pageKey) || template.pageType === "SYSTEM_TEMPLATE") {
+      throw new BadRequestException("固定模板或系统业务页不能删除");
+    }
+    if (template.publishedVersionId) {
+      throw new BadRequestException("已发布页面不能删除，请先新建草稿替代或停用发布入口");
+    }
+    await this.prisma.pageTemplate.delete({ where: { id } });
+    await this.writeAudit(admin, AuditAction.DELETE, "PageTemplate", id, "Delete page template", {
+      pageKey: template.pageKey,
+      title: template.title
+    });
+    return ok({ id, deleted: true });
   }
 
   async getPageVersion(id: string) {
@@ -1083,9 +1111,9 @@ function readTemplateMeta(themeJson: Prisma.JsonObject | null): { category: stri
   };
 }
 
-function cloneTemplateThemeForPage(themeJson: Prisma.JsonObject | null | undefined, title: string): Prisma.InputJsonObject | undefined {
+function cloneTemplateThemeForPage(themeJson: Prisma.JsonObject | Prisma.InputJsonObject | null | undefined, title: string): Prisma.InputJsonObject | undefined {
   if (!themeJson) return undefined;
-  const next = { ...themeJson };
+  const next = { ...(themeJson as Record<string, unknown>) };
   delete next.templateMeta;
   const pageMeta = readPlainObject(next.pageMeta) ?? {};
   next.pageMeta = {
@@ -1093,7 +1121,7 @@ function cloneTemplateThemeForPage(themeJson: Prisma.JsonObject | null | undefin
     pageTitle: typeof pageMeta.pageTitle === "string" && pageMeta.pageTitle.trim() ? pageMeta.pageTitle : title,
     shareTitle: typeof pageMeta.shareTitle === "string" && pageMeta.shareTitle.trim() ? pageMeta.shareTitle : title
   };
-  return next;
+  return next as Prisma.InputJsonObject;
 }
 
 function sanitizeStringArray(value: unknown): string[] {

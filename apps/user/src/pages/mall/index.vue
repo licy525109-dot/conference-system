@@ -3,7 +3,7 @@
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
-    <view class="topbar ui-card">
+    <view v-if="!hasCmsContent" class="topbar ui-card">
       <view>
         <text class="eyebrow">商城</text>
         <text class="title">商城商品</text>
@@ -13,6 +13,7 @@
     </view>
 
     <ExtensionStatusNotice
+      v-if="!hasCmsContent"
       status="商城基础闭环"
       title="商品可下待支付订单"
       description="商品金额由后端按 SKU 当前价格重算并锁定库存，订单创建后以前往订单页查询和支付为准。"
@@ -21,29 +22,29 @@
 
     <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
 
-    <view class="toolbar ui-card">
+    <view v-if="!hasCmsContent" class="toolbar ui-card">
       <input v-model="keyword" class="search" placeholder="搜索商品" @confirm="loadProducts" />
       <button class="ui-button-primary ui-button-compact" @click="loadProducts">查询</button>
     </view>
 
-    <scroll-view scroll-x class="category-scroll">
+    <scroll-view v-if="!hasCmsContent" scroll-x class="category-scroll">
       <button class="category" :class="{ active: !categoryId }" @click="selectCategory('')">全部</button>
       <button v-for="item in categories" :key="item.id" class="category" :class="{ active: categoryId === item.id }" @click="selectCategory(item.id)">
         {{ item.name }}
       </button>
     </scroll-view>
 
-    <LoadingState v-if="loading" title="加载商品中" description="正在读取商品、分类和可售库存。" />
-    <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="loadProducts" @secondary="goHome" />
+    <LoadingState v-if="!hasCmsContent && loading" title="加载商品中" description="正在读取商品、分类和可售库存。" />
+    <ErrorState v-else-if="!hasCmsContent && error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="loadProducts" @secondary="goHome" />
     <EmptyState
-      v-else-if="products.length === 0"
+      v-else-if="!hasCmsContent && products.length === 0"
       title="暂无展示商品"
       description="当前没有可售商品，可以先返回首页查看会议报名。"
       mark="商"
       action-text="查看会议"
       @action="goHome"
     />
-    <view v-else class="grid">
+    <view v-else-if="!hasCmsContent" class="grid">
       <view v-for="item in products" :key="item.id" class="product-card" @click="goDetail(item.id)">
         <image v-if="item.coverImageUrl" class="cover" :src="item.coverImageUrl" mode="aspectFill" />
         <view v-else class="cover empty">暂无图片</view>
@@ -63,7 +64,7 @@
 
 <script setup lang="ts">
 import { onLoad } from "@dcloudio/uni-app";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
@@ -85,6 +86,7 @@ const loading = ref(false);
 const error = ref("");
 const cmsPage = ref<PublishedPage | null>(null);
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("mall");
+const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.components?.length));
 
 onMounted(async () => {
   await Promise.all([refreshTheme(), loadCmsPage(), loadCategories(), loadProducts()]);

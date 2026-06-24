@@ -101,6 +101,15 @@ export async function removeRegistrationCartItem(id: string): Promise<{ id: stri
   });
 }
 
+export async function updateRegistrationCartItem(id: string, quantity: number): Promise<{ id: string }> {
+  await ensureLogin();
+  return request<{ id: string }>(`/cart/registration-items/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    auth: true,
+    data: { quantity }
+  });
+}
+
 export async function addProductCartItem(skuId: string, quantity: number): Promise<{ id: string }> {
   await ensureLogin();
   return request<{ id: string }>("/cart/product-items", {
@@ -115,6 +124,15 @@ export async function removeProductCartItem(id: string): Promise<{ id: string }>
   return request<{ id: string }>(`/cart/product-items/${encodeURIComponent(id)}`, {
     method: "DELETE",
     auth: true
+  });
+}
+
+export async function updateProductCartItem(id: string, quantity: number): Promise<{ id: string }> {
+  await ensureLogin();
+  return request<{ id: string }>(`/cart/product-items/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    auth: true,
+    data: { quantity }
   });
 }
 

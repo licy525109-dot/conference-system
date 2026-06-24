@@ -509,21 +509,42 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
 
   if (pageKey === "member-center") {
     return [
-      { id: "member-benefits-default", type: "membership-benefits", enabled: true, config: { title: "会员权益", items: ["会员专属权益", "会员价规则以后台配置为准"] } },
-      { id: "member-orders-default", type: "my-order-list", enabled: true, config: { title: "常用入口", orderType: "both" } }
+      { id: "member-profile-default", type: "user-profile-card", enabled: true, config: { title: "我的资料", description: "登录后查看头像、昵称、手机号和会员状态。", target: "member", contentBackgroundStyle: "card" } },
+      {
+        id: "member-actions-default",
+        type: "quick-icon-grid",
+        enabled: true,
+        config: {
+          title: "",
+          showTitle: false,
+          columns: 4,
+          cardStyle: "minimal",
+          contentBackgroundStyle: "card",
+          items: [
+            entry("我的报名", "6", "registration", "page", { targetPageKey: "my-registrations" }),
+            entry("商城订单", "3", "order", "page", { targetPageKey: "mall-orders" }),
+            entry("待参会", "2", "calendar", "page", { targetPageKey: "my-registrations" }),
+            entry("优惠券", "3", "coupon", "page", { targetPageKey: "custom:coupon-center" })
+          ]
+        }
+      },
+      { id: "member-benefits-default", type: "member-promo-banner", enabled: true, config: { title: "观潮会集会员权益", subtitle: "尊享会员专属特权，助力思想与机遇的深度链接", buttonText: "查看权益", actionTargetType: "page", targetPageKey: "member-center", contentBackgroundStyle: "card", backgroundColor: "#071426", textColor: "#f8e4b2" } },
+      { id: "member-orders-default", type: "my-order-list", enabled: true, config: { title: "常用入口", orderType: "both", contentBackgroundStyle: "card" } }
     ];
   }
 
   if (pageKey === "cart") {
     return [
-      { id: "cart-title-default", type: "title", enabled: true, config: { text: "确认商品与报名项" } },
-      { id: "cart-notice-default", type: "notice", enabled: true, config: { text: "会议报名和商城订单均由后端重新计算金额。" } }
+      { id: "cart-title-default", type: "title", enabled: true, config: { text: "购物车", textAlign: "center" } },
+      { id: "cart-notice-default", type: "notice", enabled: true, config: { text: "会议报名和商城订单均由后端重新计算金额，选中后可在底部统一查看合计。" } },
+      { id: "cart-recommend-default", type: "mall-product-grid", enabled: true, config: { title: "为你推荐", limit: 4, buttonText: "加入购物车", contentBackgroundStyle: "transparent" } }
     ];
   }
 
   if (pageKey === "mall") {
     return [
-      { id: "mall-product-grid-default", type: "mall-product-grid", enabled: true, config: { title: "精选商品", limit: 6, buttonText: "查看更多商品" } }
+      { id: "mall-tabs-default", type: "tag-filter", enabled: true, config: { title: "热门主题", target: "product-category", scope: "mall", items: ["全部｜all｜product-category"], contentBackgroundStyle: "transparent" } },
+      { id: "mall-product-grid-default", type: "mall-product-grid", enabled: true, config: { title: "商城商品", limit: 8, buttonText: "加入购物车", contentBackgroundStyle: "transparent" } }
     ];
   }
 
@@ -1027,7 +1048,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     },
     components: [
       { id: "schedule-hero", type: "hero-banner", enabled: true, config: { title: "年度排期", subtitle: "观潮会集", description: "查看观潮会集全年会议安排", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
-      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCalendarButton: true, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
+      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCover: true, showCalendarButton: true, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
     ]
   },
   {
@@ -1079,8 +1100,8 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     },
     components: [
       { id: "member-profile", type: "user-profile-card", enabled: true, config: { title: "我的资料", description: "登录后查看头像、昵称、手机号和会员状态。", target: "member" } },
-      { id: "member-stats", type: "stats-grid", enabled: true, config: { title: "", items: ["我的报名", "我的订单", "待参会", "优惠券"] } },
-      { id: "member-benefits", type: "membership-benefits", enabled: true, config: { title: "观潮会集会员权益", items: ["优先获取会议排期", "会员专享报名通道", "专属活动与服务特权"], buttonText: "查看权益" } },
+      { id: "member-stats", type: "quick-icon-grid", enabled: true, config: { title: "", showTitle: false, columns: 4, cardStyle: "minimal", contentBackgroundStyle: "card", items: [entry("我的报名", "6", "registration", "page", { targetPageKey: "my-registrations" }), entry("商城订单", "3", "order", "page", { targetPageKey: "mall-orders" }), entry("待参会", "2", "calendar", "page", { targetPageKey: "my-registrations" }), entry("优惠券", "3", "coupon", "page", { targetPageKey: "custom:coupon-center" })] } },
+      { id: "member-benefits", type: "member-promo-banner", enabled: true, config: { title: "观潮会集会员权益", subtitle: "尊享会员专属特权，助力思想与机遇的深度链接", items: ["查看排期", "会议报名", "会员专属权益"], buttonText: "查看权益", actionTargetType: "page", targetPageKey: "member-center", backgroundColor: "#071426", textColor: "#f8e4b2" } },
       { id: "member-orders", type: "my-order-list", enabled: true, config: { title: "常用入口", orderType: "both" } }
     ]
   },
@@ -1107,8 +1128,8 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     },
     components: [
       { id: "mall-hero", type: "hero-banner", enabled: true, config: { title: "会议周边商城", subtitle: "观潮会集", description: "精选会议周边与品牌物料", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
-      { id: "mall-tabs", type: "tag-filter", enabled: true, config: { title: "", items: ["全部｜all｜category", "文创周边｜creative｜category", "办公用品｜office｜category", "伴手礼｜gift｜category", "服饰｜wear｜category", "限量礼盒｜limited｜category"], contentBackgroundStyle: "transparent" } },
-      { id: "mall-grid", type: "mall-product-grid", enabled: true, config: { title: "", limit: 8, buttonText: "去商城", contentBackgroundStyle: "transparent" } }
+      { id: "mall-tabs", type: "tag-filter", enabled: true, config: { title: "", target: "product-category", scope: "mall", items: ["全部｜all｜product-category", "文创周边｜creative｜product-category", "办公用品｜office｜product-category", "伴手礼｜gift｜product-category", "服饰｜wear｜product-category", "限量礼盒｜limited｜product-category"], contentBackgroundStyle: "transparent" } },
+      { id: "mall-grid", type: "mall-product-grid", enabled: true, config: { title: "", limit: 8, buttonText: "加入购物车", contentBackgroundStyle: "transparent" } }
     ]
   },
   {
