@@ -103,7 +103,7 @@ export const routes: AdminRoute[] = [
   { path: "/finance/invoices", title: "发票申请", menuTitle: "发票申请", group: "财务管理", description: "报名和商城发票申请审核、驳回和人工开票记录。", permission: "invoice:view", component: FinancePage },
   { path: "/finance/reconciliation", title: "财务对账", menuTitle: "财务对账", group: "财务管理", description: "微信账单、报名支付和商城支付差异核查。", permission: "reconciliation:view", component: FinancePage },
   { path: "/finance/wechat-bills", title: "微信账单", menuTitle: "微信账单", group: "财务管理", description: "微信账单创建、手动导入、可选下载和对账。", permission: "wechat-bill:view", component: FinancePage },
-  { path: "/pages", title: "页面装修", menuTitle: "页面装修", group: "页面装修", description: "CMS 页面版本、组件和发布预览", permission: "page:view", component: CmsPagesPage },
+  { path: "/pages", title: "页面装修", menuTitle: "页面装修", group: "页面装修", description: "CMS 页面版本、业务模块和发布预览", permission: "page:view", component: CmsPagesPage },
   { path: "/themes", title: "主题配置", menuTitle: "主题配置", group: "页面装修", description: "小程序/H5 主题色、圆角和卡片风格", permission: "theme:view", component: ThemesPage },
   { path: "/tabbar", title: "底部导航", menuTitle: "底部导航", group: "页面装修", description: "小程序动态底部导航配置", permission: "tabbar:view", component: TabbarPage },
   { path: "/materials", title: "素材管理", menuTitle: "素材管理", group: "页面装修", description: "图片、图标、视频和字体素材", permission: "material:view", component: MaterialsPage },

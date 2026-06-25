@@ -1,5 +1,7 @@
 packages:
+  - "business-modules"
   - "design-system"
+  - "module-compiler"
   - "render-governor"
   - "runtime"
   - "apps/*"

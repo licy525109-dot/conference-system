@@ -11,8 +11,10 @@
     "test": "node -e \"console.log('admin: no tests yet')\""
   },
   "dependencies": {
+    "@conference/business-modules": "workspace:*",
     "@conference/design-system": "workspace:*",
     "@conference/dsl-runtime": "workspace:*",
+    "@conference/module-compiler": "workspace:*",
     "@conference/render-governor": "workspace:*",
     "@conference/shared": "workspace:*",
     "element-plus": "^2.9.3",

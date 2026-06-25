@@ -674,6 +674,7 @@ export interface PageVersion {
     dsl: {
       nodes: DslEditorNode[];
     };
+    meta?: Record<string, unknown>;
   };
   themeJson: Record<string, unknown> | null;
   publishedAt: string | null;
@@ -726,6 +727,7 @@ export interface PageLibraryTemplate {
       dsl: {
         nodes: DslEditorNode[];
       };
+      meta?: Record<string, unknown>;
     };
     themeJson: Record<string, unknown> | null;
     publishedAt: string | null;

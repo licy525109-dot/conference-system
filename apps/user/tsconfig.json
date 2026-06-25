@@ -7,6 +7,8 @@
     "paths": {
       "@conference/design-system": ["../../design-system/index.ts"],
       "@conference/design-system/*": ["../../design-system/*/index.ts"],
+      "@conference/business-modules": ["../../business-modules/src/index.ts"],
+      "@conference/module-compiler": ["../../module-compiler/src/index.ts"],
       "@conference/dsl-runtime": ["../../runtime/src/index.ts"],
       "@conference/dsl-runtime/*": ["../../runtime/src/*"],
       "@conference/render-governor": ["../../render-governor/src/index.ts"],

@@ -1,24 +1,24 @@
 <template>
-  <section class="admin-page cms-dsl-page">
+  <section class="admin-page ops-page">
     <div class="page-header">
       <div>
-        <h1 class="page-title">页面装修 DSL 控制台</h1>
-        <p class="page-subtitle">CMS 只编辑 P9 DSL；预览、H5 和小程序共用 Render Governor 与 Runtime。</p>
+        <h1 class="page-title">页面装修运营台</h1>
+        <p class="page-subtitle">运营编辑业务模块，系统自动生成页面渲染配置。</p>
       </div>
       <div class="inline-actions">
         <el-button @click="createVisible = true">新增页面</el-button>
-        <el-button :disabled="!version" :loading="saving" @click="saveDraft">保存 DSL</el-button>
-        <el-button :disabled="!version" type="primary" :loading="publishing" @click="publish">发布 DSL</el-button>
+        <el-button :disabled="!version" :loading="saving" @click="saveDraft">保存草稿</el-button>
+        <el-button :disabled="!version" type="primary" :loading="publishing" @click="publish">发布页面</el-button>
       </div>
     </div>
 
-    <section class="dsl-workbench">
-      <aside class="dsl-sidebar">
+    <section class="ops-workbench">
+      <aside class="ops-sidebar">
         <section class="data-panel">
           <div class="panel-head">
             <div>
               <strong>页面</strong>
-              <span>选择一个 CMS DSL 文档</span>
+              <span>选择要装修的运营页面</span>
             </div>
             <el-button link type="primary" @click="loadPages">刷新</el-button>
           </div>
@@ -41,7 +41,7 @@
           <div class="panel-head">
             <div>
               <strong>版本</strong>
-              <span>编辑草稿或从发布版创建草稿</span>
+              <span>选择草稿或发布版本</span>
             </div>
           </div>
           <el-select v-model="selectedVersionId" placeholder="选择版本" @change="loadVersion">
@@ -58,104 +58,72 @@
         <section class="data-panel">
           <div class="panel-head">
             <div>
-              <strong>新增节点</strong>
-              <span>所有操作都会生成 DSL AST</span>
+              <strong>添加模块</strong>
+              <span>选择业务语义模块</span>
             </div>
           </div>
-          <div class="node-type-grid">
-            <button v-for="type in dslTypes" :key="type" type="button" @click="addNode(type)">
-              {{ type }}
+          <div class="module-library">
+            <button
+              v-for="definition in moduleDefinitions"
+              :key="definition.type"
+              type="button"
+              class="module-preset"
+              @click="addModule(definition.type)"
+            >
+              <strong>{{ definition.name }}</strong>
+              <span>{{ definition.group }}</span>
+              <small>{{ definition.description }}</small>
             </button>
           </div>
         </section>
       </aside>
 
-      <main class="dsl-main">
+      <main class="ops-main">
         <section class="data-panel">
           <div class="panel-head">
             <div>
-              <strong>DSL AST</strong>
-              <span>{{ currentDsl.schemaVersion }} · {{ currentDsl.page }} · {{ currentDsl.dsl.nodes.length }} nodes</span>
+              <strong>页面模块</strong>
+              <span>{{ currentModules.length }} 个模块 · {{ selectedPage?.pageKey ?? "未选择页面" }}</span>
             </div>
-            <el-tag type="success">DSL Only</el-tag>
+            <el-tag type="success">运营模式</el-tag>
           </div>
 
           <el-empty v-if="!version" description="请选择页面版本" />
           <template v-else>
             <div class="version-row">
-              <el-input v-model="versionTitle" placeholder="DSL 版本标题" />
-              <el-input v-model="currentDsl.page" placeholder="page key" />
+              <el-input v-model="versionTitle" placeholder="版本标题" />
+              <el-input v-model="currentPageKey" placeholder="页面 key" disabled />
             </div>
 
-            <div class="node-list">
+            <div class="module-list">
               <button
-                v-for="(node, index) in currentDsl.dsl.nodes"
-                :key="node.id"
+                v-for="(module, index) in currentModules"
+                :key="module.id"
                 type="button"
-                :class="['node-row', selectedNodeId === node.id ? 'active' : '']"
-                @click="selectNode(node.id)"
+                :class="['module-row', selectedModuleId === module.id ? 'active' : '']"
+                @click="selectModule(module.id)"
               >
-                <span>
-                  <strong>{{ index + 1 }}. {{ node.type }}</strong>
-                  <small>{{ node.id }} · {{ node.enabled === false ? "hidden" : "enabled" }}</small>
+                <span class="module-row__index">{{ index + 1 }}</span>
+                <span class="module-row__body">
+                  <strong>{{ definitionName(module.type) }}</strong>
+                  <small>{{ module.config.title || module.type }} · {{ module.enabled ? "显示" : "隐藏" }}</small>
                 </span>
-                <span class="node-actions">
-                  <i @click.stop="moveNode(index, -1)">上移</i>
-                  <i @click.stop="moveNode(index, 1)">下移</i>
-                  <i @click.stop="duplicateNode(node)">复制</i>
-                  <i class="danger" @click.stop="removeNode(node.id)">删除</i>
+                <span class="module-row__actions">
+                  <i @click.stop="moveModule(index, -1)">上移</i>
+                  <i @click.stop="moveModule(index, 1)">下移</i>
+                  <i @click.stop="duplicateModule(module)">复制</i>
+                  <i class="danger" @click.stop="removeModule(module.id)">删除</i>
                 </span>
               </button>
             </div>
           </template>
         </section>
 
-        <section v-if="selectedNode" class="data-panel">
-          <div class="panel-head">
-            <div>
-              <strong>节点属性</strong>
-              <span>{{ selectedNode.id }}</span>
-            </div>
-            <el-switch v-model="selectedNode.enabled" active-text="启用" inactive-text="隐藏" />
-          </div>
-          <div class="editor-grid">
-            <el-input v-model="selectedNode.id" label="id" placeholder="node id" />
-            <el-select v-model="selectedNode.type">
-              <el-option v-for="type in dslTypes" :key="type" :label="type" :value="type" />
-            </el-select>
-            <el-input-number v-model="selectedNode.sortOrder" :min="0" :step="10" />
-          </div>
-          <el-tabs v-model="activeEditorTab">
-            <el-tab-pane label="props" name="props">
-              <el-input v-model="propsJson" type="textarea" :rows="10" spellcheck="false" @blur="applyJson('props')" />
-            </el-tab-pane>
-            <el-tab-pane label="style" name="style">
-              <el-input v-model="styleJson" type="textarea" :rows="8" spellcheck="false" @blur="applyJson('style')" />
-            </el-tab-pane>
-            <el-tab-pane label="action" name="action">
-              <el-input v-model="actionJson" type="textarea" :rows="8" spellcheck="false" @blur="applyJson('action')" />
-            </el-tab-pane>
-          </el-tabs>
-        </section>
-
-        <section class="data-panel">
-          <div class="panel-head">
-            <div>
-              <strong>Raw DSL</strong>
-              <span>保存前可直接编辑完整 DSL JSON</span>
-            </div>
-            <el-button @click="applyRawDsl">应用 JSON</el-button>
-          </div>
-          <el-input v-model="rawDslJson" type="textarea" :rows="14" spellcheck="false" />
-        </section>
-      </main>
-
-      <aside class="dsl-preview">
         <section class="data-panel preview-shell">
           <div class="panel-head">
             <div>
-              <strong>Runtime 预览</strong>
-              <span>Render Governor → Runtime → Design System</span>
+              <strong>实时预览</strong>
+              <span>模块自动编译后进入统一运行时</span>
             </div>
             <el-tag v-if="renderWarnings.length" type="warning">{{ renderWarnings.length }} warnings</el-tag>
           </div>
@@ -171,10 +139,95 @@
             <AdminDslRenderTree :nodes="renderTree.nodes" />
           </div>
         </section>
+      </main>
+
+      <aside class="ops-config">
+        <section class="data-panel config-panel">
+          <div class="panel-head">
+            <div>
+              <strong>模块配置</strong>
+              <span>{{ selectedDefinition?.name ?? "选择左侧模块后编辑" }}</span>
+            </div>
+            <el-switch v-if="selectedModule" v-model="selectedModule.enabled" active-text="显示" inactive-text="隐藏" />
+          </div>
+
+          <el-empty v-if="!selectedModule || !selectedDefinition" description="请选择一个模块" />
+          <el-form v-else label-position="top" class="module-form">
+            <el-form-item
+              v-for="field in selectedDefinition.fields"
+              :key="field.key"
+              :label="field.label"
+            >
+              <el-input
+                v-if="field.type === 'text'"
+                :model-value="fieldValue(field.key)"
+                :placeholder="field.placeholder"
+                @update:model-value="updateField(field.key, $event)"
+              />
+              <el-input
+                v-else-if="field.type === 'textarea'"
+                :model-value="fieldValue(field.key)"
+                type="textarea"
+                :rows="4"
+                :placeholder="field.placeholder"
+                @update:model-value="updateField(field.key, $event)"
+              />
+              <el-input
+                v-else-if="field.type === 'image'"
+                :model-value="fieldValue(field.key)"
+                :placeholder="field.placeholder || '图片 URL 或素材地址'"
+                @update:model-value="updateField(field.key, $event)"
+              />
+              <el-select
+                v-else-if="field.type === 'select'"
+                :model-value="fieldValue(field.key)"
+                @update:model-value="updateField(field.key, $event)"
+              >
+                <el-option
+                  v-for="option in field.options ?? []"
+                  :key="String(option.value)"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+              <el-switch
+                v-else-if="field.type === 'switch'"
+                :model-value="Boolean(fieldValue(field.key))"
+                @update:model-value="updateField(field.key, $event)"
+              />
+              <div v-else-if="field.type === 'items'" class="item-editor">
+                <p v-if="field.help" class="field-help">{{ field.help }}</p>
+                <article v-for="(item, index) in editableItems" :key="item.id" class="item-card">
+                  <div class="item-card__head">
+                    <strong>条目 {{ index + 1 }}</strong>
+                    <el-button link type="danger" @click="removeItem(index)">删除</el-button>
+                  </div>
+                  <el-input v-model="item.label" placeholder="名称" />
+                  <el-input v-model="item.subtitle" placeholder="说明，可不填" />
+                  <el-input v-model="item.iconUrl" placeholder="图标 URL，可不填" />
+                  <el-input v-model="item.imageUrl" placeholder="图片 URL，可不填" />
+                  <div class="item-link-row">
+                    <el-select v-model="item.linkType" placeholder="跳转类型">
+                      <el-option label="无跳转" value="none" />
+                      <el-option label="小程序页面" value="page" />
+                      <el-option label="会议详情" value="conference" />
+                      <el-option label="报名页" value="registration" />
+                      <el-option label="商品详情" value="product" />
+                      <el-option label="外部 H5" value="url" />
+                    </el-select>
+                    <el-input v-model="item.link" placeholder="页面 key / ID / URL" />
+                  </div>
+                </article>
+                <el-button class="full-button" @click="addItem">添加条目</el-button>
+              </div>
+              <p v-if="field.help && field.type !== 'items'" class="field-help">{{ field.help }}</p>
+            </el-form-item>
+          </el-form>
+        </section>
       </aside>
     </section>
 
-    <el-dialog v-model="createVisible" title="新增 DSL 页面" width="520px">
+    <el-dialog v-model="createVisible" title="新增运营页面" width="520px">
       <el-form label-width="92px">
         <el-form-item label="页面 Key">
           <el-input v-model="createForm.pageKey" placeholder="custom:landing" />
@@ -188,15 +241,26 @@
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="createDslPage">创建</el-button>
+        <el-button type="primary" :loading="creating" @click="createOpsPage">创建</el-button>
       </template>
     </el-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import {
+  BUSINESS_MODULE_DEFINITIONS,
+  createBusinessModule,
+  getBusinessModuleDefinition,
+  normalizeBusinessModules,
+  type BusinessModule,
+  type BusinessModuleConfig,
+  type BusinessModuleItem,
+  type BusinessModuleType
+} from "@conference/business-modules";
+import { compileBusinessModules, defaultModulesForPage, extractBusinessModules } from "@conference/module-compiler";
 import type { PageDsl } from "@conference/dsl-runtime";
 import { createGovernedRuntimeContext, governRender, type RenderGovernorWarning } from "@conference/render-governor";
 import AdminDslRenderTree from "../../components/design-system/AdminDslRenderTree.vue";
@@ -208,62 +272,43 @@ import {
   rollbackPage,
   updatePageVersion
 } from "../../services/admin";
-import type { DslEditorNode, PageTemplate, PageVersion } from "../../services/types";
+import type { PageTemplate, PageVersion } from "../../services/types";
 
-const dslTypes = ["ds-banner", "ds-grid", "ds-card", "ds-list", "ds-section", "ds-button", "ds-tag", "ds-image", "ds-carousel"];
+const moduleDefinitions = BUSINESS_MODULE_DEFINITIONS;
 
 const pages = ref<PageTemplate[]>([]);
 const selectedPage = ref<PageTemplate | null>(null);
 const selectedVersionId = ref("");
 const version = ref<PageVersion | null>(null);
 const versionTitle = ref("");
-const selectedNodeId = ref("");
-const activeEditorTab = ref("props");
+const selectedModuleId = ref("");
+const currentPageKey = ref("cms");
+const currentModules = ref<BusinessModule[]>([]);
 const saving = ref(false);
 const publishing = ref(false);
 const creating = ref(false);
 const createVisible = ref(false);
 const createForm = reactive({ pageKey: "", title: "", description: "" });
 
-const currentDsl = reactive<PageDsl>({
-  schemaVersion: "p9",
-  page: "cms",
-  dsl: {
-    nodes: []
-  }
-});
-
-const propsJson = ref("{}");
-const styleJson = ref("{}");
-const actionJson = ref("{}");
-const rawDslJson = ref("{}");
-
-const selectedNode = computed(() => currentDsl.dsl.nodes.find((node) => node.id === selectedNodeId.value) as DslEditorNode | undefined);
+const selectedModule = computed(() => currentModules.value.find((module) => module.id === selectedModuleId.value));
+const selectedDefinition = computed(() => (selectedModule.value ? getBusinessModuleDefinition(selectedModule.value.type) : null));
+const compiledDsl = computed<PageDsl>(() => compileBusinessModules({ page: currentPageKey.value, modules: currentModules.value }).dsl);
 const runtimeContext = computed(() =>
   createGovernedRuntimeContext({
-    page: currentDsl.page,
+    page: compiledDsl.value.page,
     platform: "admin",
     data: {},
     theme: { id: "admin-preview", name: "Admin Preview" }
   })
 );
-const governed = computed(() => governRender(cloneDsl(currentDsl), { context: runtimeContext.value, allowLegacyDslFallback: false }));
+const governed = computed(() => governRender(compiledDsl.value, { context: runtimeContext.value, allowLegacyDslFallback: false }));
 const renderTree = computed(() => governed.value.tree);
 const renderWarnings = computed<RenderGovernorWarning[]>(() => governed.value.warnings);
-
-watch(selectedNode, (node) => {
-  propsJson.value = formatJson(node?.props ?? {});
-  styleJson.value = formatJson(node?.style ?? {});
-  actionJson.value = formatJson(node?.action ?? {});
+const editableItems = computed<BusinessModuleItem[]>(() => {
+  if (!selectedModule.value) return [];
+  if (!Array.isArray(selectedModule.value.config.items)) selectedModule.value.config.items = [];
+  return selectedModule.value.config.items;
 });
-
-watch(
-  currentDsl,
-  () => {
-    rawDslJson.value = formatJson(cloneDsl(currentDsl));
-  },
-  { deep: true }
-);
 
 onMounted(loadPages);
 
@@ -277,12 +322,13 @@ async function loadPages(): Promise<void> {
 
 async function selectPage(page: PageTemplate): Promise<void> {
   selectedPage.value = page;
+  currentPageKey.value = page.pageKey;
   const editable = page.versions.find((item) => item.status === "DRAFT") ?? page.versions[0];
   selectedVersionId.value = editable?.id ?? "";
   if (selectedVersionId.value) {
     await loadVersion(selectedVersionId.value);
   } else {
-    resetDsl(page.pageKey, []);
+    resetModules(page.pageKey, defaultModulesForPage(page.pageKey));
   }
 }
 
@@ -291,89 +337,88 @@ async function loadVersion(id = selectedVersionId.value): Promise<void> {
   const response = await getPageVersion(id);
   version.value = response;
   versionTitle.value = response.title;
-  const dsl = normalizeDsl(response.dsl, response.template.pageKey);
-  resetDsl(dsl.page, dsl.dsl.nodes);
+  const extracted = extractBusinessModules(response.dsl, response.template.pageKey);
+  resetModules(extracted.dsl.page, extracted.modules.length > 0 ? extracted.modules : defaultModulesForPage(response.template.pageKey));
 }
 
-function resetDsl(page: string, nodes: DslEditorNode[]): void {
-  currentDsl.schemaVersion = "p9";
-  currentDsl.page = page;
-  currentDsl.dsl.nodes = nodes.map((node, index) => normalizeNode(node, index));
-  selectedNodeId.value = currentDsl.dsl.nodes[0]?.id ?? "";
-  rawDslJson.value = formatJson(cloneDsl(currentDsl));
+function resetModules(page: string, modules: BusinessModule[]): void {
+  currentPageKey.value = page;
+  currentModules.value = normalizeBusinessModules(modules).map((module, index) => ({ ...module, sortOrder: index * 10 }));
+  selectedModuleId.value = currentModules.value[0]?.id ?? "";
 }
 
-function addNode(type: string): void {
-  const node = normalizeNode({
-    id: `${type}-${Date.now().toString(36)}`,
-    type,
-    enabled: true,
-    sortOrder: currentDsl.dsl.nodes.length * 10,
-    props: defaultPropsFor(type),
-    style: {},
-    action: {}
-  }, currentDsl.dsl.nodes.length);
-  currentDsl.dsl.nodes.push(node);
-  selectedNodeId.value = node.id;
+function addModule(type: BusinessModuleType): void {
+  const module = createBusinessModule(type, currentModules.value.length);
+  currentModules.value.push(module);
+  selectedModuleId.value = module.id;
 }
 
-function selectNode(id: string): void {
-  selectedNodeId.value = id;
+function selectModule(id: string): void {
+  selectedModuleId.value = id;
 }
 
-function moveNode(index: number, direction: -1 | 1): void {
+function moveModule(index: number, direction: -1 | 1): void {
   const nextIndex = index + direction;
-  if (nextIndex < 0 || nextIndex >= currentDsl.dsl.nodes.length) return;
-  const [node] = currentDsl.dsl.nodes.splice(index, 1);
-  if (!node) return;
-  currentDsl.dsl.nodes.splice(nextIndex, 0, node);
-  resequenceNodes();
+  if (nextIndex < 0 || nextIndex >= currentModules.value.length) return;
+  const [module] = currentModules.value.splice(index, 1);
+  if (!module) return;
+  currentModules.value.splice(nextIndex, 0, module);
+  resequenceModules();
 }
 
-function duplicateNode(node: DslEditorNode): void {
-  const copy = normalizeNode({ ...deepClone(node), id: `${node.id}-copy-${Date.now().toString(36)}` }, currentDsl.dsl.nodes.length);
-  currentDsl.dsl.nodes.push(copy);
-  selectedNodeId.value = copy.id;
+function duplicateModule(module: BusinessModule): void {
+  const copy = deepClone(module);
+  copy.id = `${module.type}-${Date.now().toString(36)}`;
+  copy.sortOrder = currentModules.value.length * 10;
+  currentModules.value.push(copy);
+  selectedModuleId.value = copy.id;
 }
 
-function removeNode(id: string): void {
-  const index = currentDsl.dsl.nodes.findIndex((node) => node.id === id);
+function removeModule(id: string): void {
+  const index = currentModules.value.findIndex((module) => module.id === id);
   if (index < 0) return;
-  currentDsl.dsl.nodes.splice(index, 1);
-  selectedNodeId.value = currentDsl.dsl.nodes[Math.max(index - 1, 0)]?.id ?? "";
-  resequenceNodes();
+  currentModules.value.splice(index, 1);
+  selectedModuleId.value = currentModules.value[Math.max(index - 1, 0)]?.id ?? "";
+  resequenceModules();
 }
 
-function resequenceNodes(): void {
-  currentDsl.dsl.nodes.forEach((node, index) => {
-    node.sortOrder = index * 10;
+function resequenceModules(): void {
+  currentModules.value.forEach((module, index) => {
+    module.sortOrder = index * 10;
   });
 }
 
-function applyJson(target: "props" | "style" | "action"): void {
-  if (!selectedNode.value) return;
-  const source = target === "props" ? propsJson.value : target === "style" ? styleJson.value : actionJson.value;
-  try {
-    const parsed = parseJsonObject(source);
-    selectedNode.value[target] = parsed;
-    if (target === "action") {
-      selectedNode.value.props = { ...(selectedNode.value.props ?? {}), action: parsed };
-    }
-    ElMessage.success(`${target} 已应用`);
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "JSON 不合法");
-  }
+function fieldValue(key: keyof BusinessModuleConfig): string | number | boolean {
+  const value = selectedModule.value?.config[key];
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  return typeof value === "string" ? value : "";
 }
 
-function applyRawDsl(): void {
-  try {
-    const parsed = JSON.parse(rawDslJson.value) as unknown;
-    const dsl = normalizeDsl(parsed, currentDsl.page);
-    resetDsl(dsl.page, dsl.dsl.nodes);
-    ElMessage.success("DSL JSON 已应用");
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "DSL JSON 不合法");
-  }
+function updateField(key: keyof BusinessModuleConfig, value: string | number | boolean): void {
+  if (!selectedModule.value) return;
+  selectedModule.value.config = {
+    ...selectedModule.value.config,
+    [key]: value
+  };
+}
+
+function addItem(): void {
+  if (!selectedModule.value) return;
+  if (!Array.isArray(selectedModule.value.config.items)) selectedModule.value.config.items = [];
+  selectedModule.value.config.items.push({
+    id: `item-${Date.now().toString(36)}`,
+    label: "新条目",
+    subtitle: "",
+    iconUrl: "",
+    imageUrl: "",
+    linkType: "none",
+    link: ""
+  });
+}
+
+function removeItem(index: number): void {
+  if (!selectedModule.value?.config.items) return;
+  selectedModule.value.config.items.splice(index, 1);
 }
 
 async function saveDraft(): Promise<void> {
@@ -382,11 +427,11 @@ async function saveDraft(): Promise<void> {
   try {
     const response = await updatePageVersion(version.value.id, {
       title: versionTitle.value,
-      dsl: cloneDsl(currentDsl),
+      dsl: compileBusinessModules({ page: currentPageKey.value, modules: currentModules.value }).dsl,
       themeJson: version.value.themeJson ?? null
     });
     version.value = response;
-    ElMessage.success("DSL 草稿已保存");
+    ElMessage.success("运营页面草稿已保存");
     await loadPages();
   } finally {
     saving.value = false;
@@ -400,7 +445,7 @@ async function publish(): Promise<void> {
   try {
     const response = await publishPageVersion(version.value.id);
     version.value = response;
-    ElMessage.success("DSL 已发布");
+    ElMessage.success("运营页面已发布");
     await loadPages();
   } finally {
     publishing.value = false;
@@ -413,11 +458,12 @@ async function rollback(): Promise<void> {
   const response = await rollbackPage(selectedPage.value.id);
   version.value = response;
   selectedVersionId.value = response.id;
-  resetDsl(response.dsl?.page ?? selectedPage.value.pageKey, response.dsl?.dsl.nodes ?? []);
+  const extracted = extractBusinessModules(response.dsl, selectedPage.value.pageKey);
+  resetModules(extracted.dsl.page, extracted.modules);
   await loadPages();
 }
 
-async function createDslPage(): Promise<void> {
+async function createOpsPage(): Promise<void> {
   const pageKey = createForm.pageKey.trim();
   const title = createForm.title.trim();
   if (!pageKey || !title) {
@@ -430,80 +476,28 @@ async function createDslPage(): Promise<void> {
       pageKey,
       title,
       description: createForm.description.trim(),
-      dsl: { schemaVersion: "p9", page: pageKey, dsl: { nodes: [] } }
+      dsl: compileBusinessModules({ page: pageKey, modules: defaultModulesForPage(pageKey) }).dsl
     });
     createVisible.value = false;
     Object.assign(createForm, { pageKey: "", title: "", description: "" });
     await loadPages();
-    ElMessage.success("DSL 页面已创建");
+    ElMessage.success("运营页面已创建");
   } finally {
     creating.value = false;
   }
 }
 
-function normalizeDsl(value: unknown, fallbackPage: string): PageDsl {
-  if (!isRecord(value)) return { schemaVersion: "p9", page: fallbackPage, dsl: { nodes: [] } };
-  const source = isRecord(value.dsl) ? value.dsl : value;
-  return {
-    schemaVersion: "p9",
-    page: typeof value.page === "string" && value.page.trim() ? value.page : fallbackPage,
-    dsl: {
-      nodes: Array.isArray(source.nodes) ? source.nodes.map((node, index) => normalizeNode(node, index)) : []
-    }
-  };
-}
-
-function normalizeNode(value: unknown, index: number): DslEditorNode {
-  const record = isRecord(value) ? value : {};
-  const type = typeof record.type === "string" && record.type.trim() ? record.type : "ds-section";
-  const action = isRecord(record.action) ? record.action : (isRecord(record.props) && isRecord(record.props.action) ? record.props.action : {});
-  return {
-    id: typeof record.id === "string" && record.id.trim() ? record.id : `${type}-${index + 1}`,
-    type,
-    enabled: typeof record.enabled === "boolean" ? record.enabled : true,
-    sortOrder: Number.isFinite(Number(record.sortOrder)) ? Number(record.sortOrder) : index * 10,
-    props: isRecord(record.props) ? { ...record.props, ...(Object.keys(action).length > 0 ? { action } : {}) } : defaultPropsFor(type),
-    style: isRecord(record.style) ? record.style : {},
-    action,
-    children: Array.isArray(record.children) ? record.children.map((child, childIndex) => normalizeNode(child, childIndex)) : [],
-    meta: isRecord(record.meta) ? record.meta : {}
-  };
-}
-
-function defaultPropsFor(type: string): Record<string, unknown> {
-  if (type === "ds-banner") return { title: "主视觉标题", subtitle: "活动推荐", description: "在这里填写页面主视觉文案", buttonText: "查看详情" };
-  if (type === "ds-grid") return { title: "入口宫格", columns: 4, items: [{ id: "entry-1", title: "入口", subtitle: "说明" }] };
-  if (type === "ds-list") return { title: "内容列表", emptyText: "暂无内容", items: [{ id: "item-1", title: "列表项", description: "列表描述" }] };
-  if (type === "ds-button") return { text: "立即行动", action: { type: "page", pageKey: "home" } };
-  if (type === "ds-carousel") return { images: [] };
-  return { title: "模块标题", description: "模块说明" };
-}
-
-function cloneDsl(dsl: PageDsl): PageDsl {
-  return deepClone(dsl);
+function definitionName(type: BusinessModuleType): string {
+  return getBusinessModuleDefinition(type).name;
 }
 
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
-
-function formatJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
-function parseJsonObject(value: string): Record<string, unknown> {
-  const parsed = JSON.parse(value || "{}") as unknown;
-  if (!isRecord(parsed)) throw new Error("必须是 JSON 对象");
-  return parsed;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 </script>
 
 <style scoped>
-.cms-dsl-page {
+.ops-page {
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -540,16 +534,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   gap: 10px;
 }
 
-.dsl-workbench {
+.ops-workbench {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 390px;
+  grid-template-columns: 300px minmax(0, 1fr) 410px;
   gap: 18px;
   align-items: start;
 }
 
-.dsl-sidebar,
-.dsl-main,
-.dsl-preview {
+.ops-sidebar,
+.ops-main,
+.ops-config {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -579,18 +573,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 .page-list,
-.node-list {
+.module-library,
+.module-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
 .page-item,
-.node-row {
+.module-preset,
+.module-row {
   display: flex;
   width: 100%;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   padding: 12px;
   border: 1px solid #dbe4e1;
@@ -600,70 +595,76 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   text-align: left;
 }
 
+.page-item,
+.module-preset {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 .page-item.active,
-.node-row.active {
+.module-row.active {
   border-color: #315d7d;
   background: #e6eef4;
 }
 
 .page-item span,
 .page-item small,
-.node-row small {
-  display: block;
+.module-preset span,
+.module-preset small,
+.module-row small {
   color: #5f6d76;
 }
 
-.node-actions {
+.module-row__index {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: #e6eef4;
+  color: #315d7d;
+  font-weight: 700;
+}
+
+.module-row__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.module-row__body strong,
+.module-row__body small {
+  display: block;
+}
+
+.module-row__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
-  color: #315d7d;
-  font-size: 12px;
 }
 
-.node-actions i {
+.module-row__actions i {
+  color: #315d7d;
+  cursor: pointer;
   font-style: normal;
 }
 
-.node-actions .danger {
-  color: #c14242;
-}
-
-.node-type-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.node-type-grid button,
-.full-button {
-  width: 100%;
-  margin-top: 10px;
-}
-
-.node-type-grid button {
-  height: 34px;
-  border: 1px solid #dbe4e1;
-  border-radius: 8px;
-  background: #fff;
-  color: #315d7d;
+.module-row__actions .danger {
+  color: #bf3b3b;
 }
 
 .version-row,
-.editor-grid {
+.item-link-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
   margin-bottom: 14px;
 }
 
-.editor-grid {
-  grid-template-columns: minmax(0, 1fr) 180px 140px;
-}
-
-.warning-alert {
-  margin-bottom: 10px;
+.full-button {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .preview-shell {
@@ -672,19 +673,66 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 .phone-window {
+  width: 340px;
   min-height: 620px;
-  padding: 16px;
+  max-height: 760px;
+  overflow: auto;
+  margin: 0 auto;
+  padding: 14px;
   border: 10px solid #172026;
   border-radius: 28px;
-  background: #f5f7f6;
+  background: #eef3f1;
+}
+
+.phone-window :deep(.admin-ds-tree) {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.warning-alert {
+  margin-bottom: 10px;
+}
+
+.module-form :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+
+.field-help {
+  margin: 6px 0 0;
+  color: #5f6d76;
+  font-size: 12px;
+}
+
+.item-editor {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.item-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dbe4e1;
+  border-radius: 8px;
+  background: #f8faf9;
+}
+
+.item-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 @media (max-width: 1280px) {
-  .dsl-workbench {
-    grid-template-columns: 240px minmax(0, 1fr);
+  .ops-workbench {
+    grid-template-columns: 280px minmax(0, 1fr);
   }
 
-  .dsl-preview {
+  .ops-config {
     grid-column: 1 / -1;
   }
 }
