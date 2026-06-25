@@ -3277,6 +3277,20 @@ function fieldsFor(type: string): ConfigField[] {
       ...actionTargetFields,
       { key: "secondaryButtonText", label: "次按钮文案", placeholder: "我的报名" },
       ...secondaryActionTargetFields,
+      { key: "imageOnly", label: "仅显示图片", kind: "switch", fallback: "false" },
+      { key: "showOverlay", label: "显示遮罩", kind: "switch", fallback: "true" },
+      {
+        key: "imageMode",
+        label: "图片显示方式",
+        kind: "select",
+        fallback: "scaleToFill",
+        options: [
+          { label: "整图铺满", value: "scaleToFill" },
+          { label: "完整显示", value: "contain" },
+          { label: "等比裁切铺满", value: "aspectFill" },
+          { label: "宽度铺满", value: "widthFix" }
+        ]
+      },
       { key: "height", label: "高度", kind: "range", fallback: 420, min: 260, max: 720 },
       { key: "radius", label: "圆角", kind: "range", fallback: 28, min: 0, max: 48 }
     ], 26),
@@ -4516,17 +4530,20 @@ const ComponentPreview = defineComponent({
         ]);
       }
       if (type === "hero-banner") {
+        const showCopy = !booleanConfig(props.item, "imageOnly", false) && Boolean(value("title") || value("subtitle") || value("description") || value("buttonText") || value("secondaryButtonText"));
         return h("div", { class: "preview-home-hero", style: previewHomeHeroStyle(props.item) }, [
           value("imageUrl") ? h("img", { src: value("imageUrl"), alt: "顶部主视觉", style: previewImageModeStyle(props.item) }) : null,
-          h("div", { class: "preview-home-hero__copy" }, [
-            h("span", value("subtitle", "会议报名、签到和会务服务一站完成")),
-            h("strong", { style: { ...titleStyle(), color: value("textColor", "#ffffff") } }, value("title", "欢迎进入会务小程序")),
-            h("p", { style: { ...textStyle(), color: value("textColor", "#ffffff") } }, value("description", "选择会议并完成报名缴费，后续可在我的报名中查看凭证。")),
-            h("div", { class: "preview-home-hero__actions" }, [
-              value("buttonText") ? h("button", value("buttonText")) : null,
-              value("secondaryButtonText") ? h("button", { class: "is-secondary" }, value("secondaryButtonText")) : null
-            ])
-          ])
+          showCopy
+            ? h("div", { class: "preview-home-hero__copy" }, [
+                value("subtitle") ? h("span", value("subtitle")) : null,
+                value("title") ? h("strong", { style: { ...titleStyle(), color: value("textColor", "#ffffff") } }, value("title")) : null,
+                value("description") ? h("p", { style: { ...textStyle(), color: value("textColor", "#ffffff") } }, value("description")) : null,
+                h("div", { class: "preview-home-hero__actions" }, [
+                  value("buttonText") ? h("button", value("buttonText")) : null,
+                  value("secondaryButtonText") ? h("button", { class: "is-secondary" }, value("secondaryButtonText")) : null
+                ])
+              ])
+            : null
         ]);
       }
       if (type === "login-card") {
