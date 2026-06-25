@@ -1,9 +1,20 @@
 <template>
-  <view class="dsl-page" :style="rootStyle">
-    <view v-if="governorWarnings.length > 0" class="dsl-warning">
-      <text>页面已通过 DSL Runtime 渲染，存在 {{ governorWarnings.length }} 条治理提示。</text>
+  <view class="page-renderer" :style="rootStyle">
+    <view v-if="governorWarnings.length > 0" class="page-renderer__warning">
+      <text>页面已通过 DSL Runtime 校验，存在 {{ governorWarnings.length }} 条治理提示。</text>
     </view>
-    <DslRenderTree :nodes="renderTree.nodes" @action="handleAction" />
+
+    <CmsVisualRenderer
+      v-if="useCmsVisualRenderer"
+      :components="visualComponents"
+      :theme="theme"
+      :conferences="conferences"
+      :conference="conference"
+      :suppress-registration-cta="suppressRegistrationCta"
+      @open-conference="emit('openConference', $event)"
+      @register="emit('register')"
+    />
+    <DslRenderTree v-else :nodes="renderTree.nodes" @action="handleAction" />
   </view>
 </template>
 
@@ -11,7 +22,10 @@
 import { computed } from "vue";
 import type { PageDsl, ResolvedDslNode } from "@conference/dsl-runtime";
 import { createGovernedRuntimeContext, governRender, type RenderGovernorWarning } from "@conference/render-governor";
+import CmsVisualRenderer from "@/components/cms-visual/CmsVisualRenderer.vue";
+import { cmsVisualComponentsFromDsl, hasCmsVisualComponents } from "@/components/cms-visual/useCmsVisualContext";
 import DslRenderTree from "@/components/design-system/DslRenderTree.vue";
+import { ensureLogin } from "@/services/auth";
 import type { ThemeConfig } from "@/services/cms";
 import type { ConferenceDetail, ConferenceListItem } from "@/services/conference";
 import type { Product } from "@/services/mall";
@@ -65,6 +79,8 @@ const runtimeContext = computed(() =>
 
 const governedResult = computed(() => governRender(props.dsl, { context: runtimeContext.value, allowLegacyDslFallback: false }));
 const governorWarnings = computed<RenderGovernorWarning[]>(() => governedResult.value.warnings);
+const visualComponents = computed(() => (hasCmsVisualComponents(props.dsl) ? cmsVisualComponentsFromDsl(props.dsl) : []));
+const useCmsVisualRenderer = computed(() => visualComponents.value.length > 0);
 const renderTree = computed(() => ({
   ...governedResult.value.tree,
   nodes: withRuntimeContext(props.suppressRegistrationCta ? governedResult.value.tree.nodes.filter((node) => !isRegistrationNode(node)) : governedResult.value.tree.nodes)
@@ -91,8 +107,12 @@ function shouldHydrateUserContext(node: ResolvedDslNode): boolean {
   return ["login-card", "user-profile-card", "membership-benefits", "my-order-list"].includes(originalType);
 }
 
-function handleAction(action: Record<string, unknown>): void {
+async function handleAction(action: Record<string, unknown>): Promise<void> {
   const type = readString(action.type);
+  if (type === "login") {
+    await ensureLoginAndPrompt();
+    return;
+  }
   if (type === "registration") {
     emit("register");
     return;
@@ -105,6 +125,14 @@ function handleAction(action: Record<string, unknown>): void {
   if (type === "page") {
     const pageKey = readString(action.pageKey);
     if (pageKey) navigateToPage(pageKey, action);
+    return;
+  }
+  if (type === "member") {
+    await ensureLoginAndNavigate("/pages/member/center");
+    return;
+  }
+  if (type === "cart") {
+    await ensureLoginAndNavigate("/pages/cart/index");
     return;
   }
   if (type === "url") {
@@ -132,7 +160,34 @@ function navigateToPage(pageKey: string, action: Record<string, unknown>): void 
   if (productId) query.productId = productId;
   const path = builtin[pageKey] ?? `/pages/custom/index?pageKey=${encodeURIComponent(pageKey.startsWith("custom:") ? pageKey.slice("custom:".length) : pageKey)}`;
   const suffix = Object.keys(query).length > 0 ? `${path.includes("?") ? "&" : "?"}${stringifyQuery(query)}` : "";
-  uni.navigateTo({ url: `${path}${suffix}` });
+  navigateToPath(`${path}${suffix}`);
+}
+
+async function ensureLoginAndPrompt(): Promise<void> {
+  try {
+    await ensureLogin();
+    uni.$emit("wechat-profile:open");
+  } catch {
+    uni.showToast({ title: "登录失败，请稍后重试", icon: "none" });
+  }
+}
+
+async function ensureLoginAndNavigate(path: string): Promise<void> {
+  try {
+    await ensureLogin();
+    navigateToPath(path);
+  } catch {
+    uni.showToast({ title: "请先登录", icon: "none" });
+  }
+}
+
+function navigateToPath(path: string): void {
+  uni.navigateTo({
+    url: path,
+    fail: () => {
+      uni.switchTab({ url: path, fail: () => undefined });
+    }
+  });
 }
 
 function copyText(text: string, title: string): void {
@@ -152,13 +207,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </script>
 
 <style scoped>
-.dsl-page {
+.page-renderer {
   display: flex;
   flex-direction: column;
   gap: var(--cms-space-section-y);
 }
 
-.dsl-warning {
+.page-renderer__warning {
   padding: 16rpx 24rpx;
   border: 1px solid var(--cms-warning-soft);
   border-radius: var(--cms-radius-md);

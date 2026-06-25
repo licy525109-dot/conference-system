@@ -11,7 +11,8 @@ CMS Editor
   -> Developer Mode: Raw P9 DSL
   -> Render Governor
   -> DSL Runtime
-  -> Design System UI
+  -> CmsVisualRenderer when dsl.meta.editorComponents exists
+  -> Design System UI fallback
 ```
 
 ## Operator Model
@@ -39,6 +40,8 @@ Each module exposes simplified fields and maps to the visual component editor. T
 
 The advanced visual editor stores the compiled P9 DSL and writes the full editor component source into `dsl.meta.editorComponents`. This keeps published pages renderable by the runtime while preserving the full editor source for future editing.
 
+`dsl.meta.editorComponents` is a visual compatibility source for advanced page decoration, not a replacement public page model. User pages still receive a P9 DSL document, validate it through Render Governor, and only then route advanced decoration pages to `CmsVisualRenderer`. Pages without `editorComponents` render through the shared Design System render tree.
+
 The module compiler still supports module-to-DSL rendering and is used by the Render Governor when module input is supplied directly.
 
 The database schema is unchanged. The existing page version JSON column continues to store the normalized P9 DSL document.
@@ -46,7 +49,9 @@ The database schema is unchanged. The existing page version JSON column continue
 ## Runtime Rules
 
 - Admin preview uses the restored phone preview and saves compiled P9 DSL.
-- User H5 and MiniApp continue to render published P9 DSL through `PageRenderer` and Render Governor.
+- User H5 and MiniApp continue to receive published P9 DSL through `PageRenderer` and Render Governor.
+- `PageRenderer` stays a thin entry point: it validates DSL, resolves the runtime tree, routes advanced decoration pages to `cms-visual`, and falls back to `DslRenderTree`.
+- `CmsVisualRenderer` owns the high-fidelity advanced decoration component UI, including hero banners, login cards, icon grids, rich content, schedules, and product/member modules.
 - Render Governor also accepts module input and compiles it to DSL before rendering.
 - Legacy component input is not an operator-facing CMS edit model.
 - User runtime can receive `userContext` so login/profile-style CMS cards can show the current user's avatar, nickname, phone, member level, registration count, order count, and coupon count.

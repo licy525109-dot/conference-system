@@ -1,6 +1,14 @@
 import { request } from "./request";
 import type { PageDsl } from "@conference/dsl-runtime";
 
+export interface CmsComponent {
+  id: string;
+  type: string;
+  enabled: boolean;
+  sortOrder: number;
+  config: Record<string, unknown>;
+}
+
 export interface PublishedPage {
   id: string;
   pageKey: string;
