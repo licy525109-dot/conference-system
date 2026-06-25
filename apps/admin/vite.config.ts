@@ -19,8 +19,10 @@ export default defineConfig(({ mode }) => {
     envDir,
     resolve: {
       alias: {
+        "@conference/business-modules": resolve(repoRoot, "business-modules/src/index.ts"),
         "@conference/design-system": resolve(repoRoot, "design-system/index.ts"),
         "@conference/dsl-runtime": resolve(repoRoot, "runtime/src/index.ts"),
+        "@conference/module-compiler": resolve(repoRoot, "module-compiler/src/index.ts"),
         "@conference/render-governor": resolve(repoRoot, "render-governor/src/index.ts")
       }
     },

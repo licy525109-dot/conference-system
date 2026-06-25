@@ -12,6 +12,7 @@ export interface PageDslForApi {
   dsl: {
     nodes: DslNodeForApi[];
   };
+  meta?: Record<string, unknown>;
 }
 
 export interface DslNodeForApi {
@@ -92,6 +93,9 @@ export function pageComponentsToDsl(components: unknown, page: string): PageDslF
             originalType: component.type
           }
         }))
+    },
+    meta: {
+      source: "legacy-components"
     }
   };
 }
@@ -106,7 +110,8 @@ export function normalizePageDsl(input: unknown, fallbackPage: string): PageDslF
     page,
     dsl: {
       nodes: nodes.map((node, index) => normalizeDslNode(node, index)).filter((node): node is DslNodeForApi => Boolean(node))
-    }
+    },
+    ...(isRecord(record.meta) ? { meta: record.meta } : {})
   };
 }
 

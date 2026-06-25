@@ -1,7 +1,10 @@
 import { createRuntimeContext, renderDsl, type PageDsl, type RuntimeContext, type RuntimeRenderTree } from "@conference/dsl-runtime";
 import { createDesignSystemRegistry, type ComponentRegistry } from "@conference/design-system";
+import { compileBusinessModules } from "@conference/module-compiler";
+import type { BusinessModule } from "@conference/business-modules";
 
 export type RenderGovernorWarningCode =
+  | "BUSINESS_MODULES_COMPILED"
   | "NON_DSL_INPUT"
   | "LEGACY_FLAT_DSL"
   | "LEGACY_CMS_COMPONENTS"
@@ -17,6 +20,7 @@ export interface RenderGovernorWarning {
 
 export interface GovernedRenderInput {
   dsl?: PageDsl | null;
+  modules?: BusinessModule[] | null;
   components?: LegacyCmsComponent[] | null;
   page?: string;
 }
@@ -104,6 +108,14 @@ export function governRender(input: PageDsl | GovernedRenderInput | unknown, opt
 }
 
 export function normalizeRenderInput(input: PageDsl | GovernedRenderInput | unknown, fallbackPage: string, warnings: RenderGovernorWarning[], allowLegacyDslFallback = true): PageDsl {
+  if (isRecord(input) && Array.isArray(input.modules)) {
+    warnings.push({
+      code: "BUSINESS_MODULES_COMPILED",
+      message: "Business modules were compiled to locked P9 DSL before rendering."
+    });
+    return compileBusinessModules({ page: readString(input.page) || fallbackPage, modules: input.modules as BusinessModule[] }).dsl;
+  }
+
   if (isPageDsl(input)) {
     if (!isSupportedSchemaVersion(input.schemaVersion)) {
       warnings.push({

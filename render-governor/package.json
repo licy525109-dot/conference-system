@@ -12,14 +12,16 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @conference/design-system build && pnpm --filter @conference/dsl-runtime build && tsc -p tsconfig.json",
-    "typecheck": "pnpm --filter @conference/design-system build && pnpm --filter @conference/dsl-runtime build && tsc --noEmit -p tsconfig.json",
-    "lint": "pnpm --filter @conference/design-system build && pnpm --filter @conference/dsl-runtime build && tsc --noEmit -p tsconfig.json",
-    "test": "pnpm --filter @conference/design-system build && pnpm --filter @conference/dsl-runtime build && tsx src/__tests__/render-governor.spec.ts"
+    "build": "pnpm --filter @conference/module-compiler build && pnpm --filter @conference/design-system build && pnpm --filter @conference/dsl-runtime build && tsc -p tsconfig.json",
+    "typecheck": "pnpm --filter @conference/module-compiler build && pnpm --filter @conference/design-system build && pnpm --filter @conference/dsl-runtime build && tsc --noEmit -p tsconfig.json",
+    "lint": "pnpm --filter @conference/module-compiler build && pnpm --filter @conference/design-system build && pnpm --filter @conference/dsl-runtime build && tsc --noEmit -p tsconfig.json",
+    "test": "pnpm --filter @conference/module-compiler build && pnpm --filter @conference/design-system build && pnpm --filter @conference/dsl-runtime build && tsx src/__tests__/render-governor.spec.ts"
   },
   "dependencies": {
+    "@conference/business-modules": "workspace:*",
     "@conference/design-system": "workspace:*",
-    "@conference/dsl-runtime": "workspace:*"
+    "@conference/dsl-runtime": "workspace:*",
+    "@conference/module-compiler": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.20.6",

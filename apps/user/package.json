@@ -13,8 +13,10 @@
     "test": "node -e \"console.log('user: no tests yet')\""
   },
   "dependencies": {
+    "@conference/business-modules": "workspace:*",
     "@conference/design-system": "workspace:*",
     "@conference/dsl-runtime": "workspace:*",
+    "@conference/module-compiler": "workspace:*",
     "@conference/render-governor": "workspace:*",
     "@conference/shared": "workspace:*",
     "@dcloudio/uni-app": "3.0.0-4080420251103001",
