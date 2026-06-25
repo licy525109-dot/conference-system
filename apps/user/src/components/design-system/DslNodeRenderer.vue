@@ -49,6 +49,24 @@
       <button class="ds-button" @click="emitAction">{{ buttonText || title || "查看" }}</button>
     </template>
 
+    <template v-else-if="isUserContextCard">
+      <view class="ds-user-card">
+        <image v-if="userAvatar" class="ds-user-card__avatar" :src="userAvatar" mode="aspectFill" />
+        <view v-else class="ds-user-card__avatar ds-user-card__avatar--text">{{ userName.slice(0, 1) || "我" }}</view>
+        <view class="ds-user-card__body">
+          <text class="ds-user-card__name">{{ userName }}</text>
+          <text class="ds-user-card__meta">{{ userPhone || "已登录小程序账号" }}</text>
+          <text class="ds-user-card__meta">{{ memberText }}</text>
+        </view>
+        <view class="ds-user-card__stats">
+          <view><text>{{ userStat("registrationCount") }}</text><text>报名</text></view>
+          <view><text>{{ userStat("pendingConferenceCount") }}</text><text>待参会</text></view>
+          <view><text>{{ userStat("orderCount") }}</text><text>订单</text></view>
+          <view><text>{{ userStat("couponCount") }}</text><text>券</text></view>
+        </view>
+      </view>
+    </template>
+
     <template v-else>
       <text v-if="title" class="ds-title">{{ title }}</text>
       <text v-if="description" class="ds-text">{{ description }}</text>
@@ -75,6 +93,17 @@ const emit = defineEmits<{
 }>();
 
 const nodeClass = computed(() => ["ds-node", `ds-node--${props.node.type}`]);
+const originalType = computed(() => readString(props.node.meta.originalType));
+const userContext = computed(() => (isRecord(props.node.props.userContext) ? props.node.props.userContext : {}));
+const isUserContextCard = computed(() => ["login-card", "user-profile-card", "membership-benefits", "my-order-list"].includes(originalType.value) && Object.keys(userContext.value).length > 0);
+const userName = computed(() => readString(userContext.value.nickname || userContext.value.wechatNickname || props.node.props.loggedInTitle) || "微信用户");
+const userPhone = computed(() => readString(userContext.value.phone));
+const userAvatar = computed(() => readString(userContext.value.avatarUrl || userContext.value.wechatAvatarUrl));
+const memberText = computed(() => {
+  const status = readString(userContext.value.memberStatus) || "普通用户";
+  const level = readString(userContext.value.memberLevel);
+  return level ? `${status} · ${level}` : status;
+});
 const title = computed(() => readString(props.node.props.title));
 const subtitle = computed(() => readString(props.node.props.subtitle));
 const description = computed(() => readString(props.node.props.description || props.node.props.text));
@@ -142,6 +171,11 @@ function itemMeta(item: unknown): string {
 
 function itemImage(item: unknown): string {
   return isRecord(item) ? readString(item.imageUrl || item.coverImageUrl || item.iconUrl) : "";
+}
+
+function userStat(key: string): string {
+  const value = Number(userContext.value[key]);
+  return Number.isFinite(value) ? String(value) : "0";
 }
 
 function readString(value: unknown): string {
@@ -266,6 +300,77 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   background: var(--cms-primary-soft);
   color: var(--cms-primary-strong);
   font-weight: 700;
+}
+
+.ds-user-card {
+  display: grid;
+  grid-template-columns: 96rpx minmax(0, 1fr);
+  gap: 20rpx;
+  align-items: center;
+}
+
+.ds-user-card__avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: var(--cms-gradient-cta);
+}
+
+.ds-user-card__avatar--text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cms-text-inverse);
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.ds-user-card__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.ds-user-card__name {
+  color: var(--cms-text-primary);
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 44rpx;
+}
+
+.ds-user-card__meta {
+  color: var(--cms-text-secondary);
+  font-size: 24rpx;
+  line-height: 34rpx;
+}
+
+.ds-user-card__stats {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.ds-user-card__stats view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  padding: 14rpx 8rpx;
+  border-radius: var(--cms-radius-md);
+  background: var(--cms-surface-soft);
+}
+
+.ds-user-card__stats text:first-child {
+  color: var(--cms-text-primary);
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.ds-user-card__stats text:last-child {
+  color: var(--cms-text-secondary);
+  font-size: 22rpx;
 }
 
 .ds-grid__title,

@@ -21,7 +21,7 @@
       tone="info"
     />
 
-    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" />
+    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" :user-context="cmsUserContext" />
 
     <view v-if="user" class="session-actions ui-card">
       <button class="ui-button-secondary" @click="openProfileEditor">编辑资料</button>
@@ -165,7 +165,8 @@ import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { createMobileAdminSession, getCheckinStaffMe } from "@/services/admin-mobile";
 import { clearAuthSession, ensureLogin, getStoredUser, type CurrentUser } from "@/services/auth";
 import { getMemberCenter, type CurrentMembership, type MemberBenefitGrant, type MemberLevel } from "@/services/member";
-import { getMyInvoiceProfile, saveMyInvoiceProfile } from "@/services/operations";
+import { getMyCoupons, getMyInvoiceProfile, getMyMallOrders, saveMyInvoiceProfile } from "@/services/operations";
+import { getMyRegistrations } from "@/services/registration";
 import { goHome } from "@/utils/navigation";
 
 const COMMON_PROFILE_STORAGE_KEY = "conference_user_common_profile";
@@ -176,6 +177,10 @@ const user = ref<CurrentUser | null>(getStoredUser());
 const membership = ref<CurrentMembership | null>(null);
 const levels = ref<MemberLevel[]>([]);
 const grants = ref<MemberBenefitGrant[]>([]);
+const registrationCount = ref(0);
+const pendingConferenceCount = ref(0);
+const mallOrderCount = ref(0);
+const couponCount = ref(0);
 const cmsPage = ref<PublishedPage | null>(null);
 const purchaseMessage = ref("会员购买支付暂未开放，可联系会务组或等待后台授予。");
 const hasAdminAccess = ref(false);
@@ -190,6 +195,17 @@ const profileForm = ref({
   invoiceEmail: ""
 });
 const displayName = computed(() => user.value?.wechatNickname || user.value?.nickname || "微信用户");
+const cmsUserContext = computed(() => ({
+  avatarUrl: user.value?.wechatAvatarUrl || "",
+  nickname: displayName.value,
+  phone: user.value?.phone || "",
+  memberStatus: membership.value ? statusText(membership.value.status) : "普通用户",
+  memberLevel: membership.value?.level.name || "普通用户",
+  registrationCount: registrationCount.value,
+  pendingConferenceCount: pendingConferenceCount.value,
+  orderCount: mallOrderCount.value,
+  couponCount: couponCount.value
+}));
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("member-center");
 const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.dsl.dsl.nodes.length));
 
@@ -212,10 +228,20 @@ async function load() {
   try {
     await ensureLogin();
     user.value = getStoredUser();
-    const [data, page] = await Promise.all([getMemberCenter(), getPublishedPage("member-center")]);
+    const [data, page, registrations, mallOrders, coupons] = await Promise.all([
+      getMemberCenter(),
+      getPublishedPage("member-center"),
+      getMyRegistrations().catch(() => []),
+      getMyMallOrders().catch(() => ({ items: [] })),
+      getMyCoupons().catch(() => ({ items: [] }))
+    ]);
     levels.value = data.levels;
     membership.value = data.membership;
     grants.value = data.grants;
+    registrationCount.value = registrations.length;
+    pendingConferenceCount.value = registrations.filter((item) => item.status !== "CANCELLED").length;
+    mallOrderCount.value = mallOrders.items.length;
+    couponCount.value = coupons.items.length;
     cmsPage.value = page;
     purchaseMessage.value = data.purchase.message;
   } catch (err) {

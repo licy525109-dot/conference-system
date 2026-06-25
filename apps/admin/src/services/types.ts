@@ -618,6 +618,14 @@ export interface MaterialAsset {
 
 export type CmsComponentSupportStatus = "supported" | "basic" | "unsupported" | "planned";
 
+export interface CmsComponent {
+  id: string;
+  type: string;
+  enabled: boolean;
+  sortOrder: number;
+  config: Record<string, unknown>;
+}
+
 export interface ComponentPreset {
   id: string;
   type: string;
@@ -638,6 +646,7 @@ export interface PageVersionSummary {
   versionNo: number;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED" | string;
   title: string;
+  componentCount?: number;
   nodeCount: number;
   publishedAt: string | null;
   createdAt: string;
@@ -667,7 +676,7 @@ export interface PageVersion {
   versionNo: number;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED" | string;
   title: string;
-  components?: never;
+  components?: CmsComponent[];
   dsl?: {
     schemaVersion: "p9";
     page: string;
@@ -721,6 +730,7 @@ export interface PageLibraryTemplate {
     versionNo: number;
     status: "DRAFT" | "PUBLISHED" | "ARCHIVED" | string;
     title: string;
+    components?: CmsComponent[];
     dsl?: {
       schemaVersion: "p9";
       page: string;
