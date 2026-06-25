@@ -10,7 +10,8 @@ import {
   SYSTEM_PAGE_LIBRARY_TEMPLATES,
   defaultPageComponents
 } from "../cms/cms-defaults";
-import { assertCmsPresetsArePublishable, assertCmsPublishable, buildCmsPublishCheck } from "../cms/cms-component-support";
+import { assertCmsPresetsArePublishable } from "../cms/cms-component-support";
+import { assertPageDsl, countDslNodes, pageComponentsToDsl, type PageDslForApi } from "../cms/cms-dsl";
 import { ok } from "../cms/cms.service";
 import { CurrentAdmin } from "./current-admin";
 
@@ -60,7 +61,7 @@ export class AdminCmsService {
     const pageType = readOptionalString(body, "pageType") ?? inferPageType(pageKey);
     const binding = await this.normalizePageBinding(pageType, body);
     const templateVersion = await this.loadPageLibraryTemplateVersion(readOptionalString(body, "templateId"));
-    const components = parseComponents(body.components ?? templateVersion?.components ?? defaultPageComponents(defaultComponentPageKey(pageType, pageKey)));
+    const dsl = parsePageDslInput(body.dsl ?? templateVersion?.dsl ?? defaultPageComponents(defaultComponentPageKey(pageType, pageKey)), pageKey);
     const bodyThemeJson = typeof body.themeJson === "undefined" ? null : readNullableJsonObject(body.themeJson);
     const themeJson = cloneTemplateThemeForPage(templateVersion?.themeJson ?? bodyThemeJson, title);
     const template = await catchUniqueConstraint(
@@ -78,7 +79,7 @@ export class AdminCmsService {
               versionNo: 1,
               status: "DRAFT",
               title,
-              components,
+              components: dsl as unknown as Prisma.InputJsonObject,
               ...(themeJson ? { themeJson } : {}),
               createdBy: admin.id
             }
@@ -111,7 +112,7 @@ export class AdminCmsService {
     const title = readRequiredString(body, "title");
     const description = readOptionalString(body, "description");
     const category = readOptionalString(body, "category") ?? "自定义模板";
-    const components = parseComponents(body.components ?? defaultPageComponents("home"));
+    const dsl = parsePageDslInput(body.dsl ?? defaultPageComponents("home"), `${PAGE_LIBRARY_PREFIX}${slug}`);
     const templateThemeJson = typeof body.themeJson === "undefined" ? {} : readNullableJsonObject(body.themeJson) ?? {};
     const themeJson = attachTemplateMeta(templateThemeJson, category, description);
     const created = await catchUniqueConstraint(
@@ -132,7 +133,7 @@ export class AdminCmsService {
             versionNo: 1,
             status: "PUBLISHED",
             title,
-            components,
+            components: dsl as unknown as Prisma.InputJsonObject,
             themeJson,
             createdBy: admin.id,
             publishedAt: new Date()
@@ -238,6 +239,7 @@ export class AdminCmsService {
 
   async updatePageVersion(id: string, input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
+    rejectLegacyComponentsInput(body);
     const existing = await this.prisma.pageVersion.findUnique({
       where: { id },
       select: { id: true, status: true, templateId: true, title: true, components: true, themeJson: true }
@@ -253,7 +255,7 @@ export class AdminCmsService {
           versionNo: nextVersionNo,
           status: "DRAFT",
           title: typeof body.title !== "undefined" ? readRequiredString(body, "title") : existing.title,
-          components: typeof body.components !== "undefined" ? parseComponents(body.components) : parseComponents(existing.components),
+          components: parsePageDslInput(body.dsl ?? existing.components, "cms") as unknown as Prisma.InputJsonObject,
           themeJson:
             typeof body.themeJson !== "undefined"
               ? readNullableJsonObject(body.themeJson)
@@ -276,7 +278,7 @@ export class AdminCmsService {
       where: { id },
       data: {
         ...(typeof body.title !== "undefined" ? { title: readRequiredString(body, "title") } : {}),
-        ...(typeof body.components !== "undefined" ? { components: parseComponents(body.components) } : {}),
+        ...(typeof body.dsl !== "undefined" ? { components: parsePageDslInput(body.dsl, "cms") as unknown as Prisma.InputJsonObject } : {}),
         ...(typeof body.themeJson !== "undefined" ? { themeJson: readNullableJsonObject(body.themeJson) } : {}),
         createdBy: admin.id
       },
@@ -297,8 +299,7 @@ export class AdminCmsService {
     if (!existing) {
       throw new NotFoundException("Page version not found");
     }
-    const publishReport = assertCmsPublishable(existing.components, { confirmBasic: readOptionalBoolean(body, "confirmBasic") ?? false });
-    const components = parseComponents(existing.components);
+    const dsl = parsePageDslInput(existing.components, "cms");
     const themeJson = readPlainObject(existing.themeJson);
     const latestVersion = await this.prisma.pageVersion.findFirst({
       where: { templateId: existing.templateId },
@@ -323,7 +324,7 @@ export class AdminCmsService {
           versionNo: publishVersionNo,
           status: "PUBLISHED",
           title: existing.title,
-          components,
+          components: dsl as unknown as Prisma.InputJsonObject,
           themeJson: themeJson ?? undefined,
           createdBy: admin.id,
           publishedAt
@@ -336,7 +337,7 @@ export class AdminCmsService {
           versionNo: publishVersionNo + 1,
           status: "DRAFT",
           title: existing.title,
-          components,
+          components: dsl as unknown as Prisma.InputJsonObject,
           themeJson: themeJson ?? undefined,
           createdBy: admin.id
         },
@@ -362,7 +363,7 @@ export class AdminCmsService {
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "PageVersion", id, "Publish page version", {
       templateId: existing.templateId,
-      publishReport: publishReport as unknown as Prisma.InputJsonValue
+      publishReport: { schemaVersion: dsl.schemaVersion, nodeCount: dsl.dsl.nodes.length } as unknown as Prisma.InputJsonValue
     });
     return ok(formatPageVersion(draft));
   }
@@ -400,7 +401,7 @@ export class AdminCmsService {
           versionNo: nextVersionNo,
           status: "PUBLISHED",
           title: source.title,
-          components: parseComponents(source.components),
+          components: parsePageDslInput(source.components, "cms") as unknown as Prisma.InputJsonObject,
           themeJson: source.themeJson ?? undefined,
           createdBy: admin.id,
           publishedAt
@@ -645,7 +646,7 @@ export class AdminCmsService {
             versionNo: 1,
             status: "DRAFT",
             title: page.title,
-            components: defaultPageComponents(page.pageKey)
+            components: parsePageDslInput(defaultPageComponents(page.pageKey), page.pageKey) as unknown as Prisma.InputJsonObject
           }
         });
       }
@@ -676,7 +677,7 @@ export class AdminCmsService {
             versionNo: 1,
             status: "PUBLISHED",
             title: template.title,
-            components: parseComponents(template.components),
+            components: parsePageDslInput(template.components, template.pageKey) as unknown as Prisma.InputJsonObject,
             themeJson: template.themeJson,
             publishedAt: new Date()
           },
@@ -715,7 +716,8 @@ export class AdminCmsService {
       },
       select: {
         id: true,
-        publishedVersionId: true
+        publishedVersionId: true,
+        pageKey: true
       }
     });
     if (!template) {
@@ -735,7 +737,7 @@ export class AdminCmsService {
       throw new NotFoundException("Page library template version not found");
     }
     return {
-      components: Array.isArray(version.components) ? version.components : [],
+      dsl: pageComponentsToDsl(version.components, template.pageKey),
       themeJson: readPlainObject(version.themeJson)
     };
   }
@@ -875,7 +877,7 @@ function formatPageTemplate(template: Prisma.PageTemplateGetPayload<{ select: ty
       versionNo: version.versionNo,
       status: version.status,
       title: version.title,
-      componentCount: Array.isArray(version.components) ? version.components.length : 0,
+      nodeCount: countDslNodes(version.components),
       publishedAt: version.publishedAt?.toISOString() ?? null,
       createdAt: version.createdAt.toISOString(),
       updatedAt: version.updatedAt.toISOString()
@@ -886,12 +888,20 @@ function formatPageTemplate(template: Prisma.PageTemplateGetPayload<{ select: ty
 }
 
 function formatPageVersion(version: Prisma.PageVersionGetPayload<{ select: typeof versionSelect }>) {
-  const components = Array.isArray(version.components) ? version.components : [];
+  const dsl = pageComponentsToDsl(version.components, version.template?.pageKey ?? "cms");
   return {
     ...version,
-    components,
+    components: undefined,
+    dsl,
     themeJson: readPlainObject(version.themeJson),
-    publishCheck: buildCmsPublishCheck(components),
+    publishCheck: {
+      supportedCount: dsl.dsl.nodes.length,
+      basicCount: 0,
+      blockingCount: 0,
+      basicComponents: [],
+      blockingComponents: [],
+      suggestions: []
+    },
     publishedAt: version.publishedAt?.toISOString() ?? null,
     createdAt: version.createdAt.toISOString(),
     updatedAt: version.updatedAt.toISOString()
@@ -930,6 +940,7 @@ function formatPageLibraryTemplate(template: Prisma.PageTemplateGetPayload<{ sel
   const latest = template.versions[0];
   const themeJson = readPlainObject(latest?.themeJson);
   const meta = readTemplateMeta(themeJson);
+  const dsl = latest ? pageComponentsToDsl(latest.components, template.pageKey) : null;
   return {
     id: template.id,
     pageKey: template.pageKey,
@@ -944,7 +955,7 @@ function formatPageLibraryTemplate(template: Prisma.PageTemplateGetPayload<{ sel
           versionNo: latest.versionNo,
           status: latest.status,
           title: latest.title,
-          components: Array.isArray(latest.components) ? latest.components : [],
+          dsl,
           themeJson,
           publishedAt: latest.publishedAt?.toISOString() ?? null,
           createdAt: latest.createdAt.toISOString(),
@@ -975,6 +986,24 @@ function formatTabbar(config: Prisma.TabBarConfigGetPayload<{ include: { items: 
     createdAt: config?.createdAt.toISOString() ?? null,
     updatedAt: config?.updatedAt.toISOString() ?? null
   };
+}
+
+function parsePageDslInput(value: unknown, fallbackPage: string): PageDslForApi {
+  try {
+    if (Array.isArray(value)) {
+      return pageComponentsToDsl(parseComponents(value), fallbackPage);
+    }
+    return assertPageDsl(value, fallbackPage);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "DSL 配置不合法";
+    throw new BadRequestException(message);
+  }
+}
+
+function rejectLegacyComponentsInput(body: Record<string, unknown>): void {
+  if (typeof body.components !== "undefined") {
+    throw new BadRequestException("CMS 已锁定为 DSL-only，禁止提交 components 编辑结构");
+  }
 }
 
 function parseComponents(value: unknown): Prisma.InputJsonArray {

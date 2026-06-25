@@ -63,7 +63,7 @@
         </view>
         <PageRenderer
           v-if="cmsPage"
-          :components="cmsPage.version.components"
+          :dsl="cmsPage.version.dsl"
           :theme="theme"
         />
         <view v-if="requiresReceiver" class="receiver-card ui-card">

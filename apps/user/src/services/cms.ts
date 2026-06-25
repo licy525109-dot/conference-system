@@ -1,12 +1,5 @@
 import { request } from "./request";
-
-export interface CmsComponent {
-  id: string;
-  type: string;
-  enabled: boolean;
-  sortOrder: number;
-  config: Record<string, unknown>;
-}
+import type { PageDsl } from "@conference/dsl-runtime";
 
 export interface PublishedPage {
   id: string;
@@ -21,7 +14,7 @@ export interface PublishedPage {
     id: string;
     versionNo: number;
     title: string;
-    components: CmsComponent[];
+    dsl: PageDsl;
     themeJson: Record<string, unknown> | null;
     publishedAt: string | null;
     updatedAt: string;
@@ -152,7 +145,7 @@ export async function getPublishedPage(pageKey: string, params: { conferenceId?:
       .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
       .join("&");
     const cacheKey = query ? `cms-page:${pageKey}:${query}` : `cms-page:${pageKey}`;
-    const page = await request<PublishedPage>(`/pages/${encodeURIComponent(pageKey)}/published${query ? `?${query}` : ""}`, { auth: false });
+    const page = normalizePublishedPage(await request<PublishedPage>(`/pages/${encodeURIComponent(pageKey)}/published${query ? `?${query}` : ""}`, { auth: false }), pageKey);
     uni.setStorageSync(cacheKey, page);
     return page;
   } catch (error) {
@@ -162,8 +155,23 @@ export async function getPublishedPage(pageKey: string, params: { conferenceId?:
       .join("&");
     const scoped = query ? (uni.getStorageSync(`cms-page:${pageKey}:${query}`) as PublishedPage | "") : "";
     const fallback = uni.getStorageSync(`cms-page:${pageKey}`) as PublishedPage | "";
-    return scoped || fallback || null;
+    return normalizePublishedPage(scoped || fallback || null, pageKey);
   }
+}
+
+export function normalizePublishedPage(page: PublishedPage | null | undefined, fallbackPageKey: string): PublishedPage | null {
+  if (!page) return null;
+  const rawDsl = page.version.dsl;
+  const dsl: PageDsl = rawDsl?.schemaVersion === "p9" && rawDsl.dsl && Array.isArray(rawDsl.dsl.nodes)
+    ? rawDsl
+    : { schemaVersion: "p9", page: page.pageKey || fallbackPageKey, dsl: { nodes: [] } };
+  return {
+    ...page,
+    version: {
+      ...page.version,
+      dsl
+    }
+  };
 }
 
 export function getPageMeta(page: PublishedPage | null | undefined): PageMeta {

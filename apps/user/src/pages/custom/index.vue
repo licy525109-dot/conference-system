@@ -21,7 +21,7 @@
           :description="extensionNotice.description"
           :tone="extensionNotice.tone"
         />
-        <PageRenderer :components="cmsPage.version.components" :theme="theme" :conferences="conferences" @open-conference="goDetail" />
+        <PageRenderer :dsl="cmsPage.version.dsl" :theme="theme" :conferences="conferences" @open-conference="goDetail" />
       </template>
       <EmptyState v-else title="页面尚未发布" description="该页面内容暂未开放，请返回首页查看会议。" mark="页" action-text="返回首页" @action="goHome" />
     </view>

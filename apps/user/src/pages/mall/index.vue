@@ -20,7 +20,7 @@
       tone="info"
     />
 
-    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" />
 
     <view v-if="!hasCmsContent" class="toolbar ui-card">
       <input v-model="keyword" class="search" placeholder="搜索商品" @confirm="loadProducts" />
@@ -88,7 +88,7 @@ const loading = ref(false);
 const error = ref("");
 const cmsPage = ref<PublishedPage | null>(null);
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("mall");
-const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.components?.length));
+const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.dsl.dsl.nodes.length));
 
 onMounted(async () => {
   await Promise.all([refreshTheme(), loadCmsPage(), loadCategories(), loadProducts()]);

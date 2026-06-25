@@ -12,7 +12,7 @@
       <button class="ui-button-secondary ui-button-compact" @click="loadRegistrations">刷新</button>
     </view>
 
-    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" />
 
     <LoadingState v-if="loading" title="加载报名记录中" description="正在同步你的报名凭证。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="loadRegistrations" />

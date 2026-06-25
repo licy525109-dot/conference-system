@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { pageComponentsToDsl } from "./cms-dsl";
 import { DEFAULT_TABBAR_ITEMS, DEFAULT_THEME_CONFIG } from "./cms-defaults";
 
 @Injectable()
@@ -46,7 +47,7 @@ export class CmsService {
         id: version.id,
         versionNo: version.versionNo,
         title: version.title,
-        components: normalizeJsonArray(version.components),
+        dsl: pageComponentsToDsl(version.components, template.pageKey),
         themeJson: normalizeJsonObject(version.themeJson),
         publishedAt: version.publishedAt?.toISOString() ?? null,
         updatedAt: version.updatedAt.toISOString()
@@ -224,10 +225,6 @@ export function ok<TData>(data: TData) {
     message: "ok" as const,
     data
   };
-}
-
-function normalizeJsonArray(value: Prisma.JsonValue): Prisma.JsonArray {
-  return Array.isArray(value) ? value : [];
 }
 
 function normalizeJsonObject(value: Prisma.JsonValue | null | undefined): Prisma.JsonObject | null {

@@ -34,11 +34,13 @@ describe("CmsService public fallbacks", () => {
     const service = new CmsService(createPublicPrismaMock({ activeTheme: null, tabbar: null }));
 
     const response = await service.getPublishedPage("home");
-    const firstComponent = response.data.version.components[0] as { type?: string } | undefined;
+    const firstNode = response.data.version.dsl.dsl.nodes[0];
 
     assert.equal(response.data.pageKey, "home");
     assert.equal(response.data.version.versionNo, 2);
-    assert.equal(firstComponent?.type, "hero");
+    assert.equal(response.data.version.dsl.schemaVersion, "p9");
+    assert.equal(Array.isArray(response.data.version.dsl.dsl.nodes), true);
+    assert.equal(firstNode?.type, "ds-banner");
   });
 
   it("matches specific conference pages by business page type", async () => {
@@ -84,7 +86,7 @@ describe("AdminCmsService validation", () => {
     assert.deepEqual(blocked, []);
   });
 
-  it("rejects dangerous HTML in draft component config", async () => {
+  it("rejects dangerous HTML in draft DSL props", async () => {
     const service = new AdminCmsService(createAdminValidationPrismaMock("DRAFT"));
 
     await assert.rejects(
@@ -92,14 +94,36 @@ describe("AdminCmsService validation", () => {
         service.updatePageVersion(
           "version-1",
           {
-            components: [
-              {
-                id: "html-1",
-                type: "safe-html",
-                enabled: true,
-                config: { html: '<img src="x" onerror="alert(1)" />' }
+            dsl: {
+              schemaVersion: "p9",
+              page: "cms",
+              dsl: {
+                nodes: [
+                  {
+                    id: "html-1",
+                    type: "ds-section",
+                    enabled: true,
+                    props: { html: '<img src="x" onerror="alert(1)" />' }
+                  }
+                ]
               }
-            ]
+            }
+          },
+          admin
+        ),
+      BadRequestException
+    );
+  });
+
+  it("rejects legacy components as CMS editor input", async () => {
+    const service = new AdminCmsService(createAdminValidationPrismaMock("DRAFT"));
+
+    await assert.rejects(
+      () =>
+        service.updatePageVersion(
+          "version-1",
+          {
+            components: [{ id: "hero-1", type: "hero", enabled: true, config: { title: "首页" } }]
           },
           admin
         ),

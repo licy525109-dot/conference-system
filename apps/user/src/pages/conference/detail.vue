@@ -70,7 +70,7 @@
         <FormSection v-if="isModuleVisible('guide')" :title="displaySettings.guideTitle" description="以下内容由主办方维护，报名前请确认参会安排。">
           <PageRenderer
             v-if="cmsPage"
-            :components="cmsPage.version.components"
+            :dsl="cmsPage.version.dsl"
             :theme="theme"
             :conference="conference"
             suppress-registration-cta
