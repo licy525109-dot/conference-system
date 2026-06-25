@@ -23,7 +23,7 @@
 
       <PageRenderer
         v-if="cmsPage"
-        :components="cmsPage.version.components"
+        :dsl="cmsPage.version.dsl"
         :theme="theme"
         :conference="conference"
         suppress-registration-cta

@@ -3,7 +3,7 @@
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
-    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" />
 
     <view class="topbar ui-card">
       <text class="title">我的商城订单</text>

@@ -17,6 +17,13 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir,
+    resolve: {
+      alias: {
+        "@conference/design-system": resolve(repoRoot, "design-system/index.ts"),
+        "@conference/dsl-runtime": resolve(repoRoot, "runtime/src/index.ts"),
+        "@conference/render-governor": resolve(repoRoot, "render-governor/src/index.ts")
+      }
+    },
     plugins: [vue()],
     server: {
       port: 5174

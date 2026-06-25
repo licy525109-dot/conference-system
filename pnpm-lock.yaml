@@ -20,6 +20,15 @@ importers:
 
   apps/admin:
     dependencies:
+      '@conference/design-system':
+        specifier: workspace:*
+        version: link:../../design-system
+      '@conference/dsl-runtime':
+        specifier: workspace:*
+        version: link:../../runtime
+      '@conference/render-governor':
+        specifier: workspace:*
+        version: link:../../render-governor
       '@conference/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -45,6 +54,15 @@ importers:
 
   apps/user:
     dependencies:
+      '@conference/design-system':
+        specifier: workspace:*
+        version: link:../../design-system
+      '@conference/dsl-runtime':
+        specifier: workspace:*
+        version: link:../../runtime
+      '@conference/render-governor':
+        specifier: workspace:*
+        version: link:../../render-governor
       '@conference/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -92,8 +110,43 @@ importers:
         specifier: ^1.0.24
         version: 1.8.27(typescript@4.9.5)
 
+  design-system:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   packages/shared:
     devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  render-governor:
+    dependencies:
+      '@conference/design-system':
+        specifier: workspace:*
+        version: link:../design-system
+      '@conference/dsl-runtime':
+        specifier: workspace:*
+        version: link:../runtime
+    devDependencies:
+      tsx:
+        specifier: ^4.20.6
+        version: 4.22.4
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  runtime:
+    dependencies:
+      '@conference/design-system':
+        specifier: workspace:*
+        version: link:../design-system
+    devDependencies:
+      tsx:
+        specifier: ^4.20.6
+        version: 4.22.4
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

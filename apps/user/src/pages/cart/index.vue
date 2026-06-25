@@ -20,7 +20,7 @@
       tone="info"
     />
 
-    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" />
 
     <LoadingState v-if="loading" title="加载购物车中" description="正在同步会议报名项和商品项。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="loadCart" @secondary="goHome" />
@@ -203,7 +203,7 @@ const selectedProductIds = ref<string[]>([]);
 const isEmpty = computed(() => registrationItems.value.length === 0 && productItems.value.length === 0);
 const hasPhysicalProduct = computed(() => productItems.value.some((item) => !["VIRTUAL", "SERVICE"].includes(String(item.sku.product.productType || "PHYSICAL"))));
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("cart");
-const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.components?.length));
+const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.dsl.dsl.nodes.length));
 const selectedCount = computed(() => selectedRegistrationIds.value.length + selectedProductIds.value.length);
 const selectedTotalCent = computed(() => {
   const registrations = registrationItems.value.filter((item) => selectedRegistrationIds.value.includes(item.id)).reduce((sum, item) => sum + item.subtotalCent, 0);

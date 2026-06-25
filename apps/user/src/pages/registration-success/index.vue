@@ -102,7 +102,7 @@ import QrCodeMatrix from "@/components/QrCodeMatrix.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
-import { applyPageTitle, getPublishedPage, type CmsComponent, type PublishedPage } from "@/services/cms";
+import { applyPageTitle, getPublishedPage, type PublishedPage } from "@/services/cms";
 import { getOrderRegistrationCredential, getRegistrationCredential } from "@/services/registration";
 import type { RegistrationCredential } from "@/services/registration-types";
 import { formatDateTime } from "@/utils/date";
@@ -130,22 +130,22 @@ const loading = ref(false);
 const error = ref("");
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("registration-success");
 
-const FALLBACK_CREDENTIAL_COMPONENTS: CmsComponent[] = [
-  { id: "credential-header-default", type: "credential-header", enabled: true, sortOrder: 0, config: { title: "报名成功", statusText: "报名成功" } },
-  { id: "credential-qr-default", type: "credential-qr", enabled: true, sortOrder: 10, config: { title: "电子报名凭证", description: "请妥善保存报名凭证，工作人员可扫码完成签到核销。二维码不包含手机号、姓名等个人信息。" } },
-  { id: "credential-conference-default", type: "credential-conference-info", enabled: true, sortOrder: 20, config: { title: "会议信息" } },
-  { id: "credential-attendee-default", type: "credential-attendee-info", enabled: true, sortOrder: 30, config: { title: "参会人信息", showWechatUser: true } },
-  { id: "credential-payment-default", type: "credential-payment-info", enabled: true, sortOrder: 40, config: { title: "支付信息" } },
-  { id: "credential-form-default", type: "credential-form-summary", enabled: true, sortOrder: 50, config: { title: "报名表单摘要", emptyText: "暂无补充报名字段" } },
-  { id: "credential-checkin-default", type: "credential-checkin-info", enabled: true, sortOrder: 60, config: { title: "签到信息" } },
-  { id: "credential-actions-default", type: "credential-actions", enabled: true, sortOrder: 70, config: { checkinText: "去签到", groupText: "加入会议客户群", agendaText: "查看议程", guideText: "参会指南", contactText: "联系客服", calendarText: "添加到日历" } }
-];
+interface CredentialSection {
+  id: string;
+  type: string;
+  config: Record<string, unknown>;
+}
 
-const credentialComponents = computed(() => {
-  const published = cmsPage.value?.version.components.filter((item) => item.type.startsWith("credential-")) ?? [];
-  const source = published.length > 0 ? published : FALLBACK_CREDENTIAL_COMPONENTS;
-  return source.filter((item) => item.enabled).sort((a, b) => a.sortOrder - b.sortOrder);
-});
+const credentialComponents = computed<CredentialSection[]>(() => [
+  { id: "credential-header-default", type: "credential-header", config: { title: "报名成功", statusText: "报名成功" } },
+  { id: "credential-qr-default", type: "credential-qr", config: { title: "电子报名凭证", description: "请妥善保存报名凭证，工作人员可扫码完成签到核销。二维码不包含手机号、姓名等个人信息。" } },
+  { id: "credential-conference-default", type: "credential-conference-info", config: { title: "会议信息" } },
+  { id: "credential-attendee-default", type: "credential-attendee-info", config: { title: "参会人信息", showWechatUser: true } },
+  { id: "credential-payment-default", type: "credential-payment-info", config: { title: "支付信息" } },
+  { id: "credential-form-default", type: "credential-form-summary", config: { title: "报名表单摘要", emptyText: "暂无补充报名字段" } },
+  { id: "credential-checkin-default", type: "credential-checkin-info", config: { title: "签到信息" } },
+  { id: "credential-actions-default", type: "credential-actions", config: { checkinText: "去签到", groupText: "加入会议客户群", agendaText: "查看议程", guideText: "参会指南", contactText: "联系客服", calendarText: "添加到日历" } }
+]);
 
 onLoad((query) => {
   registrationId.value = String(query?.registrationId || "");
@@ -221,21 +221,21 @@ function displayText(value: string | null | undefined) {
   return typeof value === "string" && value.trim() ? value.trim() : "未填写";
 }
 
-function stringConfig(component: CmsComponent, key: string): string {
+function stringConfig(component: CredentialSection, key: string): string {
   const value = component.config?.[key];
   return typeof value === "string" ? value : "";
 }
 
-function booleanConfig(component: CmsComponent, key: string, fallback = false): boolean {
+function booleanConfig(component: CredentialSection, key: string, fallback = false): boolean {
   const value = component.config?.[key];
   return typeof value === "boolean" ? value : fallback;
 }
 
-function componentTitle(component: CmsComponent, fallback: string): string {
+function componentTitle(component: CredentialSection, fallback: string): string {
   return stringConfig(component, "title") || fallback;
 }
 
-function credentialBlockClass(component: CmsComponent) {
+function credentialBlockClass(component: CredentialSection) {
   const style = stringConfig(component, "cardStyle") || "standard";
   const base = [`is-${style}`];
   if (component.type === "credential-header") return ["success-band", ...base];

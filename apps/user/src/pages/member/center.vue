@@ -21,7 +21,7 @@
       tone="info"
     />
 
-    <PageRenderer v-if="cmsPage" :components="cmsPage.version.components" :theme="theme" />
+    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" />
 
     <view v-if="user" class="session-actions ui-card">
       <button class="ui-button-secondary" @click="openProfileEditor">编辑资料</button>
@@ -191,7 +191,7 @@ const profileForm = ref({
 });
 const displayName = computed(() => user.value?.wechatNickname || user.value?.nickname || "微信用户");
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("member-center");
-const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.components?.length));
+const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.dsl.dsl.nodes.length));
 
 onMounted(() => {
   uni.$on("wechat-profile:updated", handleProfileUpdated);

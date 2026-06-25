@@ -18,7 +18,7 @@
 
       <PageRenderer
         v-else-if="cmsPage"
-        :components="cmsPage.version.components"
+        :dsl="cmsPage.version.dsl"
         :theme="theme"
         :conferences="conferences"
         @open-conference="goDetail"

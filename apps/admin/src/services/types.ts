@@ -616,14 +616,6 @@ export interface MaterialAsset {
   };
 }
 
-export interface CmsComponent {
-  id: string;
-  type: string;
-  enabled: boolean;
-  sortOrder: number;
-  config: Record<string, unknown>;
-}
-
 export type CmsComponentSupportStatus = "supported" | "basic" | "unsupported" | "planned";
 
 export interface ComponentPreset {
@@ -646,7 +638,7 @@ export interface PageVersionSummary {
   versionNo: number;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED" | string;
   title: string;
-  componentCount: number;
+  nodeCount: number;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -675,7 +667,14 @@ export interface PageVersion {
   versionNo: number;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED" | string;
   title: string;
-  components: CmsComponent[];
+  components?: never;
+  dsl?: {
+    schemaVersion: "p9";
+    page: string;
+    dsl: {
+      nodes: DslEditorNode[];
+    };
+  };
   themeJson: Record<string, unknown> | null;
   publishedAt: string | null;
   createdAt: string;
@@ -721,7 +720,13 @@ export interface PageLibraryTemplate {
     versionNo: number;
     status: "DRAFT" | "PUBLISHED" | "ARCHIVED" | string;
     title: string;
-    components: CmsComponent[];
+    dsl?: {
+      schemaVersion: "p9";
+      page: string;
+      dsl: {
+        nodes: DslEditorNode[];
+      };
+    };
     themeJson: Record<string, unknown> | null;
     publishedAt: string | null;
     createdAt: string;
@@ -729,6 +734,18 @@ export interface PageLibraryTemplate {
   } | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DslEditorNode {
+  id: string;
+  type: string;
+  enabled?: boolean;
+  sortOrder?: number;
+  props?: Record<string, unknown>;
+  style?: Record<string, unknown>;
+  action?: Record<string, unknown>;
+  children?: DslEditorNode[];
+  meta?: Record<string, unknown>;
 }
 
 export interface ThemeConfig {
