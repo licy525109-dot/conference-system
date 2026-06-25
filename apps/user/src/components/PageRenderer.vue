@@ -29,6 +29,7 @@ const props = defineProps<{
   conferences?: ConferenceListItem[];
   conference?: ConferenceDetail | null;
   products?: Product[];
+  userContext?: Record<string, unknown> | null;
   suppressRegistrationCta?: boolean;
 }>();
 
@@ -56,7 +57,8 @@ const runtimeContext = computed(() =>
     data: {
       conferences: props.conferences ?? [],
       conference: props.conference ?? null,
-      products: props.products ?? []
+      products: props.products ?? [],
+      userContext: props.userContext ?? null
     }
   })
 );
@@ -65,7 +67,7 @@ const governedResult = computed(() => governRender(props.dsl, { context: runtime
 const governorWarnings = computed<RenderGovernorWarning[]>(() => governedResult.value.warnings);
 const renderTree = computed(() => ({
   ...governedResult.value.tree,
-  nodes: props.suppressRegistrationCta ? governedResult.value.tree.nodes.filter((node) => !isRegistrationNode(node)) : governedResult.value.tree.nodes
+  nodes: withRuntimeContext(props.suppressRegistrationCta ? governedResult.value.tree.nodes.filter((node) => !isRegistrationNode(node)) : governedResult.value.tree.nodes)
 }));
 const rootStyle = computed(() => ({
   ...createCmsThemeVars(props.theme)
@@ -74,6 +76,19 @@ const rootStyle = computed(() => ({
 function isRegistrationNode(node: ResolvedDslNode): boolean {
   const action = node.props.action;
   return node.type === "ds-button" && isRecord(action) && action.type === "registration";
+}
+
+function withRuntimeContext(nodes: ResolvedDslNode[]): ResolvedDslNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    props: shouldHydrateUserContext(node) ? { ...node.props, userContext: props.userContext ?? null } : node.props,
+    children: withRuntimeContext(node.children)
+  }));
+}
+
+function shouldHydrateUserContext(node: ResolvedDslNode): boolean {
+  const originalType = readString(node.meta.originalType);
+  return ["login-card", "user-profile-card", "membership-benefits", "my-order-list"].includes(originalType);
 }
 
 function handleAction(action: Record<string, unknown>): void {
