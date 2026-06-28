@@ -413,6 +413,19 @@
             title="业务数据仍来自会议、票种和报名接口"
             description="这里负责显示隐藏、标题文案、按钮文案和库存展示方式；会议名称、时间、地点、价格、库存和报名状态仍以真实业务数据为准。"
           />
+          <div class="business-display-toolbar">
+            <div class="business-display-stats">
+              <span><b>{{ businessDisplayStats.visible }}</b> 显示</span>
+              <span><b>{{ businessDisplayStats.hidden }}</b> 隐藏</span>
+              <span><b>{{ businessDisplayStats.total }}</b> 总模块</span>
+            </div>
+            <div class="business-display-actions">
+              <el-button size="small" plain @click="showAllBusinessModules">全部显示</el-button>
+              <el-button size="small" plain @click="hideOptionalBusinessModules">隐藏可选项</el-button>
+              <el-button size="small" plain @click="normalizeBusinessDisplayOrder">整理排序</el-button>
+              <el-button size="small" plain @click="resetBusinessDisplayForCurrentPage">恢复默认</el-button>
+            </div>
+          </div>
           <el-form label-position="top" class="business-display-form">
             <el-form-item label="底部报名按钮文案">
               <el-input v-model="businessDisplay.primaryButtonText" placeholder="立即报名" />
@@ -434,10 +447,17 @@
               </el-select>
             </el-form-item>
             <div class="business-module-list">
-              <div v-for="module in businessDisplay.modules" :key="module.key" class="business-module-card">
+              <div v-for="(module, moduleIndex) in businessDisplay.modules" :key="module.key" class="business-module-card">
                 <div class="business-module-card__head">
-                  <strong>{{ businessModuleLabel(module.key) }}</strong>
-                  <el-switch v-model="module.visible" active-text="显示" inactive-text="隐藏" />
+                  <span class="business-module-card__title">
+                    <strong>{{ businessModuleLabel(module.key) }}</strong>
+                    <small>{{ moduleIndex + 1 }} · {{ module.key }}</small>
+                  </span>
+                  <span class="business-module-card__ops">
+                    <el-switch v-model="module.visible" active-text="显示" inactive-text="隐藏" />
+                    <el-button size="small" :disabled="moduleIndex === 0" @click="moveBusinessDisplayModule(moduleIndex, -1)">上移</el-button>
+                    <el-button size="small" :disabled="moduleIndex === businessDisplay.modules.length - 1" @click="moveBusinessDisplayModule(moduleIndex, 1)">下移</el-button>
+                  </span>
                 </div>
                 <div class="business-module-card__guide">
                   <span><b>数据来源：</b>{{ businessModuleGuide(module.key).source }}</span>
@@ -453,6 +473,10 @@
                   :rows="2"
                   placeholder="模块说明或按钮文案，可留空使用真实数据兜底"
                 />
+                <div class="business-module-card__sort">
+                  <span>显示顺序</span>
+                  <el-input-number v-model="module.sort" size="small" :min="0" :step="10" controls-position="right" />
+                </div>
                 <el-select v-model="module.style" size="small" placeholder="模块样式">
                   <el-option label="卡片" value="card" />
                   <el-option label="紧凑" value="compact" />
@@ -486,6 +510,25 @@
                 </el-button>
                 <el-button size="small" plain @click="duplicateSelectedComponent">复制当前模块</el-button>
                 <el-button size="small" type="danger" plain @click="removeSelectedComponent">删除当前模块</el-button>
+              </div>
+            </div>
+            <div class="component-parity-panel">
+              <div class="component-parity-panel__head">
+                <span>
+                  <strong>{{ selectedComponentParityContract.title }}</strong>
+                  <small>{{ selectedComponentParityContract.summary }}</small>
+                </span>
+                <span class="support-badge" :class="supportStatusClass(selectedComponent.type)">{{ componentSupport(selectedComponent.type).label }}</span>
+              </div>
+              <div class="platform-contract-grid">
+                <span><b>后台预览</b>{{ selectedComponentParityContract.adminAdapter }}</span>
+                <span><b>H5</b>{{ selectedComponentParityContract.h5Adapter }}</span>
+                <span><b>小程序</b>{{ selectedComponentParityContract.miniappAdapter }}</span>
+              </div>
+              <div class="parity-rule-list">
+                <span v-for="rule in selectedComponentParityContract.rules" :key="rule.label">
+                  <b>{{ rule.label }}</b>{{ rule.detail }}
+                </span>
               </div>
             </div>
             <el-collapse v-model="expandedConfigGroupIds[selectedComponent.id]" class="config-group-collapse">
@@ -886,6 +929,30 @@
           <el-empty v-else description="从中间页面内容区选择一个组件，即可在这里编辑参数" />
         </section>
 
+        <section class="data-panel cms-panel inspector-panel acceptance-panel">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">发布验收</div>
+              <p class="page-subtitle">发布前按 DSL、跨端预览、业务固定模块和用户上下文做快速自检。</p>
+            </div>
+          </div>
+          <div class="acceptance-summary">
+            <span class="is-pass"><b>{{ acceptanceSummary.pass }}</b> 通过</span>
+            <span class="is-warn"><b>{{ acceptanceSummary.warn }}</b> 提醒</span>
+            <span class="is-error"><b>{{ acceptanceSummary.error }}</b> 阻断</span>
+          </div>
+          <div class="acceptance-list">
+            <div v-for="check in acceptanceChecks" :key="check.key" class="acceptance-check" :class="acceptanceCheckClass(check.status)">
+              <span class="acceptance-check__status">{{ acceptanceStatusLabel(check.status) }}</span>
+              <span class="acceptance-check__copy">
+                <strong>{{ check.title }}</strong>
+                <small>{{ check.description }}</small>
+                <em v-if="check.action">{{ check.action }}</em>
+              </span>
+            </div>
+          </div>
+        </section>
+
         <section v-if="editorMode === 'developer'" class="data-panel cms-panel inspector-panel developer-panel">
           <div class="library-head">
             <div>
@@ -1240,6 +1307,30 @@ interface CmsComponentSupportMeta {
   description: string;
 }
 
+type AcceptanceStatus = "pass" | "warn" | "error";
+
+interface AcceptanceCheck {
+  key: string;
+  title: string;
+  description: string;
+  status: AcceptanceStatus;
+  action?: string;
+}
+
+interface ComponentParityRuleView {
+  label: string;
+  detail: string;
+}
+
+interface ComponentParityContractView {
+  title: string;
+  summary: string;
+  adminAdapter: string;
+  h5Adapter: string;
+  miniappAdapter: string;
+  rules: ComponentParityRuleView[];
+}
+
 interface BusinessPreviewContextModel {
   kind: string;
   label: string;
@@ -1274,6 +1365,99 @@ const SAMPLE_USER_CONTEXT: PreviewUserContext = {
   pendingConferenceCount: 2,
   orderCount: 5,
   couponCount: 4
+};
+
+const DEFAULT_PARITY_RULES: ComponentParityRuleView[] = [
+  { label: "数据源", detail: "保存后写入 P9 DSL，并在 meta.editorComponents 保留高级装修源配置。" },
+  { label: "渲染路径", detail: "后台预览、H5 和小程序均按同一组件字段解释，用户端仍先经过 Render Governor 校验。" },
+  { label: "文案策略", detail: "运营删除标题或描述后，不在用户端自动补技术节点名。" }
+];
+
+const COMPONENT_PARITY_CONTRACTS: Record<string, ComponentParityContractView> = {
+  "fixed-business-template": {
+    title: "固定业务模板协议",
+    summary: "六类固定模板共享 templateKey、素材根路径、显隐开关和快捷入口字段。",
+    adminAdapter: "ComponentPreview 固定模板预览",
+    h5Adapter: "FixedBusinessTemplateRenderer H5",
+    miniappAdapter: "FixedBusinessTemplateRenderer MiniApp",
+    rules: [
+      { label: "模板类型", detail: "home、schedule、registration、mall、cart、member-center 三端一致识别。" },
+      { label: "素材路径", detail: "assetRoot 与 heroImageUrl 使用同一字段，未配置时才使用模板默认素材。" },
+      { label: "模块显隐", detail: "noticeBar、loginCard、quickGrid 等开关必须在预览和真机同步生效。" }
+    ]
+  },
+  "hero-banner": {
+    title: "Hero Banner 跨端协议",
+    summary: "主视觉图片、标题、描述、遮罩、按钮和图片模式三端同源。",
+    adminAdapter: "ComponentPreview hero-banner",
+    h5Adapter: "CmsVisualRenderer hero-banner",
+    miniappAdapter: "CmsVisualRenderer hero-banner",
+    rules: [
+      { label: "图片模式", detail: "完整显示、等比裁切、宽度铺满必须使用同一个 imageMode。" },
+      { label: "文案显隐", detail: "标题、描述、按钮为空时三端都不显示默认技术文案。" },
+      { label: "高度策略", detail: "height、radius、imageOnly 与遮罩开关保持一致。" }
+    ]
+  },
+  "quick-icon-grid": {
+    title: "快捷入口宫格协议",
+    summary: "入口列表、列数、图标、卡片样式和跳转动作三端一致。",
+    adminAdapter: "ComponentPreview entry-grid",
+    h5Adapter: "CmsVisualRenderer quick-icon-grid",
+    miniappAdapter: "CmsVisualRenderer quick-icon-grid",
+    rules: [
+      { label: "列数", detail: "columns 在后台、H5、小程序保持一致，不按端私自改列数。" },
+      { label: "入口字段", detail: "title、subtitle、iconUrl、dynamicIconUrl、enabled 和 actionTargetType 同源。" },
+      { label: "跳转动作", detail: "内部页、会议、商品、优惠券、电话、复制文本均走统一动作字段。" }
+    ]
+  },
+  "login-card": {
+    title: "登录欢迎卡协议",
+    summary: "未登录引导和已登录头像昵称上下文使用同一字段结构。",
+    adminAdapter: "示例用户上下文预览",
+    h5Adapter: "ensureLogin / 用户上下文",
+    miniappAdapter: "ensureLogin / 微信头像昵称补全",
+    rules: [
+      { label: "登录动作", detail: "立即登录必须触发 ensureLogin，不作为普通链接处理。" },
+      { label: "用户信息", detail: "头像、昵称、手机号、会员等级和统计信息进入统一 userContext。" },
+      { label: "空态兜底", detail: "后台预览可用示例用户，小程序真机必须读取当前登录用户。" }
+    ]
+  },
+  "rich-text": {
+    title: "图文富文本协议",
+    summary: "默认不暴露 HTML/JSON，使用图文块配置生成跨端内容。",
+    adminAdapter: "rich-blocks 表单预览",
+    h5Adapter: "CmsVisualRenderer rich-text",
+    miniappAdapter: "CmsVisualRenderer rich-text",
+    rules: [
+      { label: "内容块", detail: "标题、正文、图片、引用、按钮和分割线按 blocks 顺序渲染。" },
+      { label: "图片显示", detail: "图片圆角、间距和 imageMode 与高级装修配置一致。" },
+      { label: "点击动作", detail: "图文块可配置统一 actionTargetType，不要求运营写 JSON。" }
+    ]
+  },
+  "conference-schedule": {
+    title: "年度排期协议",
+    summary: "月份、分类、会议卡片、预约/日历入口使用真实会议上下文预览。",
+    adminAdapter: "ComponentPreview schedule",
+    h5Adapter: "CmsVisualRenderer conference-schedule",
+    miniappAdapter: "CmsVisualRenderer conference-schedule",
+    rules: [
+      { label: "日期", detail: "月份和日期来自会议 startAt/endAt，不在端上硬编码。" },
+      { label: "分类", detail: "categories 字段决定筛选标签，未配置时用安全默认分类。" },
+      { label: "卡片样式", detail: "封面、时间、地点、报名人数显隐按同一配置生效。" }
+    ]
+  },
+  "mall-product-grid": {
+    title: "商品宫格协议",
+    summary: "商品来源、分类、价格和加购文案在后台预览与用户端保持同一字段。",
+    adminAdapter: "商品示例预览",
+    h5Adapter: "CmsVisualRenderer mall-product-grid",
+    miniappAdapter: "CmsVisualRenderer mall-product-grid",
+    rules: [
+      { label: "商品来源", detail: "productCategoryId、keyword、limit 决定展示范围。" },
+      { label: "卡片字段", detail: "封面、标题、价格和库存来自商城商品接口。" },
+      { label: "加购动作", detail: "按钮文案可配，订单金额仍由后端商城链路计算。" }
+    ]
+  }
 };
 
 const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
@@ -1902,6 +2086,26 @@ const previewBusinessModules = computed(() =>
     }))
     .filter((module) => module.visible)
     .sort((a, b) => a.sort - b.sort)
+);
+const businessDisplayStats = computed(() => {
+  const total = businessDisplay.modules.length;
+  const visible = businessDisplay.modules.filter((module) => module.visible).length;
+  return {
+    total,
+    visible,
+    hidden: Math.max(0, total - visible)
+  };
+});
+const selectedComponentParityContract = computed(() => componentParityContract(selectedComponent.value?.type));
+const acceptanceChecks = computed<AcceptanceCheck[]>(() => buildAcceptanceChecks());
+const acceptanceSummary = computed(() =>
+  acceptanceChecks.value.reduce(
+    (summary, check) => {
+      summary[check.status] += 1;
+      return summary;
+    },
+    { pass: 0, warn: 0, error: 0 } as Record<AcceptanceStatus, number>
+  )
 );
 const previewContextHint = computed(() => {
   const page = selectedPage.value;
@@ -3342,6 +3546,157 @@ function businessModuleStatus(module: BusinessDisplayModule): string {
   if (status === "configured") return "已配置";
   if (status === "unconfigured") return "未配置";
   return "使用默认值";
+}
+
+function componentParityContract(type: string | undefined): ComponentParityContractView {
+  if (type && COMPONENT_PARITY_CONTRACTS[type]) return COMPONENT_PARITY_CONTRACTS[type];
+  const name = type ? presetName(type) : "未选择组件";
+  return {
+    title: `${name} 通用跨端协议`,
+    summary: "使用当前组件配置生成 P9 DSL，后台预览、H5 和小程序按支持矩阵解释。",
+    adminAdapter: "ComponentPreview",
+    h5Adapter: "CmsVisualRenderer / DS RenderTree",
+    miniappAdapter: "CmsVisualRenderer / DS RenderTree",
+    rules: DEFAULT_PARITY_RULES
+  };
+}
+
+function buildAcceptanceChecks(): AcceptanceCheck[] {
+  const page = selectedPage.value;
+  const route = previewRouteForPage(page);
+  const enabledComponents = components.value.filter((component) => component.enabled);
+  const requiredBusinessModules = requiredBusinessModuleKeysForPage(page);
+  const missingBusinessModules = requiredBusinessModules.filter((key) => !businessDisplay.modules.some((module) => module.key === key));
+  const disabledRequiredModules = requiredBusinessModules.filter((key) => businessDisplay.modules.some((module) => module.key === key && !module.visible));
+  const hasUserContextModule = enabledComponents.some((component) => ["login-card", "user-profile-card", "member-promo-banner", "fixed-business-template"].includes(component.type));
+  const needsUserContext = page ? ["member-center", "my-registrations", "cart", "invoice", "mall-orders"].includes(page.pageKey) || hasUserContextModule : hasUserContextModule;
+  const versionDsl = readRecord(version.value?.dsl);
+  const schemaVersion = readString(versionDsl.schemaVersion) || "p9";
+  const checks: AcceptanceCheck[] = [
+    {
+      key: "dsl",
+      title: "P9 DSL 保存链路",
+      description: `当前草稿保存会写入 schemaVersion=${schemaVersion === "p9" ? "p9" : "p9（保存时重写）"}，高级装修源配置保存在 meta.editorComponents。`,
+      status: "pass"
+    },
+    {
+      key: "support-matrix",
+      title: "组件支持矩阵",
+      description: unsupportedEnabledComponents.value.length > 0 ? `仍有 ${unsupportedEnabledComponents.value.length} 个启用组件未纳入 H5/小程序支持。` : "当前启用组件均已纳入发布支持矩阵。",
+      status: unsupportedEnabledComponents.value.length > 0 ? "error" : basicEnabledComponents.value.length > 0 ? "warn" : "pass",
+      action: basicEnabledComponents.value.length > 0 ? "基础支持组件发布前需人工核对真机。" : undefined
+    },
+    {
+      key: "route",
+      title: "三端路由",
+      description: `小程序：${route.miniapp}；H5：${route.h5}。后台预览可在顶部切换两个平台外壳。`,
+      status: page ? "pass" : "warn",
+      action: page ? undefined : "请选择页面后再发布。"
+    },
+    {
+      key: "preview",
+      title: "手机实时预览",
+      description: enabledComponents.length > 0 ? `当前展示 ${enabledComponents.length} 个组件，点击预览组件可定位右侧配置，预览内可拖拽排序。` : "当前页面没有启用装修组件。",
+      status: enabledComponents.length > 0 || Boolean(businessPreviewContext.value) ? "pass" : "warn",
+      action: enabledComponents.length === 0 && !businessPreviewContext.value ? "建议至少配置一个组件或固定业务模板。" : undefined
+    }
+  ];
+
+  if (showBusinessDisplayEditor.value) {
+    checks.push({
+      key: "business-display",
+      title: "固定业务模块",
+      description: missingBusinessModules.length > 0
+        ? `缺少固定业务模块：${missingBusinessModules.map(businessModuleLabel).join("、")}。`
+        : `固定业务模块 ${businessDisplayStats.value.visible}/${businessDisplayStats.value.total} 正在显示。`,
+      status: missingBusinessModules.length > 0 ? "error" : disabledRequiredModules.length > 0 ? "warn" : "pass",
+      action: disabledRequiredModules.length > 0 ? `已隐藏关键模块：${disabledRequiredModules.map(businessModuleLabel).join("、")}，请确认这是运营意图。` : undefined
+    });
+  }
+
+  if (needsUserContext) {
+    checks.push({
+      key: "user-context",
+      title: "登录用户上下文",
+      description: "后台预览使用示例用户；小程序真机会注入头像、昵称、手机号、会员等级、报名数、订单数和优惠券数。",
+      status: businessPreviewContext.value?.user || hasUserContextModule ? "pass" : "warn",
+      action: "请在小程序真机登录后核对会员中心、登录卡、购物车和我的报名数据。"
+    });
+  }
+
+  return checks;
+}
+
+function requiredBusinessModuleKeysForPage(page: PageTemplate | null | undefined): string[] {
+  const key = businessDisplayKeyForPage(page);
+  const map: Record<string, string[]> = {
+    conferenceDetail: ["conferenceInfo", "location", "skus", "registrationButton"],
+    registrationForm: ["registrationInfo", "skuSelector", "attendeeForm", "submitOrder"],
+    registrationCredential: ["credentialHeader", "credentialQr", "conferenceInfo", "attendeeInfo"],
+    myRegistrations: ["listHeader", "credentialEntry", "emptyState"],
+    mallHome: ["mallHeader", "categories", "recommended", "cart"],
+    productDetail: ["productInfo", "cover", "price", "skuSelector", "buyNowButton"],
+    cart: ["title", "cartItems", "shippingInfo", "productCoupons", "checkoutBar", "emptyState", "recommendations"],
+    cartCheckout: ["title", "cartItems", "shippingInfo", "productCoupons", "checkoutBar", "emptyState", "recommendations"],
+    mallOrders: ["orderList", "statusFilter", "aftersalesEntry", "invoiceEntry", "emptyState"],
+    memberCenter: ["memberProfile", "level", "benefitList", "registrations", "orders"],
+    invoice: ["invoiceableOrders", "invoiceProfile", "invoiceForm", "submitButton"],
+    aftersale: ["aftersaleInfo", "orderProduct", "reason", "submitButton"]
+  };
+  return map[key] ?? [];
+}
+
+function acceptanceStatusLabel(status: AcceptanceStatus): string {
+  if (status === "pass") return "通过";
+  if (status === "warn") return "提醒";
+  return "阻断";
+}
+
+function acceptanceCheckClass(status: AcceptanceStatus): string {
+  return `is-${status}`;
+}
+
+function showAllBusinessModules() {
+  businessDisplay.modules.forEach((module) => {
+    module.visible = true;
+  });
+  ElMessage.success("已显示全部固定业务模块");
+}
+
+function hideOptionalBusinessModules() {
+  businessDisplay.modules.forEach((module) => {
+    if (businessModuleGuide(module.key).defaultStatus === "unconfigured") {
+      module.visible = false;
+    }
+  });
+  ElMessage.success("已隐藏默认未配置的可选业务模块");
+}
+
+function normalizeBusinessDisplayOrder() {
+  businessDisplay.modules = [...businessDisplay.modules]
+    .sort((a, b) => a.sort - b.sort)
+    .map((module, index) => ({ ...module, sort: index * 10 + 10 }));
+  ElMessage.success("已按显示顺序整理模块");
+}
+
+function resetBusinessDisplayForCurrentPage() {
+  const key = businessDisplayKeyForPage(selectedPage.value) || "conferenceDetail";
+  const next = defaultBusinessDisplay(businessModulesForKey(key));
+  businessDisplay.modules = next.modules;
+  businessDisplay.assistantMode = next.assistantMode;
+  businessDisplay.primaryButtonText = next.primaryButtonText;
+  businessDisplay.inventoryDisplayMode = next.inventoryDisplayMode;
+  businessDisplay.lowStockThreshold = next.lowStockThreshold;
+  ElMessage.success("已恢复当前业务页默认模块配置");
+}
+
+function moveBusinessDisplayModule(index: number, offset: number) {
+  const target = index + offset;
+  if (target < 0 || target >= businessDisplay.modules.length) return;
+  const list = [...businessDisplay.modules];
+  const [item] = list.splice(index, 1);
+  list.splice(target, 0, item);
+  businessDisplay.modules = list.map((module, moduleIndex) => ({ ...module, sort: moduleIndex * 10 + 10 }));
 }
 
 function readString(value: unknown): string {
@@ -6495,6 +6850,173 @@ function looksLikePreviewImage(value: string): boolean {
   color: #b42318;
 }
 
+.component-parity-panel,
+.acceptance-panel,
+.business-display-toolbar {
+  border: 1px solid rgb(218 226 238 / 92%);
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.component-parity-panel {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px;
+}
+
+.component-parity-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.component-parity-panel__head span:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.component-parity-panel__head strong {
+  color: var(--admin-color-text);
+  font-size: 14px;
+}
+
+.component-parity-panel__head small {
+  color: var(--admin-color-muted);
+  line-height: 1.45;
+}
+
+.platform-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.platform-contract-grid span,
+.parity-rule-list span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgb(220 227 239 / 88%);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.platform-contract-grid b,
+.parity-rule-list b {
+  color: var(--admin-color-text);
+  font-size: 12px;
+}
+
+.parity-rule-list {
+  display: grid;
+  gap: 8px;
+}
+
+.acceptance-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.acceptance-summary span {
+  display: grid;
+  gap: 2px;
+  min-height: 52px;
+  align-content: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.acceptance-summary b {
+  color: var(--admin-color-text);
+  font-size: 18px;
+}
+
+.acceptance-summary .is-pass {
+  border: 1px solid rgb(16 185 129 / 22%);
+}
+
+.acceptance-summary .is-warn {
+  border: 1px solid rgb(245 158 11 / 26%);
+}
+
+.acceptance-summary .is-error {
+  border: 1px solid rgb(239 68 68 / 24%);
+}
+
+.acceptance-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.acceptance-check {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgb(220 227 239 / 88%);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.acceptance-check__status {
+  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  border-radius: 999px;
+  background: #e9f8f2;
+  color: #0f7a52;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.acceptance-check.is-warn .acceptance-check__status {
+  background: #fff7e8;
+  color: #a15c00;
+}
+
+.acceptance-check.is-error .acceptance-check__status {
+  background: #fff1f2;
+  color: #b42318;
+}
+
+.acceptance-check__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.acceptance-check__copy strong {
+  color: var(--admin-color-text);
+}
+
+.acceptance-check__copy small,
+.acceptance-check__copy em {
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.acceptance-check__copy em {
+  color: #a15c00;
+  font-style: normal;
+}
+
 .preset-thumb {
   height: 54px;
   display: grid;
@@ -8935,6 +9457,36 @@ function looksLikePreviewImage(value: string): boolean {
   margin-bottom: 12px;
 }
 
+.business-display-toolbar {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px;
+}
+
+.business-display-stats,
+.business-display-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.business-display-stats span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+}
+
+.business-display-stats b {
+  margin-right: 4px;
+  color: var(--admin-color-text);
+}
+
 .business-display-form {
   display: flex;
   flex-direction: column;
@@ -8959,14 +9511,36 @@ function looksLikePreviewImage(value: string): boolean {
 
 .business-module-card__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+
+.business-module-card__title {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
 }
 
 .business-module-card__head strong {
   color: #172033;
   font-size: 13px;
+}
+
+.business-module-card__title small {
+  overflow: hidden;
+  color: var(--admin-color-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.business-module-card__ops {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .business-module-card__guide {
@@ -8986,6 +9560,18 @@ function looksLikePreviewImage(value: string): boolean {
 
 .business-module-card__guide b {
   color: #172033;
+}
+
+.business-module-card__sort {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.business-module-card__sort span {
+  color: var(--admin-color-muted);
+  font-size: 12px;
 }
 
 .preview-fixed-template {
