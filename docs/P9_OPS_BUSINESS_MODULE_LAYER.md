@@ -88,6 +88,26 @@ The database schema is unchanged. The existing page version JSON column continue
 - Legacy component input is not an operator-facing CMS edit model.
 - User runtime can receive `userContext` so login/profile-style CMS cards can show the current user's avatar, nickname, phone, member level, registration count, order count, and coupon count.
 
+## Cart Fixed Business Modules
+
+The cart page uses `themeJson.businessDisplay.cart` as the canonical display-control source. Existing published pages that still use `businessDisplay.cartCheckout`, `businessDisplay.shoppingCart`, or `businessDisplay.mallCart` are read as compatibility fallbacks, but new saves write `businessDisplay.cart`.
+
+The canonical cart display modules are:
+
+- `title`: page title/capsule visibility and title copy.
+- `couponNotice`: top coupon prompt visibility, copy, button copy, and action.
+- `cartItems`: aggregate switch for registration and mall item blocks.
+- `registrationItems`: registration item block visibility and card details.
+- `mallItems`: mall item block visibility and card details.
+- `shippingInfo`: receiver/fulfillment block visibility and field display.
+- `productCoupons`: product coupon selector visibility and copy.
+- `checkoutBar`: bottom settlement bar visibility, select-all, total copy, button copy, sticky behavior, and tabbar spacing.
+- `emptyState`: empty cart visibility and copy.
+- `recommendations`: recommended product/entry visibility and copy.
+- `customerService`: customer-service entry visibility and copy.
+
+MiniApp/H5 cart rendering reads this config outside the CMS content area, so hiding a fixed cart module in the CMS also hides the corresponding real business block. The cart checkout, order creation, amount recomputation, and payment flows are unchanged.
+
 ## Protected Areas
 
 P9-OPS does not modify payment, refunds, order core logic, check-in core logic, member pricing, AI, WeCom, notifications, or Prisma schema.
