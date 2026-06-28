@@ -4,6 +4,7 @@ export type BusinessModuleType =
   | "home-event-list"
   | "home-product-grid"
   | "home-member-card"
+  | "fixed-business-template"
   | "conference-detail-info"
   | "conference-register-form"
   | "mall-product-grid"
@@ -37,6 +38,20 @@ export interface BusinessModuleConfig {
   subtitle?: string;
   description?: string;
   imageUrl?: string;
+  templateKey?: "home" | "schedule" | "registration" | "mall" | "cart" | "member-center" | string;
+  assetRoot?: string;
+  heroTitle?: string;
+  heroSubtitle?: string;
+  heroImageUrl?: string;
+  noticeText?: string;
+  growthValue?: string;
+  noticeBar?: boolean;
+  loginCard?: boolean;
+  quickGrid?: boolean;
+  highlightStrip?: boolean;
+  statsCard?: boolean;
+  conferenceModels?: boolean;
+  tagRows?: boolean;
   imageMode?: "scaleToFill" | "contain" | "aspectFill" | "widthFix";
   imageRatio?: "16:9" | "4:3" | "1:1" | "3:4";
   showTitle?: boolean;
@@ -349,7 +364,69 @@ const FORM_FIELDS: BusinessModuleField[] = [
   { key: "buttonStyle", label: "按钮样式", type: "select", options: [{ label: "主按钮", value: "primary" }, { label: "次按钮", value: "secondary" }, { label: "文字按钮", value: "text" }] }
 ];
 
+const FIXED_TEMPLATE_FIELDS: BusinessModuleField[] = [
+  {
+    key: "templateKey",
+    label: "固定模板",
+    type: "select",
+    options: [
+      { label: "首页", value: "home" },
+      { label: "年度排期", value: "schedule" },
+      { label: "会议报名", value: "registration" },
+      { label: "商城首页", value: "mall" },
+      { label: "购物车", value: "cart" },
+      { label: "会员中心", value: "member-center" }
+    ]
+  },
+  { key: "heroTitle", label: "主标题", type: "text" },
+  { key: "heroSubtitle", label: "副标题", type: "text" },
+  { key: "heroImageUrl", label: "Hero 背景图", type: "image" },
+  { key: "noticeText", label: "公告文案", type: "textarea" },
+  { key: "items", label: "首页快捷入口", type: "items" },
+  { key: "noticeBar", label: "显示公告条", type: "switch" },
+  { key: "loginCard", label: "显示登录卡", type: "switch" },
+  { key: "quickGrid", label: "显示快捷入口", type: "switch" },
+  { key: "highlightStrip", label: "显示赛道导引", type: "switch" },
+  { key: "statsCard", label: "显示品牌数据卡", type: "switch" },
+  { key: "conferenceModels", label: "显示会议模型", type: "switch" },
+  { key: "tagRows", label: "显示生态标签", type: "switch" }
+];
+
 export const BUSINESS_MODULE_DEFINITIONS: BusinessModuleDefinition[] = [
+  moduleDefinition({
+    type: "fixed-business-template",
+    componentType: "fixed-business-template",
+    name: "固定业务模板",
+    group: "首页模块",
+    description: "首页、年度排期、会议报名、商城、购物车和会员中心的锁定业务模板。",
+    defaultConfig: {
+      templateKey: "home",
+      assetRoot: "/static/fixed-templates",
+      heroTitle: "潮起谋局  潮落定势",
+      heroSubtitle: "行业会议与创始人社群平台",
+      heroImageUrl: "",
+      noticeText: "欢迎来到观潮会集，查看年度排期、会议报名与会员权益。",
+      noticeBar: true,
+      loginCard: true,
+      quickGrid: true,
+      highlightStrip: true,
+      statsCard: true,
+      conferenceModels: true,
+      tagRows: true,
+      items: [
+        { id: "schedule", label: "年度排期", subtitle: "SCHEDULE", iconUrl: "/static/fixed-templates/icons/calendar.svg", linkType: "page", link: "custom:about-paiqi" },
+        { id: "registration", label: "会议报名", subtitle: "REGISTRATION", iconUrl: "/static/fixed-templates/icons/registration.svg", linkType: "page", link: "conference-list" },
+        { id: "ecosystem", label: "赛道生态", subtitle: "ECOSYSTEM", iconUrl: "/static/fixed-templates/icons/user.svg", linkType: "page", link: "custom:ecosystem" }
+      ]
+    },
+    fields: FIXED_TEMPLATE_FIELDS,
+    designTokens: { ...DEFAULT_TOKENS, radiusPreset: "lg", spacingPreset: "standard" },
+    parityRules: [
+      ...COMMON_PARITY_RULES,
+      { key: "fixedTemplate.templateKey", label: "模板类型一致", appliesTo: ["adminPreview", "h5", "miniapp"], invariant: "三端使用同一个 templateKey 选择首页、排期、报名、商城、购物车或会员中心模板。" },
+      { key: "fixedTemplate.visibility", label: "模块显隐一致", appliesTo: ["adminPreview", "h5", "miniapp"], invariant: "公告、登录卡、快捷入口、导引条、数据卡等显隐字段三端一致。" }
+    ]
+  }),
   moduleDefinition({
     type: "home-hero",
     componentType: "hero-banner",
@@ -701,6 +778,7 @@ export function hasBusinessModuleType(value: string): value is BusinessModuleTyp
 }
 
 const VISUAL_COMPONENT_MODULE_MAP: Record<string, BusinessModuleType> = {
+  "fixed-business-template": "fixed-business-template",
   "hero-banner": "home-hero",
   hero: "image-banner",
   carousel: "image-banner",
