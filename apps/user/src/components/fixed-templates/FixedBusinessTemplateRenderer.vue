@@ -1067,4 +1067,58 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
   font-size: 28rpx;
   font-weight: 800;
 }
+
+/* Guanchao fixed template alignment */
+.fixed-template {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(185, 150, 67, 0.1), transparent 34%),
+    #f8f5ee;
+  color: #071426;
+}
+
+.fixed-card,
+.fixed-menu-card,
+.fixed-product-card,
+.fixed-cart-item,
+.fixed-member-stats,
+.fixed-section {
+  border: 1rpx solid rgba(185, 150, 67, 0.18);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14rpx 34rpx rgba(7, 20, 38, 0.08);
+}
+
+.fixed-hero,
+.fixed-member-card,
+.fixed-benefit-card {
+  border: 1rpx solid rgba(248, 228, 178, 0.2);
+  box-shadow: 0 24rpx 60rpx rgba(7, 20, 38, 0.16);
+}
+
+.fixed-quick-card,
+.fixed-stat-card,
+.fixed-ticket-card,
+.fixed-order-card,
+.fixed-form-card {
+  border-color: rgba(185, 150, 67, 0.2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 245, 238, 0.94));
+  box-shadow: 0 12rpx 30rpx rgba(7, 20, 38, 0.07);
+}
+
+.fixed-quick-card__icon,
+.fixed-select-dot,
+.fixed-badge,
+.fixed-tag {
+  background: #edf4f7;
+  color: #8f6b24;
+}
+
+.fixed-button,
+.fixed-hero button,
+.fixed-product-card button,
+.fixed-checkout button,
+.fixed-form-card button {
+  background: linear-gradient(135deg, #b99643, #8f6b24);
+  color: #fff;
+  box-shadow: 0 12rpx 28rpx rgba(143, 107, 36, 0.2);
+}
 </style>

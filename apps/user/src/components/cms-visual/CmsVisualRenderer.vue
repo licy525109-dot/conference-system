@@ -4572,4 +4572,206 @@ function readErrorText(error: unknown, fallback: string): string {
 .cms-divider {
   background: var(--cms-divider);
 }
+
+/* Guanchao cross-platform visual alignment */
+.cms-page {
+  --cms-primary: #071426;
+  --cms-primary-strong: #071426;
+  --cms-primary-soft: #edf4f7;
+  --cms-secondary: #b99643;
+  --cms-secondary-strong: #8f6b24;
+  --cms-surface: #f8f5ee;
+  --cms-surface-soft: #f3ead7;
+  --cms-surface-muted: #f0e7d6;
+  --cms-surface-elevated: rgba(255, 255, 255, 0.94);
+  --cms-border: rgba(185, 150, 67, 0.22);
+  --cms-border-strong: rgba(185, 150, 67, 0.34);
+  --cms-text-primary: #071426;
+  --cms-text-secondary: #697386;
+  --cms-text-muted: #8b93a3;
+  --cms-text-inverse: #ffffff;
+  --cms-gradient-cta: linear-gradient(135deg, #b99643, #8f6b24);
+  --cms-gradient-hero: linear-gradient(135deg, #071426, #10233d 70%, #b99643);
+  --cms-gradient-card: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 245, 238, 0.94));
+  --cms-shadow-sm: 0 12rpx 30rpx rgba(7, 20, 38, 0.08);
+  --cms-shadow-md: 0 16rpx 42rpx rgba(7, 20, 38, 0.1);
+  --cms-shadow-lg: 0 24rpx 60rpx rgba(7, 20, 38, 0.16);
+}
+
+.cms-section,
+.cms-card,
+.cms-mini-card,
+.cms-notice,
+.cms-title,
+.cms-login-card,
+.cms-entry-tile,
+.cms-event-card,
+.cms-product-card,
+.cms-schedule-card {
+  border-color: var(--cms-border);
+}
+
+.cms-section,
+.cms-card,
+.cms-mini-card,
+.cms-title,
+.cms-login-card {
+  background: var(--cms-gradient-card);
+  box-shadow: var(--cms-shadow-md);
+}
+
+.cms-home-hero,
+.cms-hero {
+  border: 1rpx solid rgba(248, 228, 178, 0.18);
+  box-shadow: var(--cms-shadow-lg);
+}
+
+.cms-hero__shade {
+  background: linear-gradient(90deg, rgba(7, 20, 38, 0.72), rgba(7, 20, 38, 0.3) 58%, rgba(7, 20, 38, 0.06));
+}
+
+.cms-hero__kicker,
+.cms-home-hero__kicker {
+  background: rgba(185, 150, 67, 0.24);
+  color: #f9edd1;
+}
+
+.cms-hero__button,
+.cms-home-hero__button,
+.cms-card__button,
+.cms-button,
+.cms-login-card__button,
+.cms-schedule-card__button,
+.cms-product-card__cart,
+.cms-search__button,
+.cms-track-tags__button {
+  background: var(--cms-gradient-cta);
+  color: var(--cms-text-inverse);
+  box-shadow: 0 12rpx 28rpx rgba(143, 107, 36, 0.2);
+}
+
+.cms-home-hero__button.is-secondary,
+.cms-button--outline,
+.cms-schedule-card__calendar {
+  border: 1rpx solid var(--cms-border-strong);
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--cms-secondary-strong);
+  box-shadow: none;
+}
+
+.cms-login-card {
+  overflow: hidden;
+  border-radius: 28rpx;
+  background:
+    radial-gradient(circle at 96% 12%, rgba(185, 150, 67, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 245, 238, 0.94));
+}
+
+.cms-login-card::after {
+  content: "";
+  position: absolute;
+  right: -36rpx;
+  bottom: -54rpx;
+  width: 180rpx;
+  height: 180rpx;
+  border-radius: 50%;
+  background: rgba(185, 150, 67, 0.08);
+}
+
+.cms-login-card__avatar {
+  border: 4rpx solid rgba(255, 255, 255, 0.74);
+  background: var(--cms-gradient-cta);
+  color: var(--cms-text-inverse);
+  box-shadow: 0 12rpx 28rpx rgba(7, 20, 38, 0.1);
+}
+
+.cms-entry-section {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.cms-entry-tile {
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 10rpx 26rpx rgba(7, 20, 38, 0.06);
+}
+
+.cms-entry-tile.is-plain {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.cms-entry-tile__icon,
+.cms-task-card__icon {
+  background: var(--cms-primary-soft);
+  color: var(--cms-secondary-strong);
+}
+
+.cms-entry-tile__title,
+.cms-section__title,
+.cms-card__title,
+.cms-title,
+.cms-schedule-card__title,
+.cms-product-card__title {
+  color: var(--cms-text-primary);
+}
+
+.cms-entry-tile__subtitle,
+.cms-section__text,
+.cms-card__text,
+.cms-card__meta,
+.cms-schedule-card__summary,
+.cms-schedule-card__meta,
+.cms-event-card__text,
+.cms-event-card__meta {
+  color: var(--cms-text-secondary);
+}
+
+.cms-card.is-conference-card,
+.cms-mini-card.is-conference-card,
+.cms-event-card,
+.cms-schedule-card,
+.cms-product-card,
+.cms-profile {
+  border-color: var(--cms-border);
+  background: var(--cms-surface-elevated);
+  box-shadow: var(--cms-shadow-sm);
+}
+
+.cms-card__image--empty,
+.cms-product-card__image,
+.cms-event-card__image,
+.cms-schedule-card__cover {
+  background:
+    radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.64), transparent 30%),
+    linear-gradient(135deg, rgba(185, 150, 67, 0.16), rgba(7, 20, 38, 0.08)),
+    var(--cms-surface-soft);
+  color: var(--cms-secondary-strong);
+}
+
+.cms-schedule-card__date,
+.cms-schedule-card__tag,
+.cms-tab,
+.cms-stat,
+.cms-countdown__item,
+.cms-speaker__avatar {
+  background: var(--cms-primary-soft);
+  color: var(--cms-secondary-strong);
+}
+
+.cms-tab.active,
+.cms-schedule-card__button {
+  background: var(--cms-gradient-cta);
+  color: var(--cms-text-inverse);
+}
+
+.cms-notice,
+.cms-link-bar {
+  border-color: rgba(185, 150, 67, 0.24);
+  background: rgba(255, 248, 233, 0.92);
+  color: var(--cms-secondary-strong);
+}
+
+.cms-floating {
+  background: var(--cms-gradient-cta);
+  box-shadow: 0 18rpx 42rpx rgba(143, 107, 36, 0.24);
+}
 </style>

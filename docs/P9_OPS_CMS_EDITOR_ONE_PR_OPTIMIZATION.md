@@ -70,6 +70,16 @@ The right inspector now includes a release acceptance panel that checks:
 
 The panel separates pass, warning, and blocking states so operators can understand what still needs manual verification before publishing.
 
+### Guanchao Admin Layout Alignment
+
+The CMS workbench has been aligned with the observed "观潮会集 - 管理后台" product surface:
+
+- the top page header now identifies the management workbench and keeps mode switching, templates, drafts, and publishing in one action row
+- an operations overview bar summarizes the current page, visible components, fixed business modules, and release acceptance state
+- component cards show the operator label, support status, technical type, platform coverage, and render hint without exposing raw DSL
+- the phone preview shell uses a MiniApp/H5-like status bar and keeps the preview fixed in the center work area
+- the admin workbench, CMS visual renderer, and fixed business templates share the same navy / gold / warm paper visual language
+
 ## Manual Acceptance
 
 Before marking the PR ready, verify:
