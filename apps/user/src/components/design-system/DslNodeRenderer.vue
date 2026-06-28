@@ -1,11 +1,11 @@
 <template>
   <view :class="nodeClass">
     <template v-if="node.type === 'ds-banner'">
-      <image v-if="imageUrl" class="ds-banner__image" :src="imageUrl" mode="aspectFill" />
-      <view class="ds-banner__shade" />
-      <view class="ds-banner__copy">
+      <image v-if="imageUrl" class="ds-banner__image" :src="imageUrl" :mode="imageMode" />
+      <view v-if="showBannerCopy && showOverlay" class="ds-banner__shade" />
+      <view v-if="showBannerCopy" class="ds-banner__copy">
         <text v-if="subtitle" class="ds-kicker">{{ subtitle }}</text>
-        <text class="ds-title">{{ title }}</text>
+        <text v-if="title" class="ds-title">{{ title }}</text>
         <text v-if="description" class="ds-text">{{ description }}</text>
         <button v-if="buttonText" class="ds-button" @click="emitAction">{{ buttonText }}</button>
       </view>
@@ -108,6 +108,9 @@ const title = computed(() => readString(props.node.props.title));
 const subtitle = computed(() => readString(props.node.props.subtitle));
 const description = computed(() => readString(props.node.props.description || props.node.props.text));
 const imageUrl = computed(() => readString(props.node.props.imageUrl));
+const imageMode = computed(() => normalizeImageMode(readString(props.node.props.imageMode)));
+const showOverlay = computed(() => props.node.props.showOverlay !== false);
+const showBannerCopy = computed(() => props.node.props.imageOnly !== true && Boolean(title.value || subtitle.value || description.value || buttonText.value));
 const buttonText = computed(() => readString(props.node.props.buttonText || props.node.props.text));
 const emptyText = computed(() => readString(props.node.props.emptyText) || "暂无内容");
 const images = computed(() => (Array.isArray(props.node.props.images) ? props.node.props.images.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : []));
@@ -150,6 +153,13 @@ function normalizeActionType(value: string): string {
   if (value === "external-h5") return "url";
   if (value === "page") return "page";
   return value || "none";
+}
+
+function normalizeImageMode(value: string): "scaleToFill" | "aspectFit" | "aspectFill" | "widthFix" {
+  if (value === "contain") return "aspectFit";
+  if (value === "aspectFill") return "aspectFill";
+  if (value === "widthFix") return "widthFix";
+  return "scaleToFill";
 }
 
 function itemKey(item: unknown, index: number): string {

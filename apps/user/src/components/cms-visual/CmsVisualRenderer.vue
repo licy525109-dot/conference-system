@@ -621,6 +621,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { getModuleRenderContractForVisualComponent, type ModuleRenderContract, type RendererPlatform } from "@conference/business-modules";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { ensureLogin, getStoredUser } from "@/services/auth";
 import type { CmsComponent, ThemeConfig } from "@/services/cms";
@@ -658,6 +659,7 @@ const scheduleMonthMap = ref<Record<string, string>>({});
 const scheduleCategoryMap = ref<Record<string, string>>({});
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
+const visualPlatform = computed<RendererPlatform>(() => (typeof window === "undefined" ? "miniapp" : "h5"));
 const visibleComponents = computed(() =>
   props.components
     .filter((item) => item.enabled)
@@ -2076,7 +2078,7 @@ function carouselImageMode(component: CmsComponent): string {
 
 function homeHeroStyle(component: CmsComponent): Record<string, string> {
   const height = Math.max(260, intConfig(component, "height", 420));
-  const radius = Math.max(0, intConfig(component, "radius", 28));
+  const radius = Math.max(0, intConfig(component, "radius", radiusPresetRpx(component)));
   return {
     minHeight: `${height}rpx`,
     borderRadius: `${radius}rpx`,
@@ -2126,12 +2128,15 @@ function homePanelStyle(component: CmsComponent): Record<string, string> {
     };
   }
   const background = stringConfig(component, "backgroundColor") || stringConfig(component, "cardBackground");
-  return background ? { background } : {};
+  return {
+    ...(background ? { background } : {}),
+    borderRadius: `${radiusPresetRpx(component)}rpx`
+  };
 }
 
 function homeGridStyle(component: CmsComponent): Record<string, string> {
-  const columns = Math.min(4, Math.max(2, intConfig(component, "columns", component.type === "service-shortcut-card" ? 2 : 3)));
-  const gap = Math.max(4, intConfig(component, "cardGap", 14));
+  const columns = Math.min(4, Math.max(2, intConfig(component, "columns", moduleTokens(component)?.columns ?? (component.type === "service-shortcut-card" ? 2 : 3))));
+  const gap = Math.max(4, intConfig(component, "cardGap", spacingPresetRpx(component)));
   if (entryLayoutMode(component) === "scroll") {
     return {
       gap: `${gap}rpx`
@@ -2148,12 +2153,12 @@ function entryLayoutMode(component: CmsComponent): "grid" | "scroll" {
 }
 
 function homeEntryClass(component: CmsComponent, entry: HomeEntryItem): string[] {
-  const style = entry.cardStyle || stringConfig(component, "cardStyle") || (entryTilesUseTransparentBackground(component) ? "plain" : "soft");
+  const style = entry.cardStyle || stringConfig(component, "cardStyle") || moduleTokens(component)?.cardStyle || (entryTilesUseTransparentBackground(component) ? "plain" : "soft");
   return ["cms-entry-tile", `is-${style}`];
 }
 
 function homeEntryStyle(component: CmsComponent, entry: HomeEntryItem): Record<string, string> {
-  const radius = Math.max(0, intConfig(component, "cardRadius", 28));
+  const radius = Math.max(0, intConfig(component, "cardRadius", radiusPresetRpx(component)));
   const background = entry.backgroundColor || stringConfig(component, "cardBackground");
   return {
     ...(background ? { background } : entryTilesUseTransparentBackground(component) ? { background: "transparent", borderColor: "transparent", boxShadow: "none" } : {}),
@@ -2163,8 +2168,30 @@ function homeEntryStyle(component: CmsComponent, entry: HomeEntryItem): Record<s
 }
 
 function entryIconClass(component: CmsComponent): string[] {
-  const size = stringConfig(component, "iconSize");
+  const size = stringConfig(component, "iconSize") || moduleTokens(component)?.iconSize || "large";
   return [size === "small" ? "is-small" : size === "xlarge" ? "is-xlarge" : "is-large"];
+}
+
+function moduleContract(component: CmsComponent): ModuleRenderContract | null {
+  return getModuleRenderContractForVisualComponent(component.type, visualPlatform.value);
+}
+
+function moduleTokens(component: CmsComponent) {
+  return moduleContract(component)?.designTokens;
+}
+
+function radiusPresetRpx(component: CmsComponent): number {
+  const preset = stringConfig(component, "radiusPreset") || moduleTokens(component)?.radiusPreset || "md";
+  if (preset === "sm") return 16;
+  if (preset === "lg") return 32;
+  return 24;
+}
+
+function spacingPresetRpx(component: CmsComponent): number {
+  const preset = stringConfig(component, "spacingPreset") || moduleTokens(component)?.spacingPreset || "standard";
+  if (preset === "compact") return 10;
+  if (preset === "relaxed") return 24;
+  return 14;
 }
 
 function homeEntryTitleStyle(entry: HomeEntryItem): Record<string, string> {

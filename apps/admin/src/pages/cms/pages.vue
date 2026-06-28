@@ -993,7 +993,14 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import ThemeDynamicBackgroundPreview from "../../components/ThemeDynamicBackgroundPreview.vue";
 import type { PageDsl } from "@conference/dsl-runtime";
-import { BUSINESS_MODULE_DEFINITIONS, createBusinessModule, type BusinessModule, type BusinessModuleType } from "@conference/business-modules";
+import {
+  BUSINESS_MODULE_DEFINITIONS,
+  createBusinessModule,
+  getModuleRenderContractForVisualComponent,
+  type BusinessModule,
+  type BusinessModuleType,
+  type ModuleRenderContract
+} from "@conference/business-modules";
 import {
   createPage,
   createPageLibraryTemplate,
@@ -2085,17 +2092,29 @@ function addBusinessModule(type: BusinessModuleType) {
 
 function businessModuleToComponent(module: BusinessModule): EditableComponent {
   const config = module.config;
-  const typeMap: Record<BusinessModuleType, string> = {
+  const typeMap: Partial<Record<BusinessModuleType, string>> = {
     "home-hero": "hero-banner",
+    "image-banner": "hero-banner",
     "home-quick-entry": "quick-icon-grid",
+    "quick-icon-grid": "quick-icon-grid",
     "home-event-list": "conference-list",
+    "event-card-carousel": "event-card-carousel",
+    "conference-card": "conference-list",
     "home-product-grid": "mall-product-grid",
+    "product-card": "mall-product-grid",
+    "cart-item": "service-shortcut-card",
     "home-member-card": "member-promo-banner",
+    "member-profile-card": "login-card",
+    "member-benefit-card": "membership-benefits",
+    "order-card": "my-order-list",
     "conference-detail-info": "rich-content-block",
+    "rich-text": "rich-content-block",
     "conference-register-form": "registration-button",
-    "mall-product-grid": "mall-product-grid"
+    "mall-product-grid": "mall-product-grid",
+    "invoice-form": "service-shortcut-card",
+    "aftersale-form": "service-shortcut-card"
   };
-  const componentType = typeMap[module.type];
+  const componentType = typeMap[module.type] ?? "rich-content-block";
   return {
     id: `${componentType}-${Date.now().toString(36)}`,
     type: componentType,
@@ -2107,8 +2126,17 @@ function businessModuleToComponent(module: BusinessModule): EditableComponent {
       description: config.description ?? "",
       buttonText: config.buttonText ?? "",
       imageUrl: config.imageUrl ?? "",
+      imageMode: config.imageMode ?? "scaleToFill",
+      imageOnly: config.imageOnly ?? false,
+      showOverlay: config.showOverlay ?? true,
       columns: config.columns ?? 4,
       layout: config.layout ?? "grid",
+      layoutMode: config.layout === "card" ? "scroll" : "grid",
+      iconSize: config.iconSize ?? "large",
+      radiusPreset: config.radiusPreset ?? "md",
+      spacingPreset: config.spacingPreset ?? "standard",
+      buttonStyle: config.buttonStyle ?? "primary",
+      cardStyle: config.cardStyle ?? "soft",
       actionTargetType: businessModuleLinkTypeToAction(config.linkType),
       targetPageKey: config.linkType === "page" ? config.link ?? "" : "",
       targetConferenceId: config.linkType === "conference" || config.linkType === "registration" ? config.link ?? "" : "",
@@ -5047,7 +5075,7 @@ function previewHeroCardStyle(component: EditableComponent) {
 function previewHomeHeroStyle(component: EditableComponent) {
   return {
     minHeight: `${Math.max(150, Math.round(numberValue(component, "height", 420) / 2.35))}px`,
-    borderRadius: `${numberValue(component, "radius", 28) / 2}px`,
+    borderRadius: `${numberValue(component, "radius", adminRadiusPx(component) * 2) / 2}px`,
     background: String(component.config.backgroundColor || "var(--preview-primary)")
   };
 }
@@ -5064,6 +5092,7 @@ function previewPanelStyle(component: EditableComponent) {
   }
   return {
     background: String(component.config.backgroundColor || ""),
+    borderRadius: `${adminRadiusPx(component)}px`,
     ...layout
   };
 }
@@ -5100,8 +5129,8 @@ function previewSectionStyle(component: EditableComponent) {
 }
 
 function previewGridColumnsStyle(component: EditableComponent) {
-  const columns = Math.min(4, Math.max(2, Number(component.config.columns) || 3));
-  const gap = Math.max(2, Math.round(numberValue(component, "cardGap", 14) / 2));
+  const columns = Math.min(4, Math.max(2, Number(component.config.columns) || adminModuleTokens(component)?.columns || 3));
+  const gap = Math.max(2, Math.round(numberValue(component, "cardGap", adminSpacingPx(component) * 2) / 2));
   if (component.config.layoutMode === "scroll") {
     return {
       gap: `${gap}px`
@@ -5125,7 +5154,7 @@ function previewEntryGridClass(component: EditableComponent): string[] {
 }
 
 function previewEntryTileClass(component: EditableComponent, entry: EntryConfigItem): string[] {
-  const style = entry.cardStyle || String(component.config.cardStyle || "soft");
+  const style = entry.cardStyle || String(component.config.cardStyle || adminModuleTokens(component)?.cardStyle || "soft");
   return ["preview-entry-tile", `is-${style}`];
 }
 
@@ -5133,18 +5162,41 @@ function previewEntryTileStyle(component: EditableComponent, entry: EntryConfigI
   const isTransparentContainer = previewComponentContainerStyle(component) === "transparent";
   const background = entry.backgroundColor || String(component.config.cardBackground || "");
   return {
-    borderRadius: `${numberValue(component, "cardRadius", 28) / 2}px`,
+    borderRadius: `${numberValue(component, "cardRadius", adminRadiusPx(component) * 2) / 2}px`,
     ...(background ? { background } : isTransparentContainer ? { background: "transparent", borderColor: "transparent", boxShadow: "none" } : {}),
     color: entry.textColor || String(component.config.textColor || "")
   };
 }
 
 function previewEntryIconStyle(component: EditableComponent) {
-  const size = component.config.iconSize === "small" ? 30 : component.config.iconSize === "xlarge" ? 52 : 40;
+  const iconSize = component.config.iconSize || adminModuleTokens(component)?.iconSize || "large";
+  const size = iconSize === "small" ? 30 : iconSize === "xlarge" ? 52 : 40;
   return {
     width: `${size}px`,
     height: `${size}px`
   };
+}
+
+function adminModuleContract(component: EditableComponent): ModuleRenderContract | null {
+  return getModuleRenderContractForVisualComponent(component.type, "adminPreview");
+}
+
+function adminModuleTokens(component: EditableComponent) {
+  return adminModuleContract(component)?.designTokens;
+}
+
+function adminRadiusPx(component: EditableComponent): number {
+  const preset = String(component.config.radiusPreset || adminModuleTokens(component)?.radiusPreset || "md");
+  if (preset === "sm") return 8;
+  if (preset === "lg") return 16;
+  return 12;
+}
+
+function adminSpacingPx(component: EditableComponent): number {
+  const preset = String(component.config.spacingPreset || adminModuleTokens(component)?.spacingPreset || "standard");
+  if (preset === "compact") return 5;
+  if (preset === "relaxed") return 12;
+  return 7;
 }
 
 function previewEntryTitleStyle(entry: EntryConfigItem) {

@@ -9,11 +9,41 @@ CMS Editor
   -> Quick Mode: Business Module Layer
   -> Advanced Mode: Visual Component Editor
   -> Developer Mode: Raw P9 DSL
+  -> Business Module Parity Contract
   -> Render Governor
   -> DSL Runtime
   -> CmsVisualRenderer when dsl.meta.editorComponents exists
   -> Design System UI fallback
 ```
+
+## Cross-End Module Parity
+
+Business modules now define a shared cross-end contract in `@conference/business-modules`:
+
+- `configSchema`: the limited operator-facing fields such as title, image, style preset, action, and items.
+- `designTokens`: constrained visual tokens such as `radiusPreset`, `spacingPreset`, `imageMode`, `columns`, `iconSize`, `cardStyle`, and `buttonStyle`.
+- `adminPreviewAdapter`: the admin preview renderer contract.
+- `h5Adapter`: the H5 renderer contract.
+- `miniappAdapter`: the MiniApp renderer contract.
+- `parityRules`: invariants that all three adapters must obey.
+
+The first aligned modules are:
+
+- `home-hero`
+- `quick-icon-grid`
+- `image-banner`
+- `rich-text`
+- `event-card-carousel`
+- `conference-card`
+- `product-card`
+- `cart-item`
+- `member-profile-card`
+- `member-benefit-card`
+- `order-card`
+- `invoice-form`
+- `aftersale-form`
+
+Admin Preview, H5, and MiniApp may have platform-specific renderers, but they must consume the same module contract. For example, `quick-icon-grid` shares the same column count, icon size, radius, spacing, card style, title/subtitle sizing, and action configuration. `hero-banner` shares the same image display mode, copy visibility, overlay visibility, height strategy, and action configuration.
 
 ## Operator Model
 
@@ -52,6 +82,8 @@ The database schema is unchanged. The existing page version JSON column continue
 - User H5 and MiniApp continue to receive published P9 DSL through `PageRenderer` and Render Governor.
 - `PageRenderer` stays a thin entry point: it validates DSL, resolves the runtime tree, routes advanced decoration pages to `cms-visual`, and falls back to `DslRenderTree`.
 - `CmsVisualRenderer` owns the high-fidelity advanced decoration component UI, including hero banners, login cards, icon grids, rich content, schedules, and product/member modules.
+- `CmsVisualRenderer` reads `miniappAdapter` or `h5Adapter` contracts from `@conference/business-modules` before applying module tokens.
+- Admin phone preview reads the same module contract through `adminPreviewAdapter` before applying preview tokens.
 - Render Governor also accepts module input and compiles it to DSL before rendering.
 - Legacy component input is not an operator-facing CMS edit model.
 - User runtime can receive `userContext` so login/profile-style CMS cards can show the current user's avatar, nickname, phone, member level, registration count, order count, and coupon count.
