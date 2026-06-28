@@ -99,6 +99,15 @@
               <div class="panel-title">组件库</div>
               <p class="page-subtitle">完整页面装修组件库，点击添加组件到当前页面，再到右侧细调参数。</p>
             </div>
+            <el-radio-group v-model="componentLibraryView" size="small" class="library-view-toggle">
+              <el-radio-button label="cards">卡片</el-radio-button>
+              <el-radio-button label="compact">紧凑</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div class="library-metrics">
+            <span><b>{{ componentLibraryStats.supported }}</b> 可发布组件</span>
+            <span><b>{{ componentLibraryStats.total }}</b> 全部组件</span>
+            <span><b>{{ activePresetGroupMeta.count }}</b> 当前分类</span>
           </div>
           <div class="library-filters">
             <el-select v-model="activePresetGroup" placeholder="组件分类">
@@ -106,9 +115,21 @@
             </el-select>
             <el-input v-model="presetKeyword" clearable placeholder="搜索组件名称" />
           </div>
+          <div v-if="filteredPresetGroups.length > 0" class="component-category-rail">
+            <button
+              v-for="group in filteredPresetGroups"
+              :key="group.name"
+              type="button"
+              :class="{ active: activePresetGroup === group.name }"
+              @click="activePresetGroup = group.name"
+            >
+              <strong>{{ group.name }}</strong>
+              <span>{{ group.items.length }}</span>
+            </button>
+          </div>
           <el-tabs v-model="activePresetGroup" class="library-tabs">
             <el-tab-pane v-for="group in filteredPresetGroups" :key="group.name" :label="group.name" :name="group.name">
-              <div class="preset-grid">
+              <div class="preset-grid" :class="`is-${componentLibraryView}`">
                 <button
                   v-for="preset in group.items"
                   :key="preset.type"
@@ -127,6 +148,10 @@
                     <span class="support-badge" :class="supportStatusClass(preset.type)">{{ componentSupport(preset.type).label }}</span>
                   </span>
                   <small>{{ presetSupportDescription(preset) }}</small>
+                  <span class="preset-card__meta">
+                    <span>{{ preset.group }}</span>
+                    <span>{{ canAddPreset(preset) ? "添加组件" : "暂不可用" }}</span>
+                  </span>
                 </button>
               </div>
             </el-tab-pane>
@@ -172,16 +197,22 @@
               <div class="panel-title">手机预览</div>
               <p class="page-subtitle">实际小程序预览效果：页面列表中的业务页使用同一套组件字段协议，发布后由对应小程序页面读取。</p>
             </div>
-            <el-select
-              v-model="selectedComponentId"
-              clearable
-              filterable
-              placeholder="定位页面组件"
-              style="width: 240px"
-              @change="focusComponent"
-            >
-              <el-option v-for="option in componentOptions" :key="option.value" :label="option.label" :value="option.value" />
-            </el-select>
+            <div class="preview-toolbar">
+              <el-radio-group v-model="previewPlatform" size="small">
+                <el-radio-button label="miniapp">小程序</el-radio-button>
+                <el-radio-button label="h5">H5</el-radio-button>
+              </el-radio-group>
+              <el-select
+                v-model="selectedComponentId"
+                clearable
+                filterable
+                placeholder="定位页面组件"
+                style="width: 220px"
+                @change="focusComponent"
+              >
+                <el-option v-for="option in componentOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+            </div>
           </div>
           <div v-if="components.length > 0" class="preview-component-rail">
             <div class="preview-component-rail__inner">
@@ -206,16 +237,28 @@
             show-icon
             :title="previewContextHint"
           />
-          <div class="phone-shell">
+          <div class="preview-device-meta">
+            <span><b>{{ previewPlatformName }}</b>{{ previewViewportLabel }}</span>
+            <span>{{ previewRouteHint }}</span>
+            <span>{{ previewStats.visible }} 展示 / {{ previewStats.hidden }} 隐藏 / {{ previewStats.unsupported }} 风险</span>
+          </div>
+          <div class="phone-shell" :class="`is-${previewPlatform}`">
             <div class="phone-status" />
-            <div class="phone-window" :style="previewStyle">
-              <div class="phone-nav">
-                <span class="phone-nav__spacer" />
-                <span class="phone-nav__title">
-                  <img v-if="previewTitleLogoUrl" class="phone-nav__logo" :src="previewTitleLogoUrl" alt="" />
-                  <span>{{ previewTitle }}</span>
-                </span>
-                <span class="phone-capsule"><i /><i /></span>
+            <div class="phone-window" :class="`is-${previewPlatform}`" :style="previewStyle">
+              <div class="phone-nav" :class="`is-${previewPlatform}`">
+                <template v-if="previewPlatform === 'h5'">
+                  <span class="phone-browser-dot" />
+                  <span class="phone-browser-address">{{ previewRouteHint }}</span>
+                  <span class="phone-browser-more">···</span>
+                </template>
+                <template v-else>
+                  <span class="phone-nav__spacer" />
+                  <span class="phone-nav__title">
+                    <img v-if="previewTitleLogoUrl" class="phone-nav__logo" :src="previewTitleLogoUrl" alt="" />
+                    <span>{{ previewTitle }}</span>
+                  </span>
+                  <span class="phone-capsule"><i /><i /></span>
+                </template>
               </div>
               <div class="phone-screen">
                 <ThemeDynamicBackgroundPreview v-if="previewShowDynamicBackground" :theme="previewTheme" />
@@ -264,6 +307,11 @@
               <div class="panel-title">页面内容</div>
               <p class="page-subtitle">可在手机预览中直接点选或拖动，也可在这里精确上移、下移和删除。</p>
             </div>
+            <div class="component-stack-metrics">
+              <span><b>{{ previewStats.total }}</b> 组件</span>
+              <span><b>{{ previewStats.visible }}</b> 展示</span>
+              <span><b>{{ previewStats.hidden }}</b> 隐藏</span>
+            </div>
           </div>
 
           <el-empty v-if="components.length === 0" description="还没有组件，请从左侧组件库添加" />
@@ -277,15 +325,18 @@
             @click="selectComponentCard(component.id)"
           >
             <div class="component-card__head">
-              <div>
+              <div class="component-card__identity">
+                <span class="component-card__index">{{ index + 1 }}</span>
+                <div class="component-card__copy">
                 <span class="component-title-row">
-                  <strong>{{ index + 1 }}. {{ presetName(component.type) }}</strong>
+                  <strong>{{ presetName(component.type) }}</strong>
                   <span class="support-badge" :class="supportStatusClass(component.type)">{{ componentSupport(component.type).label }}</span>
                 </span>
                 <span>{{ componentStateText(component) }}</span>
                 <p v-if="componentNotice(component)" class="component-notice" :class="supportStatusClass(component.type)">
                   {{ componentNotice(component) }}
                 </p>
+                </div>
               </div>
               <div class="inline-actions" @click.stop>
                 <el-switch v-model="component.enabled" active-text="展示" inactive-text="隐藏" />
@@ -1607,7 +1658,9 @@ const createForm = reactive({ slug: "", title: "", description: "", templateId: 
 const saveTemplateForm = reactive({ slug: "", title: "", category: "自定义模板", description: "" });
 const presetKeyword = ref("");
 const activePresetGroup = ref("");
+const componentLibraryView = ref<"cards" | "compact">("cards");
 const editorMode = ref<"ops" | "advanced" | "developer">("advanced");
+const previewPlatform = ref<"miniapp" | "h5">("miniapp");
 const selectedComponentId = ref("");
 const developerDslJson = ref("");
 const expandedEntryIds = ref<string[]>([]);
@@ -1772,6 +1825,17 @@ const filteredPresetGroups = computed(() => {
     .filter((group) => group.items.length > 0);
 });
 
+const componentLibraryStats = computed(() => ({
+  total: presets.value.length,
+  supported: presets.value.filter((preset) => canAddPreset(preset)).length
+}));
+const activePresetGroupMeta = computed(() => {
+  const group = filteredPresetGroups.value.find((item) => item.name === activePresetGroup.value);
+  return {
+    count: group?.items.length ?? 0,
+    supported: group?.items.filter((preset) => canAddPreset(preset)).length ?? 0
+  };
+});
 const previewComponents = computed(() => components.value.filter((item) => item.enabled));
 const unsupportedEnabledComponents = computed(() =>
   components.value.filter((item) => item.enabled && ["unsupported", "planned"].includes(componentSupport(item.type).status))
@@ -1789,6 +1853,23 @@ const selectedPageDisplayTitle = computed(() => (selectedPage.value ? pageDispla
 const previewTitle = computed(() => pageMeta.pageTitle.trim() || selectedPageDisplayTitle.value || "会议报名");
 const previewTitleLogoUrl = computed(() => pageMeta.navLogoDynamicUrl.trim() || pageMeta.navLogoUrl.trim());
 const previewTabbarItems = computed(() => (previewTabbar.value?.enabled === false ? [] : (previewTabbar.value?.items ?? []).filter((item) => item.visible).sort((a, b) => a.sortOrder - b.sortOrder)));
+const previewStats = computed(() => {
+  const total = components.value.length;
+  const visible = components.value.filter((component) => component.enabled).length;
+  const unsupported = components.value.filter((component) => component.enabled && ["unsupported", "planned"].includes(componentSupport(component.type).status)).length;
+  return {
+    total,
+    visible,
+    hidden: Math.max(0, total - visible),
+    unsupported
+  };
+});
+const previewPlatformName = computed(() => (previewPlatform.value === "miniapp" ? "微信小程序" : "H5 页面"));
+const previewViewportLabel = computed(() => (previewPlatform.value === "miniapp" ? " · 375x812 预览" : " · 移动 H5 预览"));
+const previewRouteHint = computed(() => {
+  const route = previewRouteForPage(selectedPage.value);
+  return previewPlatform.value === "miniapp" ? route.miniapp : route.h5;
+});
 const requiresCreateConference = computed(() => PAGE_TYPES_REQUIRING_CONFERENCE_UI.includes(createForm.pageType));
 const createConferenceBindingHelp = computed(() => {
   if (createForm.pageType === "REGISTRATION_FORM_PAGE") return "指定会议报名页只对所选会议生效；未命中时用户端会回退会议报名通用页。";
@@ -2691,6 +2772,34 @@ function pageDisplayTitle(page: PageTemplate) {
   if (page.pageType === "PRODUCT_DETAIL_TEMPLATE" || page.pageKey === "mall-detail") return "商品详情页（通用模板）";
   if (page.pageType === "PRODUCT_DETAIL_PAGE") return `商品详情页（${binding || "未绑定商品"}）`;
   return page.title;
+}
+
+function previewRouteForPage(page: PageTemplate | null | undefined) {
+  const key = page?.pageKey || "";
+  const routeMap: Record<string, { miniapp: string; h5: string }> = {
+    home: { miniapp: "pages/index/index", h5: "/pages/index/index" },
+    index: { miniapp: "pages/index/index", h5: "/pages/index/index" },
+    "conference-detail": { miniapp: "pages/conference/detail", h5: "/pages/conference/detail" },
+    "registration-form": { miniapp: "pages/registration/form", h5: "/pages/registration/form" },
+    "registration-credential": { miniapp: "pages/registration-success/index", h5: "/pages/registration-success/index" },
+    "my-registrations": { miniapp: "pages/registrations/my", h5: "/pages/registrations/my" },
+    cart: { miniapp: "pages/cart/index", h5: "/pages/cart/index" },
+    "member-center": { miniapp: "pages/member/center", h5: "/pages/member/center" },
+    mall: { miniapp: "pages/mall/index", h5: "/pages/mall/index" },
+    "mall-home": { miniapp: "pages/mall/index", h5: "/pages/mall/index" },
+    "mall-detail": { miniapp: "pages/mall/detail", h5: "/pages/mall/detail" },
+    "product-detail": { miniapp: "pages/mall/detail", h5: "/pages/mall/detail" },
+    "mall-orders": { miniapp: "pages/mall/orders", h5: "/pages/mall/orders" },
+    invoice: { miniapp: "pages/invoice/index", h5: "/pages/invoice/index" },
+    aftersale: { miniapp: "pages/refund/index", h5: "/pages/refund/index" },
+    "ai-assistant": { miniapp: "pages/ai-assistant/index", h5: "/pages/ai-assistant/index" }
+  };
+  const route = routeMap[key] ?? { miniapp: "pages/custom/index", h5: "/pages/custom/index" };
+  if (!key || routeMap[key]) return route;
+  return {
+    miniapp: `${route.miniapp}?pageKey=${encodeURIComponent(key)}`,
+    h5: `${route.h5}?pageKey=${encodeURIComponent(key)}`
+  };
 }
 
 function pageContextText(page: PageTemplate) {
@@ -6149,6 +6258,91 @@ function looksLikePreviewImage(value: string): boolean {
   margin: 14px 0 12px;
 }
 
+.library-view-toggle {
+  flex: 0 0 auto;
+}
+
+.library-metrics,
+.component-stack-metrics,
+.preview-device-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+}
+
+.library-metrics {
+  margin-top: 14px;
+}
+
+.library-metrics span,
+.component-stack-metrics span,
+.preview-device-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgb(220 227 239 / 92%);
+  border-radius: 999px;
+  background: #f8fbff;
+  white-space: nowrap;
+}
+
+.library-metrics b,
+.component-stack-metrics b,
+.preview-device-meta b {
+  margin-right: 4px;
+  color: var(--admin-color-text);
+}
+
+.component-category-rail {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+}
+
+.component-category-rail button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.component-category-rail button.active,
+.component-category-rail button:hover {
+  border-color: rgb(20 99 255 / 36%);
+  background: #eef4ff;
+  color: var(--admin-color-primary);
+}
+
+.component-category-rail strong {
+  font-weight: 800;
+}
+
+.component-category-rail span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgb(15 23 42 / 7%);
+  color: inherit;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .cms-builder {
   grid-template-columns: minmax(320px, 0.82fr) minmax(460px, 1.18fr);
 }
@@ -6171,6 +6365,33 @@ function looksLikePreviewImage(value: string): boolean {
   color: var(--admin-color-text);
   text-align: left;
   cursor: pointer;
+}
+
+.preset-grid.is-compact {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.preset-grid.is-compact .preset-card {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 12px;
+  padding: 10px;
+}
+
+.preset-grid.is-compact .preset-thumb {
+  grid-row: 1 / span 3;
+  height: 50px;
+}
+
+.preset-grid.is-compact .preset-card small,
+.preset-grid.is-compact .preset-card__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preset-card:hover:not(:disabled) {
@@ -6236,6 +6457,21 @@ function looksLikePreviewImage(value: string): boolean {
 .component-card__head span {
   color: var(--admin-color-muted);
   line-height: 1.45;
+}
+
+.preset-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+  color: var(--admin-color-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.preset-card__meta span:last-child {
+  color: var(--admin-color-primary);
 }
 
 .component-notice {
@@ -6397,10 +6633,22 @@ function looksLikePreviewImage(value: string): boolean {
   overflow: visible;
 }
 
+.preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.preview-device-meta {
+  justify-content: center;
+  margin: 12px auto 0;
+}
+
 .phone-shell {
   display: block;
-  width: 320px;
-  min-height: 690px;
+  width: min(360px, 100%);
+  min-height: 720px;
   margin: 14px auto 0;
   padding: 10px;
   border-radius: 34px;
@@ -6408,11 +6656,20 @@ function looksLikePreviewImage(value: string): boolean {
   box-shadow: 0 22px 44px rgb(15 23 42 / 22%);
 }
 
+.phone-shell.is-h5 {
+  border-radius: 28px;
+  background: linear-gradient(180deg, #263244, #121a27);
+}
+
 .phone-window {
-  min-height: 642px;
+  min-height: 668px;
   overflow: hidden;
   border-radius: 24px;
   background: var(--preview-bg);
+}
+
+.phone-window.is-h5 {
+  border-radius: 18px;
 }
 
 .phone-nav {
@@ -6426,6 +6683,42 @@ function looksLikePreviewImage(value: string): boolean {
   color: #172033;
   font-size: 14px;
   font-weight: 800;
+}
+
+.phone-nav.is-h5 {
+  grid-template-columns: 12px minmax(0, 1fr) 32px;
+  gap: 8px;
+  height: 42px;
+  padding: 0 10px;
+  background: #eef2f7;
+  color: #39465a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.phone-browser-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #3a8f79;
+}
+
+.phone-browser-address {
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px rgb(203 213 225 / 76%);
+}
+
+.phone-browser-more {
+  color: #64748b;
+  text-align: center;
+  letter-spacing: 0;
 }
 
 .phone-nav__title {
@@ -6609,7 +6902,7 @@ function looksLikePreviewImage(value: string): boolean {
   display: block;
   position: relative;
   min-height: 560px;
-  max-height: 620px;
+  max-height: 648px;
   overflow: auto;
   background: var(--preview-page-bg);
   background-repeat: no-repeat;
@@ -6691,6 +6984,38 @@ function looksLikePreviewImage(value: string): boolean {
 .component-card--summary.is-selected {
   border-color: var(--admin-color-primary);
   box-shadow: 0 12px 28px rgb(20 99 255 / 12%);
+}
+
+.component-card__identity {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.component-card__copy {
+  min-width: 0;
+}
+
+.component-card__head .component-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.component-card__index {
+  display: inline-grid !important;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: #eef4ff;
+  color: var(--admin-color-primary) !important;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .component-card__summary {
