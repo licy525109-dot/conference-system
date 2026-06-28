@@ -221,13 +221,16 @@ interface FixedEntry {
 
 const props = withDefaults(defineProps<{
   kind?: string;
+  template?: unknown;
   config?: Record<string, unknown>;
+  context?: Record<string, unknown> | null;
   conferences?: ConferenceListItem[];
   products?: Product[];
   userContext?: Record<string, unknown> | null;
 }>(), {
   kind: "home",
   config: () => ({}),
+  context: null,
   conferences: () => [],
   products: () => [],
   userContext: null
@@ -237,9 +240,32 @@ const emit = defineEmits<{
   openConference: [id: string];
 }>();
 
-const assetRoot = computed(() => readString(props.config.assetRoot) || "/static/fixed-templates");
+const templateConfig = computed(() => {
+  const template = isRecord(props.template) ? props.template : {};
+  const templateProps = isRecord(template.props) ? template.props : {};
+  const templateConfig = isRecord(template.config) ? template.config : {};
+  return {
+    ...templateProps,
+    ...templateConfig,
+    ...pickTemplateTopLevel(template),
+    ...props.config
+  };
+});
+const runtimeUserContext = computed(() => {
+  const context = props.context;
+  return props.userContext ?? (isRecord(context) && isRecord(context.userContext) ? context.userContext : null);
+});
+const assetRoot = computed(() => readString(templateConfig.value.assetRoot) || "/static/fixed-templates");
 
-const templateKind = computed<FixedTemplateKind>(() => normalizeKind(props.kind || readString(props.config.templateKey) || readString(props.config.kind)));
+const templateKind = computed<FixedTemplateKind>(() =>
+  normalizeKind(
+    props.kind ||
+      readString(templateConfig.value.templateKey) ||
+      readString(templateConfig.value.kind) ||
+      readString(templateConfig.value.pageType) ||
+      readString(templateConfig.value.template)
+  )
+);
 const brandSubtitle = computed(() => {
   if (templateKind.value === "mall") return "会议周边商城";
   if (templateKind.value === "cart") return "购物车结算";
@@ -259,23 +285,23 @@ const visibleProducts = computed(() => {
   }
   return fallbackProducts;
 });
-const loginAvatar = computed(() => readString(props.userContext?.avatarUrl) || asset("brand/member_avatar_placeholder.png"));
-const loginTitle = computed(() => props.userContext ? `欢迎回来，${memberName.value}` : "欢迎光临，请登录成为会员");
-const loginSubtitle = computed(() => props.userContext ? "可查看会议排期、报名权益和会员资料。" : "查看会议排期与报名权益");
-const loginButtonText = computed(() => props.userContext ? "个人中心" : "立即登录");
-const memberName = computed(() => readString(props.userContext?.nickname) || "微信用户");
-const memberAvatar = computed(() => readString(props.userContext?.avatarUrl) || asset("brand/member_avatar_placeholder.png"));
-const memberStatus = computed(() => readString(props.userContext?.memberStatus) || "普通用户");
-const memberLevel = computed(() => readString(props.userContext?.memberLevel) || "普通用户");
+const loginAvatar = computed(() => readString(runtimeUserContext.value?.avatarUrl) || asset("brand/member_avatar_placeholder.png"));
+const loginTitle = computed(() => runtimeUserContext.value ? `欢迎回来，${memberName.value}` : "欢迎光临，请登录成为会员");
+const loginSubtitle = computed(() => runtimeUserContext.value ? "可查看会议排期、报名权益和会员资料。" : "查看会议排期与报名权益");
+const loginButtonText = computed(() => runtimeUserContext.value ? "个人中心" : "立即登录");
+const memberName = computed(() => readString(runtimeUserContext.value?.nickname) || "微信用户");
+const memberAvatar = computed(() => readString(runtimeUserContext.value?.avatarUrl) || asset("brand/member_avatar_placeholder.png"));
+const memberStatus = computed(() => readString(runtimeUserContext.value?.memberStatus) || "普通用户");
+const memberLevel = computed(() => readString(runtimeUserContext.value?.memberLevel) || "普通用户");
 const memberStats = computed(() => [
-  { label: "我的报名", value: readNumber(props.userContext?.registrationCount, 0) },
-  { label: "我的订单", value: readNumber(props.userContext?.orderCount, 0) },
-  { label: "待参会", value: readNumber(props.userContext?.pendingConferenceCount, 0) },
-  { label: "优惠券", value: readNumber(props.userContext?.couponCount, 0) }
+  { label: "我的报名", value: readNumber(runtimeUserContext.value?.registrationCount, 0) },
+  { label: "我的订单", value: readNumber(runtimeUserContext.value?.orderCount, 0) },
+  { label: "待参会", value: readNumber(runtimeUserContext.value?.pendingConferenceCount, 0) },
+  { label: "优惠券", value: readNumber(runtimeUserContext.value?.couponCount, 0) }
 ]);
 
 const homeEntries = computed(() => {
-  const configured = normalizeEntries(props.config.items);
+  const configured = normalizeEntries(templateConfig.value.items);
   return configured.length > 0 ? configured.slice(0, 3) : defaultHomeEntries();
 });
 const conferenceModels = ["行业论坛", "闭门会", "城市沙龙", "案例参访", "私董会"];
@@ -310,16 +336,16 @@ function asset(path: string): string {
 }
 
 function heroStyle(file: string) {
-  const imageUrl = readString(props.config.heroImageUrl) || asset(`heroes/${file}`);
+  const imageUrl = readString(templateConfig.value.heroImageUrl) || asset(`heroes/${file}`);
   return { backgroundImage: `url(${imageUrl})` };
 }
 
 function textConfig(key: string, fallback: string): string {
-  return readString(props.config[key]) || fallback;
+  return readString(templateConfig.value[key]) || fallback;
 }
 
 function visibleConfig(key: string, fallback: boolean): boolean {
-  return typeof props.config[key] === "boolean" ? Boolean(props.config[key]) : fallback;
+  return typeof templateConfig.value[key] === "boolean" ? Boolean(templateConfig.value[key]) : fallback;
 }
 
 function normalizeKind(value: string): FixedTemplateKind {
@@ -349,7 +375,7 @@ function openProduct(id: string) {
 }
 
 async function loginOrMember() {
-  if (!props.userContext) {
+  if (!runtimeUserContext.value) {
     try {
       await ensureLogin();
       uni.$emit("wechat-profile:open");
@@ -478,6 +504,11 @@ function readNumber(value: unknown, fallback: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, unknown> {
+  const keys = ["templateKey", "kind", "pageType", "template", "assetRoot", "heroTitle", "heroSubtitle", "heroImageUrl", "noticeText", "growthValue", "items"];
+  return Object.fromEntries(keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
 }
 </script>
 

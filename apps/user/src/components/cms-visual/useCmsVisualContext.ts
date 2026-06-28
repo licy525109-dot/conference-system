@@ -18,22 +18,22 @@ export function cmsVisualComponentsFromDsl(dsl: PageDsl): CmsComponent[] {
 
 function normalizeDslComponent(value: unknown, index: number): CmsComponent | null {
   if (!isRecord(value)) return null;
-  const type = readText(value.type);
+  const mergedConfig = mergedComponentConfig(value);
+  const type = readText(value.type) || (hasFixedTemplateMarker(mergedConfig) ? "fixed-business-template" : "");
   if (!type) return null;
-  const config = isRecord(value.config) ? { ...value.config } : {};
   return {
     id: readText(value.id) || `cms-${index}`,
     type,
     enabled: typeof value.enabled === "boolean" ? value.enabled : true,
     sortOrder: readNumber(value.sortOrder, index * 10),
-    config
+    config: mergedConfig
   };
 }
 
 function componentFromDslNode(node: DslNode, index: number): CmsComponent | null {
-  const type = readText(node.meta?.originalType) || componentTypeFromDslType(node.type);
-  if (!type) return null;
   const config = isRecord(node.props) ? { ...node.props } : {};
+  const type = readText(node.meta?.originalType) || componentTypeFromDslNode(node.type, config);
+  if (!type) return null;
   delete config.userContext;
   normalizeNodeActionConfig(config);
   removeTechnicalFallbackText(config, type, node.type);
@@ -46,7 +46,8 @@ function componentFromDslNode(node: DslNode, index: number): CmsComponent | null
   };
 }
 
-function componentTypeFromDslType(type: string): string {
+function componentTypeFromDslNode(type: string, props: Record<string, unknown>): string {
+  if (hasFixedTemplateMarker(props)) return "fixed-business-template";
   const map: Record<string, string> = {
     "ds-banner": "hero-banner",
     "ds-carousel": "carousel",
@@ -57,6 +58,28 @@ function componentTypeFromDslType(type: string): string {
     "ds-button": "registration-button"
   };
   return map[type] || "";
+}
+
+function mergedComponentConfig(value: Record<string, unknown>): Record<string, unknown> {
+  const props = isRecord(value.props) ? value.props : {};
+  const config = isRecord(value.config) ? value.config : {};
+  return {
+    ...props,
+    ...config,
+    ...pickFixedTemplateTopLevel(value)
+  };
+}
+
+function pickFixedTemplateTopLevel(value: Record<string, unknown>): Record<string, unknown> {
+  const keys = ["templateKey", "kind", "pageType", "template", "assetRoot", "heroTitle", "heroSubtitle", "heroImageUrl", "noticeText", "growthValue", "items"];
+  return Object.fromEntries(keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
+}
+
+function hasFixedTemplateMarker(value: Record<string, unknown>): boolean {
+  const marker = readText(value.templateKey || value.kind || value.pageType || value.template);
+  if (!marker) return false;
+  if (marker.includes("fixed-")) return true;
+  return ["home", "schedule", "registration", "conference-list", "mall", "cart", "member-center"].includes(marker);
 }
 
 function normalizeNodeActionConfig(config: Record<string, unknown>): void {
@@ -80,6 +103,7 @@ function removeTechnicalFallbackText(config: Record<string, unknown>, componentT
 
 function titleFor(type: string): string {
   const map: Record<string, string> = {
+    "fixed-business-template": "固定业务模板",
     "hero-banner": "顶部主视觉 Banner",
     "quick-icon-grid": "图标入口宫格",
     "rich-text": "图文富文本",

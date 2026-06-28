@@ -89,6 +89,35 @@ function compileModule(module: BusinessModule, index: number): DslNode {
     }
   };
 
+  if (module.type === "fixed-business-template") {
+    return {
+      ...base,
+      type: "ds-section",
+      props: {
+        ...moduleStyleProps(config),
+        templateKey: text(config.templateKey, "home"),
+        assetRoot: text(config.assetRoot, "/static/fixed-templates"),
+        heroTitle: text(config.heroTitle || config.title),
+        heroSubtitle: text(config.heroSubtitle || config.subtitle),
+        heroImageUrl: text(config.heroImageUrl || config.imageUrl),
+        noticeText: text(config.noticeText || config.description),
+        growthValue: text(config.growthValue),
+        noticeBar: config.noticeBar !== false,
+        loginCard: config.loginCard !== false,
+        quickGrid: config.quickGrid !== false,
+        highlightStrip: config.highlightStrip !== false,
+        statsCard: config.statsCard !== false,
+        conferenceModels: config.conferenceModels !== false,
+        tagRows: config.tagRows !== false,
+        items: (config.items ?? []).map(itemToDslItem)
+      },
+      meta: {
+        ...base.meta,
+        originalType: "fixed-business-template"
+      }
+    };
+  }
+
   if (module.type === "home-hero" || module.type === "image-banner") {
     return {
       ...base,
@@ -223,6 +252,20 @@ function configFromProps(props: Record<string, unknown>, fallback: BusinessModul
     subtitle: text(props.subtitle, fallback.subtitle),
     description: text(props.description || props.text, fallback.description),
     imageUrl: text(props.imageUrl, fallback.imageUrl),
+    templateKey: text(props.templateKey, fallback.templateKey),
+    assetRoot: text(props.assetRoot, fallback.assetRoot),
+    heroTitle: text(props.heroTitle || props.title, fallback.heroTitle),
+    heroSubtitle: text(props.heroSubtitle || props.subtitle, fallback.heroSubtitle),
+    heroImageUrl: text(props.heroImageUrl || props.imageUrl, fallback.heroImageUrl),
+    noticeText: text(props.noticeText || props.description || props.text, fallback.noticeText),
+    growthValue: text(props.growthValue, fallback.growthValue),
+    noticeBar: typeof props.noticeBar === "boolean" ? props.noticeBar : fallback.noticeBar,
+    loginCard: typeof props.loginCard === "boolean" ? props.loginCard : fallback.loginCard,
+    quickGrid: typeof props.quickGrid === "boolean" ? props.quickGrid : fallback.quickGrid,
+    highlightStrip: typeof props.highlightStrip === "boolean" ? props.highlightStrip : fallback.highlightStrip,
+    statsCard: typeof props.statsCard === "boolean" ? props.statsCard : fallback.statsCard,
+    conferenceModels: typeof props.conferenceModels === "boolean" ? props.conferenceModels : fallback.conferenceModels,
+    tagRows: typeof props.tagRows === "boolean" ? props.tagRows : fallback.tagRows,
     buttonText: text(props.buttonText || props.text, fallback.buttonText),
     columns: Number.isFinite(Number(props.columns)) ? Number(props.columns) : fallback.columns,
     items: Array.isArray(props.items) ? props.items.map((item, index) => dslItemToModuleItem(item, index)) : fallback.items

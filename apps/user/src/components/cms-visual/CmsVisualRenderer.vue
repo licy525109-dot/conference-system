@@ -21,9 +21,10 @@
         :controls="false"
       />
       <FixedBusinessTemplateRenderer
-        v-if="component.type === 'fixed-business-template'"
-        :kind="stringConfig(component, 'templateKey') || stringConfig(component, 'kind') || stringConfig(component, 'pageType')"
-        :config="component.config"
+        v-if="isFixedBusinessTemplate(component)"
+        :kind="fixedTemplateKind(component)"
+        :config="fixedTemplateConfig(component)"
+        :context="fixedTemplateContext"
         :conferences="conferences"
         :products="products"
         :user-context="props.userContext"
@@ -676,7 +677,7 @@ const visualPlatform = computed<RendererPlatform>(() => (typeof window === "unde
 const visibleComponents = computed(() =>
   props.components
     .filter((item) => item.enabled)
-    .filter((item) => !(props.suppressRegistrationCta && isCmsRegistrationCta(item.type)))
+    .filter((item) => !(props.suppressRegistrationCta && isCmsRegistrationCta(normalizedComponentType(item))))
     .sort((a, b) => a.sortOrder - b.sortOrder)
 );
 const conferences = computed(() => props.conferences ?? []);
@@ -688,6 +689,12 @@ const rootStyle = computed(() => ({
 }));
 const rootClass = computed(() => ["cms-page"]);
 const showHeaderVideo = computed(() => props.theme.backgroundMode === "video" && Boolean(props.theme.backgroundVideoUrl) && props.theme.backgroundApplyTo === "header");
+const fixedTemplateContext = computed(() => ({
+  theme: props.theme,
+  userContext: props.userContext ?? null,
+  conferences: props.conferences ?? [],
+  products: props.products ?? []
+}));
 
 async function handleComponentAction(component: CmsComponent) {
   await runAction(readComponentAction(component));
@@ -2611,8 +2618,26 @@ function escapeHtmlAttribute(value: string): string {
 }
 
 function unsupportedComponentText(component: CmsComponent): string {
-  const support = getCmsComponentSupport(component.type);
+  const support = getCmsComponentSupport(normalizedComponentType(component));
   return `${support.label}未纳入当前 H5/小程序渲染支持矩阵，请联系主办方调整页面配置。`;
+}
+
+function normalizedComponentType(component: CmsComponent): string {
+  return typeof component.type === "string" ? component.type.trim() : "";
+}
+
+function isFixedBusinessTemplate(component: CmsComponent): boolean {
+  if (normalizedComponentType(component) === "fixed-business-template") return true;
+  return Boolean(fixedTemplateKind(component));
+}
+
+function fixedTemplateKind(component: CmsComponent): string {
+  return stringConfig(component, "templateKey") || stringConfig(component, "kind") || stringConfig(component, "pageType") || stringConfig(component, "template");
+}
+
+function fixedTemplateConfig(component: CmsComponent): Record<string, unknown> {
+  const templateKey = fixedTemplateKind(component);
+  return templateKey ? { ...component.config, templateKey } : component.config;
 }
 
 function parseTargetTime(value: string): number | null {

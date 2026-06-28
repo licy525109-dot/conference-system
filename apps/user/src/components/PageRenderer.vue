@@ -81,7 +81,10 @@ const runtimeContext = computed(() =>
 
 const governedResult = computed(() => governRender(props.dsl, { context: runtimeContext.value, allowLegacyDslFallback: false }));
 const governorWarnings = computed<RenderGovernorWarning[]>(() => governedResult.value.warnings);
-const visualComponents = computed(() => (hasCmsVisualComponents(props.dsl) ? cmsVisualComponentsFromDsl(props.dsl) : []));
+const visualComponents = computed(() => {
+  const components = cmsVisualComponentsFromDsl(props.dsl);
+  return hasCmsVisualComponents(props.dsl) ? components : components.filter(isFixedBusinessTemplateComponent);
+});
 const useCmsVisualRenderer = computed(() => visualComponents.value.length > 0);
 const renderTree = computed(() => ({
   ...governedResult.value.tree,
@@ -107,6 +110,11 @@ function withRuntimeContext(nodes: ResolvedDslNode[]): ResolvedDslNode[] {
 function shouldHydrateUserContext(node: ResolvedDslNode): boolean {
   const originalType = readString(node.meta.originalType);
   return ["login-card", "user-profile-card", "membership-benefits", "my-order-list"].includes(originalType);
+}
+
+function isFixedBusinessTemplateComponent(component: { type: string; config: Record<string, unknown> }): boolean {
+  if (readString(component.type) === "fixed-business-template") return true;
+  return Boolean(readString(component.config.templateKey || component.config.kind || component.config.pageType || component.config.template));
 }
 
 async function handleAction(action: Record<string, unknown>): Promise<void> {

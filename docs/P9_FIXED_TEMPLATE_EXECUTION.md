@@ -51,6 +51,8 @@ The CMS toolbar now exposes `固定模板`, which applies one of the six locked 
 
 User rendering still enters through `PageRenderer -> Render Governor -> Runtime`. If the governed DSL contains `meta.editorComponents` with `fixed-business-template`, `CmsVisualRenderer` delegates to `FixedBusinessTemplateRenderer`. Otherwise the normal DS render tree is used.
 
+`fixed-business-template` is registered in the user H5/MiniApp support matrix and normalized from any of these published shapes: top-level `templateKey`, `props.templateKey`, `config.templateKey`, or a DSL node with `meta.originalType = "fixed-business-template"`. This prevents the user runtime from falling back to the unsupported component card.
+
 ## Compatibility
 
 Old pages keep opening through `meta.editorComponents` compatibility. The fixed template does not read `version.components` as a user runtime source and does not add any migration.
