@@ -10,6 +10,8 @@
       :theme="theme"
       :conferences="conferences"
       :conference="conference"
+      :products="products"
+      :user-context="userContext"
       :suppress-registration-cta="suppressRegistrationCta"
       @open-conference="emit('openConference', $event)"
       @register="emit('register')"

@@ -7,6 +7,7 @@ export interface CmsComponentSupportDefinition {
 }
 
 export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportDefinition> = {
+  "fixed-business-template": { label: "固定业务模板", status: "supported", description: "用户端支持首页、排期、报名、商城、购物车和会员中心固定模板" },
   hero: { label: "主视觉横幅", status: "supported", description: "用户端完整支持图片横幅展示" },
   "hero-banner": { label: "顶部主视觉 Banner", status: "supported", description: "用户端支持首页主视觉、双按钮、背景图和统一跳转配置" },
   "login-card": { label: "登录欢迎卡", status: "supported", description: "用户端支持微信头像昵称登录引导和登录后头像昵称展示" },

@@ -20,7 +20,7 @@
       tone="info"
     />
 
-    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" />
+    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" :products="products" />
 
     <view v-if="!hasCmsContent" class="toolbar ui-card">
       <input v-model="keyword" class="search" placeholder="搜索商品" @confirm="loadProducts" />
