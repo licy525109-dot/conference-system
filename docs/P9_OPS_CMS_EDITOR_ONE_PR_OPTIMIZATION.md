@@ -76,6 +76,10 @@ The CMS workbench has been aligned with the observed "观潮会集 - 管理后�
 
 - the top page header now identifies the management workbench and keeps mode switching, templates, drafts, and publishing in one action row
 - an operations overview bar summarizes the current page, visible components, fixed business modules, and release acceptance state
+- a renovation workflow strip makes the page flow explicit: choose page, add components, arrange the phone canvas, save and publish
+- the component library now behaves more like a renovation toolbox, with current-group stats, display mode, component type hints, and publish support status
+- the phone canvas includes a compact operation bar for platform, click-to-select, drag sorting, and current selected module
+- the component inspector exposes content, style, and action editing modes as operator-facing configuration areas
 - component cards show the operator label, support status, technical type, platform coverage, and render hint without exposing raw DSL
 - the phone preview shell uses a MiniApp/H5-like status bar and keeps the preview fixed in the center work area
 - the admin workbench, CMS visual renderer, and fixed business templates share the same navy / gold / warm paper visual language

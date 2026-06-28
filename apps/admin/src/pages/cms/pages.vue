@@ -53,6 +53,37 @@
       </article>
     </section>
 
+    <section v-if="selectedPage && version" class="cms-workflow-strip">
+      <article>
+        <b>01</b>
+        <span>
+          <strong>选择页面</strong>
+          <small>{{ pageTypeLabel(selectedPage.pageType) }}{{ pageBindingLabel(selectedPage) ? ` · ${pageBindingLabel(selectedPage)}` : "" }}</small>
+        </span>
+      </article>
+      <article>
+        <b>02</b>
+        <span>
+          <strong>添加组件</strong>
+          <small>{{ componentLibraryStats.supported }} 个可发布组件，支持卡片/紧凑视图</small>
+        </span>
+      </article>
+      <article>
+        <b>03</b>
+        <span>
+          <strong>画布编排</strong>
+          <small>手机预览可点击定位、拖拽排序、隐藏模块</small>
+        </span>
+      </article>
+      <article>
+        <b>04</b>
+        <span>
+          <strong>保存发布</strong>
+          <small>{{ acceptanceSummary.error > 0 ? "存在发布阻断" : "可进入发布验收" }}</small>
+        </span>
+      </article>
+    </section>
+
     <section class="cms-workbench">
       <aside class="cms-sidebar cms-sidebar--left">
         <section class="data-panel cms-panel">
@@ -133,6 +164,11 @@
             <span><b>{{ componentLibraryStats.total }}</b> 全部组件</span>
             <span><b>{{ activePresetGroupMeta.count }}</b> 当前分类</span>
           </div>
+          <div class="library-toolband">
+            <span><b>当前分组</b><em>{{ activePresetGroup || "全部" }}</em></span>
+            <span><b>本组可用</b><em>{{ activePresetGroupMeta.supported }} / {{ activePresetGroupMeta.count }}</em></span>
+            <span><b>展示形式</b><em>{{ componentLibraryView === "cards" ? "缩略卡片" : "紧凑清单" }}</em></span>
+          </div>
           <div class="library-filters">
             <el-select v-model="activePresetGroup" placeholder="组件分类">
               <el-option v-for="group in filteredPresetGroups" :key="group.name" :label="group.name" :value="group.name" />
@@ -171,6 +207,7 @@
                     <strong>{{ preset.name }}</strong>
                     <span class="support-badge" :class="supportStatusClass(preset.type)">{{ componentSupport(preset.type).label }}</span>
                   </span>
+                  <span class="preset-card__type">{{ preset.type }}</span>
                   <small>{{ presetSupportDescription(preset) }}</small>
                   <span class="preset-card__meta">
                     <span>{{ preset.group }}</span>
@@ -265,6 +302,11 @@
             <span><b>{{ previewPlatformName }}</b>{{ previewViewportLabel }}</span>
             <span>{{ previewRouteHint }}</span>
             <span>{{ previewStats.visible }} 展示 / {{ previewStats.hidden }} 隐藏 / {{ previewStats.unsupported }} 风险</span>
+          </div>
+          <div class="preview-canvas-bar">
+            <span><b>画布</b>{{ previewPlatformName }} · {{ previewViewportLabel }}</span>
+            <span><b>交互</b>点击组件定位，拖拽调整顺序</span>
+            <span><b>当前</b>{{ selectedComponent ? presetName(selectedComponent.type) : "未选择组件" }}</span>
           </div>
           <div class="phone-shell" :class="`is-${previewPlatform}`">
             <div class="phone-status" :class="`is-${previewPlatform}`">
@@ -543,6 +585,11 @@
                 <el-button size="small" plain @click="duplicateSelectedComponent">复制当前模块</el-button>
                 <el-button size="small" type="danger" plain @click="removeSelectedComponent">删除当前模块</el-button>
               </div>
+            </div>
+            <div class="inspector-mode-strip">
+              <span><b>内容</b>表单配置</span>
+              <span><b>样式</b>预设约束</span>
+              <span><b>动作</b>跳转选择</span>
             </div>
             <div class="component-parity-panel">
               <div class="component-parity-panel__head">
@@ -10365,6 +10412,125 @@ function looksLikePreviewImage(value: string): boolean {
   white-space: nowrap;
 }
 
+.cms-workflow-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.cms-workflow-strip article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid rgb(185 150 67 / 16%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 76%);
+}
+
+.cms-workflow-strip b {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--gc-ink);
+  color: #f8f5ee;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.cms-workflow-strip span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.cms-workflow-strip strong,
+.cms-workflow-strip small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-workflow-strip strong {
+  color: var(--gc-ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.cms-workflow-strip small {
+  color: var(--gc-muted);
+  font-size: 12px;
+}
+
+.library-toolband,
+.preview-canvas-bar,
+.inspector-mode-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgb(185 150 67 / 14%);
+  border-radius: 12px;
+  background: rgb(248 245 238 / 72%);
+}
+
+.library-toolband {
+  margin-top: 12px;
+}
+
+.preview-canvas-bar {
+  margin: 10px 0 14px;
+}
+
+.inspector-mode-strip {
+  margin-bottom: 12px;
+}
+
+.library-toolband span,
+.preview-canvas-bar span,
+.inspector-mode-strip span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 74%);
+  color: var(--gc-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.library-toolband b,
+.preview-canvas-bar b,
+.inspector-mode-strip b {
+  color: var(--gc-ink);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.library-toolband em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gc-gold-strong);
+  font-style: normal;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-canvas-bar span,
+.inspector-mode-strip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cms-panel,
 .preset-card,
 .component-card,
@@ -10460,6 +10626,23 @@ function looksLikePreviewImage(value: string): boolean {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.preset-card__type {
+  min-width: 0;
+  overflow: hidden;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgb(7 20 38 / 5%);
+  color: var(--gc-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-grid.is-compact .preset-card__type {
+  max-width: 100%;
 }
 
 .phone-preview {
@@ -10584,7 +10767,17 @@ function looksLikePreviewImage(value: string): boolean {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .cms-workflow-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .component-card__summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .library-toolband,
+  .preview-canvas-bar,
+  .inspector-mode-strip {
     grid-template-columns: minmax(0, 1fr);
   }
 }
