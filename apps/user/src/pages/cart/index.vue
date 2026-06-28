@@ -3,42 +3,44 @@
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
-    <view v-if="!hasCmsContent" class="topbar ui-card">
+    <view v-if="showCartTitle" class="topbar ui-card" :class="[`is-${cartDisplay.title.style}`, `align-${cartDisplay.title.align}`]" :style="cartTitleStyle">
       <view>
-        <text class="eyebrow">会议报名优先</text>
-        <text class="title">购物车</text>
-        <text class="subtitle">会议报名项可继续支付；商城商品可创建订单后前往订单页支付。</text>
+        <text class="eyebrow">购物车</text>
+        <text class="title">{{ cartDisplay.title.text }}</text>
+        <text v-if="cartDisplay.title.description" class="subtitle">{{ cartDisplay.title.description }}</text>
       </view>
       <button class="ui-button-secondary ui-button-compact" @click="loadCart">刷新</button>
     </view>
 
-    <ExtensionStatusNotice
-      v-if="!hasCmsContent"
-      status="主线提醒"
-      title="第一版优先完成会议报名缴费"
-      description="购物车中的商品可创建商城待支付订单，金额由后端按 SKU 当前价格重算，支付以订单页后端状态为准。"
-      tone="info"
-    />
+    <view v-if="cartDisplay.couponNotice.visible" class="coupon-notice ui-card" :class="`is-${cartDisplay.couponNotice.style}`">
+      <view>
+        <text class="section-title">{{ cartDisplay.couponNotice.title }}</text>
+        <text v-if="cartDisplay.couponNotice.description" class="muted">{{ cartDisplay.couponNotice.description }}</text>
+      </view>
+      <button v-if="cartDisplay.couponNotice.buttonText && cartDisplay.couponNotice.action !== 'none'" class="ui-button-secondary ui-button-compact" @click="handleCouponNoticeAction">
+        {{ cartDisplay.couponNotice.buttonText }}
+      </button>
+    </view>
 
     <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" />
 
     <LoadingState v-if="loading" title="加载购物车中" description="正在同步会议报名项和商品项。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="loadCart" @secondary="goHome" />
     <EmptyState
-      v-else-if="isEmpty"
-      title="购物车还没有内容"
-      description="可以先从会议列表选择报名规格，完成报名缴费主流程。"
+      v-else-if="isEmpty && cartDisplay.emptyState.visible"
+      :title="cartDisplay.emptyState.title"
+      :description="cartDisplay.emptyState.description"
       mark="车"
-      action-text="查看会议"
-      @action="goHome"
+      :action-text="cartDisplay.emptyState.buttonText"
+      @action="handleEmptyStateAction"
     />
 
     <template v-else>
-      <view v-if="registrationItems.length > 0" class="section">
-        <view v-if="!hasCmsContent" class="section-head">
+      <view v-if="showRegistrationSection" class="section">
+        <view class="section-head">
           <view>
-            <text class="section-title">会议报名</text>
-            <text class="muted">报名支付沿用现有安全订单链路</text>
+            <text class="section-title">{{ cartDisplay.registrationItems.title }}</text>
+            <text v-if="cartDisplay.registrationItems.description" class="muted">{{ cartDisplay.registrationItems.description }}</text>
           </view>
           <StatusTag label="已可用" tone="success" />
         </view>
@@ -49,86 +51,84 @@
           <view class="card-head">
             <view class="card-main">
               <text class="card-title">{{ item.conference.title }}</text>
-              <text class="muted">{{ item.sku.name }} × {{ item.quantity }}</text>
-              <text class="muted" v-if="item.conference.location">{{ item.conference.location }}</text>
+              <text v-if="cartDisplay.registrationItems.showSku && cartDisplay.registrationItems.showQuantity" class="muted">{{ item.sku.name }} × {{ item.quantity }}</text>
+              <text v-else-if="cartDisplay.registrationItems.showSku" class="muted">{{ item.sku.name }}</text>
+              <text v-else-if="cartDisplay.registrationItems.showQuantity" class="muted">数量 × {{ item.quantity }}</text>
+              <text class="muted" v-if="cartDisplay.registrationItems.showLocation && item.conference.location">{{ item.conference.location }}</text>
             </view>
             <text class="price">¥{{ formatCent(item.subtotalCent) }}</text>
           </view>
-          <view class="quantity-row">
+          <view v-if="cartDisplay.registrationItems.showQuantity" class="quantity-row">
             <text class="muted">数量</text>
-            <view class="quantity-stepper">
+            <view v-if="cartDisplay.registrationItems.allowQuantityEdit" class="quantity-stepper">
               <button @click="changeRegistrationQuantity(item, -1)">−</button>
               <text>{{ item.quantity }}</text>
               <button @click="changeRegistrationQuantity(item, 1)">＋</button>
             </view>
+            <text v-else class="quantity-static">{{ item.quantity }}</text>
           </view>
-          <view class="card-actions">
-            <button class="ui-button-secondary action-button" :disabled="removingId === item.id" @click="removeRegistration(item.id)">删除</button>
-            <button class="ui-button-primary action-button" :disabled="checkoutId === item.id" @click="payRegistration(item.id)">
+          <view v-if="showRegistrationCardActions" class="card-actions">
+            <button v-if="cartDisplay.registrationItems.showDeleteButton" class="ui-button-secondary action-button" :disabled="removingId === item.id" @click="removeRegistration(item.id)">删除</button>
+            <button v-if="cartDisplay.registrationItems.showSinglePayButton" class="ui-button-primary action-button" :disabled="checkoutId === item.id" @click="payRegistration(item.id)">
               {{ checkoutId === item.id ? "处理中..." : "去付款" }}
             </button>
           </view>
         </view>
       </view>
 
-      <view v-if="productItems.length > 0" class="section">
-        <view v-if="!hasCmsContent" class="section-head">
+      <view v-if="showMallSection" class="section">
+        <view class="section-head">
           <view>
-            <text class="section-title">商品</text>
-            <text class="muted">商品可创建待支付订单，订单页完成支付</text>
+            <text class="section-title">{{ cartDisplay.mallItems.title }}</text>
+            <text v-if="cartDisplay.mallItems.description" class="muted">{{ cartDisplay.mallItems.description }}</text>
           </view>
           <StatusTag label="待支付订单" tone="info" />
         </view>
-        <ExtensionStatusNotice
-          v-if="!hasCmsContent"
-          status="商城订单"
-          title="商品项可创建待支付订单"
-          description="后端会重新计算金额并锁定库存。订单创建后前往我的商城订单完成支付。"
-          tone="info"
-        />
-        <view v-if="hasPhysicalProduct" class="receiver-card ui-card">
-          <text class="section-title">收货信息</text>
-          <input v-model="receiver.name" class="field" placeholder="收货人" />
-          <input v-model="receiver.phone" class="field" placeholder="手机号" />
-          <input v-model="receiver.address" class="field" placeholder="收货地址" />
-          <view class="receiver-actions">
-            <button class="ui-button-secondary ui-button-compact" @click="loadSavedReceiver">使用常用信息</button>
-            <button class="ui-button-secondary ui-button-compact" @click="saveReceiverProfile()">保存为常用</button>
+        <view v-if="showShippingInfoCard && hasPhysicalProduct" class="receiver-card ui-card">
+          <text class="section-title">{{ cartDisplay.shippingInfo.title }}</text>
+          <input v-if="cartDisplay.shippingInfo.showName" v-model="receiver.name" class="field" placeholder="收货人" />
+          <input v-if="cartDisplay.shippingInfo.showPhone" v-model="receiver.phone" class="field" placeholder="手机号" />
+          <input v-if="cartDisplay.shippingInfo.showAddress" v-model="receiver.address" class="field" placeholder="收货地址" />
+          <view v-if="cartDisplay.shippingInfo.showUseCommon || cartDisplay.shippingInfo.showSaveCommon" class="receiver-actions">
+            <button v-if="cartDisplay.shippingInfo.showUseCommon" class="ui-button-secondary ui-button-compact" @click="loadSavedReceiver">使用常用信息</button>
+            <button v-if="cartDisplay.shippingInfo.showSaveCommon" class="ui-button-secondary ui-button-compact" @click="saveReceiverProfile()">保存为常用</button>
           </view>
         </view>
-        <view v-else class="receiver-card ui-card">
-          <text class="section-title">履约信息</text>
+        <view v-else-if="showShippingInfoCard" class="receiver-card ui-card">
+          <text class="section-title">{{ cartDisplay.shippingInfo.title || "履约信息" }}</text>
           <text class="muted">当前商品均为虚拟/服务商品，无需填写收货地址。</text>
         </view>
-        <view class="coupon-card ui-card">
+        <view v-if="cartDisplay.productCoupons.visible" class="coupon-card ui-card">
           <view>
-            <text class="section-title">商品优惠券</text>
-            <text class="muted">{{ productCouponCode ? `已选择 ${productCouponCode}` : "选择已领取的商品券或通用券，结算时由后端重新计算抵扣。" }}</text>
+            <text class="section-title">{{ cartDisplay.productCoupons.title }}</text>
+            <text class="muted">{{ productCouponCode ? `已选择 ${productCouponCode}` : cartDisplay.productCoupons.description }}</text>
           </view>
-          <button class="ui-button-secondary ui-button-compact" @click="selectProductCoupon">{{ productCouponCode ? "更换" : "选择" }}</button>
+          <button class="ui-button-secondary ui-button-compact" @click="selectProductCoupon">{{ productCouponCode ? "更换" : cartDisplay.productCoupons.buttonText }}</button>
         </view>
         <view v-for="item in productItems" :key="item.id" class="card product-card selectable-card ui-card">
           <view class="select-dot" :class="{ active: selectedProductIds.includes(item.id) }" @click="toggleProduct(item.id)">
             <text>{{ selectedProductIds.includes(item.id) ? "✓" : "" }}</text>
           </view>
-          <image v-if="item.sku.product.coverImageUrl" class="product-cover" :src="item.sku.product.coverImageUrl" mode="aspectFill" @click="goProductDetail(item.sku.product.id)" />
-          <view v-else class="product-cover empty-cover" @click="goProductDetail(item.sku.product.id)">商品</view>
+          <image v-if="cartDisplay.mallItems.showImage && item.sku.product.coverImageUrl" class="product-cover" :src="item.sku.product.coverImageUrl" mode="aspectFill" @click="goProductDetail(item.sku.product.id)" />
+          <view v-else-if="cartDisplay.mallItems.showImage" class="product-cover empty-cover" @click="goProductDetail(item.sku.product.id)">商品</view>
           <view class="product-body">
             <view class="card-head">
               <view class="card-main">
                 <text class="card-title">{{ item.sku.product.title }}</text>
-                <text class="muted">{{ item.sku.name }} × {{ item.quantity }}</text>
-                <StatusTag :label="item.sku.availableStock > 0 ? '可下待支付订单' : '库存不足'" :tone="item.sku.availableStock > 0 ? 'info' : 'neutral'" />
+                <text v-if="cartDisplay.mallItems.showSku && cartDisplay.mallItems.showQuantity" class="muted">{{ item.sku.name }} × {{ item.quantity }}</text>
+                <text v-else-if="cartDisplay.mallItems.showSku" class="muted">{{ item.sku.name }}</text>
+                <text v-else-if="cartDisplay.mallItems.showQuantity" class="muted">数量 × {{ item.quantity }}</text>
+                <StatusTag v-if="cartDisplay.mallItems.showStock" :label="item.sku.availableStock > 0 ? '可下待支付订单' : '库存不足'" :tone="item.sku.availableStock > 0 ? 'info' : 'neutral'" />
               </view>
               <text class="price">¥{{ formatCent(item.subtotalCent) }}</text>
             </view>
-            <view class="card-actions">
-              <button class="ui-button-secondary action-button" :disabled="removingId === item.id" @click="removeProduct(item.id)">删除</button>
+            <view v-if="showMallCardActions" class="card-actions">
+              <button v-if="cartDisplay.mallItems.showDeleteButton" class="ui-button-secondary action-button" :disabled="removingId === item.id" @click="removeProduct(item.id)">删除</button>
               <button class="ui-button-ghost action-button reserve-button" :disabled="checkoutId === item.id || item.sku.availableStock <= 0" @click="checkoutProduct(item.id)">
                 {{ checkoutId === item.id ? "处理中..." : "创建订单" }}
               </button>
             </view>
-            <view class="quantity-row">
+            <view v-if="cartDisplay.mallItems.showQuantity" class="quantity-row">
               <text class="muted">数量</text>
               <view class="quantity-stepper">
                 <button @click="changeProductQuantity(item, -1)">−</button>
@@ -141,16 +141,32 @@
       </view>
     </template>
 
-    <view v-if="!isEmpty" class="settlement-bar">
-      <view class="settlement-select" @click="toggleAll">
+    <view v-if="!loading && !error && cartDisplay.recommendations.visible" class="recommendation-card ui-card">
+      <view>
+        <text class="section-title">{{ cartDisplay.recommendations.title }}</text>
+        <text v-if="cartDisplay.recommendations.description" class="muted">{{ cartDisplay.recommendations.description }}</text>
+      </view>
+      <button class="ui-button-secondary ui-button-compact" @click="goMall">{{ cartDisplay.recommendations.buttonText }}</button>
+    </view>
+
+    <view v-if="!loading && !error && cartDisplay.customerService.visible" class="customer-service-card ui-card">
+      <view>
+        <text class="section-title">{{ cartDisplay.customerService.title }}</text>
+        <text v-if="cartDisplay.customerService.description" class="muted">{{ cartDisplay.customerService.description }}</text>
+      </view>
+      <button class="ui-button-secondary ui-button-compact" @click="contactService">{{ cartDisplay.customerService.buttonText }}</button>
+    </view>
+
+    <view v-if="!isEmpty && cartDisplay.checkoutBar.visible" class="settlement-bar" :class="{ 'is-static': !cartDisplay.checkoutBar.sticky, 'avoid-tabbar': cartDisplay.checkoutBar.avoidTabbar }">
+      <view v-if="cartDisplay.checkoutBar.showSelectAll" class="settlement-select" @click="toggleAll">
         <view class="select-dot" :class="{ active: allSelected }"><text>{{ allSelected ? "✓" : "" }}</text></view>
         <text>全选</text>
       </view>
       <view class="settlement-total">
-        <text>合计：¥{{ formatCent(selectedTotalCent) }}</text>
-        <text class="muted">已选 {{ selectedCount }} 项</text>
+        <text>{{ cartDisplay.checkoutBar.totalText }}：¥{{ formatCent(selectedTotalCent) }}</text>
+        <text v-if="cartDisplay.checkoutBar.showDiscountDetail" class="muted">已选 {{ selectedCount }} 项</text>
       </view>
-      <button class="settlement-button" :disabled="selectedCount === 0 || Boolean(checkoutId)" @click="checkoutSelected">去结算</button>
+      <button class="settlement-button" :class="`is-${cartDisplay.checkoutBar.style}`" :disabled="selectedCount === 0 || Boolean(checkoutId)" @click="checkoutSelected">{{ cartDisplay.checkoutBar.buttonText }}</button>
     </view>
 
     <CustomTabbar active-page-key="cart" />
@@ -159,12 +175,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
-import ExtensionStatusNotice from "@/components/ui/ExtensionStatusNotice.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
@@ -189,6 +204,184 @@ import { getMyCoupons, type MyCouponItem } from "@/services/operations";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
 
+type CartCouponNoticeAction = "selectCoupon" | "couponPage" | "none";
+type CartDisplayAlign = "left" | "center" | "right";
+type CartModuleStyle = "capsule" | "title" | "hidden" | "bar" | "card" | "text" | "compact" | "sticky" | "accent";
+
+interface CartDisplayModule {
+  visible: boolean;
+  title: string;
+  description: string;
+  style: CartModuleStyle;
+}
+
+interface CartDisplay {
+  title: CartDisplayModule & {
+    text: string;
+    align: CartDisplayAlign;
+    backgroundColor: string;
+    textColor: string;
+  };
+  couponNotice: CartDisplayModule & {
+    buttonText: string;
+    action: CartCouponNoticeAction;
+  };
+  cartItems: CartDisplayModule;
+  registrationItems: CartDisplayModule & {
+    showSku: boolean;
+    showLocation: boolean;
+    showQuantity: boolean;
+    showSinglePayButton: boolean;
+    showDeleteButton: boolean;
+    allowQuantityEdit: boolean;
+  };
+  mallItems: CartDisplayModule & {
+    showImage: boolean;
+    showSku: boolean;
+    showQuantity: boolean;
+    showDeleteButton: boolean;
+    showStock: boolean;
+  };
+  shippingInfo: CartDisplayModule & {
+    showName: boolean;
+    showPhone: boolean;
+    showAddress: boolean;
+    showUseCommon: boolean;
+    showSaveCommon: boolean;
+    required: boolean;
+    hideForVirtualService: boolean;
+  };
+  productCoupons: CartDisplayModule & {
+    buttonText: string;
+  };
+  checkoutBar: CartDisplayModule & {
+    showSelectAll: boolean;
+    totalText: string;
+    showDiscountDetail: boolean;
+    buttonText: string;
+    avoidTabbar: boolean;
+    sticky: boolean;
+  };
+  emptyState: CartDisplayModule & {
+    buttonText: string;
+    target: string;
+  };
+  recommendations: CartDisplayModule & {
+    buttonText: string;
+    source: string;
+  };
+  customerService: CartDisplayModule & {
+    buttonText: string;
+  };
+}
+
+type CartDisplayKey = keyof CartDisplay;
+
+const DEFAULT_CART_DISPLAY: CartDisplay = {
+  title: {
+    visible: true,
+    title: "页面标题",
+    text: "购物车",
+    description: "会议报名项可继续支付；商城商品可创建订单后前往订单页支付。",
+    style: "capsule",
+    align: "left",
+    backgroundColor: "",
+    textColor: ""
+  },
+  couponNotice: {
+    visible: true,
+    title: "优惠券提示",
+    description: "选择已领取的商品券或通用券。",
+    buttonText: "选择优惠券",
+    action: "selectCoupon",
+    style: "bar"
+  },
+  cartItems: {
+    visible: true,
+    title: "商品与报名项",
+    description: "",
+    style: "card"
+  },
+  registrationItems: {
+    visible: true,
+    title: "会议报名",
+    description: "报名支付沿用现有安全订单链路",
+    style: "card",
+    showSku: true,
+    showLocation: true,
+    showQuantity: true,
+    showSinglePayButton: true,
+    showDeleteButton: true,
+    allowQuantityEdit: true
+  },
+  mallItems: {
+    visible: true,
+    title: "商品",
+    description: "商品可创建待支付订单，订单页完成支付",
+    style: "card",
+    showImage: true,
+    showSku: true,
+    showQuantity: true,
+    showDeleteButton: true,
+    showStock: true
+  },
+  shippingInfo: {
+    visible: true,
+    title: "收货信息",
+    description: "用于实物商品配送",
+    style: "card",
+    showName: true,
+    showPhone: true,
+    showAddress: true,
+    showUseCommon: true,
+    showSaveCommon: true,
+    required: true,
+    hideForVirtualService: false
+  },
+  productCoupons: {
+    visible: true,
+    title: "商品优惠券",
+    description: "选择已领取的商品券或通用券，结算时由后端重新计算抵扣。",
+    buttonText: "选择",
+    style: "card"
+  },
+  checkoutBar: {
+    visible: true,
+    title: "底部结算条",
+    description: "",
+    style: "sticky",
+    showSelectAll: true,
+    totalText: "合计",
+    showDiscountDetail: true,
+    buttonText: "去结算",
+    avoidTabbar: true,
+    sticky: true
+  },
+  emptyState: {
+    visible: true,
+    title: "购物车还没有内容",
+    description: "可以先从会议列表选择报名规格，完成报名缴费主流程。",
+    buttonText: "查看会议",
+    target: "home",
+    style: "card"
+  },
+  recommendations: {
+    visible: true,
+    title: "推荐商品",
+    description: "也可以先去商城看看更多周边商品。",
+    buttonText: "去商城逛逛",
+    source: "auto",
+    style: "card"
+  },
+  customerService: {
+    visible: false,
+    title: "客服入口",
+    description: "如需协助，可联系会务客服。",
+    buttonText: "联系客服",
+    style: "compact"
+  }
+};
+
 const registrationItems = ref<CartRegistrationItem[]>([]);
 const productItems = ref<CartProductItem[]>([]);
 const loading = ref(false);
@@ -203,7 +396,18 @@ const selectedProductIds = ref<string[]>([]);
 const isEmpty = computed(() => registrationItems.value.length === 0 && productItems.value.length === 0);
 const hasPhysicalProduct = computed(() => productItems.value.some((item) => !["VIRTUAL", "SERVICE"].includes(String(item.sku.product.productType || "PHYSICAL"))));
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("cart");
-const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.dsl.dsl.nodes.length));
+const cartDisplay = computed(() => resolveCartDisplay(cmsPage.value));
+const cartTitleStyle = computed(() => ({
+  background: cartDisplay.value.title.backgroundColor || undefined,
+  color: cartDisplay.value.title.textColor || undefined,
+  "--cart-title-color": cartDisplay.value.title.textColor || undefined
+}));
+const showCartTitle = computed(() => cartDisplay.value.title.visible && cartDisplay.value.title.style !== "hidden");
+const showRegistrationSection = computed(() => cartDisplay.value.cartItems.visible && cartDisplay.value.registrationItems.visible && registrationItems.value.length > 0);
+const showMallSection = computed(() => cartDisplay.value.cartItems.visible && cartDisplay.value.mallItems.visible && productItems.value.length > 0);
+const showShippingInfoCard = computed(() => cartDisplay.value.shippingInfo.visible && showMallSection.value && (hasPhysicalProduct.value || !cartDisplay.value.shippingInfo.hideForVirtualService));
+const showRegistrationCardActions = computed(() => cartDisplay.value.registrationItems.showDeleteButton || cartDisplay.value.registrationItems.showSinglePayButton);
+const showMallCardActions = computed(() => showMallSection.value);
 const selectedCount = computed(() => selectedRegistrationIds.value.length + selectedProductIds.value.length);
 const selectedTotalCent = computed(() => {
   const registrations = registrationItems.value.filter((item) => selectedRegistrationIds.value.includes(item.id)).reduce((sum, item) => sum + item.subtotalCent, 0);
@@ -215,6 +419,181 @@ const allSelected = computed(() => {
   return total > 0 && selectedCount.value === total;
 });
 const COMMON_PROFILE_STORAGE_KEY = "conference_user_common_profile";
+
+watch(
+  cartDisplay,
+  (display) => {
+    uni.setNavigationBarTitle({ title: display.title.visible && display.title.style !== "hidden" ? display.title.text : "" });
+  },
+  { immediate: true }
+);
+
+function resolveCartDisplay(page: PublishedPage | null): CartDisplay {
+  const display = cloneCartDisplay(DEFAULT_CART_DISPLAY);
+  const businessDisplay = readRecord(page?.version.themeJson?.businessDisplay);
+  const source = readRecord(businessDisplay.cart ?? businessDisplay.cartCheckout ?? businessDisplay.shoppingCart ?? businessDisplay.mallCart);
+  applyNestedCartDisplay(display, source);
+  applyCartDisplayModules(display, source);
+  return display;
+}
+
+function cloneCartDisplay(display: CartDisplay): CartDisplay {
+  return JSON.parse(JSON.stringify(display)) as CartDisplay;
+}
+
+function applyNestedCartDisplay(display: CartDisplay, source: Record<string, unknown>) {
+  (Object.keys(display) as CartDisplayKey[]).forEach((key) => {
+    const config = readRecord(source[key]);
+    if (Object.keys(config).length === 0) return;
+    applyCartModuleConfig(display, key, config);
+  });
+}
+
+function applyCartDisplayModules(display: CartDisplay, source: Record<string, unknown>) {
+  const rawModules = Array.isArray(source.modules) ? source.modules : [];
+  const oldVisibleModules = Array.isArray(source.visibleModules) ? source.visibleModules.filter((item): item is string => typeof item === "string") : [];
+  if (oldVisibleModules.length > 0) {
+    const visible = new Set(oldVisibleModules.map(normalizeCartModuleKey));
+    (Object.keys(display) as CartDisplayKey[]).forEach((key) => {
+      display[key].visible = visible.has(key);
+    });
+  }
+  rawModules.forEach((item) => {
+    const module = readRecord(item);
+    const rawKey = readString(module.key);
+    if (rawKey === "quantity") {
+      const visible = readBoolean(module.visible, true);
+      display.registrationItems.showQuantity = visible;
+      display.registrationItems.allowQuantityEdit = visible;
+      display.mallItems.showQuantity = visible;
+      return;
+    }
+    if (rawKey === "feeSummary") {
+      display.checkoutBar.showDiscountDetail = readBoolean(module.visible, display.checkoutBar.showDiscountDetail);
+      return;
+    }
+    const key = normalizeCartModuleKey(rawKey);
+    if (!key) return;
+    applyCartModuleConfig(display, key, module);
+  });
+}
+
+function applyCartModuleConfig(display: CartDisplay, key: CartDisplayKey, module: Record<string, unknown>) {
+  const target = display[key];
+  if (typeof module.visible === "boolean") target.visible = module.visible;
+  const title = readString(module.title);
+  const content = readString(module.content ?? module.description);
+  const style = normalizeCartStyle(readString(module.style));
+  if (title) target.title = title;
+  if (content) target.description = content;
+  if (style) target.style = style;
+
+  if (key === "title") {
+    display.title.text = readString(module.text) || content || title || display.title.text;
+    display.title.description = readString(module.description) || display.title.description;
+    display.title.align = normalizeAlign(readString(module.align)) || display.title.align;
+    display.title.backgroundColor = readString(module.backgroundColor) || display.title.backgroundColor;
+    display.title.textColor = readString(module.textColor) || display.title.textColor;
+  }
+  if (key === "couponNotice") {
+    display.couponNotice.buttonText = readString(module.buttonText) || display.couponNotice.buttonText;
+    display.couponNotice.action = normalizeCouponNoticeAction(readString(module.action)) || display.couponNotice.action;
+  }
+  if (key === "registrationItems") {
+    display.registrationItems.showSku = readBoolean(module.showSku, display.registrationItems.showSku);
+    display.registrationItems.showLocation = readBoolean(module.showLocation, display.registrationItems.showLocation);
+    display.registrationItems.showQuantity = readBoolean(module.showQuantity, display.registrationItems.showQuantity);
+    display.registrationItems.showSinglePayButton = readBoolean(module.showSinglePayButton, display.registrationItems.showSinglePayButton);
+    display.registrationItems.showDeleteButton = readBoolean(module.showDeleteButton, display.registrationItems.showDeleteButton);
+    display.registrationItems.allowQuantityEdit = readBoolean(module.allowQuantityEdit, display.registrationItems.allowQuantityEdit);
+  }
+  if (key === "mallItems") {
+    display.mallItems.showImage = readBoolean(module.showImage, display.mallItems.showImage);
+    display.mallItems.showSku = readBoolean(module.showSku, display.mallItems.showSku);
+    display.mallItems.showQuantity = readBoolean(module.showQuantity, display.mallItems.showQuantity);
+    display.mallItems.showDeleteButton = readBoolean(module.showDeleteButton, display.mallItems.showDeleteButton);
+    display.mallItems.showStock = readBoolean(module.showStock, display.mallItems.showStock);
+  }
+  if (key === "shippingInfo") {
+    display.shippingInfo.showName = readBoolean(module.showName, display.shippingInfo.showName);
+    display.shippingInfo.showPhone = readBoolean(module.showPhone, display.shippingInfo.showPhone);
+    display.shippingInfo.showAddress = readBoolean(module.showAddress, display.shippingInfo.showAddress);
+    display.shippingInfo.showUseCommon = readBoolean(module.showUseCommon, display.shippingInfo.showUseCommon);
+    display.shippingInfo.showSaveCommon = readBoolean(module.showSaveCommon, display.shippingInfo.showSaveCommon);
+    display.shippingInfo.required = readBoolean(module.required, display.shippingInfo.required);
+    display.shippingInfo.hideForVirtualService = readBoolean(module.hideForVirtualService, display.shippingInfo.hideForVirtualService);
+  }
+  if (key === "productCoupons") {
+    display.productCoupons.buttonText = readString(module.buttonText) || display.productCoupons.buttonText;
+  }
+  if (key === "checkoutBar") {
+    display.checkoutBar.showSelectAll = readBoolean(module.showSelectAll, display.checkoutBar.showSelectAll);
+    display.checkoutBar.totalText = readString(module.totalText) || display.checkoutBar.totalText;
+    display.checkoutBar.showDiscountDetail = readBoolean(module.showDiscountDetail, display.checkoutBar.showDiscountDetail);
+    display.checkoutBar.buttonText = content || readString(module.buttonText) || display.checkoutBar.buttonText;
+    display.checkoutBar.avoidTabbar = readBoolean(module.avoidTabbar, display.checkoutBar.avoidTabbar);
+    display.checkoutBar.sticky = readBoolean(module.sticky, display.checkoutBar.sticky);
+  }
+  if (key === "emptyState") {
+    display.emptyState.buttonText = readString(module.buttonText) || display.emptyState.buttonText;
+    display.emptyState.target = readString(module.target) || display.emptyState.target;
+  }
+  if (key === "recommendations") {
+    display.recommendations.buttonText = content || readString(module.buttonText) || display.recommendations.buttonText;
+    display.recommendations.source = readString(module.source) || display.recommendations.source;
+  }
+  if (key === "customerService") {
+    display.customerService.buttonText = content || readString(module.buttonText) || display.customerService.buttonText;
+  }
+}
+
+function normalizeCartModuleKey(key: string): CartDisplayKey | "" {
+  const map: Record<string, CartDisplayKey> = {
+    title: "title",
+    pageTitle: "title",
+    couponNotice: "couponNotice",
+    cartItems: "cartItems",
+    registrationItems: "registrationItems",
+    mallItems: "mallItems",
+    productItems: "mallItems",
+    shippingInfo: "shippingInfo",
+    receiver: "shippingInfo",
+    productCoupons: "productCoupons",
+    coupon: "productCoupons",
+    submitButton: "checkoutBar",
+    checkoutBar: "checkoutBar",
+    emptyState: "emptyState",
+    recommendations: "recommendations",
+    recommended: "recommendations",
+    customerService: "customerService"
+  };
+  return map[key] ?? "";
+}
+
+function normalizeCartStyle(value: string): CartModuleStyle | "" {
+  const allowed = new Set<CartModuleStyle>(["capsule", "title", "hidden", "bar", "card", "text", "compact", "sticky", "accent"]);
+  return allowed.has(value as CartModuleStyle) ? (value as CartModuleStyle) : "";
+}
+
+function normalizeAlign(value: string): CartDisplayAlign | "" {
+  return value === "left" || value === "center" || value === "right" ? value : "";
+}
+
+function normalizeCouponNoticeAction(value: string): CartCouponNoticeAction | "" {
+  return value === "selectCoupon" || value === "couponPage" || value === "none" ? value : "";
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
 
 onShow(() => {
   if (!productCouponCode.value) productCouponCode.value = readPendingProductCoupon();
@@ -451,6 +830,32 @@ function goProductDetail(id: string) {
   uni.navigateTo({ url: `/pages/mall/detail?id=${encodeURIComponent(id)}` });
 }
 
+function goMall() {
+  uni.navigateTo({ url: "/pages/mall/index" });
+}
+
+function handleCouponNoticeAction() {
+  if (cartDisplay.value.couponNotice.action === "couponPage") {
+    uni.navigateTo({ url: "/pages/coupon/my" });
+    return;
+  }
+  if (cartDisplay.value.couponNotice.action === "selectCoupon") {
+    void selectProductCoupon();
+  }
+}
+
+function handleEmptyStateAction() {
+  if (cartDisplay.value.emptyState.target === "mall") {
+    goMall();
+    return;
+  }
+  goHome();
+}
+
+function contactService() {
+  uni.showToast({ title: "请联系会务客服", icon: "none" });
+}
+
 async function selectProductCoupon() {
   try {
     const response = await getMyCoupons({ scope: "MALL" });
@@ -543,6 +948,21 @@ function checkoutMessage(err: unknown, fallback: string): string {
   padding: 28rpx;
 }
 
+.topbar.align-center {
+  text-align: center;
+}
+
+.topbar.align-right {
+  text-align: right;
+}
+
+.topbar.is-title,
+.topbar.is-hidden {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
 .eyebrow,
 .title,
 .section-title,
@@ -559,7 +979,7 @@ function checkoutMessage(err: unknown, fallback: string): string {
 }
 
 .title {
-  color: var(--ui-color-text);
+  color: var(--cart-title-color, var(--ui-color-text));
   font-size: 42rpx;
   line-height: 1.25;
 }
@@ -645,6 +1065,27 @@ function checkoutMessage(err: unknown, fallback: string): string {
   padding: 24rpx;
 }
 
+.coupon-notice,
+.recommendation-card,
+.customer-service-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 24rpx;
+}
+
+.coupon-notice.is-bar {
+  border-color: rgba(181, 139, 71, 0.22);
+  background: rgba(255, 250, 238, 0.94);
+}
+
+.coupon-notice.is-text {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
 .field {
   min-height: 78rpx;
   padding: 0 20rpx;
@@ -706,6 +1147,12 @@ function checkoutMessage(err: unknown, fallback: string): string {
   min-width: 54rpx;
   text-align: center;
   font-size: 26rpx;
+  font-weight: 800;
+}
+
+.quantity-static {
+  color: var(--ui-color-text);
+  font-size: 28rpx;
   font-weight: 800;
 }
 
@@ -774,6 +1221,18 @@ function checkoutMessage(err: unknown, fallback: string): string {
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 18rpx 50rpx rgba(15, 23, 42, 0.14);
   backdrop-filter: blur(14px);
+}
+
+.settlement-bar.is-static {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  margin: 4rpx 24rpx 0;
+}
+
+.settlement-bar:not(.avoid-tabbar) {
+  bottom: calc(40rpx + env(safe-area-inset-bottom));
 }
 
 .settlement-select {

@@ -392,6 +392,17 @@
                   :rows="2"
                   placeholder="模块说明或按钮文案，可留空使用真实数据兜底"
                 />
+                <el-select v-model="module.style" size="small" placeholder="模块样式">
+                  <el-option label="卡片" value="card" />
+                  <el-option label="紧凑" value="compact" />
+                  <el-option label="强调按钮" value="accent" />
+                  <el-option label="胶囊标题" value="capsule" />
+                  <el-option label="普通标题" value="title" />
+                  <el-option label="提示条" value="bar" />
+                  <el-option label="简洁文字" value="text" />
+                  <el-option label="吸底结算" value="sticky" />
+                  <el-option label="隐藏标题样式" value="hidden" />
+                </el-select>
               </div>
             </div>
           </el-form>
@@ -1357,13 +1368,31 @@ const BUSINESS_PAGE_MODULES: Record<string, BusinessDisplayModule[]> = {
     { key: "aftersales", title: "售后说明", content: "", visible: true, sort: 90, style: "card" },
     { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 100, style: "compact" }
   ],
+  cart: [
+    { key: "title", title: "页面标题", content: "购物车", visible: true, sort: 10, style: "capsule" },
+    { key: "couponNotice", title: "优惠券提示", content: "选择已领取的商品券或通用券", visible: true, sort: 20, style: "bar" },
+    { key: "cartItems", title: "商品与报名项", content: "", visible: true, sort: 30, style: "card" },
+    { key: "registrationItems", title: "会议报名商品", content: "报名支付沿用现有安全订单链路", visible: true, sort: 40, style: "card" },
+    { key: "mallItems", title: "商城商品", content: "商品可创建待支付订单，订单页完成支付", visible: true, sort: 50, style: "card" },
+    { key: "shippingInfo", title: "收货信息", content: "用于实物商品配送", visible: true, sort: 60, style: "card" },
+    { key: "productCoupons", title: "商品优惠券", content: "选择已领取的商品券或通用券，结算时由后端重新计算抵扣。", visible: true, sort: 70, style: "card" },
+    { key: "checkoutBar", title: "底部结算条", content: "去结算", visible: true, sort: 80, style: "sticky" },
+    { key: "emptyState", title: "空状态", content: "购物车还没有内容", visible: true, sort: 90, style: "card" },
+    { key: "recommendations", title: "推荐商品", content: "去商城逛逛", visible: true, sort: 100, style: "card" },
+    { key: "customerService", title: "客服入口", content: "联系客服", visible: false, sort: 110, style: "compact" }
+  ],
   cartCheckout: [
-    { key: "cartItems", title: "商品与报名项", content: "", visible: true, sort: 10, style: "card" },
-    { key: "quantity", title: "数量调整", content: "", visible: true, sort: 20, style: "compact" },
-    { key: "feeSummary", title: "费用确认", content: "", visible: true, sort: 30, style: "card" },
-    { key: "submitButton", title: "提交按钮", content: "提交订单", visible: true, sort: 40, style: "accent" },
-    { key: "emptyState", title: "空购物车文案", content: "购物车暂无商品", visible: true, sort: 50, style: "card" },
-    { key: "customerService", title: "客服咨询", content: "", visible: false, sort: 60, style: "compact" }
+    { key: "title", title: "页面标题", content: "购物车", visible: true, sort: 10, style: "capsule" },
+    { key: "couponNotice", title: "优惠券提示", content: "选择已领取的商品券或通用券", visible: true, sort: 20, style: "bar" },
+    { key: "cartItems", title: "商品与报名项", content: "", visible: true, sort: 30, style: "card" },
+    { key: "registrationItems", title: "会议报名商品", content: "报名支付沿用现有安全订单链路", visible: true, sort: 40, style: "card" },
+    { key: "mallItems", title: "商城商品", content: "商品可创建待支付订单，订单页完成支付", visible: true, sort: 50, style: "card" },
+    { key: "shippingInfo", title: "收货信息", content: "用于实物商品配送", visible: true, sort: 60, style: "card" },
+    { key: "productCoupons", title: "商品优惠券", content: "选择已领取的商品券或通用券，结算时由后端重新计算抵扣。", visible: true, sort: 70, style: "card" },
+    { key: "checkoutBar", title: "底部结算条", content: "去结算", visible: true, sort: 80, style: "sticky" },
+    { key: "emptyState", title: "空状态", content: "购物车还没有内容", visible: true, sort: 90, style: "card" },
+    { key: "recommendations", title: "推荐商品", content: "去商城逛逛", visible: true, sort: 100, style: "card" },
+    { key: "customerService", title: "客服入口", content: "联系客服", visible: false, sort: 110, style: "compact" }
   ],
   mallOrders: [
     { key: "orderList", title: "订单列表", content: "", visible: true, sort: 10, style: "card" },
@@ -1449,6 +1478,60 @@ const BUSINESS_MODULE_GUIDES: Record<string, BusinessModuleGuide> = {
     source: "参会指南自定义内容或会议资料",
     entry: "会议管理 -> 内容维护 -> 参会指南；或当前页面装修模块",
     effect: "未配置时显示默认提示；运营可选择隐藏。",
+    defaultStatus: "default"
+  },
+  title: {
+    source: "当前页面装修的购物车标题配置",
+    entry: "页面装修 -> 固定业务模块 -> 页面标题",
+    effect: "控制小程序购物车顶部标题胶囊是否显示，以及标题文案。",
+    defaultStatus: "configured"
+  },
+  couponNotice: {
+    source: "当前页面装修的购物车优惠券提示配置",
+    entry: "页面装修 -> 固定业务模块 -> 优惠券提示",
+    effect: "控制购物车顶部优惠券提示条是否展示。",
+    defaultStatus: "default"
+  },
+  cartItems: {
+    source: "当前登录用户购物车中的报名项和商城商品项",
+    entry: "用户在报名页或商品页加入购物车；当前页面装修控制显示隐藏。",
+    effect: "隐藏后用户端不显示报名商品列表和商城商品列表，但不改变购物车数据。",
+    defaultStatus: "configured"
+  },
+  registrationItems: {
+    source: "当前登录用户购物车中的会议报名项",
+    entry: "会议报名页 -> 加入购物车；当前页面装修控制显示隐藏。",
+    effect: "隐藏后用户端不显示会议报名商品块，支付链路不变。",
+    defaultStatus: "configured"
+  },
+  mallItems: {
+    source: "当前登录用户购物车中的商城商品项",
+    entry: "商城商品页 -> 加入购物车；当前页面装修控制显示隐藏。",
+    effect: "隐藏后用户端不显示商城商品块，商城订单创建逻辑不变。",
+    defaultStatus: "configured"
+  },
+  shippingInfo: {
+    source: "当前用户填写或保存的常用收货信息",
+    entry: "购物车页收货信息；当前页面装修控制显示隐藏。",
+    effect: "控制实物商品收货信息区域是否显示，隐藏不改变后端订单校验。",
+    defaultStatus: "configured"
+  },
+  productCoupons: {
+    source: "当前登录用户可用商城优惠券",
+    entry: "营销活动 -> 优惠券；当前页面装修控制显示隐藏。",
+    effect: "控制商品优惠券选择卡片是否显示，实际抵扣仍由后端结算重算。",
+    defaultStatus: "configured"
+  },
+  checkoutBar: {
+    source: "当前购物车勾选项和后端返回的购物车金额",
+    entry: "购物车页底部结算条；当前页面装修控制显示隐藏。",
+    effect: "控制底部全选、合计和去结算按钮是否显示，不改变订单金额计算。",
+    defaultStatus: "configured"
+  },
+  recommendations: {
+    source: "商城推荐商品或当前页面装修推荐入口",
+    entry: "商城商品管理；或当前页面装修模块",
+    effect: "控制空白区或列表下方的推荐商品入口是否显示。",
     defaultStatus: "default"
   },
   customerService: {
@@ -1755,12 +1838,12 @@ const businessPreviewContext = computed<BusinessPreviewContextModel | null>(() =
       kind: "cart",
       label: "商城下单/购物车页",
       title: "购物车",
-      subtitle: "页面固定展示会议报名项和商城商品项，CMS 内容显示在顶部运营位。",
+      subtitle: "购物车页的标题、提示、报名项、商品项、收货信息、商品券、空状态、推荐和结算条都受固定业务模块配置控制。",
       rows: [
         { label: "报名项", value: "沿用会议报名支付链路" },
         { label: "商品项", value: "创建商城待支付订单" }
       ],
-      notice: "后台只装修运营内容区域，订单金额和库存以用户端实时数据为准。",
+      notice: "后台预览会按模块显示/隐藏模拟购物车真实布局；订单金额和库存以用户端实时数据为准。",
       modules: previewBusinessModules.value,
       user: SAMPLE_USER_CONTEXT,
       cta: "提交订单"
@@ -2855,7 +2938,7 @@ function businessDisplayKeyForPage(page: PageTemplate | null | undefined): strin
   if (page.pageKey === "my-registrations") return "myRegistrations";
   if (page.pageKey === "mall" || page.pageType === "MALL") return "mallHome";
   if (page.pageKey === "mall-detail" || ["PRODUCT_DETAIL_TEMPLATE", "PRODUCT_DETAIL_PAGE"].includes(page.pageType)) return "productDetail";
-  if (page.pageKey === "cart" || page.pageType === "MALL_CHECKOUT") return "cartCheckout";
+  if (page.pageKey === "cart" || page.pageType === "MALL_CHECKOUT") return "cart";
   if (page.pageKey === "mall-orders") return page.pageType === "MALL_AFTERSALE" ? "aftersale" : "mallOrders";
   if (page.pageKey === "member-center") return "memberCenter";
   if (page.pageKey === "invoice" || page.pageType === "INVOICE") return "invoice";
@@ -2887,7 +2970,12 @@ function applyBusinessDisplay(themeJson: Record<string, unknown> | null | undefi
 
 function readBusinessDisplay(themeJson: Record<string, unknown> | null | undefined, key = "conferenceDetail"): BusinessDisplayForm {
   const businessDisplaySource = readRecord(themeJson?.businessDisplay);
-  const fallbackSource = key === "conferenceDetail" ? businessDisplaySource.conferenceDetail ?? themeJson?.detailDisplay : {};
+  const fallbackSource =
+    key === "conferenceDetail"
+      ? businessDisplaySource.conferenceDetail ?? themeJson?.detailDisplay
+      : key === "cart"
+        ? businessDisplaySource.cart ?? businessDisplaySource.cartCheckout ?? businessDisplaySource.shoppingCart ?? businessDisplaySource.mallCart
+        : {};
   const source = readRecord(businessDisplaySource[key] ?? fallbackSource);
   const mode = String(source.inventoryDisplayMode || "STATUS").toUpperCase();
   const rawModules = Array.isArray(source.modules) ? source.modules : [];
@@ -2895,7 +2983,8 @@ function readBusinessDisplay(themeJson: Record<string, unknown> | null | undefin
   const oldVisible = new Set(oldVisibleModules);
   const defaultModules = businessModulesForKey(key);
   const modules = defaultModules.map((module) => {
-    const configured = readRecord(rawModules.find((item) => readRecord(item).key === module.key));
+    const keys = businessModuleConfigAliases(module.key);
+    const configured = readRecord(rawModules.find((item) => keys.includes(String(readRecord(item).key || ""))));
     const hasOldVisible = oldVisibleModules.length > 0;
     return {
       ...module,
@@ -2936,8 +3025,17 @@ function businessModuleLabel(key: string): string {
   return businessModulesForKey(selectedPage.value ? businessDisplayKeyForPage(selectedPage.value) : "conferenceDetail").find((module) => module.key === key)?.title || key;
 }
 
+function businessModuleConfigAliases(key: string): string[] {
+  if (key === "checkoutBar") return ["checkoutBar", "submitButton"];
+  if (key === "productCoupons") return ["productCoupons", "coupon"];
+  if (key === "mallItems") return ["mallItems", "productItems"];
+  if (key === "shippingInfo") return ["shippingInfo", "receiver"];
+  if (key === "recommendations") return ["recommendations", "recommended"];
+  return [key];
+}
+
 function businessModuleAllowsContent(key: string): boolean {
-  return !["conferenceInfo", "registrationInfo", "credentialHeader", "productInfo", "mallHeader", "memberProfile", "cartItems", "orderList", "invoiceableOrders"].includes(key);
+  return !["conferenceInfo", "registrationInfo", "credentialHeader", "productInfo", "mallHeader", "memberProfile", "orderList", "invoiceableOrders"].includes(key);
 }
 
 function businessModuleGuide(key: string): BusinessModuleGuide {
@@ -4420,6 +4518,82 @@ const BusinessPreviewContext = defineComponent({
         ])
       ]);
     };
+    const cartPreview = () => {
+      const showItems = isVisible("cartItems");
+      const nodes = [
+        userCard(),
+        isVisible("title")
+          ? h("div", { class: "business-preview__cart-title" }, [
+              h("strong", moduleContent("title", moduleTitle("title", "购物车"))),
+              h("p", "会议报名项可继续支付；商城商品可创建订单后前往订单页支付。")
+            ])
+          : null,
+        isVisible("couponNotice")
+          ? h("div", { class: "business-preview__module is-notice" }, [
+              h("strong", moduleTitle("couponNotice", "优惠券提示")),
+              h("p", moduleContent("couponNotice", "选择已领取的商品券或通用券。"))
+            ])
+          : null,
+        showItems && isVisible("registrationItems")
+          ? h("div", { class: "business-preview__module" }, [
+              h("strong", moduleTitle("registrationItems", "会议报名商品")),
+              h("div", { class: "business-preview__cart-item" }, [
+                h("span", "示例会议报名 × 1"),
+                h("b", "¥299.00")
+              ]),
+              h("p", moduleContent("registrationItems", "报名支付沿用现有安全订单链路。"))
+            ])
+          : null,
+        showItems && isVisible("mallItems")
+          ? h("div", { class: "business-preview__module" }, [
+              h("strong", moduleTitle("mallItems", "商城商品")),
+              h("div", { class: "business-preview__cart-item" }, [
+                h("span", "示例商品规格 × 2"),
+                h("b", "¥198.00")
+              ]),
+              h("p", moduleContent("mallItems", "商品可创建待支付订单，订单页完成支付。"))
+            ])
+          : null,
+        isVisible("shippingInfo")
+          ? h("div", { class: "business-preview__module" }, [
+              h("strong", moduleTitle("shippingInfo", "收货信息")),
+              h("p", moduleContent("shippingInfo", "收货人 / 手机号 / 收货地址。"))
+            ])
+          : null,
+        isVisible("productCoupons")
+          ? h("div", { class: "business-preview__module" }, [
+              h("strong", moduleTitle("productCoupons", "商品优惠券")),
+              h("p", moduleContent("productCoupons", "选择已领取的商品券或通用券，结算时由后端重新计算抵扣。"))
+            ])
+          : null,
+        isVisible("emptyState")
+          ? h("div", { class: "business-preview__module is-empty" }, [
+              h("strong", moduleTitle("emptyState", "空状态")),
+              h("p", moduleContent("emptyState", "购物车还没有内容。"))
+            ])
+          : null,
+        isVisible("recommendations")
+          ? h("div", { class: "business-preview__module" }, [
+              h("strong", moduleTitle("recommendations", "推荐商品")),
+              h("p", moduleContent("recommendations", "去商城逛逛。"))
+            ])
+          : null,
+        isVisible("customerService")
+          ? h("div", { class: "business-preview__module" }, [
+              h("strong", moduleTitle("customerService", "客服入口")),
+              h("p", moduleContent("customerService", "联系客服。"))
+            ])
+          : null,
+        !showItems ? h("div", { class: "business-preview__module is-empty" }, [h("strong", "商品与报名项已隐藏"), h("p", "用户端不会展示报名商品块和商城商品块。")]) : null,
+        isVisible("checkoutBar")
+          ? h("div", { class: "business-preview__checkout" }, [
+              h("span", "合计：¥497.00"),
+              h("button", moduleContent("checkoutBar", "去结算"))
+            ])
+          : null
+      ].filter(Boolean);
+      return h("div", { class: ["business-preview", "is-cart"] }, nodes);
+    };
     const textModules = () =>
       (props.context.modules ?? [])
         .filter((module) => !heroKeys.includes(module.key) && !["assistant", "skus", "inventory", "guide", "registrationButton", "submitOrder"].includes(module.key) && module.visible)
@@ -4430,7 +4604,9 @@ const BusinessPreviewContext = defineComponent({
           ])
         );
     return () =>
-      h("div", { class: ["business-preview", `is-${props.context.kind}`] }, [
+      props.context.kind === "cart"
+        ? cartPreview()
+        : h("div", { class: ["business-preview", `is-${props.context.kind}`] }, [
         userCard(),
         heroVisible()
           ? h("div", { class: "business-preview__hero" }, [
@@ -4469,6 +4645,16 @@ const BusinessPreviewContext = defineComponent({
 });
 
 function businessModuleFallback(key: string): string {
+  if (key === "title") return "购物车";
+  if (key === "couponNotice") return "选择已领取的商品券或通用券。";
+  if (key === "cartItems") return "购物车会按装修配置展示报名项和商品项。";
+  if (key === "registrationItems") return "报名支付沿用现有安全订单链路。";
+  if (key === "mallItems") return "商品可创建待支付订单，订单页完成支付。";
+  if (key === "shippingInfo") return "用于实物商品配送。";
+  if (key === "productCoupons") return "结算时由后端重新计算优惠抵扣。";
+  if (key === "checkoutBar") return "去结算";
+  if (key === "emptyState") return "购物车还没有内容。";
+  if (key === "recommendations") return "去商城逛逛。";
   if (key === "location") return "会议地点优先展示真实会议地址。";
   if (key === "customerService") return "可在会议配置中维护客服入口。";
   if (key === "customerGroup") return "可绑定企业微信客户群入口。";
@@ -7878,7 +8064,9 @@ function looksLikePreviewImage(value: string): boolean {
 
 .business-preview__hero,
 .business-preview__module,
-.business-preview__assistant {
+.business-preview__assistant,
+.business-preview__cart-title,
+.business-preview__checkout {
   padding: 16px;
   border: 1px solid rgb(255 255 255 / 70%);
   border-radius: calc(var(--preview-radius) + 10px);
@@ -8037,6 +8225,57 @@ function looksLikePreviewImage(value: string): boolean {
 
 .business-preview__module.is-guide {
   border-style: dashed;
+}
+
+.business-preview__module.is-notice {
+  border-color: rgb(181 139 71 / 28%);
+  background: rgb(255 250 238 / 94%);
+}
+
+.business-preview__module.is-empty {
+  border-style: dashed;
+}
+
+.business-preview__cart-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.business-preview__cart-title strong {
+  font-size: 20px;
+}
+
+.business-preview__cart-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: var(--preview-radius);
+  background: #f6f8fb;
+  color: #263143;
+  font-size: 12px;
+}
+
+.business-preview__cart-item b {
+  color: #b45309;
+}
+
+.business-preview__checkout {
+  position: sticky;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgb(255 255 255 / 96%);
+}
+
+.business-preview__checkout span {
+  color: #172033;
+  font-weight: 900;
 }
 
 .business-preview__stock {
