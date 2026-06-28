@@ -1,9 +1,10 @@
 <template>
   <section class="admin-page cms-page">
     <div class="page-header cms-hero">
-      <div>
-        <h1 class="page-title">页面装修控制台</h1>
-        <p class="page-subtitle">快捷模式适合快速搭建，高级装修保留完整组件库和精细配置，开发者模式才显示 DSL。</p>
+      <div class="cms-hero__copy">
+        <span class="cms-hero__eyebrow">观潮会集 - 管理后台</span>
+        <h1 class="page-title">页面装修工作台</h1>
+        <p class="page-subtitle">按运营页面、组件库、手机预览和发布验收组织装修流程，默认隐藏 DSL 细节。</p>
       </div>
       <div class="inline-actions">
         <el-radio-group v-model="editorMode" class="mode-switch">
@@ -28,6 +29,29 @@
         <el-button type="primary" :loading="publishing" @click="publish">发布页面</el-button>
       </div>
     </div>
+
+    <section v-if="selectedPage && version" class="cms-ops-overview">
+      <article>
+        <span>当前页面</span>
+        <strong>{{ selectedPageDisplayTitle }}</strong>
+        <small>{{ selectedPageContextText }}</small>
+      </article>
+      <article>
+        <span>装修组件</span>
+        <strong>{{ previewStats.visible }} / {{ previewStats.total }}</strong>
+        <small>{{ previewStats.hidden }} 个隐藏，{{ previewStats.unsupported }} 个风险</small>
+      </article>
+      <article>
+        <span>业务模块</span>
+        <strong>{{ showBusinessDisplayEditor ? `${businessDisplayStats.visible} / ${businessDisplayStats.total}` : "不适用" }}</strong>
+        <small>{{ showBusinessDisplayEditor ? `${businessDisplayStats.hidden} 个隐藏` : "普通页面只看装修组件" }}</small>
+      </article>
+      <article>
+        <span>发布验收</span>
+        <strong>{{ acceptanceSummary.error }} 阻断 · {{ acceptanceSummary.warn }} 提醒</strong>
+        <small>{{ acceptanceSummary.pass }} 项通过，发布前核对右侧验收面板</small>
+      </article>
+    </section>
 
     <section class="cms-workbench">
       <aside class="cms-sidebar cms-sidebar--left">
@@ -243,7 +267,10 @@
             <span>{{ previewStats.visible }} 展示 / {{ previewStats.hidden }} 隐藏 / {{ previewStats.unsupported }} 风险</span>
           </div>
           <div class="phone-shell" :class="`is-${previewPlatform}`">
-            <div class="phone-status" />
+            <div class="phone-status" :class="`is-${previewPlatform}`">
+              <span>15:29</span>
+              <span><i /> <i /> <b>63</b></span>
+            </div>
             <div class="phone-window" :class="`is-${previewPlatform}`" :style="previewStyle">
               <div class="phone-nav" :class="`is-${previewPlatform}`">
                 <template v-if="previewPlatform === 'h5'">
@@ -333,6 +360,10 @@
                   <span class="support-badge" :class="supportStatusClass(component.type)">{{ componentSupport(component.type).label }}</span>
                 </span>
                 <span>{{ componentStateText(component) }}</span>
+                <span class="component-card__meta-line">
+                  <b>{{ component.type }}</b>
+                  <small>{{ componentPlatformText(component.type) }}</small>
+                </span>
                 <p v-if="componentNotice(component)" class="component-notice" :class="supportStatusClass(component.type)">
                   {{ componentNotice(component) }}
                 </p>
@@ -348,6 +379,7 @@
             </div>
             <div class="component-card__summary">
               <span>{{ componentSummary(component) }}</span>
+              <small>{{ componentRenderHint(component.type) }}</small>
               <el-button link type="primary" @click.stop="selectComponentCard(component.id)">编辑参数</el-button>
             </div>
           </div>
@@ -1067,7 +1099,10 @@
       <div v-if="templatePreview" class="template-preview-layout">
         <div class="template-preview-phone">
           <div class="phone-shell">
-            <div class="phone-status" />
+            <div class="phone-status is-miniapp">
+              <span>15:29</span>
+              <span><i /> <i /> <b>63</b></span>
+            </div>
             <div class="phone-window" :style="templatePreviewStyle">
               <div class="phone-nav">
                 <span class="phone-nav__spacer" />
@@ -5107,6 +5142,25 @@ function componentSupport(type: string): CmsComponentSupportMeta {
     status: "unsupported",
     description: "该组件暂未纳入小程序/H5渲染支持矩阵，建议暂勿发布"
   };
+}
+
+function componentPlatformText(type: string): string {
+  const status = componentSupport(type).status;
+  if (status === "supported") return "后台预览 / H5 / 小程序";
+  if (status === "basic") return "基础支持，发布前真机核对";
+  if (status === "planned") return "规划中，暂不建议发布";
+  return "未纳入用户端支持矩阵";
+}
+
+function componentRenderHint(type: string): string {
+  if (type === "fixed-business-template") return "固定业务模板由三端模板渲染器还原";
+  if (["hero-banner", "quick-icon-grid", "login-card", "rich-text", "conference-schedule", "mall-product-grid"].includes(type)) {
+    return "已接入跨端视觉协议，按 P9 DSL 进入用户端渲染";
+  }
+  const support = componentSupport(type);
+  if (support.status === "supported") return "保存后写入 P9 DSL，用户端由 CMS Visual Renderer 展示";
+  if (support.status === "basic") return "基础支持组件，发布验收时需重点核对";
+  return "请替换为支持矩阵内组件后再发布";
 }
 
 function canAddPreset(preset: ComponentPreset): boolean {
@@ -10195,5 +10249,343 @@ function looksLikePreviewImage(value: string): boolean {
     radial-gradient(circle at 12% 12%, rgb(255 255 255 / 65%), transparent 24%),
     linear-gradient(135deg, rgb(20 99 255 / 16%), rgb(24 194 156 / 10%)),
     #f8fbff;
+}
+
+/* Guanchao admin alignment */
+.cms-page {
+  --gc-ink: #071426;
+  --gc-ink-2: #10233d;
+  --gc-gold: #b99643;
+  --gc-gold-strong: #8f6b24;
+  --gc-gold-soft: #f3ead7;
+  --gc-paper: #f8f5ee;
+  --gc-line: #e3d9c7;
+  --gc-muted: #6f7788;
+  --gc-shadow: 0 16px 42px rgb(7 20 38 / 10%);
+  background:
+    linear-gradient(180deg, #f7f4ed 0%, #f4f7fb 46%, #eef3f8 100%);
+}
+
+.cms-hero {
+  align-items: center;
+  border-color: rgb(185 150 67 / 22%);
+  background:
+    radial-gradient(circle at 12% 0%, rgb(185 150 67 / 20%), transparent 34%),
+    radial-gradient(circle at 88% 10%, rgb(16 35 61 / 10%), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #fbf8f0 48%, #eef7f4 100%);
+  box-shadow: var(--gc-shadow);
+}
+
+.cms-hero__copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.cms-hero__eyebrow {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgb(185 150 67 / 26%);
+  border-radius: 999px;
+  background: rgb(185 150 67 / 10%);
+  color: var(--gc-gold-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.cms-hero .page-title {
+  color: var(--gc-ink);
+  letter-spacing: 0;
+}
+
+.cms-hero .page-subtitle {
+  color: var(--gc-muted);
+}
+
+.cms-hero .inline-actions {
+  align-items: center;
+}
+
+.cms-hero :deep(.el-button--primary) {
+  --el-button-bg-color: var(--gc-ink);
+  --el-button-border-color: var(--gc-ink);
+  --el-button-hover-bg-color: var(--gc-ink-2);
+  --el-button-hover-border-color: var(--gc-ink-2);
+}
+
+.cms-hero :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  border-color: var(--gc-ink);
+  background: var(--gc-ink);
+  box-shadow: -1px 0 0 0 var(--gc-ink);
+}
+
+.cms-ops-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0 18px;
+}
+
+.cms-ops-overview article {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid rgb(185 150 67 / 18%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 82%);
+  box-shadow: 0 10px 28px rgb(7 20 38 / 6%);
+}
+
+.cms-ops-overview span {
+  color: var(--gc-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cms-ops-overview strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gc-ink);
+  font-size: 20px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-ops-overview small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gc-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-panel,
+.preset-card,
+.component-card,
+.template-card {
+  border-color: rgb(227 217 199 / 82%);
+}
+
+.cms-panel {
+  background: rgb(255 255 255 / 94%);
+}
+
+.page-item:hover,
+.preset-card:hover:not(:disabled),
+.component-card--summary:hover {
+  border-color: rgb(185 150 67 / 42%);
+  box-shadow: 0 14px 34px rgb(7 20 38 / 8%);
+}
+
+.page-item.active,
+.component-card--summary.is-selected,
+.component-card.is-selected,
+.preview-block.is-selected {
+  border-color: var(--gc-gold);
+  background: linear-gradient(135deg, rgb(185 150 67 / 12%), rgb(255 255 255 / 72%));
+  box-shadow: 0 14px 34px rgb(185 150 67 / 14%);
+}
+
+.page-item__status,
+.component-card__index,
+.support-badge,
+.library-metrics span,
+.component-stack-metrics span,
+.preview-device-meta span {
+  border-color: rgb(185 150 67 / 16%);
+  background: rgb(243 234 215 / 66%);
+  color: var(--gc-gold-strong) !important;
+}
+
+.support-badge.is-support-supported {
+  background: #edf8f3;
+  color: #126342 !important;
+}
+
+.support-badge.is-support-basic {
+  background: #fff5de;
+  color: var(--gc-gold-strong) !important;
+}
+
+.support-badge.is-support-unsupported,
+.support-badge.is-support-planned {
+  background: #f1f5f9;
+  color: #64748b !important;
+}
+
+.component-card__meta-line {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.component-card__meta-line b {
+  max-width: 180px;
+  overflow: hidden;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgb(7 20 38 / 6%);
+  color: var(--gc-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.component-card__meta-line small,
+.component-card__summary small {
+  color: var(--gc-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.component-card__summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(160px, 0.9fr) auto;
+  align-items: center;
+  border-color: rgb(185 150 67 / 18%);
+}
+
+.component-card__summary > span,
+.component-card__summary > small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-preview {
+  background:
+    radial-gradient(circle at 50% 0%, rgb(185 150 67 / 12%), transparent 30%),
+    linear-gradient(180deg, #ffffff, #f6f1e8 54%, #eef3f8);
+}
+
+.phone-shell {
+  width: 360px;
+  padding: 10px 12px 14px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 10%), rgb(255 255 255 / 2%)),
+    var(--gc-ink);
+  box-shadow: 0 28px 60px rgb(7 20 38 / 24%);
+}
+
+.phone-status {
+  width: 100%;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 8px;
+  padding: 0 14px;
+  border-radius: 0;
+  background: transparent;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.phone-status span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.phone-status i {
+  width: 7px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.74;
+}
+
+.phone-status i:first-child {
+  height: 11px;
+}
+
+.phone-status b {
+  min-width: 22px;
+  height: 14px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 5px;
+  background: #f8fafc;
+  color: #111827;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.phone-nav {
+  border-color: rgb(185 150 67 / 14%);
+  background: rgb(255 255 255 / 94%);
+}
+
+.phone-capsule {
+  border-color: rgb(7 20 38 / 12%);
+  background: rgb(255 255 255 / 82%);
+}
+
+.phone-screen {
+  background-color: #f4efe5;
+}
+
+.phone-tabbar {
+  border-top-color: rgb(185 150 67 / 16%);
+  background: rgb(255 255 255 / 94%);
+}
+
+.phone-tabbar__item.active {
+  color: var(--gc-gold-strong);
+}
+
+.preview-block {
+  border-color: transparent;
+}
+
+.business-preview__hero,
+.business-preview__module,
+.business-preview__assistant,
+.business-preview__cart-title,
+.business-preview__checkout,
+.business-preview__user {
+  border-color: rgb(185 150 67 / 20%);
+  background: linear-gradient(180deg, rgb(255 255 255 / 96%), rgb(250 247 241 / 94%));
+  box-shadow: 0 14px 34px rgb(7 20 38 / 10%);
+}
+
+.business-preview__label,
+.business-preview__stock {
+  background: rgb(185 150 67 / 12%);
+  color: var(--gc-gold-strong);
+}
+
+.business-preview button {
+  background: linear-gradient(135deg, var(--gc-gold), var(--gc-gold-strong));
+}
+
+.template-card__screen {
+  background:
+    radial-gradient(circle at 12% 12%, rgb(255 255 255 / 68%), transparent 24%),
+    linear-gradient(135deg, rgb(185 150 67 / 18%), rgb(16 35 61 / 8%)),
+    #f8f5ee;
+}
+
+@media (max-width: 1440px) {
+  .cms-ops-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .component-card__summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>
