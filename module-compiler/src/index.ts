@@ -1,5 +1,6 @@
 import {
   createBusinessModule,
+  getModuleRenderContract,
   normalizeBusinessModules,
   type BusinessModule,
   type BusinessModuleConfig,
@@ -71,6 +72,11 @@ export function defaultModulesForPage(page: string): BusinessModule[] {
 
 function compileModule(module: BusinessModule, index: number): DslNode {
   const config = module.config;
+  const renderContracts = {
+    adminPreview: getModuleRenderContract(module.type, "adminPreview"),
+    h5: getModuleRenderContract(module.type, "h5"),
+    miniapp: getModuleRenderContract(module.type, "miniapp")
+  };
   const base = {
     id: module.id,
     enabled: module.enabled,
@@ -78,44 +84,53 @@ function compileModule(module: BusinessModule, index: number): DslNode {
     meta: {
       source: "business-module",
       moduleId: module.id,
-      moduleType: module.type
+      moduleType: module.type,
+      renderContracts
     }
   };
 
-  if (module.type === "home-hero") {
+  if (module.type === "home-hero" || module.type === "image-banner") {
     return {
       ...base,
       type: "ds-banner",
       props: {
-        title: text(config.title, "首页主视觉"),
+        ...moduleStyleProps(config),
+        title: text(config.title),
         subtitle: text(config.subtitle),
         description: text(config.description),
         imageUrl: text(config.imageUrl),
+        imageMode: text(config.imageMode),
+        imageOnly: config.imageOnly === true,
+        showOverlay: config.showOverlay !== false,
         buttonText: text(config.buttonText),
         action: moduleAction(config)
       }
     };
   }
 
-  if (module.type === "home-quick-entry" || module.type === "home-product-grid" || module.type === "mall-product-grid") {
+  if (module.type === "home-quick-entry" || module.type === "quick-icon-grid" || module.type === "home-product-grid" || module.type === "mall-product-grid") {
     return {
       ...base,
       type: config.layout === "list" ? "ds-list" : "ds-grid",
       props: {
-        title: text(config.title, "入口"),
+        ...moduleStyleProps(config),
+        title: text(config.title),
         subtitle: text(config.subtitle),
         columns: Number(config.columns || (module.type === "home-quick-entry" ? 4 : 2)),
+        iconSize: text(config.iconSize),
+        cardStyle: text(config.cardStyle),
         items: (config.items ?? []).map(itemToDslItem)
       }
     };
   }
 
-  if (module.type === "home-event-list") {
+  if (module.type === "home-event-list" || module.type === "event-card-carousel" || module.type === "conference-card") {
     return {
       ...base,
       type: config.layout === "grid" ? "ds-grid" : "ds-list",
       props: {
-        title: text(config.title, "会议推荐"),
+        ...moduleStyleProps(config),
+        title: text(config.title),
         subtitle: text(config.subtitle),
         emptyText: "暂无会议",
         columns: Number(config.columns || 2),
@@ -124,11 +139,22 @@ function compileModule(module: BusinessModule, index: number): DslNode {
     };
   }
 
-  if (module.type === "home-member-card" || module.type === "conference-register-form") {
+  if (
+    module.type === "home-member-card" ||
+    module.type === "member-profile-card" ||
+    module.type === "member-benefit-card" ||
+    module.type === "order-card" ||
+    module.type === "product-card" ||
+    module.type === "cart-item" ||
+    module.type === "conference-register-form" ||
+    module.type === "invoice-form" ||
+    module.type === "aftersale-form"
+  ) {
     return {
       ...base,
       type: "ds-card",
       props: {
+        ...moduleStyleProps(config),
         title: text(config.title),
         subtitle: text(config.subtitle),
         description: text(config.description),
@@ -142,13 +168,25 @@ function compileModule(module: BusinessModule, index: number): DslNode {
     ...base,
     type: "ds-section",
     props: {
+      ...moduleStyleProps(config),
       title: text(config.title),
       subtitle: text(config.subtitle),
       description: text(config.description),
       imageUrl: text(config.imageUrl),
+      imageMode: text(config.imageMode),
       buttonText: text(config.buttonText),
       action: moduleAction(config)
     }
+  };
+}
+
+function moduleStyleProps(config: BusinessModuleConfig): Record<string, unknown> {
+  return {
+    radiusPreset: config.radiusPreset ?? "md",
+    spacingPreset: config.spacingPreset ?? "standard",
+    imageRatio: config.imageRatio ?? "",
+    buttonStyle: config.buttonStyle ?? "primary",
+    cardStyle: config.cardStyle ?? "soft"
   };
 }
 
