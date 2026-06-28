@@ -28,6 +28,7 @@ export interface DslNodeForApi {
 }
 
 const LEGACY_TO_DS_TYPE: Record<string, string> = {
+  "fixed-business-template": "ds-section",
   hero: "ds-banner",
   "hero-banner": "ds-banner",
   carousel: "ds-carousel",

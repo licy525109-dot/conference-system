@@ -26,6 +26,7 @@ export interface CmsPublishCheckReport {
 }
 
 export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
+  "fixed-business-template": supported("固定业务模板", "H5/小程序支持首页、排期、报名、商城、购物车和会员中心固定业务模板。"),
   hero: supported("主视觉横幅", "H5/小程序完整支持图片横幅、按钮和空图兜底。"),
   carousel: supported("轮播图", "H5/小程序完整支持图片轮播、指示点和空状态。"),
   "hero-banner": supported("顶部主视觉 Banner", "H5/小程序完整支持首页主视觉、双按钮、背景图和统一跳转配置。"),

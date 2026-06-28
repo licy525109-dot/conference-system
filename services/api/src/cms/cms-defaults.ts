@@ -88,7 +88,27 @@ export const DEFAULT_TABBAR_ITEMS = [
   }
 ] as const;
 
+const FIXED_TEMPLATE_ASSET_ROOT = "/static/fixed-templates";
+
 export const ENABLED_COMPONENT_PRESETS = [
+  preset("fixed-business-template", "固定业务模板", "业务固定模板", "首页、年度排期、会议报名、商城、购物车和会员中心固定业务模板", {
+    templateKey: "home",
+    heroTitle: "",
+    heroSubtitle: "",
+    heroImageUrl: "",
+    items: [
+      entry("年度排期", "SCHEDULE", "calendar", "page", { iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/calendar.svg`, targetPageKey: "custom:about-paiqi" }),
+      entry("会议报名", "REGISTRATION", "registration", "page", { iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/registration.svg`, targetPageKey: "conference-list" }),
+      entry("赛道生态", "ECOSYSTEM", "team", "page", { iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/user.svg`, targetPageKey: "custom:ecosystem" })
+    ],
+    noticeBar: true,
+    loginCard: true,
+    quickGrid: true,
+    highlightStrip: true,
+    statsCard: true,
+    conferenceModels: true,
+    tagRows: true
+  }),
   preset("hero", "主视觉横幅", "基础展示", "页面顶部沉浸式横幅", {
     kicker: "会议报名",
     title: "选择会议，完成报名缴费",
@@ -350,115 +370,28 @@ export const ALL_COMPONENT_TYPES = new Set(ALL_COMPONENT_PRESETS.map((item) => i
 export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
   if (pageKey === "home") {
     return [
-      {
-        id: "home-hero-banner-default",
-        type: "hero-banner",
-        enabled: true,
-        config: {
-          title: "欢迎进入会务小程序",
-          subtitle: "报名、签到、会务服务一站完成",
-          description: "选择会议并完成报名缴费，后续可在我的报名中查看凭证。",
-          buttonText: "查看会议",
-          secondaryButtonText: "我的报名",
-          actionTargetType: "page",
-          targetPageKey: "conference-list",
-          secondaryActionTargetType: "page",
-          secondaryTargetPageKey: "my-registrations",
-          backgroundColor: "#315d7d",
-          textColor: "#ffffff",
-          height: 420,
-          radius: 28
-        }
-      },
-      {
-        id: "home-quick-grid-default",
-        type: "quick-icon-grid",
-        enabled: true,
-        config: {
-          title: "快捷入口",
-          showTitle: true,
-          columns: 3,
-          layoutMode: "grid",
-          iconSize: "large",
-          cardStyle: "soft",
-          cardRadius: 28,
-          cardGap: 14,
-          showSubtitle: true,
-          items: [
-            entry("会议报名", "Registration", "registration", "page", { targetPageKey: "conference-list" }),
-            entry("我的报名", "My tickets", "order", "page", { targetPageKey: "my-registrations" }),
-            entry("商城", "Shop", "shop", "page", { targetPageKey: "mall" })
-          ]
-        }
-      },
-      {
-        id: "home-service-shortcuts-default",
-        type: "service-shortcut-card",
-        enabled: true,
-        config: {
-          title: "服务中心",
-          showTitle: true,
-          columns: 2,
-          layoutMode: "grid",
-          iconSize: "small",
-          cardStyle: "soft",
-          cardRadius: 24,
-          cardGap: 14,
-          showSubtitle: true,
-          items: [
-            entry("我的报名", "查看报名与凭证", "registration", "page", { targetPageKey: "my-registrations" }),
-            entry("商城订单", "查看商品订单", "order", "page", { targetPageKey: "mall-orders" }),
-            entry("发票申请", "提交和查看发票", "invoice", "invoice"),
-            entry("联系客服", "复制客服信息", "service", "copy", { copyText: "请联系会务组" })
-          ]
-        }
-      },
-      {
-        id: "home-event-carousel-default",
-        type: "event-card-carousel",
-        enabled: true,
-        config: {
-          title: "精选会议",
-          limit: 6,
-          cardSize: "large",
-          detailButtonText: "查看详情",
-          showAppointmentButton: true,
-          appointmentButtonText: "提前预约",
-          showSummary: true,
-          showTime: true,
-          showLocation: true
-        }
-      }
+      fixedTemplate("home-fixed-default", "home", {
+        heroTitle: "潮起谋局  潮落定势",
+        heroSubtitle: "行业会议与创始人社群平台"
+      })
     ];
   }
 
   if (pageKey === "conference-list") {
     return [
-      {
-        id: "conference-list-default",
-        type: "conference-list",
-        enabled: true,
-        config: {
-          title: "可报名会议",
-          limit: 10,
-          showSummary: true,
-          showTime: true,
-          showLocation: true,
-          showRegistrationCount: true,
-          detailButtonText: "查看详情",
-          showAppointmentButton: true,
-          appointmentButtonText: "提前预约",
-          cardImageMode: "scaleToFill",
-          cardImageLayout: "left"
-        }
-      }
+      fixedTemplate("conference-list-fixed-default", "registration", {
+        heroTitle: "会议报名",
+        heroSubtitle: "选择感兴趣的会议，快速报名参与"
+      })
     ];
   }
 
   if (pageKey === "custom:about-paiqi" || pageKey === "custom:annual-schedule") {
     return [
-      { id: "schedule-hero", type: "hero-banner", enabled: true, config: { title: "年度排期", subtitle: "观潮会集", description: "查看观潮会集全年会议安排", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
-      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCalendarButton: true, showItemCalendarButton: false, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
+      fixedTemplate("schedule-fixed-default", "schedule", {
+        heroTitle: "年度排期",
+        heroSubtitle: "查看观潮会集全年会议安排"
+      })
     ];
   }
 
@@ -510,42 +443,27 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
 
   if (pageKey === "member-center") {
     return [
-      { id: "member-profile-default", type: "user-profile-card", enabled: true, config: { title: "我的资料", description: "登录后查看头像、昵称、手机号和会员状态。", target: "member", contentBackgroundStyle: "card" } },
-      {
-        id: "member-actions-default",
-        type: "quick-icon-grid",
-        enabled: true,
-        config: {
-          title: "",
-          showTitle: false,
-          columns: 4,
-          cardStyle: "minimal",
-          contentBackgroundStyle: "card",
-          items: [
-            entry("我的报名", "6", "registration", "page", { targetPageKey: "my-registrations" }),
-            entry("商城订单", "3", "order", "page", { targetPageKey: "mall-orders" }),
-            entry("待参会", "2", "calendar", "page", { targetPageKey: "my-registrations" }),
-            entry("优惠券", "3", "coupon", "page", { targetPageKey: "custom:coupon-center" })
-          ]
-        }
-      },
-      { id: "member-benefits-default", type: "member-promo-banner", enabled: true, config: { title: "观潮会集会员权益", subtitle: "尊享会员专属特权，助力思想与机遇的深度链接", buttonText: "查看权益", actionTargetType: "page", targetPageKey: "member-center", contentBackgroundStyle: "card", backgroundColor: "#071426", textColor: "#f8e4b2" } },
-      { id: "member-orders-default", type: "my-order-list", enabled: true, config: { title: "常用入口", orderType: "both", contentBackgroundStyle: "card" } }
+      fixedTemplate("member-center-fixed-default", "member-center", {
+        growthValue: "2568"
+      })
     ];
   }
 
   if (pageKey === "cart") {
     return [
-      { id: "cart-title-default", type: "title", enabled: true, config: { text: "购物车", textAlign: "center" } },
-      { id: "cart-notice-default", type: "notice", enabled: true, config: { text: "会议报名和商城订单均由后端重新计算金额，选中后可在底部统一查看合计。" } },
-      { id: "cart-recommend-default", type: "mall-product-grid", enabled: true, config: { title: "为你推荐", limit: 4, buttonText: "加入购物车", contentBackgroundStyle: "transparent" } }
+      fixedTemplate("cart-fixed-default", "cart", {
+        heroTitle: "购物车",
+        heroSubtitle: "已选商品、优惠券和结算信息都可按模块显隐控制"
+      })
     ];
   }
 
   if (pageKey === "mall") {
     return [
-      { id: "mall-tabs-default", type: "tag-filter", enabled: true, config: { title: "热门主题", target: "product-category", scope: "mall", items: ["全部｜all｜product-category"], contentBackgroundStyle: "transparent" } },
-      { id: "mall-product-grid-default", type: "mall-product-grid", enabled: true, config: { title: "商城商品", limit: 8, buttonText: "加入购物车", contentBackgroundStyle: "transparent" } }
+      fixedTemplate("mall-fixed-default", "mall", {
+        heroTitle: "会议周边商城",
+        heroSubtitle: "精选会议周边与品牌物料"
+      })
     ];
   }
 
@@ -1017,13 +935,11 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       }
     },
     components: [
-      { id: "guanchao-home-hero", type: "hero-banner", enabled: true, config: { title: "观潮会集", subtitle: "潮起谋局  潮落定势", description: "行业会议与创始人社群平台", imageUrl: "", buttonText: "", secondaryButtonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 500, radius: 0 } },
-      { id: "guanchao-home-login", type: "login-card", enabled: true, config: { title: "欢迎光临，请登录成为会员", subtitle: "查看会议排期与报名权益", buttonText: "立即登录", loggedInSubtitle: "可查看会议排期、报名权益和优惠券。", loggedInButtonText: "我的优惠券", actionTargetType: "page", targetPageKey: "member-center", contentBackgroundStyle: "card" } },
-      { id: "guanchao-home-grid", type: "quick-icon-grid", enabled: true, config: { title: "", showTitle: false, columns: 3, iconSize: "xlarge", cardStyle: "outline", cardRadius: 24, cardGap: 18, showSubtitle: true, contentBackgroundStyle: "transparent", items: [entry("年度排期", "SCHEDULE", "calendar", "page", { targetPageKey: "custom:about-paiqi" }), entry("会议报名", "REGISTRATION", "registration", "page", { targetPageKey: "conference-list" }), entry("赛道生态", "ECOSYSTEM", "team", "page", { targetPageKey: "custom:ecosystem" })] } },
-      { id: "guanchao-home-track-bar", type: "promotion-bar", enabled: true, config: { iconText: "▰", title: "五大增量生态 × 五大垂类赛道", buttonText: "查看详情", showArrow: true, actionTargetType: "page", targetPageKey: "custom:ecosystem", backgroundColor: "#efe7d8", barHeight: 76, moduleOpacity: 100 } },
-      { id: "guanchao-home-stats", type: "stats-grid", enabled: true, config: { title: "观潮会集", items: ["1500+ 头部创始人", "20+ 覆盖城市业态", "5 大核心会议模型"] } },
-      { id: "guanchao-home-tracks", type: "dual-track-tags", enabled: true, config: { primaryTitle: "五大增量生态", primaryItems: ["自然", "银发", "赛事", "研学", "情绪"], primaryButtonText: "", secondaryTitle: "五大垂类赛道", secondaryItems: ["学前", "科创", "舞蹈", "美术", "自主学习"], secondaryButtonText: "", contentBackgroundStyle: "transparent" } },
-      { id: "guanchao-home-conferences", type: "conference-list", enabled: true, config: { title: "可报名会议", limit: 4, showSummary: true, showTime: true, showLocation: true, showRegistrationCount: true, detailButtonText: "立即报名", showAppointmentButton: true, appointmentButtonText: "提前预约", cardImageLayout: "left", cardImageMode: "scaleToFill", cardRadius: 18 } }
+      fixedTemplate("fixed-home-guanchao", "home", {
+        heroTitle: "潮起谋局  潮落定势",
+        heroSubtitle: "行业会议与创始人社群平台",
+        noticeText: "欢迎来到观潮会集，查看年度排期、会议报名与会员权益。"
+      })
     ]
   },
   {
@@ -1048,8 +964,10 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       }
     },
     components: [
-      { id: "schedule-hero", type: "hero-banner", enabled: true, config: { title: "年度排期", subtitle: "观潮会集", description: "查看观潮会集全年会议安排", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
-      { id: "schedule-list", type: "conference-schedule", enabled: true, config: { title: "", categories: ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"], limit: 8, showCover: true, showCalendarButton: true, showItemCalendarButton: false, calendarText: "日历", detailButtonText: "查看详情", showAppointmentButton: true, appointmentButtonText: "提前预约", contentBackgroundStyle: "transparent" } }
+      fixedTemplate("fixed-schedule-guanchao", "schedule", {
+        heroTitle: "年度排期",
+        heroSubtitle: "查看观潮会集全年会议安排"
+      })
     ]
   },
   {
@@ -1074,8 +992,10 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       }
     },
     components: [
-      { id: "registration-hero", type: "hero-banner", enabled: true, config: { title: "会议报名", subtitle: "观潮会集", description: "选择感兴趣的会议，快速报名参与", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
-      { id: "registration-tabs", type: "conference-tabs", enabled: true, config: { title: "", tabs: ["全部", "推荐", "即将开始", "闭门会", "论坛", "沙龙", "参访"], limit: 8, showSummary: true, showTime: true, showLocation: true, showRegistrationCount: true, detailButtonText: "立即报名", showAppointmentButton: true, appointmentButtonText: "提前预约", cardImageLayout: "left", cardImageMode: "scaleToFill", cardRadius: 18 } }
+      fixedTemplate("fixed-registration-guanchao", "registration", {
+        heroTitle: "会议报名",
+        heroSubtitle: "选择感兴趣的会议，快速报名参与"
+      })
     ]
   },
   {
@@ -1100,10 +1020,9 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       }
     },
     components: [
-      { id: "member-profile", type: "user-profile-card", enabled: true, config: { title: "潮起东方", description: "观潮会集会员 · 成长值 2568", target: "member" } },
-      { id: "member-stats", type: "quick-icon-grid", enabled: true, config: { title: "", showTitle: false, columns: 4, iconSize: "large", cardStyle: "plain", contentBackgroundStyle: "card", cardRadius: 24, items: [entry("我的报名", "6", "registration", "page", { targetPageKey: "my-registrations" }), entry("我的订单", "3", "order", "page", { targetPageKey: "mall-orders" }), entry("待参会", "2", "calendar", "page", { targetPageKey: "my-registrations" }), entry("优惠券", "3", "coupon", "page", { targetPageKey: "custom:coupon-center" })] } },
-      { id: "member-benefits", type: "member-promo-banner", enabled: true, config: { title: "观潮会集会员权益", subtitle: "尊享会员专属特权，助力思想与机遇的深度链接", items: ["查看排期", "会议报名", "会员专属权益"], buttonText: "查看权益", actionTargetType: "page", targetPageKey: "member-center", backgroundColor: "#071426", textColor: "#f8e4b2" } },
-      { id: "member-orders", type: "my-order-list", enabled: true, config: { title: "常用入口", orderType: "both" } }
+      fixedTemplate("fixed-member-center-guanchao", "member-center", {
+        growthValue: "2568"
+      })
     ]
   },
   {
@@ -1128,9 +1047,10 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       }
     },
     components: [
-      { id: "mall-hero", type: "hero-banner", enabled: true, config: { title: "会议周边商城", subtitle: "观潮会集", description: "精选会议周边与品牌物料", imageUrl: "", buttonText: "", backgroundColor: "#071426", textColor: "#ffffff", fullBleed: true, height: 460, radius: 0 } },
-      { id: "mall-tabs", type: "tag-filter", enabled: true, config: { title: "", target: "product-category", scope: "mall", items: ["全部｜all｜product-category", "文创周边｜creative｜product-category", "办公用品｜office｜product-category", "伴手礼｜gift｜product-category", "服饰｜wear｜product-category", "限量礼盒｜limited｜product-category"], contentBackgroundStyle: "transparent" } },
-      { id: "mall-grid", type: "mall-product-grid", enabled: true, config: { title: "", limit: 8, buttonText: "加入购物车", contentBackgroundStyle: "transparent" } }
+      fixedTemplate("fixed-mall-guanchao", "mall", {
+        heroTitle: "会议周边商城",
+        heroSubtitle: "精选会议周边与品牌物料"
+      })
     ]
   },
   {
@@ -1155,9 +1075,10 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
       }
     },
     components: [
-      { id: "cart-title", type: "title", enabled: true, config: { text: "购物车", fontSize: 36, textAlign: "center" } },
-      { id: "cart-coupon-notice", type: "notice", enabled: true, config: { text: "商品优惠券可在购物车中选择，结算金额以后端重新计算为准。" } },
-      { id: "cart-recommend", type: "mall-product-grid", enabled: true, config: { title: "为你推荐", limit: 4, buttonText: "加入购物车" } }
+      fixedTemplate("fixed-cart-guanchao", "cart", {
+        heroTitle: "购物车",
+        heroSubtitle: "已选商品、优惠券和结算信息都可按模块显隐控制"
+      })
     ]
   }
 ] as const;
@@ -1205,5 +1126,29 @@ function entry(
     textColor: "",
     actionTargetType,
     ...extra
+  };
+}
+
+function fixedTemplate(id: string, templateKey: string, config: Prisma.InputJsonObject = {}): Prisma.InputJsonObject {
+  const fixedDefaults: Prisma.InputJsonObject =
+    templateKey === "home"
+      ? {
+          items: [
+            entry("年度排期", "SCHEDULE", "calendar", "page", { iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/calendar.svg`, targetPageKey: "custom:about-paiqi" }),
+            entry("会议报名", "REGISTRATION", "registration", "page", { iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/registration.svg`, targetPageKey: "conference-list" }),
+            entry("赛道生态", "ECOSYSTEM", "team", "page", { iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/user.svg`, targetPageKey: "custom:ecosystem" })
+          ]
+        }
+      : {};
+  return {
+    id,
+    type: "fixed-business-template",
+    enabled: true,
+    config: {
+      templateKey,
+      assetRoot: FIXED_TEMPLATE_ASSET_ROOT,
+      ...fixedDefaults,
+      ...config
+    }
   };
 }

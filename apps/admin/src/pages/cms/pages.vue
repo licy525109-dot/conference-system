@@ -12,6 +12,16 @@
           <el-radio-button label="developer">开发者模式</el-radio-button>
         </el-radio-group>
         <el-button @click="createVisible = true">新增页面</el-button>
+        <el-dropdown :disabled="!selectedPage || !version" @command="applyFixedBusinessTemplate">
+          <el-button>固定模板</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="template in fixedBusinessTemplateOptions" :key="template.key" :command="template.key">
+                {{ template.name }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button @click="openTemplateLibrary">页面模板</el-button>
         <el-button :disabled="!selectedPage || !version" @click="saveTemplateVisible = true">另存为模板</el-button>
         <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
@@ -1101,6 +1111,18 @@ interface BusinessModuleGuide {
   defaultStatus?: "configured" | "default" | "unconfigured";
 }
 
+interface FixedBusinessTemplateOption {
+  key: string;
+  kind: "home" | "schedule" | "registration" | "mall" | "cart" | "member-center";
+  name: string;
+  pageTitle: string;
+  shareTitle: string;
+  heroTitle: string;
+  heroSubtitle: string;
+  noticeText?: string;
+  growthValue?: string;
+}
+
 interface BusinessDisplayForm {
   modules: BusinessDisplayModule[];
   assistantMode: string;
@@ -1204,6 +1226,7 @@ const SAMPLE_USER_CONTEXT: PreviewUserContext = {
 };
 
 const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportMeta> = {
+  "fixed-business-template": { label: "已支持", status: "supported", description: "小程序/H5 已支持首页、排期、报名、商城、购物车和会员中心固定业务模板" },
   hero: { label: "已支持", status: "supported", description: "小程序/H5 已完整支持图片横幅展示" },
   "hero-banner": { label: "已支持", status: "supported", description: "小程序/H5 已支持首页主视觉、双按钮、背景图和统一跳转配置" },
   "login-card": { label: "已支持", status: "supported", description: "小程序/H5 已支持微信头像昵称登录引导、登录后头像昵称展示和跳转配置" },
@@ -1622,6 +1645,65 @@ const pageTypeOptions = [
   { label: "指定会议详情页", value: "CONFERENCE_DETAIL_PAGE" },
   { label: "商品详情模板", value: "PRODUCT_DETAIL_TEMPLATE" },
   { label: "指定商品详情页", value: "PRODUCT_DETAIL_PAGE" }
+];
+const FIXED_TEMPLATE_ASSET_ROOT = "/static/fixed-templates";
+const fixedBusinessTemplateOptions: FixedBusinessTemplateOption[] = [
+  {
+    key: "fixed-home",
+    kind: "home",
+    name: "观潮首页固定模板",
+    pageTitle: "观潮会集",
+    shareTitle: "欢迎来到观潮会集",
+    heroTitle: "潮起谋局  潮落定势",
+    heroSubtitle: "行业会议与创始人社群平台",
+    noticeText: "欢迎来到观潮会集，查看年度排期、会议报名与会员权益。"
+  },
+  {
+    key: "fixed-schedule",
+    kind: "schedule",
+    name: "年度排期固定模板",
+    pageTitle: "年度排期",
+    shareTitle: "观潮会集全年会议安排",
+    heroTitle: "年度排期",
+    heroSubtitle: "查看观潮会集全年会议安排"
+  },
+  {
+    key: "fixed-registration",
+    kind: "registration",
+    name: "会议报名固定模板",
+    pageTitle: "会议报名",
+    shareTitle: "选择感兴趣的会议，快速报名参与",
+    heroTitle: "会议报名",
+    heroSubtitle: "选择感兴趣的会议，快速报名参与"
+  },
+  {
+    key: "fixed-mall",
+    kind: "mall",
+    name: "商城首页固定模板",
+    pageTitle: "会议周边商城",
+    shareTitle: "精选会议周边与品牌物料",
+    heroTitle: "会议周边商城",
+    heroSubtitle: "精选会议周边与品牌物料"
+  },
+  {
+    key: "fixed-cart",
+    kind: "cart",
+    name: "购物车固定模板",
+    pageTitle: "购物车",
+    shareTitle: "观潮会集购物车",
+    heroTitle: "购物车",
+    heroSubtitle: "已选商品、优惠券和结算信息都可按模块显隐控制"
+  },
+  {
+    key: "fixed-member-center",
+    kind: "member-center",
+    name: "会员中心固定模板",
+    pageTitle: "我的",
+    shareTitle: "观潮会集会员中心",
+    heroTitle: "会员中心",
+    heroSubtitle: "查看报名、订单、优惠券和会员权益",
+    growthValue: "2568"
+  }
 ];
 const quickModuleDefinitions = BUSINESS_MODULE_DEFINITIONS;
 const loadedPreviewFonts = new Set<string>();
@@ -2694,6 +2776,102 @@ async function applyTemplateToCurrentPage(template: PageLibraryTemplate) {
   ElMessage.success("已应用模板到当前草稿");
 }
 
+async function applyFixedBusinessTemplate(command: string | number | object) {
+  if (!selectedPage.value || !version.value) return;
+  const option = fixedBusinessTemplateOptions.find((item) => item.key === String(command));
+  if (!option) return;
+  if (components.value.length > 0) {
+    try {
+      await ElMessageBox.confirm(`应用“${option.name}”会替换当前草稿组件，但仍保存为 P9 DSL。`, "应用固定业务模板", {
+        confirmButtonText: "继续应用",
+        cancelButtonText: "取消",
+        type: "warning"
+      });
+    } catch {
+      return;
+    }
+  }
+  const component = createFixedBusinessTemplateComponent(option);
+  components.value = [component];
+  versionTitle.value = `${selectedPage.value.title || "页面"} · ${option.name}`;
+  Object.assign(pageMeta, {
+    pageTitle: option.pageTitle,
+    shareTitle: option.shareTitle,
+    shareDescription: option.heroSubtitle,
+    navLogoUrl: pageMeta.navLogoUrl,
+    navLogoDynamicUrl: pageMeta.navLogoDynamicUrl,
+    shareImageUrl: pageMeta.shareImageUrl
+  });
+  selectedComponentId.value = component.id;
+  expandedComponentIds.value = [component.id];
+  expandedConfigGroupIds[component.id] = ["template", "quick-entry", "visibility"];
+  initializeConfigGroups(components.value);
+  ElMessage.success(`已应用${option.name}`);
+}
+
+function createFixedBusinessTemplateComponent(option: FixedBusinessTemplateOption): EditableComponent {
+  return {
+    id: `fixed-business-template-${option.kind}`,
+    type: "fixed-business-template",
+    enabled: true,
+    sortOrder: 0,
+    config: {
+      templateKey: option.kind,
+      assetRoot: FIXED_TEMPLATE_ASSET_ROOT,
+      heroTitle: option.heroTitle,
+      heroSubtitle: option.heroSubtitle,
+      heroImageUrl: "",
+      items: defaultFixedHomeEntries(),
+      noticeText: option.noticeText || "",
+      growthValue: option.growthValue || "",
+      noticeBar: true,
+      loginCard: true,
+      quickGrid: true,
+      highlightStrip: true,
+      statsCard: true,
+      conferenceModels: true,
+      tagRows: true
+    }
+  };
+}
+
+function defaultFixedHomeEntries(): EntryConfigItem[] {
+  return [
+    fixedHomeEntry("schedule", "年度排期", "SCHEDULE", "calendar.svg", "custom:about-paiqi"),
+    fixedHomeEntry("registration", "会议报名", "REGISTRATION", "registration.svg", "conference-list"),
+    fixedHomeEntry("ecosystem", "赛道生态", "ECOSYSTEM", "user.svg", "custom:ecosystem")
+  ];
+}
+
+function fixedHomeEntry(id: string, title: string, subtitle: string, iconFile: string, targetPageKey: string): EntryConfigItem {
+  return {
+    id,
+    enabled: true,
+    sort: 0,
+    title,
+    subtitle,
+    iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/${iconFile}`,
+    dynamicIconUrl: "",
+    builtinIcon: "",
+    cardStyle: "",
+    backgroundColor: "",
+    textColor: "",
+    actionTargetType: "page",
+    targetPageKey,
+    targetConferenceId: "",
+    targetProductId: "",
+    targetProductCategoryId: "",
+    targetCouponCampaignId: "",
+    externalUrl: "",
+    externalMiniappAppId: "",
+    externalMiniappPath: "",
+    externalMiniappExtraData: "",
+    phone: "",
+    copyText: "",
+    copySuccessText: ""
+  };
+}
+
 async function saveAsTemplate() {
   if (!version.value) return;
   const slug = saveTemplateForm.slug.trim().replace(/^template:/, "");
@@ -2795,6 +2973,7 @@ function componentPropsForDsl(component: CmsComponent): Record<string, unknown> 
 
 function dsTypeForComponent(type: string): string {
   const map: Record<string, string> = {
+    "fixed-business-template": "ds-section",
     hero: "ds-banner",
     "hero-banner": "ds-banner",
     carousel: "ds-carousel",
@@ -3058,6 +3237,15 @@ function businessModuleStatus(module: BusinessDisplayModule): string {
 
 function readString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeFixedTemplateKind(value: string): FixedBusinessTemplateOption["kind"] {
+  if (value.includes("schedule")) return "schedule";
+  if (value.includes("registration") || value.includes("conference-list")) return "registration";
+  if (value.includes("mall")) return "mall";
+  if (value.includes("cart")) return "cart";
+  if (value.includes("member")) return "member-center";
+  return "home";
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -3345,6 +3533,28 @@ function fieldsFor(type: string): ConfigField[] {
     ...extraFields
   ], 26);
   const map: Record<string, ConfigField[]> = {
+    "fixed-business-template": [
+      {
+        key: "templateKey",
+        label: "固定模板类型",
+        kind: "select",
+        fallback: "home",
+        options: fixedBusinessTemplateOptions.map((item) => ({ label: item.name, value: item.kind }))
+      },
+      { key: "heroTitle", label: "主标题", placeholder: "请输入模板主标题" },
+      { key: "heroSubtitle", label: "副标题", placeholder: "请输入模板副标题" },
+      { key: "heroImageUrl", label: "Hero 背景图", placeholder: "从素材库选择或粘贴图片地址" },
+      { key: "items", label: "首页快捷入口", kind: "entry-list" },
+      { key: "noticeText", label: "公告文案", kind: "textarea", rows: 2, placeholder: "首页公告/说明文案" },
+      { key: "growthValue", label: "示例成长值", placeholder: "2568" },
+      { key: "noticeBar", label: "显示公告条", kind: "switch", fallback: "true" },
+      { key: "loginCard", label: "显示登录卡", kind: "switch", fallback: "true" },
+      { key: "quickGrid", label: "显示快捷入口", kind: "switch", fallback: "true" },
+      { key: "highlightStrip", label: "显示赛道导引", kind: "switch", fallback: "true" },
+      { key: "statsCard", label: "显示品牌数据卡", kind: "switch", fallback: "true" },
+      { key: "conferenceModels", label: "显示会议模型", kind: "switch", fallback: "true" },
+      { key: "tagRows", label: "显示生态标签", kind: "switch", fallback: "true" }
+    ],
     hero: [
       { key: "kicker", label: "眉标文字", placeholder: "会议报名" },
       { key: "title", label: "主标题", placeholder: "选择会议，完成报名缴费" },
@@ -3719,6 +3929,14 @@ function orderTypeOptions(): Array<{ label: string; value: string }> {
 function groupedFieldsFor(type: string): ConfigFieldGroup[] {
   const fields = fieldsFor(type);
   if (fields.length === 0) return [];
+
+  if (type === "fixed-business-template") {
+    return compactGroups([
+      { key: "template", title: "固定模板", fields: fieldsByKeys(fields, ["templateKey", "heroTitle", "heroSubtitle", "heroImageUrl", "noticeText", "growthValue"]) },
+      { key: "quick-entry", title: "首页快捷入口", fields: fieldsByKeys(fields, ["items"]) },
+      { key: "visibility", title: "模块显隐", fields: fieldsByKeys(fields, ["noticeBar", "loginCard", "quickGrid", "highlightStrip", "statsCard", "conferenceModels", "tagRows"]) }
+    ]);
+  }
 
   if (type === "hero") {
     return compactGroups([
@@ -4233,7 +4451,7 @@ function isStandardEntryConfigItem(value: unknown): value is EntryConfigItem {
 }
 
 function isImageField(field: ConfigField): boolean {
-  return ["imageUrl", "images", "coverUrl", "iconUrl", "logoUrl", "backgroundImageUrl"].includes(field.key);
+  return ["imageUrl", "images", "coverUrl", "iconUrl", "logoUrl", "backgroundImageUrl", "heroImageUrl"].includes(field.key);
 }
 
 function isFontField(field: ConfigField): boolean {
@@ -4267,6 +4485,7 @@ function materialSpecKeyForField(componentType: string, field: ConfigField): Mat
   if (componentType === "sponsor-wall" && field.key === "sponsors") return "sponsorLogo";
   if (field.kind === "rich-blocks") return "contentImage";
   if (!isImageField(field)) return undefined;
+  if (componentType === "fixed-business-template" && field.key === "heroImageUrl") return "heroImage";
   if (componentType === "hero") return "heroImage";
   if (componentType === "hero-banner") return "heroImage";
   if (componentType === "login-card" && field.key === "logoUrl") return "topTitleLogo";
@@ -4712,6 +4931,103 @@ const ComponentPreview = defineComponent({
         time: formatPreviewDate(item.startAt),
         registrationCount: registrationCountForPreview(item, props.item, index)
       }));
+    const fixedAsset = (path: string) => `${String(props.item.config.assetRoot || FIXED_TEMPLATE_ASSET_ROOT)}/${path}`;
+    const fixedKind = () => normalizeFixedTemplateKind(value("templateKey", "home"));
+    const fixedHeroFile = (kind: string) => {
+      const map: Record<string, string> = {
+        home: "hero_home_bg.png",
+        schedule: "hero_schedule_bg.png",
+        registration: "hero_registration_bg.png",
+        mall: "hero_mall_bg.png",
+        cart: "hero_cart_bg.png",
+        "member-center": "hero_member_bg.png"
+      };
+      return map[kind] || map.home;
+    };
+    const fixedHeroTitle = (kind: string) => {
+      const map: Record<string, string> = {
+        home: "潮起谋局  潮落定势",
+        schedule: "年度排期",
+        registration: "会议报名",
+        mall: "会议周边商城",
+        cart: "购物车",
+        "member-center": "会员中心"
+      };
+      return value("heroTitle", map[kind] || map.home);
+    };
+    const fixedHeroSubtitle = (kind: string) => {
+      const map: Record<string, string> = {
+        home: "行业会议与创始人社群平台",
+        schedule: "查看观潮会集全年会议安排",
+        registration: "选择感兴趣的会议，快速报名参与",
+        mall: "精选会议周边与品牌物料",
+        cart: "已选商品、优惠券和结算信息都可按模块显隐控制",
+        "member-center": "查看报名、订单、优惠券和会员权益"
+      };
+      return value("heroSubtitle", map[kind] || map.home);
+    };
+    const fixedHero = (kind: string) =>
+      h("div", { class: "preview-fixed-hero", style: { backgroundImage: `url(${value("heroImageUrl") || fixedAsset(`heroes/${fixedHeroFile(kind)}`)})` } }, [
+        h("strong", fixedHeroTitle(kind)),
+        h("span", fixedHeroSubtitle(kind))
+      ]);
+    const fixedProductRows = () =>
+      (productOptions.value.length > 0
+        ? productOptions.value.slice(0, 4).map((item, index) => ({
+            title: item.title,
+            price: "skus" in item && Array.isArray(item.skus) && item.skus[0] ? `¥${(item.skus[0].priceCent / 100).toFixed(2)}` : "¥68.00",
+            image: item.coverImageUrl || fixedAsset(`products/${["product_notebook.png", "product_tote_bag.png", "product_mug.png", "product_gift_box.png"][index % 4]}`)
+          }))
+        : [
+            { title: "观潮笔记本", price: "¥68.00", image: fixedAsset("products/product_notebook.png") },
+            { title: "观潮帆布袋", price: "¥88.00", image: fixedAsset("products/product_tote_bag.png") },
+            { title: "会议马克杯", price: "¥59.00", image: fixedAsset("products/product_mug.png") },
+            { title: "会议礼盒", price: "¥198.00", image: fixedAsset("products/product_gift_box.png") }
+          ]);
+    const fixedTemplatePreview = () => {
+      const kind = fixedKind();
+      const rows = meetings().slice(0, 3);
+      const children = [
+        h("div", { class: "preview-fixed-brand" }, [
+          h("img", { src: fixedAsset("brand/logo_gc_mark.png"), alt: "" }),
+          h("span", "观潮会集"),
+          h("small", kind === "member-center" ? "会员中心" : kind === "cart" ? "购物车结算" : "行业会议与创始人社群平台")
+        ]),
+        fixedHero(kind)
+      ];
+      if (kind === "home") {
+        const quickEntries = entryItems().slice(0, 3);
+        if (booleanConfig(props.item, "noticeBar", true)) children.push(h("div", { class: "preview-fixed-notice" }, value("noticeText", "欢迎来到观潮会集，查看年度排期、会议报名与会员权益。")));
+        if (booleanConfig(props.item, "loginCard", true)) children.push(h("div", { class: "preview-fixed-login" }, [h("span", "观"), h("strong", "欢迎光临，请登录成为会员"), h("button", "立即登录")]));
+        if (booleanConfig(props.item, "quickGrid", true)) {
+          children.push(h("div", { class: "preview-fixed-grid" }, quickEntries.map((item) =>
+            h("div", [
+              item.dynamicIconUrl || item.iconUrl ? h("img", { src: item.dynamicIconUrl || item.iconUrl, alt: item.title }) : h("b", item.title.slice(0, 1)),
+              h("span", item.title),
+              item.subtitle ? h("small", item.subtitle) : null
+            ])
+          )));
+        }
+        if (booleanConfig(props.item, "highlightStrip", true)) children.push(h("div", { class: "preview-fixed-strip" }, [h("strong", "五大增量生态 × 五大垂类赛道"), h("button", "查看详情")]));
+        if (booleanConfig(props.item, "statsCard", true)) children.push(h("div", { class: "preview-fixed-stats" }, [h("span", "1500+ 头部创始人"), h("span", "20+ 覆盖城市业态")]));
+      } else if (kind === "schedule") {
+        children.push(h("div", { class: "preview-fixed-tabs" }, ["全部", "闭门会", "论坛", "沙龙"].map((item, index) => h("span", { class: index === 0 ? "active" : "" }, item))));
+        children.push(...rows.map((meeting) => h("div", { class: "preview-fixed-schedule-card" }, [h("b", previewScheduleDay(meeting.startAt)), h("div", [h("strong", meeting.title), h("small", meeting.location)]), h("button", "查看详情")])));
+      } else if (kind === "registration") {
+        children.push(...rows.map((meeting) => h("div", { class: "preview-fixed-conference-card" }, [meeting.image ? h("img", { src: meeting.image, alt: "" }) : h("span", "会"), h("div", [h("strong", meeting.title), h("small", `${meeting.time} · ${meeting.location}`), h("button", "立即报名")])])));
+      } else if (kind === "mall") {
+        children.push(h("div", { class: "preview-fixed-products" }, fixedProductRows().map((item) => h("div", [h("img", { src: item.image, alt: "" }), h("strong", item.title), h("span", item.price)]))));
+      } else if (kind === "cart") {
+        children.push(h("div", { class: "preview-fixed-strip" }, [h("strong", "已选 3 件商品"), h("button", "编辑")]));
+        children.push(...fixedProductRows().slice(0, 2).map((item) => h("div", { class: "preview-fixed-cart-row" }, [h("img", { src: item.image, alt: "" }), h("div", [h("strong", item.title), h("small", "默认规格 · 会员价"), h("b", item.price)]), h("span", "− 1 ＋")])));
+        children.push(h("div", { class: "preview-fixed-notice" }, "优惠券 · 已减 ¥20"));
+      } else {
+        children.push(h("div", { class: "preview-fixed-member-card", style: { backgroundImage: `url(${fixedAsset("brand/member_card_bg.png")})` } }, [h("img", { src: fixedAsset("brand/member_avatar_placeholder.png"), alt: "" }), h("div", [h("strong", "微信用户"), h("span", `普通用户 · 成长值 ${value("growthValue", "2568")}`)]), h("button", "编辑资料")]));
+        children.push(h("div", { class: "preview-fixed-stats" }, [h("span", "0 我的报名"), h("span", "0 我的订单"), h("span", "0 优惠券")]));
+        children.push(h("div", { class: "preview-fixed-menu" }, ["我的会议", "收货地址", "发票信息", "客服帮助"].map((item) => h("span", item))));
+      }
+      return h("div", { class: ["preview-fixed-template", `is-${kind}`] }, children);
+    };
     return () => {
       const type = props.item.type;
       if (!isRenderableSupport(type)) {
@@ -4726,6 +5042,7 @@ const ComponentPreview = defineComponent({
           h("span", "会议详情页会使用固定底部报名按钮，该 CMS 报名按钮将隐藏")
         ]);
       }
+      if (type === "fixed-business-template") return fixedTemplatePreview();
       if (type === "hero") {
         const showContent = !booleanConfig(props.item, "imageOnly", false) && booleanConfig(props.item, "showContent", true);
         return h("div", { class: ["preview-hero-card", booleanConfig(props.item, "imageOnly", false) ? "is-image-only" : ""], style: previewHeroCardStyle(props.item) }, [
@@ -8344,6 +8661,311 @@ function looksLikePreviewImage(value: string): boolean {
 
 .business-module-card__guide b {
   color: #172033;
+}
+
+.preview-fixed-template {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px;
+  color: #101b2d;
+}
+
+.preview-fixed-brand {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.preview-fixed-brand img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.preview-fixed-brand span {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.preview-fixed-brand small {
+  grid-column: 2;
+  margin-top: -6px;
+  color: #697386;
+  font-size: 11px;
+}
+
+.preview-fixed-hero {
+  min-height: 188px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  overflow: hidden;
+  padding: 18px;
+  border-radius: 18px;
+  background-color: #071426;
+  background-position: center;
+  background-size: cover;
+  color: #fff;
+  box-shadow: 0 14px 34px rgb(15 23 42 / 16%);
+}
+
+.preview-fixed-hero strong {
+  max-width: 240px;
+  color: #fff;
+  font-size: 27px;
+  line-height: 1.16;
+}
+
+.preview-fixed-hero span {
+  max-width: 240px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.preview-fixed-notice,
+.preview-fixed-login,
+.preview-fixed-strip,
+.preview-fixed-stats,
+.preview-fixed-schedule-card,
+.preview-fixed-conference-card,
+.preview-fixed-cart-row,
+.preview-fixed-member-card,
+.preview-fixed-menu {
+  border: 1px solid rgb(203 213 225 / 70%);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 10px 24px rgb(15 23 42 / 8%);
+}
+
+.preview-fixed-notice,
+.preview-fixed-strip {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 14px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.preview-fixed-login {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding: 13px;
+}
+
+.preview-fixed-login > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 50%;
+  background: #f2ead8;
+  color: #a98443;
+  font-weight: 900;
+}
+
+.preview-fixed-login strong,
+.preview-fixed-strip strong,
+.preview-fixed-member-card strong,
+.preview-fixed-cart-row strong,
+.preview-fixed-conference-card strong {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.preview-fixed-template button {
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #b99643;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.preview-fixed-grid,
+.preview-fixed-products {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.preview-fixed-products {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.preview-fixed-grid div,
+.preview-fixed-products div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  padding: 13px 7px;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 92%);
+}
+
+.preview-fixed-grid b {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf6fb;
+  color: #95721f;
+}
+
+.preview-fixed-grid img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.preview-fixed-grid span,
+.preview-fixed-products strong,
+.preview-fixed-products span {
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.preview-fixed-grid small {
+  color: #697386;
+  font-size: 10px;
+}
+
+.preview-fixed-products img {
+  width: 100%;
+  height: 88px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.preview-fixed-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+}
+
+.preview-fixed-stats span {
+  padding: 9px;
+  border-radius: 12px;
+  background: #f6f1e7;
+  color: #7a5f20;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.preview-fixed-tabs {
+  display: flex;
+  gap: 7px;
+  overflow: hidden;
+}
+
+.preview-fixed-tabs span {
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #f1eadc;
+  color: #6b7280;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.preview-fixed-tabs span.active {
+  background: #071426;
+  color: #fff;
+}
+
+.preview-fixed-schedule-card,
+.preview-fixed-conference-card,
+.preview-fixed-cart-row,
+.preview-fixed-member-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+}
+
+.preview-fixed-conference-card,
+.preview-fixed-cart-row {
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+}
+
+.preview-fixed-conference-card img,
+.preview-fixed-cart-row img,
+.preview-fixed-member-card img {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.preview-fixed-conference-card > span {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border-radius: 12px;
+  background: #f1eadc;
+  color: #95721f;
+  font-weight: 900;
+}
+
+.preview-fixed-schedule-card > b {
+  color: #a98443;
+  font-size: 28px;
+}
+
+.preview-fixed-schedule-card small,
+.preview-fixed-conference-card small,
+.preview-fixed-cart-row small,
+.preview-fixed-member-card span {
+  display: block;
+  color: #697386;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.preview-fixed-cart-row b {
+  color: #a98443;
+  font-size: 14px;
+}
+
+.preview-fixed-member-card {
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  min-height: 108px;
+  background-position: center;
+  background-size: cover;
+}
+
+.preview-fixed-member-card img {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+}
+
+.preview-fixed-menu {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.preview-fixed-menu span {
+  padding: 12px 14px;
+  background: rgb(255 255 255 / 70%);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .preview-home-hero,

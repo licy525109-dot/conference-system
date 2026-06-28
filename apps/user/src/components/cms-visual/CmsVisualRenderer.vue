@@ -20,7 +20,17 @@
         object-fit="cover"
         :controls="false"
       />
-      <view v-if="component.type === 'hero'" :class="heroClass(component)" :style="heroStyle(component)">
+      <FixedBusinessTemplateRenderer
+        v-if="component.type === 'fixed-business-template'"
+        :kind="stringConfig(component, 'templateKey') || stringConfig(component, 'kind') || stringConfig(component, 'pageType')"
+        :config="component.config"
+        :conferences="conferences"
+        :products="products"
+        :user-context="props.userContext"
+        @open-conference="emit('openConference', $event)"
+      />
+
+      <view v-else-if="component.type === 'hero'" :class="heroClass(component)" :style="heroStyle(component)">
         <image
           v-if="stringConfig(component, 'imageUrl')"
           class="cms-hero__image"
@@ -623,6 +633,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { getModuleRenderContractForVisualComponent, type ModuleRenderContract, type RendererPlatform } from "@conference/business-modules";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
+import FixedBusinessTemplateRenderer from "@/components/fixed-templates/FixedBusinessTemplateRenderer.vue";
 import { ensureLogin, getStoredUser } from "@/services/auth";
 import type { CmsComponent, ThemeConfig } from "@/services/cms";
 import { reserveConferenceAppointment, type ConferenceDetail, type ConferenceListItem } from "@/services/conference";
@@ -645,6 +656,8 @@ const props = defineProps<{
   theme: ThemeConfig;
   conferences?: ConferenceListItem[];
   conference?: ConferenceDetail | null;
+  products?: Product[];
+  userContext?: Record<string, unknown> | null;
   suppressRegistrationCta?: boolean;
 }>();
 
@@ -667,6 +680,7 @@ const visibleComponents = computed(() =>
     .sort((a, b) => a.sortOrder - b.sortOrder)
 );
 const conferences = computed(() => props.conferences ?? []);
+const products = computed(() => props.products ?? []);
 const storedUser = ref(getStoredUser());
 const profileInitial = computed(() => (storedUser.value?.wechatNickname || storedUser.value?.nickname || "用").slice(0, 1));
 const rootStyle = computed(() => ({
