@@ -84,6 +84,44 @@
       </article>
     </section>
 
+    <section v-if="selectedPage && version" class="cms-shop-console">
+      <div class="shop-console__head">
+        <div>
+          <span class="shop-console__eyebrow">店铺装修能力总控</span>
+          <strong>页面装修、页面模板、店铺主体、素材管理和手机预览统一在这里串联</strong>
+          <small>参考“店铺装修”工作台的信息架构，并映射到会务系统的会议、商城、会员、报名和用户中心页面。</small>
+        </div>
+        <div class="shop-console__status">
+          <span><b>{{ pages.length }}</b>页面</span>
+          <span><b>{{ libraryTemplates.length }}</b>模板</span>
+          <span><b>{{ componentLibraryStats.total }}</b>组件</span>
+          <span><b>{{ previewTabbarItems.length }}</b>底部导航</span>
+        </div>
+      </div>
+      <div class="shop-console__grid">
+        <button
+          v-for="card in shopWorkbenchCards"
+          :key="card.key"
+          type="button"
+          class="shop-console-card"
+          :class="{ active: card.active }"
+          @click="runShopWorkbenchAction(card.action)"
+        >
+          <span class="shop-console-card__icon">{{ card.index }}</span>
+          <span class="shop-console-card__copy">
+            <strong>{{ card.title }}</strong>
+            <small>{{ card.subtitle }}</small>
+          </span>
+          <span class="shop-console-card__meta">{{ card.meta }}</span>
+        </button>
+      </div>
+      <div class="shop-console__ops">
+        <span><b>运营快捷模式</b>业务模块快速成页，不暴露 DSL。</span>
+        <span><b>高级装修模式</b>完整组件库、拖拽排序、点击定位和参数细调。</span>
+        <span><b>开发者模式</b>仅管理员查看 Raw DSL，默认不进入运营流程。</span>
+      </div>
+    </section>
+
     <section class="cms-workbench">
       <aside class="cms-sidebar cms-sidebar--left">
         <section class="data-panel cms-panel">
@@ -163,6 +201,16 @@
             <span><b>{{ componentLibraryStats.supported }}</b> 可发布组件</span>
             <span><b>{{ componentLibraryStats.total }}</b> 全部组件</span>
             <span><b>{{ activePresetGroupMeta.count }}</b> 当前分类</span>
+          </div>
+          <div class="component-library-guide">
+            <span>
+              <b>组件展示</b>
+              <small>卡片缩略图用于搭建，紧凑清单用于快速查找；所有组件仍保存为 P9 DSL。</small>
+            </span>
+            <span>
+              <b>会务能力</b>
+              <small>会议、商城、会员、发票、售后、AI 助手等入口通过跳转选择器表单化配置。</small>
+            </span>
           </div>
           <div class="library-toolband">
             <span><b>当前分组</b><em>{{ activePresetGroup || "全部" }}</em></span>
@@ -308,6 +356,11 @@
             <span><b>交互</b>点击组件定位，拖拽调整顺序</span>
             <span><b>当前</b>{{ selectedComponent ? presetName(selectedComponent.type) : "未选择组件" }}</span>
           </div>
+          <div class="preview-parity-strip">
+            <span><b>安全区</b>顶部导航、胶囊和底部导航按平台预览。</span>
+            <span><b>用户上下文</b>会员、报名、订单和优惠券使用示例结构。</span>
+            <span><b>发布协议</b>后台预览、小程序、H5 读取同一 DSL / editorComponents。</span>
+          </div>
           <div class="phone-shell" :class="`is-${previewPlatform}`">
             <div class="phone-status" :class="`is-${previewPlatform}`">
               <span>15:29</span>
@@ -429,6 +482,37 @@
       </main>
 
       <aside v-if="selectedPage && version" class="cms-sidebar cms-sidebar--right cms-editor-settings">
+        <section class="data-panel cms-panel inspector-panel shop-identity-card">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">店铺主体</div>
+              <p class="page-subtitle">会务主体、分享信息、Logo 和素材入口集中管理，避免装修页和小程序主体信息脱节。</p>
+            </div>
+          </div>
+          <div class="shop-identity-summary">
+            <div class="shop-identity-logo">
+              <img v-if="previewTitleLogoUrl" :src="previewTitleLogoUrl" alt="" />
+              <span v-else>{{ previewTitle.slice(0, 1) || "会" }}</span>
+            </div>
+            <span>
+              <strong>{{ previewTitle }}</strong>
+              <small>{{ pageMeta.shareTitle || "未设置微信分享标题" }}</small>
+              <em>{{ previewRouteHint }}</em>
+            </span>
+          </div>
+          <div class="shop-identity-checks">
+            <span v-for="item in shopSubjectChecklist" :key="item.key" :class="{ done: item.done }">
+              <b>{{ item.done ? "已配置" : "待配置" }}</b>{{ item.label }}
+            </span>
+          </div>
+          <div class="shop-identity-actions">
+            <el-button size="small" plain @click="openPageMetaImagePicker('navLogoUrl')">主体 Logo</el-button>
+            <el-button size="small" plain @click="openPageMetaImagePicker('shareImageUrl')">分享封面</el-button>
+            <el-button size="small" plain @click="navigateToSection('/themes')">主题配置</el-button>
+            <el-button size="small" plain @click="navigateToSection('/materials')">素材管理</el-button>
+          </div>
+        </section>
+
         <section class="data-panel cms-panel inspector-panel">
           <div class="library-head">
             <div>
@@ -1241,7 +1325,7 @@ import {
   rollbackPage,
   updatePageVersion
 } from "../../services/admin";
-import { routeQuery } from "../../router";
+import { navigateTo, routeQuery } from "../../router";
 import { materialSpecs, materialSpecText, type MaterialSpecKey } from "../../constants/materialSpecs";
 import type {
   CmsComponent,
@@ -1321,6 +1405,18 @@ interface FixedBusinessTemplateOption {
   heroSubtitle: string;
   noticeText?: string;
   growthValue?: string;
+}
+
+type ShopWorkbenchAction = "decorate" | "templates" | "theme" | "tabbar" | "materials" | "subject";
+
+interface ShopWorkbenchCard {
+  key: string;
+  index: string;
+  title: string;
+  subtitle: string;
+  meta: string;
+  action: ShopWorkbenchAction;
+  active?: boolean;
 }
 
 interface BusinessDisplayForm {
@@ -2189,6 +2285,63 @@ const acceptanceSummary = computed(() =>
     { pass: 0, warn: 0, error: 0 } as Record<AcceptanceStatus, number>
   )
 );
+const shopWorkbenchCards = computed<ShopWorkbenchCard[]>(() => [
+  {
+    key: "decorate",
+    index: "01",
+    title: "店铺装修",
+    subtitle: "当前页面装修、组件编排和手机预览",
+    meta: `${previewStats.value.visible}/${previewStats.value.total} 展示`,
+    action: "decorate",
+    active: true
+  },
+  {
+    key: "templates",
+    index: "02",
+    title: "页面模板",
+    subtitle: "首页、排期、商城、会员和自定义模板",
+    meta: `${libraryTemplates.value.length} 个模板`,
+    action: "templates"
+  },
+  {
+    key: "theme",
+    index: "03",
+    title: "店铺主题",
+    subtitle: "主题色、圆角、背景、按钮和品牌视觉",
+    meta: previewTheme.primaryColor || "主题色",
+    action: "theme"
+  },
+  {
+    key: "tabbar",
+    index: "04",
+    title: "底部导航",
+    subtitle: "小程序/H5 底部入口和业务页绑定",
+    meta: `${previewTabbarItems.value.length} 个入口`,
+    action: "tabbar"
+  },
+  {
+    key: "materials",
+    index: "05",
+    title: "素材管理",
+    subtitle: "图片、图标、视频、文件和字体素材",
+    meta: "统一素材库",
+    action: "materials"
+  },
+  {
+    key: "subject",
+    index: "06",
+    title: "店铺主体",
+    subtitle: "主体名称、Logo、分享信息和页面元数据",
+    meta: shopSubjectChecklist.value.filter((item) => item.done).length + "/4 已配",
+    action: "subject"
+  }
+]);
+const shopSubjectChecklist = computed(() => [
+  { key: "title", label: "主体名称", done: Boolean(previewTitle.value.trim()) },
+  { key: "logo", label: "顶部 Logo", done: Boolean(previewTitleLogoUrl.value.trim()) },
+  { key: "shareTitle", label: "分享标题", done: Boolean(pageMeta.shareTitle.trim()) },
+  { key: "shareImage", label: "分享封面", done: Boolean(pageMeta.shareImageUrl.trim()) }
+]);
 const previewContextHint = computed(() => {
   const page = selectedPage.value;
   if (!page) return "";
@@ -3139,6 +3292,42 @@ function previewBodyBackground(theme: ThemeConfig): string {
     return `url("${theme.backgroundVideoPosterUrl}") center / cover no-repeat`;
   }
   return theme.backgroundColor || DEFAULT_PREVIEW_THEME.backgroundColor;
+}
+
+function runShopWorkbenchAction(action: ShopWorkbenchAction) {
+  if (action === "decorate") {
+    editorMode.value = "advanced";
+    focusCmsElement(".cms-workbench");
+    return;
+  }
+  if (action === "templates") {
+    openTemplateLibrary();
+    return;
+  }
+  if (action === "theme") {
+    navigateToSection("/themes");
+    return;
+  }
+  if (action === "tabbar") {
+    navigateToSection("/tabbar");
+    return;
+  }
+  if (action === "materials") {
+    navigateToSection("/materials");
+    return;
+  }
+  focusCmsElement(".shop-identity-card");
+}
+
+function navigateToSection(path: string) {
+  navigateTo(path);
+}
+
+function focusCmsElement(selector: string) {
+  void nextTick(() => {
+    const target = document.querySelector(selector);
+    target?.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
 }
 
 function openTemplateLibrary() {
@@ -10468,6 +10657,306 @@ function looksLikePreviewImage(value: string): boolean {
   font-size: 12px;
 }
 
+.cms-shop-console {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid rgb(185 150 67 / 18%);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 92%), rgb(248 245 238 / 84%)),
+    #ffffff;
+  box-shadow: 0 12px 32px rgb(7 20 38 / 7%);
+}
+
+.shop-console__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+
+.shop-console__head > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.shop-console__eyebrow {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgb(7 20 38 / 7%);
+  color: var(--gc-ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.shop-console__head strong {
+  color: var(--gc-ink);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.shop-console__head small {
+  color: var(--gc-muted);
+  line-height: 1.45;
+}
+
+.shop-console__status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.shop-console__status span,
+.shop-console-card__meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgb(185 150 67 / 16%);
+  border-radius: 999px;
+  background: rgb(243 234 215 / 62%);
+  color: var(--gc-gold-strong);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.shop-console__status b {
+  margin-right: 4px;
+  color: var(--gc-ink);
+}
+
+.shop-console__grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shop-console-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid rgb(227 217 199 / 88%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 88%);
+  color: var(--gc-ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.shop-console-card:hover,
+.shop-console-card.active {
+  border-color: rgb(185 150 67 / 44%);
+  box-shadow: 0 14px 34px rgb(7 20 38 / 8%);
+  transform: translateY(-1px);
+}
+
+.shop-console-card__icon {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--gc-ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.shop-console-card__copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.shop-console-card__copy strong,
+.shop-console-card__copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shop-console-card__copy strong {
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.shop-console-card__copy small {
+  color: var(--gc-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.shop-console-card__meta {
+  grid-column: 1 / -1;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shop-console__ops {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.shop-console__ops span,
+.component-library-guide span,
+.preview-parity-strip span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgb(185 150 67 / 14%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 76%);
+  color: var(--gc-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.shop-console__ops b,
+.component-library-guide b,
+.preview-parity-strip b {
+  color: var(--gc-ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.component-library-guide,
+.preview-parity-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.preview-parity-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 14px;
+}
+
+.shop-identity-card {
+  scroll-margin-top: 90px;
+}
+
+.shop-identity-summary {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgb(185 150 67 / 16%);
+  border-radius: 12px;
+  background: rgb(248 245 238 / 66%);
+}
+
+.shop-identity-logo {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--gc-ink);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.shop-identity-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.shop-identity-summary span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.shop-identity-summary strong,
+.shop-identity-summary small,
+.shop-identity-summary em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shop-identity-summary strong {
+  color: var(--gc-ink);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.shop-identity-summary small,
+.shop-identity-summary em {
+  color: var(--gc-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.shop-identity-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.shop-identity-checks span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid rgb(220 227 239 / 90%);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--gc-muted);
+  font-size: 12px;
+}
+
+.shop-identity-checks span.done {
+  border-color: rgb(18 99 66 / 18%);
+  background: #edf8f3;
+  color: #126342;
+}
+
+.shop-identity-checks b {
+  color: inherit;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.shop-identity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .library-toolband,
 .preview-canvas-bar,
 .inspector-mode-strip {
@@ -10652,7 +11141,7 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .phone-shell {
-  width: 360px;
+  width: min(398px, 100%);
   padding: 10px 12px 14px;
   border: 1px solid rgb(255 255 255 / 10%);
   background:
@@ -10769,6 +11258,21 @@ function looksLikePreviewImage(value: string): boolean {
 
   .cms-workflow-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .shop-console__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .shop-console__head,
+  .shop-console__ops,
+  .preview-parity-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shop-console__status {
+    justify-content: flex-start;
+    max-width: none;
   }
 
   .component-card__summary {
