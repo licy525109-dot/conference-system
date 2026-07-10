@@ -11,6 +11,7 @@
     "test": "node -e \"console.log('admin: no tests yet')\""
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
     "@conference/business-modules": "workspace:*",
     "@conference/design-system": "workspace:*",
     "@conference/dsl-runtime": "workspace:*",
