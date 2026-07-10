@@ -1,6 +1,6 @@
 <template>
-  <el-container class="admin-shell">
-    <el-aside width="264px" class="admin-aside">
+  <el-container class="admin-shell" :class="{ 'is-focused-workspace': isFocusedWorkspace }">
+    <el-aside v-if="!isFocusedWorkspace" width="264px" class="admin-aside">
       <div class="admin-brand">
         <img v-if="brandLogoUrl" class="brand-mark brand-mark--image" :src="brandLogoUrl" alt="" />
         <span v-else class="brand-mark">{{ brandMarkText }}</span>
@@ -38,7 +38,7 @@
       </el-scrollbar>
     </el-aside>
     <el-container>
-      <el-header class="admin-header">
+      <el-header v-if="!isFocusedWorkspace" class="admin-header">
         <div class="admin-header__copy">
           <div class="breadcrumb-title">后台管理 / {{ currentRoute.group }} / {{ currentRoute.title }}</div>
           <strong>{{ currentRoute.title }}</strong>
@@ -55,7 +55,7 @@
           <el-button plain @click="logout">退出登录</el-button>
         </div>
       </el-header>
-      <el-main class="admin-main">
+      <el-main class="admin-main" :class="{ 'admin-main--focused': isFocusedWorkspace }">
         <section v-if="!hasPermission(currentRoute.permission)" class="data-panel">
           <h2 class="page-title">无权限访问</h2>
           <p class="page-subtitle">当前账号没有打开该功能的权限，请联系超级管理员调整角色。</p>
@@ -115,6 +115,7 @@ const menuRouteOrder = reactive<Record<string, number>>(loadMenuRouteOrder());
 const menuRouteVisibility = reactive<Record<string, boolean>>(loadMenuRouteVisibility());
 
 const brandMarkText = computed(() => brandTitle.value.trim().slice(0, 1) || "会");
+const isFocusedWorkspace = computed(() => currentRoute.value.path === "/pages/editor");
 
 const GROUP_META: Record<string, { order: number; badge?: string; className?: string }> = {
   控制台: { order: 0 },
@@ -340,3 +341,25 @@ function setRouteVisibility(route: AdminRoute, visible: boolean) {
   menuRouteVisibility[route.path] = visible;
 }
 </script>
+
+<style scoped>
+.admin-shell.is-focused-workspace {
+  min-width: 1080px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.admin-main--focused {
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  padding: 0;
+  background: var(--admin-color-bg);
+}
+
+.admin-main--focused :deep(> .admin-page) {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+</style>

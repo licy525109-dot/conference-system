@@ -1,143 +1,51 @@
 <template>
   <section class="admin-page cms-page">
-    <div class="page-header cms-hero">
-      <div class="cms-hero__copy">
-        <span class="cms-hero__eyebrow">观潮会集 - 管理后台</span>
-        <h1 class="page-title">页面装修工作台</h1>
-        <p class="page-subtitle">按运营页面、组件库、手机预览和发布验收组织装修流程，默认隐藏 DSL 细节。</p>
+    <header class="cms-editor-toolbar">
+      <div class="cms-editor-toolbar__identity">
+        <el-button text :icon="ArrowLeft" @click="navigateTo('/pages')">返回</el-button>
+        <span class="cms-editor-toolbar__divider" />
+        <span>
+          <strong>{{ selectedPageDisplayTitle || "页面装修" }}</strong>
+          <small>{{ selectedPage ? `${pageTypeLabel(selectedPage.pageType)} · ${selectedPageContextText}` : "正在加载页面" }}</small>
+        </span>
       </div>
-      <div class="inline-actions">
-        <el-radio-group v-model="editorMode" class="mode-switch">
-          <el-radio-button label="ops">运营快捷模式</el-radio-button>
-          <el-radio-button label="advanced">高级装修模式</el-radio-button>
-          <el-radio-button label="developer">开发者模式</el-radio-button>
-        </el-radio-group>
-        <el-button @click="createVisible = true">新增页面</el-button>
-        <el-dropdown :disabled="!selectedPage || !version" @command="applyFixedBusinessTemplate">
-          <el-button>固定模板</el-button>
+      <div class="cms-editor-toolbar__actions">
+        <span class="cms-save-state" :class="{ 'is-saving': saving, 'is-dirty': isDirty }">
+          <CircleCheck v-if="!saving && !isDirty" />
+          <Loading v-else-if="saving" class="is-spinning" />
+          <EditPen v-else />
+          {{ saveStateText }}
+        </span>
+        <el-tooltip content="撤销" placement="bottom"><el-button circle :icon="RefreshLeft" :disabled="!canUndo" @click="undo" /></el-tooltip>
+        <el-tooltip content="重做" placement="bottom"><el-button circle :icon="RefreshRight" :disabled="!canRedo" @click="redo" /></el-tooltip>
+        <el-tooltip content="页面设置" placement="bottom"><el-button circle aria-label="页面设置" :icon="Setting" @click="inspectorTab = 'page'" /></el-tooltip>
+        <el-tooltip content="页面模板" placement="bottom"><el-button circle aria-label="页面模板" :icon="Collection" @click="openTemplateCenter" /></el-tooltip>
+        <el-dropdown :disabled="!selectedPage || !version" @command="handleEditorMoreAction">
+          <el-button circle aria-label="更多操作" :icon="MoreFilled" />
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item v-for="template in fixedBusinessTemplateOptions" :key="template.key" :command="template.key">
-                {{ template.name }}
-              </el-dropdown-item>
+              <el-dropdown-item command="fixed-template">应用固定业务模板</el-dropdown-item>
+              <el-dropdown-item command="save-template">另存为页面模板</el-dropdown-item>
+              <el-dropdown-item command="rollback" divided>回滚到已发布版本</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button @click="openTemplateLibrary">页面模板</el-button>
-        <el-button :disabled="!selectedPage || !version" @click="saveTemplateVisible = true">另存为模板</el-button>
-        <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
+        <el-tooltip content="发布检查" placement="bottom"><el-button circle aria-label="发布检查" :icon="DocumentChecked" @click="publishPanelVisible = true" /></el-tooltip>
         <el-button type="primary" :loading="publishing" @click="publish">发布页面</el-button>
       </div>
-    </div>
-
-    <section v-if="selectedPage && version" class="cms-ops-overview">
-      <article>
-        <span>当前页面</span>
-        <strong>{{ selectedPageDisplayTitle }}</strong>
-        <small>{{ selectedPageContextText }}</small>
-      </article>
-      <article>
-        <span>装修组件</span>
-        <strong>{{ previewStats.visible }} / {{ previewStats.total }}</strong>
-        <small>{{ previewStats.hidden }} 个隐藏，{{ previewStats.unsupported }} 个风险</small>
-      </article>
-      <article>
-        <span>业务模块</span>
-        <strong>{{ showBusinessDisplayEditor ? `${businessDisplayStats.visible} / ${businessDisplayStats.total}` : "不适用" }}</strong>
-        <small>{{ showBusinessDisplayEditor ? `${businessDisplayStats.hidden} 个隐藏` : "普通页面只看装修组件" }}</small>
-      </article>
-      <article>
-        <span>发布验收</span>
-        <strong>{{ acceptanceSummary.error }} 阻断 · {{ acceptanceSummary.warn }} 提醒</strong>
-        <small>{{ acceptanceSummary.pass }} 项通过，发布前核对右侧验收面板</small>
-      </article>
-    </section>
+    </header>
 
     <section class="cms-workbench">
       <aside class="cms-sidebar cms-sidebar--left">
-        <section class="data-panel cms-panel">
-          <div class="library-head">
-            <div>
-              <div class="panel-title">页面列表</div>
-              <p class="page-subtitle">选择要装修的页面，也可以直接新建自定义页面。</p>
-            </div>
-            <el-button link type="primary" @click="createVisible = true">新增</el-button>
-          </div>
-          <div class="page-list">
-            <div
-              v-for="page in pages"
-              :key="page.id"
-              class="page-item"
-              :class="{ active: selectedPage?.id === page.id }"
-              role="button"
-              tabindex="0"
-              @click="selectPage(page)"
-            >
-              <span class="page-item__copy">
-                <strong>{{ pageDisplayTitle(page) }}</strong>
-                <small>{{ pageTypeLabel(page.pageType) }}{{ pageBindingLabel(page) ? ` · ${pageBindingLabel(page)}` : "" }}</small>
-                <small>{{ pageConfigurableText(page) }} · 更新 {{ formatShortDate(page.updatedAt) }}</small>
-              </span>
-              <span class="page-item__side">
-                <span class="page-item__status">{{ page.publishedVersionId ? "已发布" : "草稿中" }}</span>
-                <span class="page-item__actions">
-                  <button type="button" @click.stop="duplicatePage(page)">复制</button>
-                  <button v-if="canDeletePage(page)" type="button" class="danger" @click.stop="deletePageTemplate(page)">删除</button>
-                </span>
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section v-if="editorMode === 'ops'" class="data-panel cms-panel">
-          <div class="library-head">
-            <div>
-              <div class="panel-title">业务模块</div>
-              <p class="page-subtitle">点击后自动生成可继续精修的页面组件。</p>
-            </div>
-          </div>
-          <div class="preset-grid">
-            <button
-              v-for="definition in quickModuleDefinitions"
-              :key="definition.type"
-              class="preset-card"
-              @click="addBusinessModule(definition.type)"
-            >
-              <span class="preset-thumb thumb-module">
-                <i />
-                <i />
-                <i />
-              </span>
-              <span class="preset-card__title">
-                <strong>{{ definition.name }}</strong>
-                <span class="support-badge is-supported">快捷</span>
-              </span>
-              <small>{{ definition.description }}</small>
-            </button>
-          </div>
-        </section>
-
-        <section v-else class="data-panel cms-panel">
+        <section class="data-panel cms-panel component-library-panel">
           <div class="library-head">
             <div>
               <div class="panel-title">组件库</div>
-              <p class="page-subtitle">完整页面装修组件库，点击添加组件到当前页面，再到右侧细调参数。</p>
+              <p class="page-subtitle">点击组件即可添加到页面。</p>
             </div>
-            <el-radio-group v-model="componentLibraryView" size="small" class="library-view-toggle">
-              <el-radio-button label="cards">卡片</el-radio-button>
-              <el-radio-button label="compact">紧凑</el-radio-button>
-            </el-radio-group>
-          </div>
-          <div class="library-metrics">
-            <span><b>{{ componentLibraryStats.supported }}</b> 可发布组件</span>
-            <span><b>{{ componentLibraryStats.total }}</b> 全部组件</span>
-            <span><b>{{ activePresetGroupMeta.count }}</b> 当前分类</span>
           </div>
           <div class="library-filters">
-            <el-select v-model="activePresetGroup" placeholder="组件分类">
-              <el-option v-for="group in filteredPresetGroups" :key="group.name" :label="group.name" :value="group.name" />
-            </el-select>
-            <el-input v-model="presetKeyword" clearable placeholder="搜索组件名称" />
+            <el-input v-model="presetKeyword" clearable :prefix-icon="Search" placeholder="搜索组件" />
           </div>
           <div v-if="filteredPresetGroups.length > 0" class="component-category-rail">
             <button
@@ -151,9 +59,9 @@
               <span>{{ group.items.length }}</span>
             </button>
           </div>
-          <el-tabs v-model="activePresetGroup" class="library-tabs">
+          <el-tabs v-model="activePresetGroup" class="library-tabs compact-library-tabs">
             <el-tab-pane v-for="group in filteredPresetGroups" :key="group.name" :label="group.name" :name="group.name">
-              <div class="preset-grid" :class="`is-${componentLibraryView}`">
+              <div class="preset-grid is-operator-grid">
                 <button
                   v-for="preset in group.items"
                   :key="preset.type"
@@ -162,109 +70,57 @@
                   :disabled="!canAddPreset(preset)"
                   @click="addComponent(preset)"
                 >
-                  <span class="preset-thumb" :class="thumbClass(preset.type)">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  <span class="preset-card__title">
-                    <strong>{{ preset.name }}</strong>
-                    <span class="support-badge" :class="supportStatusClass(preset.type)">{{ componentSupport(preset.type).label }}</span>
-                  </span>
-                  <small>{{ presetSupportDescription(preset) }}</small>
-                  <span class="preset-card__meta">
-                    <span>{{ preset.group }}</span>
-                    <span>{{ canAddPreset(preset) ? "添加组件" : "暂不可用" }}</span>
-                  </span>
+                  <span class="preset-card__icon"><component :is="presetIcon(preset.type)" /></span>
+                  <strong>{{ preset.name }}</strong>
                 </button>
               </div>
             </el-tab-pane>
           </el-tabs>
         </section>
+
+        <section class="data-panel cms-panel layer-panel">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">页面结构</div>
+              <p class="page-subtitle">共 {{ components.length }} 个组件，可快速定位与调整顺序。</p>
+            </div>
+          </div>
+          <el-empty v-if="components.length === 0" description="从上方添加组件" :image-size="56" />
+          <div v-else class="layer-list">
+            <button
+              v-for="(component, index) in components"
+              :key="component.id"
+              type="button"
+              class="layer-item"
+              :class="{ active: selectedComponentId === component.id, hidden: !component.enabled }"
+              @click="selectPreviewComponent(component.id)"
+            >
+              <span class="layer-item__drag"><Rank /></span>
+              <span class="layer-item__name">{{ presetName(component.type) }}</span>
+              <span class="layer-item__actions" @click.stop>
+                <el-button text :icon="component.enabled ? View : Hide" @click="component.enabled = !component.enabled" />
+                <el-button text :icon="ArrowUp" :disabled="index === 0" @click="moveComponent(index, -1)" />
+                <el-button text :icon="ArrowDown" :disabled="index === components.length - 1" @click="moveComponent(index, 1)" />
+              </span>
+            </button>
+          </div>
+        </section>
       </aside>
 
       <main v-if="selectedPage && version" class="cms-editor cms-stage">
-        <section class="data-panel cms-panel cms-stage-head">
-          <div class="editor-heading">
-            <div>
-              <div class="panel-title">{{ selectedPageDisplayTitle }}</div>
-              <p class="page-subtitle">当前页面：{{ selectedPage.pageKey }}，{{ selectedPageContextText }}。草稿标题用于区分每次装修版本。</p>
-            </div>
-            <div class="stage-head__actions">
-              <el-input v-model="versionTitle" placeholder="草稿标题" style="width: 260px" />
-              <el-button @click="rollback">回滚到已发布版本</el-button>
-            </div>
-          </div>
-          <el-alert
-            v-if="unsupportedEnabledComponents.length > 0"
-            class="publish-guard-alert"
-            type="error"
-            :closable="false"
-            show-icon
-            title="当前页面包含不可发布组件"
-            :description="`已启用 ${unsupportedEnabledComponents.length} 个不支持或后续开放组件，发布会被阻止，请先隐藏或替换：${unsupportedEnabledComponents.map((item) => presetName(item.type)).join('、')}`"
-          />
-          <el-alert
-            v-else-if="basicEnabledComponents.length > 0"
-            class="publish-guard-alert"
-            type="warning"
-            :closable="false"
-            show-icon
-            title="当前页面包含基础支持组件"
-            :description="`发布前请在 H5 和小程序预览核对：${basicEnabledComponents.map((item) => presetName(item.type)).join('、')}`"
-          />
-        </section>
-
         <section class="data-panel cms-panel phone-preview cms-editor-preview">
-          <div class="library-head">
+          <div class="canvas-toolbar">
             <div>
-              <div class="panel-title">手机预览</div>
-              <p class="page-subtitle">实际小程序预览效果：页面列表中的业务页使用同一套组件字段协议，发布后由对应小程序页面读取。</p>
+              <strong>页面预览</strong>
+              <small>点击组件编辑，按住组件拖动排序</small>
             </div>
             <div class="preview-toolbar">
               <el-radio-group v-model="previewPlatform" size="small">
                 <el-radio-button label="miniapp">小程序</el-radio-button>
                 <el-radio-button label="h5">H5</el-radio-button>
               </el-radio-group>
-              <el-select
-                v-model="selectedComponentId"
-                clearable
-                filterable
-                placeholder="定位页面组件"
-                style="width: 220px"
-                @change="focusComponent"
-              >
-                <el-option v-for="option in componentOptions" :key="option.value" :label="option.label" :value="option.value" />
-              </el-select>
+              <el-tooltip content="页面背景与分享设置" placement="bottom"><el-button circle :icon="Setting" @click="inspectorTab = 'page'" /></el-tooltip>
             </div>
-          </div>
-          <div v-if="components.length > 0" class="preview-component-rail">
-            <div class="preview-component-rail__inner">
-              <button
-                v-for="(component, index) in components"
-                :key="component.id"
-                type="button"
-                class="preview-component-chip"
-                :class="{ active: selectedComponentId === component.id, disabled: !component.enabled }"
-                @click="selectPreviewComponent(component.id)"
-              >
-                <span>{{ index + 1 }}</span>
-                <strong>{{ presetName(component.type) }}</strong>
-              </button>
-            </div>
-          </div>
-          <el-alert
-            v-if="previewContextHint"
-            class="preview-context-alert"
-            type="info"
-            :closable="false"
-            show-icon
-            :title="previewContextHint"
-          />
-          <div class="preview-device-meta">
-            <span><b>{{ previewPlatformName }}</b>{{ previewViewportLabel }}</span>
-            <span>{{ previewRouteHint }}</span>
-            <span>{{ previewStats.visible }} 展示 / {{ previewStats.hidden }} 隐藏 / {{ previewStats.unsupported }} 风险</span>
           </div>
           <div class="phone-shell" :class="`is-${previewPlatform}`">
             <div class="phone-status" :class="`is-${previewPlatform}`">
@@ -305,7 +161,13 @@
                       @drop.prevent="dropPreviewComponent(component.id)"
                       @dragend="finishPreviewDrag"
                     >
-                      <span class="preview-block__handle">按住拖动</span>
+                      <div v-if="selectedComponentId === component.id" class="preview-block__toolbar" @click.stop @mousedown.stop>
+                        <el-tooltip content="隐藏组件" placement="top"><el-button circle :icon="Hide" @click="component.enabled = false" /></el-tooltip>
+                        <el-tooltip content="上移" placement="top"><el-button circle :icon="ArrowUp" :disabled="componentIndex(component.id) === 0" @click="moveSelectedBy(-1)" /></el-tooltip>
+                        <el-tooltip content="下移" placement="top"><el-button circle :icon="ArrowDown" :disabled="componentIndex(component.id) === components.length - 1" @click="moveSelectedBy(1)" /></el-tooltip>
+                        <el-tooltip content="复制" placement="top"><el-button circle :icon="CopyDocument" @click="duplicateSelectedComponent" /></el-tooltip>
+                        <el-tooltip content="删除" placement="top"><el-button circle type="danger" :icon="Delete" @click="removeSelectedComponent" /></el-tooltip>
+                      </div>
                       <component-preview :item="component" :name="presetName(component.type)" />
                     </div>
                   </template>
@@ -327,67 +189,46 @@
             </div>
           </div>
         </section>
-
-        <section class="data-panel cms-panel component-stack">
-          <div class="library-head">
-            <div>
-              <div class="panel-title">页面内容</div>
-              <p class="page-subtitle">可在手机预览中直接点选或拖动，也可在这里精确上移、下移和删除。</p>
-            </div>
-            <div class="component-stack-metrics">
-              <span><b>{{ previewStats.total }}</b> 组件</span>
-              <span><b>{{ previewStats.visible }}</b> 展示</span>
-              <span><b>{{ previewStats.hidden }}</b> 隐藏</span>
-            </div>
-          </div>
-
-          <el-empty v-if="components.length === 0" description="还没有组件，请从左侧组件库添加" />
-
-          <div
-            v-for="(component, index) in components"
-            :id="componentDomId(component.id)"
-            :key="component.id"
-            class="component-card component-card--summary"
-            :class="{ 'is-selected': selectedComponentId === component.id }"
-            @click="selectComponentCard(component.id)"
-          >
-            <div class="component-card__head">
-              <div class="component-card__identity">
-                <span class="component-card__index">{{ index + 1 }}</span>
-                <div class="component-card__copy">
-                <span class="component-title-row">
-                  <strong>{{ presetName(component.type) }}</strong>
-                  <span class="support-badge" :class="supportStatusClass(component.type)">{{ componentSupport(component.type).label }}</span>
-                </span>
-                <span>{{ componentStateText(component) }}</span>
-                <span class="component-card__meta-line">
-                  <b>{{ component.type }}</b>
-                  <small>{{ componentPlatformText(component.type) }}</small>
-                </span>
-                <p v-if="componentNotice(component)" class="component-notice" :class="supportStatusClass(component.type)">
-                  {{ componentNotice(component) }}
-                </p>
-                </div>
-              </div>
-              <div class="inline-actions" @click.stop>
-                <el-switch v-model="component.enabled" active-text="展示" inactive-text="隐藏" />
-                <el-button size="small" @click="duplicateComponent(index)">复制</el-button>
-                <el-button size="small" :disabled="index === 0" @click="moveComponent(index, -1)">上移</el-button>
-                <el-button size="small" :disabled="index === components.length - 1" @click="moveComponent(index, 1)">下移</el-button>
-                <el-button size="small" type="danger" plain @click="removeComponent(index)">删除</el-button>
-              </div>
-            </div>
-            <div class="component-card__summary">
-              <span>{{ componentSummary(component) }}</span>
-              <small>{{ componentRenderHint(component.type) }}</small>
-              <el-button link type="primary" @click.stop="selectComponentCard(component.id)">编辑参数</el-button>
-            </div>
-          </div>
-        </section>
       </main>
 
       <aside v-if="selectedPage && version" class="cms-sidebar cms-sidebar--right cms-editor-settings">
-        <section class="data-panel cms-panel inspector-panel">
+        <div class="inspector-tabs" role="tablist" aria-label="配置面板">
+          <button type="button" :class="{ active: inspectorTab === 'component' }" @click="inspectorTab = 'component'">组件设置</button>
+          <button type="button" :class="{ active: inspectorTab === 'page' }" @click="inspectorTab = 'page'">页面设置</button>
+        </div>
+
+        <section v-show="inspectorTab === 'page'" class="data-panel cms-panel inspector-panel shop-identity-card">
+          <div class="library-head">
+            <div>
+              <div class="panel-title">店铺主体</div>
+              <p class="page-subtitle">会务主体、分享信息、Logo 和素材入口集中管理，避免装修页和小程序主体信息脱节。</p>
+            </div>
+          </div>
+          <div class="shop-identity-summary">
+            <div class="shop-identity-logo">
+              <img v-if="previewTitleLogoUrl" :src="previewTitleLogoUrl" alt="" />
+              <span v-else>{{ previewTitle.slice(0, 1) || "会" }}</span>
+            </div>
+            <span>
+              <strong>{{ previewTitle }}</strong>
+              <small>{{ pageMeta.shareTitle || "未设置微信分享标题" }}</small>
+              <em>{{ previewRouteHint }}</em>
+            </span>
+          </div>
+          <div class="shop-identity-checks">
+            <span v-for="item in shopSubjectChecklist" :key="item.key" :class="{ done: item.done }">
+              <b>{{ item.done ? "已配置" : "待配置" }}</b>{{ item.label }}
+            </span>
+          </div>
+          <div class="shop-identity-actions">
+            <el-button size="small" plain @click="openPageMetaImagePicker('navLogoUrl')">主体 Logo</el-button>
+            <el-button size="small" plain @click="openPageMetaImagePicker('shareImageUrl')">分享封面</el-button>
+            <el-button size="small" plain @click="navigateToSection('/themes')">主题配置</el-button>
+            <el-button size="small" plain @click="navigateToSection('/materials')">素材管理</el-button>
+          </div>
+        </section>
+
+        <section v-show="inspectorTab === 'page'" class="data-panel cms-panel inspector-panel">
           <div class="library-head">
             <div>
               <div class="panel-title">页面参数</div>
@@ -430,7 +271,7 @@
           </el-form>
         </section>
 
-        <section v-if="showBusinessDisplayEditor" class="data-panel cms-panel inspector-panel">
+        <section v-if="showBusinessDisplayEditor" v-show="inspectorTab === 'page'" class="data-panel cms-panel inspector-panel">
           <div class="library-head">
             <div>
               <div class="panel-title">固定业务模块</div>
@@ -491,12 +332,6 @@
                     <el-button size="small" :disabled="moduleIndex === businessDisplay.modules.length - 1" @click="moveBusinessDisplayModule(moduleIndex, 1)">下移</el-button>
                   </span>
                 </div>
-                <div class="business-module-card__guide">
-                  <span><b>数据来源：</b>{{ businessModuleGuide(module.key).source }}</span>
-                  <span><b>配置入口：</b>{{ businessModuleGuide(module.key).entry }}</span>
-                  <span><b>当前状态：</b>{{ businessModuleStatus(module) }}</span>
-                  <span><b>用户端效果：</b>{{ businessModuleGuide(module.key).effect }}</span>
-                </div>
                 <el-input v-model="module.title" size="small" placeholder="模块标题" />
                 <el-input
                   v-if="businessModuleAllowsContent(module.key)"
@@ -525,7 +360,7 @@
           </el-form>
         </section>
 
-        <section class="data-panel cms-panel inspector-panel">
+        <section v-show="inspectorTab === 'component'" class="data-panel cms-panel inspector-panel component-inspector-panel">
           <div class="library-head">
             <div>
               <div class="panel-title">组件参数</div>
@@ -537,30 +372,11 @@
             <div class="selected-component-actions">
               <span>{{ selectedComponentIndex + 1 }}. {{ presetName(selectedComponent.type) }}</span>
               <div>
-                <el-button size="small" plain @click="selectedComponent.enabled = !selectedComponent.enabled">
-                  {{ selectedComponent.enabled ? "隐藏模块" : "显示模块" }}
-                </el-button>
-                <el-button size="small" plain @click="duplicateSelectedComponent">复制当前模块</el-button>
-                <el-button size="small" type="danger" plain @click="removeSelectedComponent">删除当前模块</el-button>
-              </div>
-            </div>
-            <div class="component-parity-panel">
-              <div class="component-parity-panel__head">
-                <span>
-                  <strong>{{ selectedComponentParityContract.title }}</strong>
-                  <small>{{ selectedComponentParityContract.summary }}</small>
-                </span>
-                <span class="support-badge" :class="supportStatusClass(selectedComponent.type)">{{ componentSupport(selectedComponent.type).label }}</span>
-              </div>
-              <div class="platform-contract-grid">
-                <span><b>后台预览</b>{{ selectedComponentParityContract.adminAdapter }}</span>
-                <span><b>H5</b>{{ selectedComponentParityContract.h5Adapter }}</span>
-                <span><b>小程序</b>{{ selectedComponentParityContract.miniappAdapter }}</span>
-              </div>
-              <div class="parity-rule-list">
-                <span v-for="rule in selectedComponentParityContract.rules" :key="rule.label">
-                  <b>{{ rule.label }}</b>{{ rule.detail }}
-                </span>
+                <el-tooltip :content="selectedComponent.enabled ? '隐藏组件' : '显示组件'" placement="top">
+                  <el-button circle size="small" :aria-label="selectedComponent.enabled ? '隐藏组件' : '显示组件'" :icon="selectedComponent.enabled ? Hide : View" @click="selectedComponent.enabled = !selectedComponent.enabled" />
+                </el-tooltip>
+                <el-tooltip content="复制组件" placement="top"><el-button circle size="small" aria-label="复制组件" :icon="CopyDocument" @click="duplicateSelectedComponent" /></el-tooltip>
+                <el-tooltip content="删除组件" placement="top"><el-button circle size="small" type="danger" plain aria-label="删除组件" :icon="Delete" @click="removeSelectedComponent" /></el-tooltip>
               </div>
             </div>
             <el-collapse v-model="expandedConfigGroupIds[selectedComponent.id]" class="config-group-collapse">
@@ -961,52 +777,56 @@
           <el-empty v-else description="从中间页面内容区选择一个组件，即可在这里编辑参数" />
         </section>
 
-        <section class="data-panel cms-panel inspector-panel acceptance-panel">
-          <div class="library-head">
-            <div>
-              <div class="panel-title">发布验收</div>
-              <p class="page-subtitle">发布前按 DSL、跨端预览、业务固定模块和用户上下文做快速自检。</p>
-            </div>
-          </div>
-          <div class="acceptance-summary">
-            <span class="is-pass"><b>{{ acceptanceSummary.pass }}</b> 通过</span>
-            <span class="is-warn"><b>{{ acceptanceSummary.warn }}</b> 提醒</span>
-            <span class="is-error"><b>{{ acceptanceSummary.error }}</b> 阻断</span>
-          </div>
-          <div class="acceptance-list">
-            <div v-for="check in acceptanceChecks" :key="check.key" class="acceptance-check" :class="acceptanceCheckClass(check.status)">
-              <span class="acceptance-check__status">{{ acceptanceStatusLabel(check.status) }}</span>
-              <span class="acceptance-check__copy">
-                <strong>{{ check.title }}</strong>
-                <small>{{ check.description }}</small>
-                <em v-if="check.action">{{ check.action }}</em>
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section v-if="editorMode === 'developer'" class="data-panel cms-panel inspector-panel developer-panel">
-          <div class="library-head">
-            <div>
-              <div class="panel-title">开发者 DSL</div>
-              <p class="page-subtitle">仅用于管理员排查。普通运营请使用快捷模式或高级装修模式。</p>
-            </div>
-            <el-button size="small" @click="refreshDeveloperDsl">刷新 DSL</el-button>
-          </div>
-          <el-input v-model="developerDslJson" type="textarea" :rows="16" spellcheck="false" />
-          <div class="developer-actions">
-            <el-button @click="refreshDeveloperDsl">放弃修改</el-button>
-            <el-button type="primary" @click="applyDeveloperDsl">应用到高级装修</el-button>
-          </div>
-        </section>
-
-        <section class="settings-footer">
-          <el-button @click="rollback">回滚已发布</el-button>
-          <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
-          <el-button type="primary" :loading="publishing" @click="publish">发布页面</el-button>
-        </section>
       </aside>
     </section>
+
+    <el-drawer v-model="publishPanelVisible" title="发布检查" size="460px" append-to-body>
+      <div class="publish-drawer__summary">
+        <span class="is-pass"><b>{{ acceptanceSummary.pass }}</b> 项通过</span>
+        <span class="is-warn"><b>{{ acceptanceSummary.warn }}</b> 项提醒</span>
+        <span class="is-error"><b>{{ acceptanceSummary.error }}</b> 项阻断</span>
+      </div>
+      <el-alert
+        v-if="unsupportedEnabledComponents.length > 0"
+        type="error"
+        :closable="false"
+        show-icon
+        title="页面中有暂不可发布的组件"
+        :description="unsupportedEnabledComponents.map((item) => presetName(item.type)).join('、')"
+      />
+      <div class="acceptance-list publish-drawer__checks">
+        <div v-for="check in acceptanceChecks" :key="check.key" class="acceptance-check" :class="acceptanceCheckClass(check.status)">
+          <span class="acceptance-check__status">{{ acceptanceStatusLabel(check.status) }}</span>
+          <span class="acceptance-check__copy">
+            <strong>{{ check.title }}</strong>
+            <small>{{ operatorAcceptanceDescription(check) }}</small>
+          </span>
+        </div>
+      </div>
+      <template #footer>
+        <div class="publish-drawer__footer">
+          <el-button @click="publishPanelVisible = false">继续装修</el-button>
+          <el-button type="primary" :loading="publishing" :disabled="acceptanceSummary.error > 0" @click="publishFromDrawer">确认发布</el-button>
+        </div>
+      </template>
+    </el-drawer>
+
+    <el-dialog v-model="fixedTemplateVisible" title="固定业务模板" width="760px" destroy-on-close>
+      <p class="dialog-intro">固定模板适合快速恢复首页、年度排期、会议报名、商城、购物车和会员中心的标准业务结构。</p>
+      <div class="fixed-template-grid">
+        <button
+          v-for="template in fixedBusinessTemplateOptions"
+          :key="template.key"
+          type="button"
+          class="fixed-template-card"
+          @click="chooseFixedTemplate(template.key)"
+        >
+          <span><Collection /></span>
+          <strong>{{ template.name }}</strong>
+          <small>{{ template.heroSubtitle || template.noticeText }}</small>
+        </button>
+      </div>
+    </el-dialog>
 
     <el-dialog v-model="createVisible" title="新增页面" width="520px">
       <el-form :model="createForm" label-width="110px">
@@ -1162,7 +982,41 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Bell,
+  Calendar,
+  ChatDotRound,
+  CircleCheck,
+  Collection,
+  CopyDocument,
+  CreditCard,
+  Delete,
+  Document,
+  DocumentChecked,
+  EditPen,
+  Files,
+  Grid,
+  Hide,
+  Link,
+  Loading,
+  Menu,
+  MoreFilled,
+  Picture,
+  Rank,
+  RefreshLeft,
+  RefreshRight,
+  Search,
+  Setting,
+  ShoppingCart,
+  Tickets,
+  User,
+  VideoCamera,
+  View
+} from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import ThemeDynamicBackgroundPreview from "../../components/ThemeDynamicBackgroundPreview.vue";
@@ -1194,7 +1048,7 @@ import {
   rollbackPage,
   updatePageVersion
 } from "../../services/admin";
-import { routeQuery } from "../../router";
+import { navigateTo, routeQuery } from "../../router";
 import { materialSpecs, materialSpecText, type MaterialSpecKey } from "../../constants/materialSpecs";
 import type {
   CmsComponent,
@@ -1218,6 +1072,13 @@ interface EditableComponent {
   enabled: boolean;
   sortOrder: number;
   config: Record<string, unknown>;
+}
+
+interface EditorSnapshot {
+  components: EditableComponent[];
+  pageMeta: PageMetaForm;
+  businessDisplay: BusinessDisplayForm;
+  versionTitle: string;
 }
 
 interface ConfigField {
@@ -1274,6 +1135,18 @@ interface FixedBusinessTemplateOption {
   heroSubtitle: string;
   noticeText?: string;
   growthValue?: string;
+}
+
+type ShopWorkbenchAction = "decorate" | "templates" | "theme" | "tabbar" | "materials" | "subject";
+
+interface ShopWorkbenchCard {
+  key: string;
+  index: string;
+  title: string;
+  subtitle: string;
+  meta: string;
+  action: ShopWorkbenchAction;
+  active?: boolean;
 }
 
 interface BusinessDisplayForm {
@@ -1870,6 +1743,7 @@ const saving = ref(false);
 const publishing = ref(false);
 const createVisible = ref(false);
 const templateVisible = ref(false);
+const fixedTemplateVisible = ref(false);
 const saveTemplateVisible = ref(false);
 const templatePreviewVisible = ref(false);
 const templatePreview = ref<PageLibraryTemplate | null>(null);
@@ -1877,11 +1751,12 @@ const createForm = reactive({ slug: "", title: "", description: "", templateId: 
 const saveTemplateForm = reactive({ slug: "", title: "", category: "自定义模板", description: "" });
 const presetKeyword = ref("");
 const activePresetGroup = ref("");
-const componentLibraryView = ref<"cards" | "compact">("cards");
-const editorMode = ref<"ops" | "advanced" | "developer">("advanced");
 const previewPlatform = ref<"miniapp" | "h5">("miniapp");
 const selectedComponentId = ref("");
-const developerDslJson = ref("");
+const inspectorTab = ref<"component" | "page">("component");
+const publishPanelVisible = ref(false);
+const isDirty = ref(false);
+const lastSavedAt = ref<Date | null>(null);
 const expandedEntryIds = ref<string[]>([]);
 const expandedRichBlockIds = ref<string[]>([]);
 const draggingComponentId = ref("");
@@ -2025,6 +1900,22 @@ const expandedComponentIds = ref<string[]>([]);
 const expandedConfigGroupIds = reactive<Record<string, string[]>>({});
 const pageMeta = reactive<PageMetaForm>({ pageTitle: "", navLogoUrl: "", navLogoDynamicUrl: "", shareTitle: "", shareDescription: "", shareImageUrl: "" });
 const businessDisplay = reactive<BusinessDisplayForm>(defaultBusinessDisplay());
+const history = ref<EditorSnapshot[]>([]);
+const historyIndex = ref(-1);
+const canUndo = computed(() => historyIndex.value > 0);
+const canRedo = computed(() => historyIndex.value >= 0 && historyIndex.value < history.value.length - 1);
+const saveStateText = computed(() => {
+  if (saving.value) return "正在保存";
+  if (isDirty.value) return "有未保存修改";
+  if (lastSavedAt.value) {
+    return `${lastSavedAt.value.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })} 已保存`;
+  }
+  return "已保存";
+});
+let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
+let historyTimer: ReturnType<typeof setTimeout> | undefined;
+let editorReady = false;
+let applyingSnapshot = false;
 
 const presetGroups = computed(() => {
   const groups = new Map<string, ComponentPreset[]>();
@@ -2142,6 +2033,63 @@ const acceptanceSummary = computed(() =>
     { pass: 0, warn: 0, error: 0 } as Record<AcceptanceStatus, number>
   )
 );
+const shopWorkbenchCards = computed<ShopWorkbenchCard[]>(() => [
+  {
+    key: "decorate",
+    index: "01",
+    title: "店铺装修",
+    subtitle: "当前页面装修、组件编排和手机预览",
+    meta: `${previewStats.value.visible}/${previewStats.value.total} 展示`,
+    action: "decorate",
+    active: true
+  },
+  {
+    key: "templates",
+    index: "02",
+    title: "页面模板",
+    subtitle: "首页、排期、商城、会员和自定义模板",
+    meta: `${libraryTemplates.value.length} 个模板`,
+    action: "templates"
+  },
+  {
+    key: "theme",
+    index: "03",
+    title: "店铺主题",
+    subtitle: "主题色、圆角、背景、按钮和品牌视觉",
+    meta: previewTheme.primaryColor || "主题色",
+    action: "theme"
+  },
+  {
+    key: "tabbar",
+    index: "04",
+    title: "底部导航",
+    subtitle: "小程序/H5 底部入口和业务页绑定",
+    meta: `${previewTabbarItems.value.length} 个入口`,
+    action: "tabbar"
+  },
+  {
+    key: "materials",
+    index: "05",
+    title: "素材管理",
+    subtitle: "图片、图标、视频、文件和字体素材",
+    meta: "统一素材库",
+    action: "materials"
+  },
+  {
+    key: "subject",
+    index: "06",
+    title: "店铺主体",
+    subtitle: "主体名称、Logo、分享信息和页面元数据",
+    meta: shopSubjectChecklist.value.filter((item) => item.done).length + "/4 已配",
+    action: "subject"
+  }
+]);
+const shopSubjectChecklist = computed(() => [
+  { key: "title", label: "主体名称", done: Boolean(previewTitle.value.trim()) },
+  { key: "logo", label: "顶部 Logo", done: Boolean(previewTitleLogoUrl.value.trim()) },
+  { key: "shareTitle", label: "分享标题", done: Boolean(pageMeta.shareTitle.trim()) },
+  { key: "shareImage", label: "分享封面", done: Boolean(pageMeta.shareImageUrl.trim()) }
+]);
 const previewContextHint = computed(() => {
   const page = selectedPage.value;
   if (!page) return "";
@@ -2371,7 +2319,7 @@ watch(
   filteredPresetGroups,
   (groups) => {
     if (!groups.some((group) => group.name === activePresetGroup.value)) {
-      activePresetGroup.value = groups[0]?.name ?? "";
+      activePresetGroup.value = preferredPresetGroup(groups);
     }
   },
   { immediate: true }
@@ -2379,14 +2327,18 @@ watch(
 
 watch(components, installPreviewFonts, { deep: true });
 watch(
-  [components, () => selectedPage.value?.pageKey, editorMode],
+  [components, pageMeta, businessDisplay, versionTitle],
   () => {
-    if (editorMode.value === "developer") refreshDeveloperDsl();
+    if (!editorReady || applyingSnapshot) return;
+    isDirty.value = true;
+    scheduleHistorySnapshot();
+    scheduleAutosave();
   },
   { deep: true }
 );
 
 onMounted(async () => {
+  window.addEventListener("keydown", handleEditorShortcut);
   const [presetResponse, conferenceResponse, tabbarResponse, campaignResponse, categoryResponse, productResponse, themeResponse] = await Promise.all([
     listComponentPresets(),
     listConferences({ page: 1, pageSize: 100, status: "PUBLISHED" }).catch(() => ({ items: [] as Conference[] })),
@@ -2405,8 +2357,18 @@ onMounted(async () => {
   if (themeResponse?.config) {
     Object.assign(previewTheme, { ...DEFAULT_PREVIEW_THEME, ...themeResponse.config });
   }
-  activePresetGroup.value = presetGroups.value[0]?.name ?? "";
+  activePresetGroup.value = preferredPresetGroup(presetGroups.value);
   await Promise.all([loadPages(), loadLibraryTemplates()]);
+});
+
+function preferredPresetGroup(groups: Array<{ name: string }>): string {
+  return groups.find((group) => group.name === "基础展示")?.name ?? groups[0]?.name ?? "";
+}
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleEditorShortcut);
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  if (historyTimer) clearTimeout(historyTimer);
 });
 
 async function loadPages() {
@@ -2420,7 +2382,10 @@ async function loadPages() {
     selectedPage.value = null;
   }
   if (!selectedPage.value && pages.value[0]) {
-    const target = pages.value.find((item) => item.pageKey === routeQuery.value.pageKey) ?? pages.value[0];
+    const target =
+      pages.value.find((item) => item.id === routeQuery.value.pageId) ??
+      pages.value.find((item) => item.pageKey === routeQuery.value.pageKey) ??
+      pages.value[0];
     await selectPage(target);
   }
 }
@@ -2430,6 +2395,7 @@ async function loadLibraryTemplates() {
 }
 
 async function selectPage(page: PageTemplate) {
+  editorReady = false;
   selectedPage.value = page;
   const latest = page.versions[0];
   if (!latest) {
@@ -2443,6 +2409,12 @@ async function selectPage(page: PageTemplate) {
   expandedComponentIds.value = components.value[0] ? [components.value[0].id] : [];
   selectedComponentId.value = components.value[0]?.id ?? "";
   initializeConfigGroups(components.value);
+  inspectorTab.value = selectedComponentId.value ? "component" : "page";
+  resetEditorHistory();
+  isDirty.value = false;
+  lastSavedAt.value = new Date(version.value.updatedAt);
+  await nextTick();
+  editorReady = true;
 }
 
 function toEditableComponent(component: CmsComponent): EditableComponent {
@@ -2457,19 +2429,23 @@ function toEditableComponent(component: CmsComponent): EditableComponent {
 
 function componentsFromVersion(pageVersion: PageVersion | null | undefined): EditableComponent[] {
   if (!pageVersion) return [];
+  const dslComponents = componentsFromDsl(pageVersion.dsl);
+  if (dslComponents.length > 0) return dslComponents;
   if (Array.isArray(pageVersion.components) && pageVersion.components.length > 0) {
     return pageVersion.components.map(toEditableComponent).sort((a, b) => a.sortOrder - b.sortOrder);
   }
-  return componentsFromDsl(pageVersion.dsl);
+  return [];
 }
 
 function componentsFromTemplate(template: PageLibraryTemplate | null | undefined): EditableComponent[] {
   const pageVersion = template?.version;
   if (!pageVersion) return [];
+  const dslComponents = componentsFromDsl(pageVersion.dsl);
+  if (dslComponents.length > 0) return dslComponents;
   if (Array.isArray(pageVersion.components) && pageVersion.components.length > 0) {
     return pageVersion.components.map(toEditableComponent).sort((a, b) => a.sortOrder - b.sortOrder);
   }
-  return componentsFromDsl(pageVersion.dsl);
+  return [];
 }
 
 function componentsFromDsl(dsl: PageDsl | undefined): EditableComponent[] {
@@ -2572,7 +2548,7 @@ function addBusinessModule(type: BusinessModuleType) {
   selectedComponentId.value = component.id;
   expandedConfigGroupIds[component.id] = defaultExpandedConfigGroups(component.type);
   void nextTick(() => scrollToComponent(component.id));
-  ElMessage.success("已添加业务模块，可在高级装修模式继续精修");
+  ElMessage.success("业务模块已添加，可以继续配置内容和样式");
 }
 
 function businessModuleToComponent(module: BusinessModule): EditableComponent {
@@ -2756,15 +2732,27 @@ function focusComponent(value: string | string[] | number | boolean | undefined)
 
 function selectComponentCard(id: string) {
   selectedComponentId.value = id;
+  inspectorTab.value = "component";
   focusComponent(id);
 }
 
 function selectPreviewComponent(id: string) {
   selectedComponentId.value = id;
+  inspectorTab.value = "component";
   const component = components.value.find((item) => item.id === id);
   if (component) {
     expandedConfigGroupIds[id] = expandedConfigGroupIds[id] ?? defaultExpandedConfigGroups(component.type);
   }
+}
+
+function componentIndex(id: string): number {
+  return components.value.findIndex((item) => item.id === id);
+}
+
+function moveSelectedBy(direction: -1 | 1): void {
+  const index = componentIndex(selectedComponentId.value);
+  if (index < 0) return;
+  moveComponent(index, direction);
 }
 
 function scrollToComponent(id: string) {
@@ -2821,8 +2809,98 @@ function defaultExpandedConfigGroups(type: string): string[] {
   return groups.length > 0 ? [groups[0].key] : [];
 }
 
-async function saveDraft() {
+function captureEditorSnapshot(): EditorSnapshot {
+  return cloneJson({
+    components: components.value,
+    pageMeta: { ...pageMeta },
+    businessDisplay: { ...businessDisplay, modules: [...businessDisplay.modules] },
+    versionTitle: versionTitle.value
+  });
+}
+
+function resetEditorHistory(): void {
+  history.value = [captureEditorSnapshot()];
+  historyIndex.value = 0;
+}
+
+function scheduleHistorySnapshot(): void {
+  if (historyTimer) clearTimeout(historyTimer);
+  historyTimer = setTimeout(() => {
+    const snapshot = captureEditorSnapshot();
+    const current = history.value[historyIndex.value];
+    if (current && snapshotSignature(current) === snapshotSignature(snapshot)) return;
+    const next = history.value.slice(0, historyIndex.value + 1);
+    next.push(snapshot);
+    history.value = next.slice(-50);
+    historyIndex.value = history.value.length - 1;
+  }, 240);
+}
+
+function scheduleAutosave(): void {
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    void saveDraft({ silent: true }).catch(() => {
+      isDirty.value = true;
+    });
+  }, 1800);
+}
+
+function snapshotSignature(snapshot: EditorSnapshot): string {
+  return JSON.stringify(snapshot);
+}
+
+function applyEditorSnapshot(snapshot: EditorSnapshot): void {
+  applyingSnapshot = true;
+  components.value = cloneJson(snapshot.components);
+  Object.assign(pageMeta, cloneJson(snapshot.pageMeta));
+  Object.assign(businessDisplay, cloneJson(snapshot.businessDisplay));
+  versionTitle.value = snapshot.versionTitle;
+  if (!components.value.some((component) => component.id === selectedComponentId.value)) {
+    selectedComponentId.value = components.value[0]?.id ?? "";
+  }
+  initializeConfigGroups(components.value);
+  void nextTick(() => {
+    applyingSnapshot = false;
+    isDirty.value = true;
+    scheduleAutosave();
+  });
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function undo(): void {
+  if (!canUndo.value) return;
+  historyIndex.value -= 1;
+  applyEditorSnapshot(history.value[historyIndex.value]);
+}
+
+function redo(): void {
+  if (!canRedo.value) return;
+  historyIndex.value += 1;
+  applyEditorSnapshot(history.value[historyIndex.value]);
+}
+
+function handleEditorShortcut(event: KeyboardEvent): void {
+  if (!(event.metaKey || event.ctrlKey)) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.matches("input, textarea, [contenteditable='true']")) return;
+  if (event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
+  }
+  if (event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    void saveDraft();
+  }
+}
+
+async function saveDraft(options: { silent?: boolean } = {}) {
   if (!version.value) return;
+  if (saving.value) return;
+  if (autosaveTimer) clearTimeout(autosaveTimer);
   saving.value = true;
   try {
     version.value = await updatePageVersion(version.value.id, {
@@ -2830,14 +2908,9 @@ async function saveDraft() {
       dsl: dslFromComponents(selectedPage.value?.pageKey ?? version.value.template.pageKey),
       themeJson: nextThemeJson()
     });
-    components.value = componentsFromVersion(version.value);
-    applyPageMeta(version.value.themeJson, selectedPage.value?.title);
-    expandedComponentIds.value = expandedComponentIds.value.filter((id) => components.value.some((component) => component.id === id));
-    if (!components.value.some((component) => component.id === selectedComponentId.value)) {
-      selectedComponentId.value = components.value[0]?.id ?? "";
-    }
-    initializeConfigGroups(components.value);
-    ElMessage.success("草稿已保存");
+    isDirty.value = false;
+    lastSavedAt.value = new Date();
+    if (!options.silent) ElMessage.success("页面已保存");
   } finally {
     saving.value = false;
   }
@@ -2845,7 +2918,7 @@ async function saveDraft() {
 
 async function publish() {
   if (!version.value) return;
-  await saveDraft();
+  await saveDraft({ silent: true });
   if (unsupportedEnabledComponents.value.length > 0) {
     ElMessage.error(`页面包含不可发布组件：${unsupportedEnabledComponents.value.map((item) => presetName(item.type)).join("、")}`);
     return;
@@ -2868,6 +2941,7 @@ async function publish() {
   }
   publishing.value = true;
   try {
+    editorReady = false;
     const draft = await publishPageVersion(version.value.id, { confirmBasic });
     version.value = draft;
     versionTitle.value = draft.title;
@@ -2877,14 +2951,24 @@ async function publish() {
     selectedComponentId.value = components.value[0]?.id ?? "";
     initializeConfigGroups(components.value);
     await loadPages();
+    resetEditorHistory();
+    isDirty.value = false;
+    lastSavedAt.value = new Date();
+    publishPanelVisible.value = false;
     ElMessage.success("页面已发布，已自动保留下一版草稿");
   } finally {
+    editorReady = true;
     publishing.value = false;
   }
 }
 
+async function publishFromDrawer(): Promise<void> {
+  await publish();
+}
+
 async function rollback() {
   if (!selectedPage.value) return;
+  editorReady = false;
   const next = await rollbackPage(selectedPage.value.id);
   await loadPages();
   version.value = next;
@@ -2893,6 +2977,10 @@ async function rollback() {
   expandedComponentIds.value = components.value[0] ? [components.value[0].id] : [];
   selectedComponentId.value = components.value[0]?.id ?? "";
   initializeConfigGroups(components.value);
+  resetEditorHistory();
+  isDirty.value = false;
+  lastSavedAt.value = new Date(next.updatedAt);
+  editorReady = true;
   ElMessage.success("已回滚到上一发布版本");
 }
 
@@ -3094,6 +3182,26 @@ function previewBodyBackground(theme: ThemeConfig): string {
   return theme.backgroundColor || DEFAULT_PREVIEW_THEME.backgroundColor;
 }
 
+function navigateToSection(path: string) {
+  navigateTo(path);
+}
+
+function openTemplateCenter(): void {
+  navigateTo("/page-templates", { targetPageId: selectedPage.value?.id });
+}
+
+async function handleEditorMoreAction(command: string | number | object): Promise<void> {
+  if (command === "fixed-template") {
+    fixedTemplateVisible.value = true;
+    return;
+  }
+  if (command === "save-template") {
+    saveTemplateVisible.value = true;
+    return;
+  }
+  if (command === "rollback") await rollback();
+}
+
 function openTemplateLibrary() {
   templateVisible.value = true;
 }
@@ -3155,6 +3263,11 @@ async function applyFixedBusinessTemplate(command: string | number | object) {
   expandedConfigGroupIds[component.id] = ["template", "quick-entry", "visibility"];
   initializeConfigGroups(components.value);
   ElMessage.success(`已应用${option.name}`);
+}
+
+async function chooseFixedTemplate(key: string): Promise<void> {
+  await applyFixedBusinessTemplate(key);
+  fixedTemplateVisible.value = false;
 }
 
 function createFixedBusinessTemplateComponent(option: FixedBusinessTemplateOption): EditableComponent {
@@ -3265,27 +3378,10 @@ function dslFromComponents(page: string, source = components.value): PageDsl {
     },
     meta: {
       source: "visual-component-editor",
-      editorMode: editorMode.value,
+      editor: "operator-visual",
       editorComponents: payloadComponents
     }
   };
-}
-
-function refreshDeveloperDsl() {
-  developerDslJson.value = JSON.stringify(dslFromComponents(selectedPage.value?.pageKey ?? version.value?.template.pageKey ?? "cms"), null, 2);
-}
-
-function applyDeveloperDsl() {
-  try {
-    const parsed = JSON.parse(developerDslJson.value) as PageDsl;
-    components.value = componentsFromDsl(parsed);
-    selectedComponentId.value = components.value[0]?.id ?? "";
-    expandedComponentIds.value = selectedComponentId.value ? [selectedComponentId.value] : [];
-    initializeConfigGroups(components.value);
-    ElMessage.success("DSL 已应用到高级装修组件");
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "DSL JSON 不合法");
-  }
 }
 
 function componentToDslNode(component: CmsComponent, index: number): PageDsl["dsl"]["nodes"][number] {
@@ -3685,6 +3781,14 @@ function acceptanceStatusLabel(status: AcceptanceStatus): string {
   if (status === "pass") return "通过";
   if (status === "warn") return "提醒";
   return "阻断";
+}
+
+function operatorAcceptanceDescription(check: AcceptanceCheck): string {
+  return check.description
+    .replace(/P9 DSL/g, "页面配置")
+    .replace(/DSL/g, "页面结构")
+    .replace(/editorComponents/g, "可视化组件")
+    .replace(/Runtime/g, "前台渲染");
 }
 
 function acceptanceCheckClass(status: AcceptanceStatus): string {
@@ -5209,6 +5313,24 @@ function isRegistrationCtaType(type: string): boolean {
 
 function isRenderableSupport(type: string): boolean {
   return ADDABLE_SUPPORT_STATUSES.includes(componentSupport(type).status);
+}
+
+function presetIcon(type: string) {
+  const value = type.toLowerCase();
+  if (/(hero|banner|image|carousel|poster|sponsor)/.test(value)) return Picture;
+  if (/(grid|icon|navigation|entry|menu|benefit)/.test(value)) return Grid;
+  if (/(conference|schedule|calendar|agenda|countdown|location)/.test(value)) return Calendar;
+  if (/(product|mall|cart|recommend)/.test(value)) return ShoppingCart;
+  if (/(member|user|login|profile|speaker|guest)/.test(value)) return User;
+  if (/(registration|ticket|coupon|credential|checkin)/.test(value)) return Tickets;
+  if (/(order|payment|invoice|price|refund|aftersale)/.test(value)) return CreditCard;
+  if (/(video|live)/.test(value)) return VideoCamera;
+  if (/(download|file|material)/.test(value)) return Files;
+  if (/(contact|service|assistant|faq)/.test(value)) return ChatDotRound;
+  if (/(notice|announcement)/.test(value)) return Bell;
+  if (/(button|action|link)/.test(value)) return Link;
+  if (/(text|article|rich|content|guide)/.test(value)) return Document;
+  return Menu;
 }
 
 function thumbClass(type: string): string {
@@ -10365,6 +10487,425 @@ function looksLikePreviewImage(value: string): boolean {
   white-space: nowrap;
 }
 
+.cms-workflow-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.cms-workflow-strip article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid rgb(185 150 67 / 16%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 76%);
+}
+
+.cms-workflow-strip b {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--gc-ink);
+  color: #f8f5ee;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.cms-workflow-strip span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.cms-workflow-strip strong,
+.cms-workflow-strip small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-workflow-strip strong {
+  color: var(--gc-ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.cms-workflow-strip small {
+  color: var(--gc-muted);
+  font-size: 12px;
+}
+
+.cms-shop-console {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid rgb(185 150 67 / 18%);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 92%), rgb(248 245 238 / 84%)),
+    #ffffff;
+  box-shadow: 0 12px 32px rgb(7 20 38 / 7%);
+}
+
+.shop-console__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+
+.shop-console__head > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.shop-console__eyebrow {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgb(7 20 38 / 7%);
+  color: var(--gc-ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.shop-console__head strong {
+  color: var(--gc-ink);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.shop-console__head small {
+  color: var(--gc-muted);
+  line-height: 1.45;
+}
+
+.shop-console__status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.shop-console__status span,
+.shop-console-card__meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgb(185 150 67 / 16%);
+  border-radius: 999px;
+  background: rgb(243 234 215 / 62%);
+  color: var(--gc-gold-strong);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.shop-console__status b {
+  margin-right: 4px;
+  color: var(--gc-ink);
+}
+
+.shop-console__grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shop-console-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid rgb(227 217 199 / 88%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 88%);
+  color: var(--gc-ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.shop-console-card:hover,
+.shop-console-card.active {
+  border-color: rgb(185 150 67 / 44%);
+  box-shadow: 0 14px 34px rgb(7 20 38 / 8%);
+  transform: translateY(-1px);
+}
+
+.shop-console-card__icon {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--gc-ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.shop-console-card__copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.shop-console-card__copy strong,
+.shop-console-card__copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shop-console-card__copy strong {
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.shop-console-card__copy small {
+  color: var(--gc-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.shop-console-card__meta {
+  grid-column: 1 / -1;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shop-console__ops {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.shop-console__ops span,
+.component-library-guide span,
+.preview-parity-strip span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgb(185 150 67 / 14%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 76%);
+  color: var(--gc-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.shop-console__ops b,
+.component-library-guide b,
+.preview-parity-strip b {
+  color: var(--gc-ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.component-library-guide,
+.preview-parity-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.preview-parity-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 14px;
+}
+
+.shop-identity-card {
+  scroll-margin-top: 90px;
+}
+
+.shop-identity-summary {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgb(185 150 67 / 16%);
+  border-radius: 12px;
+  background: rgb(248 245 238 / 66%);
+}
+
+.shop-identity-logo {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--gc-ink);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.shop-identity-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.shop-identity-summary span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.shop-identity-summary strong,
+.shop-identity-summary small,
+.shop-identity-summary em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shop-identity-summary strong {
+  color: var(--gc-ink);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.shop-identity-summary small,
+.shop-identity-summary em {
+  color: var(--gc-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.shop-identity-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.shop-identity-checks span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid rgb(220 227 239 / 90%);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--gc-muted);
+  font-size: 12px;
+}
+
+.shop-identity-checks span.done {
+  border-color: rgb(18 99 66 / 18%);
+  background: #edf8f3;
+  color: #126342;
+}
+
+.shop-identity-checks b {
+  color: inherit;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.shop-identity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.library-toolband,
+.preview-canvas-bar,
+.inspector-mode-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgb(185 150 67 / 14%);
+  border-radius: 12px;
+  background: rgb(248 245 238 / 72%);
+}
+
+.library-toolband {
+  margin-top: 12px;
+}
+
+.preview-canvas-bar {
+  margin: 10px 0 14px;
+}
+
+.inspector-mode-strip {
+  margin-bottom: 12px;
+}
+
+.library-toolband span,
+.preview-canvas-bar span,
+.inspector-mode-strip span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 74%);
+  color: var(--gc-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.library-toolband b,
+.preview-canvas-bar b,
+.inspector-mode-strip b {
+  color: var(--gc-ink);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.library-toolband em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gc-gold-strong);
+  font-style: normal;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-canvas-bar span,
+.inspector-mode-strip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cms-panel,
 .preset-card,
 .component-card,
@@ -10462,6 +11003,23 @@ function looksLikePreviewImage(value: string): boolean {
   white-space: nowrap;
 }
 
+.preset-card__type {
+  min-width: 0;
+  overflow: hidden;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgb(7 20 38 / 5%);
+  color: var(--gc-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-grid.is-compact .preset-card__type {
+  max-width: 100%;
+}
+
 .phone-preview {
   background:
     radial-gradient(circle at 50% 0%, rgb(185 150 67 / 12%), transparent 30%),
@@ -10469,7 +11027,7 @@ function looksLikePreviewImage(value: string): boolean {
 }
 
 .phone-shell {
-  width: 360px;
+  width: min(398px, 100%);
   padding: 10px 12px 14px;
   border: 1px solid rgb(255 255 255 / 10%);
   background:
@@ -10584,8 +11142,993 @@ function looksLikePreviewImage(value: string): boolean {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .cms-workflow-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .shop-console__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .shop-console__head,
+  .shop-console__ops,
+  .preview-parity-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shop-console__status {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
   .component-card__summary {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .library-toolband,
+  .preview-canvas-bar,
+  .inspector-mode-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Operator-first editor shell. Keep the workbench focused on components, canvas and settings. */
+.cms-page {
+  width: 100%;
+  max-width: none;
+  height: 100vh;
+  min-height: 720px;
+  margin: 0;
+  overflow: hidden;
+  background: var(--admin-color-bg);
+  color: var(--admin-color-text);
+}
+
+.cms-editor-toolbar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--admin-space-4);
+  padding: 0 var(--admin-space-5);
+  border-bottom: 1px solid var(--admin-color-border);
+  background: var(--admin-color-panel);
+  box-shadow: 0 2px 10px rgb(24 33 47 / 4%);
+}
+
+.cms-editor-toolbar__identity,
+.cms-editor-toolbar__actions,
+.cms-save-state {
+  display: flex;
+  align-items: center;
+}
+
+.cms-editor-toolbar__identity {
+  min-width: 0;
+  gap: var(--admin-space-3);
+}
+
+.cms-editor-toolbar__identity > span:last-child {
+  min-width: 0;
+}
+
+.cms-editor-toolbar__identity strong,
+.cms-editor-toolbar__identity small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-editor-toolbar__identity strong {
+  color: var(--admin-color-text);
+  font-size: 15px;
+}
+
+.cms-editor-toolbar__identity small {
+  max-width: 46ch;
+  margin-top: 3px;
+  color: var(--admin-color-muted);
+  font-size: 12px;
+}
+
+.cms-editor-toolbar__divider {
+  width: 1px;
+  height: 28px;
+  background: var(--admin-color-border);
+}
+
+.cms-editor-toolbar__actions {
+  flex: 0 0 auto;
+  gap: var(--admin-space-2);
+}
+
+.cms-save-state {
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-color-success-soft);
+  color: var(--admin-color-success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cms-save-state.is-saving,
+.cms-save-state.is-dirty {
+  background: var(--admin-color-warning-soft);
+  color: var(--admin-color-warning);
+}
+
+.cms-save-state svg {
+  width: 15px;
+  height: 15px;
+}
+
+.is-spinning {
+  animation: cms-spin 900ms linear infinite;
+}
+
+@keyframes cms-spin {
+  to { transform: rotate(360deg); }
+}
+
+.cms-workbench {
+  display: grid;
+  width: 100%;
+  height: calc(100vh - 64px);
+  min-height: 0;
+  grid-template-columns: 286px minmax(420px, 1fr) 382px;
+  gap: 0;
+  overflow: hidden;
+  background: var(--admin-color-bg);
+}
+
+.cms-sidebar,
+.cms-stage {
+  min-width: 0;
+  min-height: 0;
+}
+
+.cms-sidebar--left,
+.cms-sidebar--right {
+  position: relative;
+  top: auto;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--admin-space-4);
+  scrollbar-gutter: stable;
+  background: var(--admin-color-panel);
+}
+
+.cms-sidebar--left {
+  border-right: 1px solid var(--admin-color-border);
+}
+
+.cms-sidebar--right {
+  border-left: 1px solid var(--admin-color-border);
+}
+
+.cms-sidebar .cms-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cms-sidebar .cms-panel + .cms-panel {
+  margin-top: var(--admin-space-5);
+  padding-top: var(--admin-space-5);
+  border-top: 1px solid var(--admin-color-border);
+}
+
+.component-library-panel .library-head,
+.layer-panel .library-head {
+  margin-bottom: var(--admin-space-3);
+}
+
+.component-library-panel .panel-title,
+.layer-panel .panel-title {
+  font-size: 15px;
+}
+
+.library-filters {
+  display: block;
+  margin-bottom: var(--admin-space-3);
+}
+
+.component-category-rail {
+  display: flex;
+  gap: 6px;
+  margin-bottom: var(--admin-space-3);
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.component-category-rail button {
+  display: inline-flex;
+  min-width: max-content;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-color-panel-soft);
+  color: var(--admin-color-muted);
+}
+
+.component-category-rail button strong,
+.component-category-rail button span {
+  font-size: 12px;
+}
+
+.component-category-rail button.active {
+  border-color: var(--admin-color-primary);
+  background: var(--admin-color-primary-soft);
+  color: var(--admin-color-primary);
+}
+
+.compact-library-tabs :deep(.el-tabs__header) {
+  display: none;
+}
+
+.preset-grid.is-operator-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--admin-space-2);
+}
+
+.preset-grid.is-operator-grid .preset-card {
+  display: flex;
+  min-width: 0;
+  min-height: 82px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-color-panel-soft);
+  box-shadow: none;
+  color: var(--admin-color-muted);
+  text-align: center;
+}
+
+.preset-grid.is-operator-grid .preset-card:hover:not(:disabled),
+.preset-grid.is-operator-grid .preset-card:focus-visible {
+  border-color: var(--admin-color-primary);
+  background: var(--admin-color-primary-soft);
+  color: var(--admin-color-primary);
+  transform: none;
+}
+
+.preset-grid.is-operator-grid .preset-card:focus-visible,
+.layer-item:focus-visible,
+.inspector-tabs button:focus-visible {
+  outline: none;
+  box-shadow: var(--admin-focus-ring);
+}
+
+.preset-grid.is-operator-grid .preset-card__icon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+}
+
+.preset-grid.is-operator-grid .preset-card__icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.preset-grid.is-operator-grid .preset-card strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-list {
+  display: grid;
+  gap: 4px;
+}
+
+.layer-item {
+  display: grid;
+  min-height: 40px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--admin-radius-sm);
+  background: transparent;
+  color: var(--admin-color-muted);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.layer-item:hover,
+.layer-item.active {
+  border-color: var(--admin-color-border);
+  background: var(--admin-color-primary-soft);
+  color: var(--admin-color-primary);
+}
+
+.layer-item.hidden {
+  opacity: 0.56;
+}
+
+.layer-item__drag {
+  display: grid;
+  place-items: center;
+}
+
+.layer-item__drag svg {
+  width: 15px;
+}
+
+.layer-item__name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-item__actions {
+  display: flex;
+}
+
+.layer-item__actions :deep(.el-button) {
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 5px;
+}
+
+.cms-stage {
+  height: 100%;
+  overflow: auto;
+  padding: 0;
+  background: var(--admin-color-bg);
+}
+
+.cms-editor-preview {
+  min-height: 100%;
+  margin: 0;
+  padding: 0 24px 40px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.canvas-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--admin-space-4);
+  margin: 0 -24px var(--admin-space-5);
+  padding: 0 var(--admin-space-5);
+  border-bottom: 1px solid var(--admin-color-border);
+  background: var(--admin-color-panel);
+}
+
+.canvas-toolbar strong,
+.canvas-toolbar small {
+  display: block;
+}
+
+.canvas-toolbar strong {
+  font-size: 14px;
+}
+
+.canvas-toolbar small {
+  margin-top: 2px;
+  color: var(--admin-color-muted);
+  font-size: 11px;
+}
+
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--admin-space-2);
+}
+
+.phone-shell,
+.phone-shell.is-h5 {
+  width: 375px;
+  height: 744px;
+  margin: 0 auto;
+  overflow: visible;
+  padding: 0;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 8px;
+  background: var(--admin-color-panel);
+  box-shadow: 0 18px 42px rgb(24 33 47 / 14%);
+}
+
+.phone-status {
+  width: 100%;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 8px 8px 0 0;
+  background: var(--admin-color-panel);
+  color: var(--admin-color-text);
+}
+
+.phone-window,
+.phone-window.is-h5 {
+  display: flex;
+  width: 100%;
+  height: 712px;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0 0 8px 8px;
+  background: var(--preview-page-bg);
+}
+
+.phone-nav {
+  flex: 0 0 52px;
+}
+
+.phone-screen {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.phone-screen__content {
+  min-height: 100%;
+  padding-bottom: 18px;
+}
+
+.phone-tabbar {
+  position: relative;
+  flex: 0 0 62px;
+  padding-bottom: 4px;
+}
+
+.preview-block {
+  position: relative;
+  cursor: grab;
+}
+
+.preview-block:active {
+  cursor: grabbing;
+}
+
+.preview-block.is-selected {
+  z-index: 5;
+  outline: 2px solid var(--admin-color-primary);
+  outline-offset: -2px;
+}
+
+.preview-block__toolbar {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 40;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-color-panel);
+  box-shadow: var(--admin-shadow);
+}
+
+.preview-block__toolbar :deep(.el-button) {
+  width: 28px;
+  height: 28px;
+  margin: 0;
+}
+
+.inspector-tabs {
+  position: sticky;
+  top: -16px;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: -16px -16px var(--admin-space-4);
+  border-bottom: 1px solid var(--admin-color-border);
+  background: var(--admin-color-panel);
+}
+
+.inspector-tabs button {
+  position: relative;
+  min-height: 50px;
+  border: 0;
+  background: transparent;
+  color: var(--admin-color-muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.inspector-tabs button.active {
+  color: var(--admin-color-primary);
+}
+
+.inspector-tabs button.active::after {
+  position: absolute;
+  right: 22px;
+  bottom: -1px;
+  left: 22px;
+  height: 2px;
+  background: var(--admin-color-primary);
+  content: "";
+}
+
+.cms-editor-settings .inspector-panel .panel-title {
+  font-size: 14px;
+}
+
+.cms-editor-settings .inspector-panel .page-subtitle {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.component-inspector-panel .selected-component-actions {
+  position: sticky;
+  top: 35px;
+  z-index: 15;
+  margin-inline: -16px;
+  padding: 10px 16px;
+  border-block: 1px solid var(--admin-color-border);
+  background: var(--admin-color-panel);
+}
+
+.component-inspector-panel :deep(.el-collapse) {
+  border-top: 0;
+}
+
+.business-module-card {
+  border-radius: var(--admin-radius-sm);
+  box-shadow: none;
+}
+
+.publish-drawer__summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--admin-space-2);
+  margin-bottom: var(--admin-space-4);
+}
+
+.publish-drawer__summary span {
+  padding: var(--admin-space-3);
+  border-radius: var(--admin-radius-sm);
+  text-align: center;
+}
+
+.publish-drawer__summary span.is-pass {
+  background: var(--admin-color-success-soft);
+  color: var(--admin-color-success);
+}
+
+.publish-drawer__summary span.is-warn {
+  background: var(--admin-color-warning-soft);
+  color: var(--admin-color-warning);
+}
+
+.publish-drawer__summary span.is-error {
+  background: var(--admin-color-danger-soft);
+  color: var(--admin-color-danger);
+}
+
+.publish-drawer__checks {
+  margin-top: var(--admin-space-4);
+}
+
+.publish-drawer__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--admin-space-2);
+}
+
+.dialog-intro {
+  margin: 0 0 var(--admin-space-4);
+  color: var(--admin-color-muted);
+}
+
+.fixed-template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--admin-space-3);
+}
+
+.fixed-template-card {
+  display: flex;
+  min-height: 138px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--admin-space-2);
+  padding: var(--admin-space-4);
+  border: 1px solid var(--admin-color-border);
+  border-radius: var(--admin-radius);
+  background: var(--admin-color-panel);
+  color: var(--admin-color-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.fixed-template-card:hover,
+.fixed-template-card:focus-visible {
+  border-color: var(--admin-color-primary);
+  background: var(--admin-color-primary-soft);
+  outline: none;
+}
+
+.fixed-template-card > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: var(--admin-radius-sm);
+  background: var(--admin-color-primary-soft);
+  color: var(--admin-color-primary);
+}
+
+.fixed-template-card svg {
+  width: 19px;
+}
+
+.fixed-template-card small {
+  color: var(--admin-color-muted);
+  line-height: 1.5;
+}
+
+.phone-screen :deep(.preview-fixed-template) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px;
+  color: var(--admin-color-text);
+}
+
+.phone-screen :deep(.preview-fixed-brand) {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.phone-screen :deep(.preview-fixed-brand img) {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.phone-screen :deep(.preview-fixed-brand span) {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.phone-screen :deep(.preview-fixed-brand small) {
+  grid-column: 2;
+  margin-top: -6px;
+  color: var(--admin-color-muted);
+  font-size: 11px;
+}
+
+.phone-screen :deep(.preview-fixed-hero) {
+  display: flex;
+  min-height: 188px;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  overflow: hidden;
+  padding: 18px;
+  border-radius: 12px;
+  background-color: var(--admin-color-aside);
+  background-position: center;
+  background-size: cover;
+  color: var(--admin-color-panel);
+  box-shadow: 0 12px 28px rgb(24 33 47 / 14%);
+}
+
+.phone-screen :deep(.preview-fixed-hero strong) {
+  max-width: 250px;
+  color: var(--admin-color-panel);
+  font-size: 25px;
+  line-height: 1.2;
+}
+
+.phone-screen :deep(.preview-fixed-hero span) {
+  max-width: 250px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.phone-screen :deep(.preview-fixed-notice),
+.phone-screen :deep(.preview-fixed-login),
+.phone-screen :deep(.preview-fixed-strip),
+.phone-screen :deep(.preview-fixed-stats),
+.phone-screen :deep(.preview-fixed-schedule-card),
+.phone-screen :deep(.preview-fixed-conference-card),
+.phone-screen :deep(.preview-fixed-cart-row),
+.phone-screen :deep(.preview-fixed-member-card),
+.phone-screen :deep(.preview-fixed-menu) {
+  overflow: hidden;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 10px;
+  background: var(--admin-color-panel);
+}
+
+.phone-screen :deep(.preview-fixed-notice) {
+  padding: 10px 12px;
+  color: var(--admin-color-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.phone-screen :deep(.preview-fixed-login) {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.phone-screen :deep(.preview-fixed-login > span) {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--admin-color-primary-soft);
+  color: var(--admin-color-primary);
+  font-weight: 800;
+}
+
+.phone-screen :deep(.preview-fixed-login strong) {
+  font-size: 13px;
+}
+
+.phone-screen :deep(.preview-fixed-login button),
+.phone-screen :deep(.preview-fixed-strip button),
+.phone-screen :deep(.preview-fixed-schedule-card button),
+.phone-screen :deep(.preview-fixed-conference-card button),
+.phone-screen :deep(.preview-fixed-member-card button) {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--admin-color-primary);
+  color: var(--admin-color-panel);
+  font-size: 11px;
+}
+
+.phone-screen :deep(.preview-fixed-grid) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.phone-screen :deep(.preview-fixed-grid > div) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 6px;
+  border-radius: 10px;
+  background: var(--admin-color-panel);
+  text-align: center;
+}
+
+.phone-screen :deep(.preview-fixed-grid img),
+.phone-screen :deep(.preview-fixed-grid b) {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.phone-screen :deep(.preview-fixed-grid b) {
+  background: var(--admin-color-primary-soft);
+  color: var(--admin-color-primary);
+}
+
+.phone-screen :deep(.preview-fixed-grid span),
+.phone-screen :deep(.preview-fixed-grid small) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-screen :deep(.preview-fixed-grid span) {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.phone-screen :deep(.preview-fixed-grid small) {
+  color: var(--admin-color-muted);
+  font-size: 9px;
+}
+
+.phone-screen :deep(.preview-fixed-strip) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+}
+
+.phone-screen :deep(.preview-fixed-strip strong) {
+  font-size: 13px;
+}
+
+.phone-screen :deep(.preview-fixed-stats) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  color: var(--admin-color-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.phone-screen :deep(.preview-fixed-tabs) {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.phone-screen :deep(.preview-fixed-tabs span) {
+  min-width: max-content;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--admin-color-panel);
+  color: var(--admin-color-muted);
+  font-size: 11px;
+}
+
+.phone-screen :deep(.preview-fixed-tabs span.active) {
+  background: var(--admin-color-primary);
+  color: var(--admin-color-panel);
+}
+
+.phone-screen :deep(.preview-fixed-schedule-card),
+.phone-screen :deep(.preview-fixed-conference-card),
+.phone-screen :deep(.preview-fixed-cart-row) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.phone-screen :deep(.preview-fixed-schedule-card > b) {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--admin-color-primary-soft);
+  color: var(--admin-color-primary);
+}
+
+.phone-screen :deep(.preview-fixed-conference-card img),
+.phone-screen :deep(.preview-fixed-cart-row img),
+.phone-screen :deep(.preview-fixed-member-card img) {
+  width: 62px;
+  height: 54px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.phone-screen :deep(.preview-fixed-products) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.phone-screen :deep(.preview-fixed-products > div) {
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--admin-color-panel);
+}
+
+.phone-screen :deep(.preview-fixed-products img) {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.phone-screen :deep(.preview-fixed-products strong),
+.phone-screen :deep(.preview-fixed-products span) {
+  display: block;
+  padding: 6px 8px 0;
+  font-size: 11px;
+}
+
+.phone-screen :deep(.preview-fixed-products span) {
+  padding-bottom: 8px;
+  color: var(--admin-color-danger);
+}
+
+.phone-screen :deep(.preview-fixed-member-card) {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  background-position: center;
+  background-size: cover;
+}
+
+.phone-screen :deep(.preview-fixed-member-card img) {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+}
+
+.phone-screen :deep(.preview-fixed-menu) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  font-size: 11px;
+}
+
+@media (max-width: 1360px) {
+  .cms-workbench {
+    grid-template-columns: 250px minmax(390px, 1fr) 340px;
+  }
+
+  .cms-editor-toolbar__actions .el-button span {
+    display: none;
+  }
+
+  .cms-editor-toolbar__actions .el-button {
+    width: 34px;
+    padding-inline: 8px;
+  }
+
+  .cms-editor-toolbar__actions .el-button--primary {
+    width: auto;
+  }
+
+  .cms-editor-toolbar__actions .el-button--primary span {
+    display: inline;
+  }
+}
+
+@media (max-width: 1120px) {
+  .cms-workbench {
+    grid-template-columns: 230px minmax(375px, 1fr) 320px;
+  }
+
+  .cms-editor-toolbar__identity small,
+  .cms-save-state {
+    display: none;
   }
 }
 </style>
