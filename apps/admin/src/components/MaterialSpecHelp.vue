@@ -8,7 +8,6 @@
       <dl>
         <div><dt>建议尺寸</dt><dd>{{ resolved.size }}</dd></div>
         <div><dt>支持格式</dt><dd>{{ resolved.formats }}</dd></div>
-        <div><dt>最大大小</dt><dd>{{ resolved.maxSize }}</dd></div>
       </dl>
       <p>{{ resolved.tip }}</p>
     </div>

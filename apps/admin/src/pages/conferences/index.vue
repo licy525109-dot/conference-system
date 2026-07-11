@@ -71,7 +71,7 @@
         <el-form-item>
           <template #label>封面 URL<MaterialSpecHelp spec-key="conferenceCover" /></template>
           <div class="cover-row">
-            <el-input v-model="form.coverImage" placeholder="建议 750x420，JPG/PNG/WebP，单张不超过 2MB" />
+            <el-input v-model="form.coverImage" placeholder="建议 750x420，JPG/PNG/WebP，主体内容居中" />
             <el-button @click="openMaterialPicker">应用素材库</el-button>
           </div>
         </el-form-item>

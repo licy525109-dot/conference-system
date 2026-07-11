@@ -1,19 +1,10 @@
 <template>
   <view class="fixed-template" :class="`is-${templateKind}`">
-    <view class="fixed-brand">
-      <image class="fixed-brand__logo" :src="asset('brand/logo_gc_mark.png')" mode="aspectFill" />
-      <view class="fixed-brand__copy">
-        <text>观潮会集</text>
-        <text>{{ brandSubtitle }}</text>
-      </view>
-      <view class="fixed-brand__capsule"><text /><text /></view>
-    </view>
-
     <view v-if="templateKind === 'home'" class="fixed-stack">
       <view class="fixed-hero is-home" :style="heroStyle('hero_home_bg.png')">
         <text class="fixed-hero__kicker">观潮会集</text>
-        <text class="fixed-hero__title">{{ textConfig("heroTitle", "潮起谋局  潮落定势") }}</text>
-        <text class="fixed-hero__desc">{{ textConfig("heroSubtitle", "行业会议与创始人社群平台") }}</text>
+        <text v-if="visibleConfig('heroShowTitle', true) && textConfig('heroTitle', '潮起谋局  潮落定势')" class="fixed-hero__title">{{ textConfig("heroTitle", "潮起谋局  潮落定势") }}</text>
+        <text v-if="visibleConfig('heroShowSubtitle', true) && textConfig('heroSubtitle', '行业会议与创始人社群平台')" class="fixed-hero__desc">{{ textConfig("heroSubtitle", "行业会议与创始人社群平台") }}</text>
       </view>
       <view v-if="visibleConfig('noticeBar', true)" class="fixed-notice">
         <image :src="asset('icons/speaker.svg')" mode="aspectFit" />
@@ -70,17 +61,31 @@
 
     <view v-else-if="templateKind === 'schedule'" class="fixed-stack">
       <view class="fixed-hero" :style="heroStyle('hero_schedule_bg.png')">
-        <text class="fixed-hero__title">{{ textConfig("heroTitle", "年度排期") }}</text>
-        <text class="fixed-hero__desc">{{ textConfig("heroSubtitle", "查看观潮会集全年会议安排") }}</text>
+        <text v-if="visibleConfig('heroShowTitle', true) && textConfig('heroTitle', '年度排期')" class="fixed-hero__title">{{ textConfig("heroTitle", "年度排期") }}</text>
+        <text v-if="visibleConfig('heroShowSubtitle', true) && textConfig('heroSubtitle', '查看观潮会集全年会议安排')" class="fixed-hero__desc">{{ textConfig("heroSubtitle", "查看观潮会集全年会议安排") }}</text>
         <button @click="openFirstConference">立即报名</button>
       </view>
-      <scroll-view scroll-x class="fixed-months">
-        <text v-for="month in scheduleMonths" :key="month" :class="{ active: month === scheduleMonths[0] }">{{ month }}</text>
+      <scroll-view scroll-x class="fixed-months" :show-scrollbar="false">
+        <text
+          v-for="month in scheduleMonthOptions"
+          :key="month.key"
+          :class="{ active: month.key === activeScheduleMonth }"
+          @click="selectScheduleMonth(month.key)"
+        >{{ month.label }}</text>
       </scroll-view>
-      <scroll-view scroll-x class="fixed-tabs">
-        <text v-for="tab in scheduleTabs" :key="tab" :class="{ active: tab === scheduleTabs[0] }">{{ tab }}</text>
+      <scroll-view scroll-x class="fixed-tabs" :show-scrollbar="false">
+        <text
+          v-for="tab in scheduleTabs"
+          :key="tab"
+          :class="{ active: tab === activeScheduleCategory }"
+          @click="selectScheduleCategory(tab)"
+        >{{ tab }}</text>
       </scroll-view>
-      <view v-for="item in visibleConferences" :key="item.id" class="fixed-schedule-card" @click="openConference(item.id)">
+      <view v-if="scheduleConferences.length === 0" class="fixed-empty-state">
+        <text>该月份暂无会议</text>
+        <text>可切换其他月份或分类查看全年安排</text>
+      </view>
+      <view v-for="item in scheduleConferences" :key="item.id" class="fixed-schedule-card" @click="openConference(item.id)">
         <view class="fixed-schedule-card__date">
           <text>{{ dayOf(item.startsAt) }}</text>
           <text>{{ weekdayOf(item.startsAt) }}</text>
@@ -97,13 +102,17 @@
 
     <view v-else-if="templateKind === 'registration'" class="fixed-stack">
       <view class="fixed-hero" :style="heroStyle('hero_registration_bg.png')">
-        <text class="fixed-hero__title">{{ textConfig("heroTitle", "会议报名") }}</text>
-        <text class="fixed-hero__desc">{{ textConfig("heroSubtitle", "选择感兴趣的会议，快速报名参与") }}</text>
+        <text v-if="visibleConfig('heroShowTitle', true) && textConfig('heroTitle', '会议报名')" class="fixed-hero__title">{{ textConfig("heroTitle", "会议报名") }}</text>
+        <text v-if="visibleConfig('heroShowSubtitle', true) && textConfig('heroSubtitle', '选择感兴趣的会议，快速报名参与')" class="fixed-hero__desc">{{ textConfig("heroSubtitle", "选择感兴趣的会议，快速报名参与") }}</text>
       </view>
-      <scroll-view scroll-x class="fixed-tabs">
-        <text v-for="tab in registrationTabs" :key="tab" :class="{ active: tab === registrationTabs[0] }">{{ tab }}</text>
+      <scroll-view scroll-x class="fixed-tabs" :show-scrollbar="false">
+        <text v-for="tab in registrationTabs" :key="tab" :class="{ active: tab === activeRegistrationCategory }" @click="activeRegistrationCategory = tab">{{ tab }}</text>
       </scroll-view>
-      <view v-for="item in visibleConferences" :key="item.id" class="fixed-conference-card" @click="openConference(item.id)">
+      <view v-if="registrationConferences.length === 0" class="fixed-empty-state">
+        <text>暂无匹配会议</text>
+        <text>切换分类查看其他可报名场次</text>
+      </view>
+      <view v-for="item in registrationConferences" :key="item.id" class="fixed-conference-card" @click="openConference(item.id)">
         <image v-if="item.coverImageUrl" :src="item.coverImageUrl" mode="aspectFill" />
         <view v-else class="fixed-conference-card__cover">会</view>
         <view class="fixed-conference-card__body">
@@ -118,11 +127,11 @@
 
     <view v-else-if="templateKind === 'mall'" class="fixed-stack">
       <view class="fixed-hero" :style="heroStyle('hero_mall_bg.png')">
-        <text class="fixed-hero__title">{{ textConfig("heroTitle", "会议周边商城") }}</text>
-        <text class="fixed-hero__desc">{{ textConfig("heroSubtitle", "精选会议周边与品牌物料") }}</text>
+        <text v-if="visibleConfig('heroShowTitle', true) && textConfig('heroTitle', '会议周边商城')" class="fixed-hero__title">{{ textConfig("heroTitle", "会议周边商城") }}</text>
+        <text v-if="visibleConfig('heroShowSubtitle', true) && textConfig('heroSubtitle', '精选会议周边与品牌物料')" class="fixed-hero__desc">{{ textConfig("heroSubtitle", "精选会议周边与品牌物料") }}</text>
       </view>
-      <scroll-view scroll-x class="fixed-tabs">
-        <text v-for="tab in mallTabs" :key="tab" :class="{ active: tab === mallTabs[0] }">{{ tab }}</text>
+      <scroll-view scroll-x class="fixed-tabs" :show-scrollbar="false">
+        <text v-for="tab in mallTabs" :key="tab" :class="{ active: tab === activeMallCategory }" @click="activeMallCategory = tab">{{ tab }}</text>
       </scroll-view>
       <view class="fixed-product-grid">
         <view v-for="item in visibleProducts" :key="item.id" class="fixed-product-card" @click="openProduct(item.id)">
@@ -134,12 +143,16 @@
           </view>
         </view>
       </view>
+      <view v-if="visibleProducts.length === 0" class="fixed-empty-state">
+        <text>该分类暂无商品</text>
+        <text>可切换其他分类继续浏览</text>
+      </view>
     </view>
 
     <view v-else-if="templateKind === 'cart'" class="fixed-stack">
       <view class="fixed-hero is-cart" :style="heroStyle('hero_cart_bg.png')">
-        <text class="fixed-hero__title">{{ textConfig("heroTitle", "购物车") }}</text>
-        <text class="fixed-hero__desc">{{ textConfig("heroSubtitle", "已选商品、优惠券和结算信息都可按模块显隐控制") }}</text>
+        <text v-if="visibleConfig('heroShowTitle', true) && textConfig('heroTitle', '购物车')" class="fixed-hero__title">{{ textConfig("heroTitle", "购物车") }}</text>
+        <text v-if="visibleConfig('heroShowSubtitle', true) && textConfig('heroSubtitle', '已选商品、优惠券和结算信息都可按模块显隐控制')" class="fixed-hero__desc">{{ textConfig("heroSubtitle", "已选商品、优惠券和结算信息都可按模块显隐控制") }}</text>
       </view>
       <view class="fixed-strip">
         <text>已选 3 件商品</text>
@@ -200,7 +213,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { ensureLogin } from "@/services/auth";
 import type { ConferenceListItem } from "@/services/conference";
 import type { Product } from "@/services/mall";
@@ -266,25 +279,28 @@ const templateKind = computed<FixedTemplateKind>(() =>
       readString(templateConfig.value.template)
   )
 );
-const brandSubtitle = computed(() => {
-  if (templateKind.value === "mall") return "会议周边商城";
-  if (templateKind.value === "cart") return "购物车结算";
-  if (templateKind.value === "member-center") return "会员中心";
-  if (templateKind.value === "schedule") return "年度排期";
-  return "行业会议与创始人社群平台";
-});
 const visibleConferences = computed(() => props.conferences.slice(0, 8));
-const visibleProducts = computed(() => {
+const allMallProducts = computed(() => {
   if (props.products.length > 0) {
     return props.products.slice(0, 8).map((item, index) => ({
       id: item.id,
       title: item.title,
       imageUrl: item.coverImageUrl || fallbackProducts[index % fallbackProducts.length].imageUrl,
-      price: priceText(item)
+      price: priceText(item),
+      category: item.category?.name || productTypeLabel(item.productType)
     }));
   }
   return fallbackProducts;
 });
+const mallTabs = computed(() => [
+  "全部",
+  ...Array.from(new Set(allMallProducts.value.map((item) => item.category).filter(Boolean))).slice(0, 4)
+]);
+const visibleProducts = computed(() =>
+  activeMallCategory.value === "全部"
+    ? allMallProducts.value
+    : allMallProducts.value.filter((item) => item.category === activeMallCategory.value)
+);
 const loginAvatar = computed(() => readString(runtimeUserContext.value?.avatarUrl) || asset("brand/member_avatar_placeholder.png"));
 const loginTitle = computed(() => runtimeUserContext.value ? `欢迎回来，${memberName.value}` : "欢迎光临，请登录成为会员");
 const loginSubtitle = computed(() => runtimeUserContext.value ? "可查看会议排期、报名权益和会员资料。" : "查看会议排期与报名权益");
@@ -309,10 +325,41 @@ const tagRows = [
   { title: "五大增量生态", items: ["自然", "银发", "赛事", "研学", "情绪"] },
   { title: "五大垂类赛道", items: ["学前", "科创", "舞蹈", "美术", "自主学习"] }
 ];
-const scheduleMonths = ["2026 6月", "2026 8月", "2026 10月", "2026 12月"];
 const scheduleTabs = ["全部", "闭门会", "论坛", "沙龙", "参访", "私董会"];
 const registrationTabs = ["全部", "推荐", "即将开始", "闭门会", "论坛", "沙龙"];
-const mallTabs = ["全部", "文创周边", "办公用品", "伴手礼", "限量礼盒"];
+const selectedScheduleMonth = ref("");
+const selectedScheduleCategory = ref("全部");
+const activeRegistrationCategory = ref("全部");
+const activeMallCategory = ref("全部");
+
+const scheduleMonthOptions = computed(() => {
+  const months = new Map<string, { key: string; label: string; timestamp: number }>();
+  props.conferences.forEach((item) => {
+    const date = parseConferenceDate(item.startsAt);
+    if (!date) return;
+    const key = monthKey(date);
+    if (!months.has(key)) {
+      months.set(key, {
+        key,
+        label: `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`,
+        timestamp: date.getTime()
+      });
+    }
+  });
+  return Array.from(months.values()).sort((a, b) => a.timestamp - b.timestamp);
+});
+const activeScheduleMonth = computed(() => selectedScheduleMonth.value || scheduleMonthOptions.value[0]?.key || "");
+const activeScheduleCategory = computed(() => selectedScheduleCategory.value || "全部");
+const scheduleConferences = computed(() =>
+  visibleConferences.value.filter((item) => {
+    const date = parseConferenceDate(item.startsAt);
+    const matchesMonth = !activeScheduleMonth.value || (date && monthKey(date) === activeScheduleMonth.value);
+    return Boolean(matchesMonth && matchesConferenceCategory(item, activeScheduleCategory.value));
+  })
+);
+const registrationConferences = computed(() =>
+  visibleConferences.value.filter((item) => matchesConferenceCategory(item, activeRegistrationCategory.value))
+);
 const memberMenu = [
   { title: "我的会议", icon: "icons/registration.svg", pageKey: "my-registrations" },
   { title: "收货地址", icon: "icons/address.svg", pageKey: "member-center" },
@@ -321,15 +368,21 @@ const memberMenu = [
   { title: "设置", icon: "icons/settings.svg", pageKey: "member-center" }
 ];
 const fallbackProducts = [
-  { id: "fixed-notebook", title: "观潮笔记本", imageUrl: asset("products/product_notebook.png"), price: "68.00" },
-  { id: "fixed-tote", title: "观潮帆布袋", imageUrl: asset("products/product_tote_bag.png"), price: "88.00" },
-  { id: "fixed-mug", title: "会议马克杯", imageUrl: asset("products/product_mug.png"), price: "59.00" },
-  { id: "fixed-badge", title: "嘉宾徽章", imageUrl: asset("products/product_guest_badge.png"), price: "39.00" },
-  { id: "fixed-gift", title: "会议礼盒", imageUrl: asset("products/product_gift_box.png"), price: "198.00" },
-  { id: "fixed-pen", title: "签字笔", imageUrl: asset("products/product_pen.png"), price: "19.00" },
-  { id: "fixed-umbrella", title: "商务伞", imageUrl: asset("products/product_umbrella.png"), price: "99.00" },
-  { id: "fixed-bookmark", title: "金属书签", imageUrl: asset("products/product_bookmark.png"), price: "29.00" }
+  { id: "fixed-notebook", title: "观潮笔记本", imageUrl: asset("products/product_notebook.png"), price: "68.00", category: "文创周边" },
+  { id: "fixed-tote", title: "观潮帆布袋", imageUrl: asset("products/product_tote_bag.png"), price: "88.00", category: "文创周边" },
+  { id: "fixed-mug", title: "会议马克杯", imageUrl: asset("products/product_mug.png"), price: "59.00", category: "办公用品" },
+  { id: "fixed-badge", title: "嘉宾徽章", imageUrl: asset("products/product_guest_badge.png"), price: "39.00", category: "文创周边" },
+  { id: "fixed-gift", title: "会议礼盒", imageUrl: asset("products/product_gift_box.png"), price: "198.00", category: "伴手礼" },
+  { id: "fixed-pen", title: "签字笔", imageUrl: asset("products/product_pen.png"), price: "19.00", category: "办公用品" },
+  { id: "fixed-umbrella", title: "商务伞", imageUrl: asset("products/product_umbrella.png"), price: "99.00", category: "伴手礼" },
+  { id: "fixed-bookmark", title: "金属书签", imageUrl: asset("products/product_bookmark.png"), price: "29.00", category: "办公用品" }
 ];
+
+function productTypeLabel(type: string): string {
+  if (type === "VIRTUAL") return "数字内容";
+  if (type === "SERVICE") return "会议服务";
+  return "文创周边";
+}
 
 function asset(path: string): string {
   return `${assetRoot.value}/${path}`;
@@ -337,11 +390,18 @@ function asset(path: string): string {
 
 function heroStyle(file: string) {
   const imageUrl = readString(templateConfig.value.heroImageUrl) || asset(`heroes/${file}`);
-  return { backgroundImage: `url(${imageUrl})` };
+  const mode = readString(templateConfig.value.heroImageMode) || "contain";
+  return {
+    backgroundImage: `url(${imageUrl})`,
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: mode === "cover" ? "cover" : mode === "width" ? "100% auto" : "contain"
+  };
 }
 
 function textConfig(key: string, fallback: string): string {
-  return readString(templateConfig.value[key]) || fallback;
+  const value = templateConfig.value[key];
+  return typeof value === "string" ? value.trim() : fallback;
 }
 
 function visibleConfig(key: string, fallback: boolean): boolean {
@@ -358,8 +418,31 @@ function normalizeKind(value: string): FixedTemplateKind {
 }
 
 function openFirstConference() {
-  const id = visibleConferences.value[0]?.id;
+  const id = scheduleConferences.value[0]?.id || visibleConferences.value[0]?.id;
   if (id) openConference(id);
+}
+
+function selectScheduleMonth(key: string): void {
+  selectedScheduleMonth.value = key;
+}
+
+function selectScheduleCategory(category: string): void {
+  selectedScheduleCategory.value = category;
+}
+
+function parseConferenceDate(value: string): Date | null {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function monthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function matchesConferenceCategory(item: ConferenceListItem, category: string): boolean {
+  if (!category || category === "全部" || category === "推荐") return true;
+  if (category === "即将开始") return Date.parse(item.startsAt) > Date.now();
+  return [item.title, item.summary, item.location].some((value) => value?.includes(category));
 }
 
 function openConference(id: string) {
@@ -507,7 +590,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, unknown> {
-  const keys = ["templateKey", "kind", "pageType", "template", "assetRoot", "heroTitle", "heroSubtitle", "heroImageUrl", "noticeText", "growthValue", "items"];
+  const keys = ["templateKey", "kind", "pageType", "template", "assetRoot", "heroTitle", "heroSubtitle", "heroImageUrl", "heroShowTitle", "heroShowSubtitle", "heroImageMode", "noticeText", "growthValue", "items"];
   return Object.fromEntries(keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
 }
 </script>
@@ -517,77 +600,33 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
 .fixed-stack {
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
+  gap: 16rpx;
 }
 
 .fixed-template {
-  color: #101b2d;
+  color: #172033;
 }
 
-.fixed-brand {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 6rpx 4rpx 0;
-}
-
-.fixed-brand__logo {
-  width: 58rpx;
-  height: 58rpx;
-  border-radius: 50%;
-}
-
-.fixed-brand__copy {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2rpx;
-}
-
-.fixed-brand__copy text:first-child {
-  font-size: 30rpx;
-  font-weight: 900;
-}
-
-.fixed-brand__copy text:last-child,
 .fixed-muted {
   color: #697386;
   font-size: 24rpx;
   line-height: 1.5;
 }
 
-.fixed-brand__capsule {
-  display: flex;
-  align-items: center;
-  gap: 18rpx;
-  padding: 10rpx 24rpx;
-  border: 1rpx solid rgba(8, 23, 44, 0.1);
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.fixed-brand__capsule text {
-  display: block;
-  width: 12rpx;
-  height: 12rpx;
-  border-radius: 50%;
-  background: #111827;
-}
-
 .fixed-hero {
-  min-height: 360rpx;
+  min-height: 394rpx;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  gap: 14rpx;
+  gap: 10rpx;
   overflow: hidden;
-  padding: 38rpx;
-  border-radius: 34rpx;
+  padding: 32rpx;
+  border-radius: 24rpx;
   background-color: #071426;
   background-position: center;
   background-size: cover;
   color: #fff;
-  box-shadow: 0 20rpx 60rpx rgba(15, 23, 42, 0.16);
+  box-shadow: 0 12rpx 34rpx rgba(23, 32, 51, 0.12);
 }
 
 .fixed-hero__kicker {
@@ -598,9 +637,9 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
 
 .fixed-hero__title {
   max-width: 520rpx;
-  font-size: 52rpx;
-  font-weight: 900;
-  line-height: 1.16;
+  font-size: 42rpx;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .fixed-hero__desc {
@@ -618,11 +657,11 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
   height: 66rpx;
   padding: 0 30rpx;
   border: 0;
-  border-radius: 999rpx;
-  background: #b99643;
+  border-radius: 16rpx;
+  background: #a98231;
   color: #fff;
   font-size: 26rpx;
-  font-weight: 900;
+  font-weight: 700;
   line-height: 66rpx;
 }
 
@@ -639,10 +678,10 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
 .fixed-coupon-row,
 .fixed-member-stats,
 .fixed-menu-card {
-  border: 1rpx solid rgba(203, 213, 225, 0.7);
-  border-radius: 28rpx;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 14rpx 34rpx rgba(15, 23, 42, 0.08);
+  border: 1rpx solid #e3e7ea;
+  border-radius: 20rpx;
+  background: #fff;
+  box-shadow: 0 8rpx 24rpx rgba(23, 32, 51, 0.05);
 }
 
 .fixed-notice,
@@ -704,9 +743,10 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
   flex-direction: column;
   align-items: center;
   gap: 10rpx;
-  padding: 28rpx 12rpx;
-  border-radius: 28rpx;
-  background: rgba(255, 255, 255, 0.9);
+  padding: 24rpx 12rpx;
+  border: 1rpx solid #e6e9ec;
+  border-radius: 18rpx;
+  background: #fff;
 }
 
 .fixed-quick-card image {
@@ -796,22 +836,27 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
 
 .fixed-tabs text,
 .fixed-months text {
-  margin-right: 12rpx;
+  min-height: 56rpx;
+  margin-right: 10rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid #e2e6e9;
   background: #fff;
   color: #6b7280;
+  line-height: 56rpx;
 }
 
 .fixed-tabs text.active,
 .fixed-months text.active {
   background: #071426;
+  border-color: #071426;
   color: #fff;
 }
 
 .fixed-schedule-card {
   display: grid;
-  grid-template-columns: 142rpx minmax(0, 1fr);
-  gap: 20rpx;
-  padding: 22rpx;
+  grid-template-columns: 118rpx minmax(0, 1fr);
+  gap: 18rpx;
+  padding: 22rpx 20rpx;
 }
 
 .fixed-schedule-card__date {
@@ -823,9 +868,9 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
 }
 
 .fixed-schedule-card__date text:first-child {
-  color: #b99643;
-  font-size: 46rpx;
-  font-weight: 900;
+  color: #9b762d;
+  font-size: 42rpx;
+  font-weight: 800;
 }
 
 .fixed-schedule-card__date text:not(:first-child) {
@@ -844,8 +889,8 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
   align-self: flex-start;
   padding: 6rpx 14rpx;
   border-radius: 999rpx;
-  background: #f2ead9;
-  color: #946f27;
+  background: #f5efe2;
+  color: #8c6824;
   font-size: 22rpx;
   font-weight: 900;
 }
@@ -853,8 +898,8 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
 .fixed-conference-card {
   display: grid;
   grid-template-columns: 186rpx minmax(0, 1fr);
-  gap: 20rpx;
-  padding: 20rpx;
+  gap: 18rpx;
+  padding: 18rpx;
 }
 
 .fixed-conference-card > image,
@@ -917,7 +962,7 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
   height: 58rpx;
   border: 0;
   border-radius: 50%;
-  background: #071426;
+  background: #172033;
   color: #fff;
   font-size: 30rpx;
   line-height: 58rpx;
@@ -1054,6 +1099,32 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
   border-bottom: 1rpx solid #eef0f3;
 }
 
+.fixed-empty-state {
+  display: flex;
+  min-height: 150rpx;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 28rpx;
+  border: 1rpx dashed #d6dce0;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.72);
+  color: #6b7280;
+  text-align: center;
+}
+
+.fixed-empty-state text:first-child {
+  color: #172033;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.fixed-empty-state text:last-child {
+  font-size: 23rpx;
+  line-height: 1.5;
+}
+
 .fixed-menu-card view:last-child {
   border-bottom: 0;
 }
@@ -1070,9 +1141,7 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
 
 /* Guanchao fixed template alignment */
 .fixed-template {
-  background:
-    radial-gradient(circle at 50% 0%, rgba(185, 150, 67, 0.1), transparent 34%),
-    #f8f5ee;
+  background: transparent;
   color: #071426;
 }
 
@@ -1100,8 +1169,8 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
 .fixed-order-card,
 .fixed-form-card {
   border-color: rgba(185, 150, 67, 0.2);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 245, 238, 0.94));
-  box-shadow: 0 12rpx 30rpx rgba(7, 20, 38, 0.07);
+  background: #fff;
+  box-shadow: 0 8rpx 24rpx rgba(7, 20, 38, 0.05);
 }
 
 .fixed-quick-card__icon,
@@ -1117,8 +1186,12 @@ function pickTemplateTopLevel(value: Record<string, unknown>): Record<string, un
 .fixed-product-card button,
 .fixed-checkout button,
 .fixed-form-card button {
-  background: linear-gradient(135deg, #b99643, #8f6b24);
+  background: #9b762d;
   color: #fff;
-  box-shadow: 0 12rpx 28rpx rgba(143, 107, 36, 0.2);
+  box-shadow: 0 8rpx 20rpx rgba(143, 107, 36, 0.16);
+}
+
+.fixed-template button::after {
+  border: 0;
 }
 </style>

@@ -1,9 +1,5 @@
 <template>
   <view class="page-renderer" :style="rootStyle">
-    <view v-if="governorWarnings.length > 0" class="page-renderer__warning">
-      <text>页面已通过 DSL Runtime 校验，存在 {{ governorWarnings.length }} 条治理提示。</text>
-    </view>
-
     <CmsVisualRenderer
       v-if="useCmsVisualRenderer"
       :components="visualComponents"
@@ -23,7 +19,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { PageDsl, ResolvedDslNode } from "@conference/dsl-runtime";
-import { createGovernedRuntimeContext, governRender, type RenderGovernorWarning } from "@conference/render-governor";
+import { createGovernedRuntimeContext, governRender } from "@conference/render-governor";
 import CmsVisualRenderer from "@/components/cms-visual/CmsVisualRenderer.vue";
 import { cmsVisualComponentsFromDsl, hasCmsVisualComponents } from "@/components/cms-visual/useCmsVisualContext";
 import DslRenderTree from "@/components/design-system/DslRenderTree.vue";
@@ -80,7 +76,6 @@ const runtimeContext = computed(() =>
 );
 
 const governedResult = computed(() => governRender(props.dsl, { context: runtimeContext.value, allowLegacyDslFallback: false }));
-const governorWarnings = computed<RenderGovernorWarning[]>(() => governedResult.value.warnings);
 const visualComponents = computed(() => {
   const components = cmsVisualComponentsFromDsl(props.dsl);
   return hasCmsVisualComponents(props.dsl) ? components : components.filter(isFixedBusinessTemplateComponent);
@@ -223,13 +218,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   gap: var(--cms-space-section-y);
 }
 
-.page-renderer__warning {
-  padding: 16rpx 24rpx;
-  border: 1px solid var(--cms-warning-soft);
-  border-radius: var(--cms-radius-md);
-  background: var(--cms-warning-soft);
-  color: var(--cms-warning);
-  font-size: 24rpx;
-  line-height: 34rpx;
-}
 </style>

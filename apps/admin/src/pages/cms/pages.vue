@@ -146,7 +146,7 @@
               <div class="phone-screen">
                 <ThemeDynamicBackgroundPreview v-if="previewShowDynamicBackground" :theme="previewTheme" />
                 <div class="phone-screen__content">
-                  <BusinessPreviewContext v-if="businessPreviewContext" :context="businessPreviewContext" />
+                  <CmsBusinessPreview v-if="businessPreviewContext" :context="businessPreviewContext" />
                   <template v-if="previewComponents.length > 0">
                     <div
                       v-for="component in previewComponents"
@@ -171,7 +171,7 @@
                       <component-preview :item="component" :name="presetName(component.type)" />
                     </div>
                   </template>
-                  <div v-else class="preview-empty">页面暂无展示内容</div>
+                  <div v-else-if="!businessPreviewContext" class="preview-empty">页面暂无展示内容</div>
                 </div>
               </div>
               <div v-if="previewTabbarItems.length > 0" class="phone-tabbar">
@@ -242,7 +242,7 @@
             <el-form-item>
               <template #label>顶部标题 Logo<MaterialSpecHelp spec-key="topTitleLogo" /></template>
               <div class="field-row">
-                <el-input v-model="pageMeta.navLogoUrl" placeholder="建议 64x64 或 96x96，PNG/SVG/WebP/GIF，单张不超过 300KB" />
+                <el-input v-model="pageMeta.navLogoUrl" placeholder="建议 64x64 或 96x96，PNG/SVG/WebP/GIF" />
                 <el-button @click="openPageMetaImagePicker('navLogoUrl')">应用素材库</el-button>
               </div>
               <p class="form-help">用于后台手机预览中的小程序顶部标题。微信原生导航栏不支持直接插入图片，若正式端需要展示 Logo，需使用自定义导航栏页面。</p>
@@ -253,7 +253,7 @@
                 <el-input v-model="pageMeta.navLogoDynamicUrl" placeholder="可填 GIF/APNG/WebP 动图 URL，不填则使用静态 Logo" />
                 <el-button @click="openPageMetaImagePicker('navLogoDynamicUrl')">应用素材库</el-button>
               </div>
-              <p class="form-help">动态素材建议控制在 300KB 内，避免影响小程序首屏加载。</p>
+              <p class="form-help">建议减少动图帧数并保留透明留白，避免影响小程序首屏加载。</p>
             </el-form-item>
             <el-form-item label="微信分享标题">
               <el-input v-model="pageMeta.shareTitle" placeholder="转发给朋友时展示的标题" />
@@ -264,7 +264,7 @@
             <el-form-item>
               <template #label>微信分享封面<MaterialSpecHelp spec-key="shareCover" /></template>
               <div class="field-row">
-                <el-input v-model="pageMeta.shareImageUrl" placeholder="建议 500x400 或 5:4，JPG/PNG，单张不超过 1MB" />
+                <el-input v-model="pageMeta.shareImageUrl" placeholder="建议 500x400 或 5:4，JPG/PNG" />
                 <el-button @click="openPageMetaImagePicker">应用素材库</el-button>
               </div>
             </el-form-item>
@@ -491,7 +491,7 @@
                               <el-input v-model="block.imageUrl" placeholder="从素材库选择或粘贴图片地址" />
                               <el-button @click="openRichBlockMaterialPicker(selectedComponent, block)">素材库</el-button>
                             </div>
-                            <small>图文配图建议宽度 750px，JPG/PNG/WebP，单张不超过 2MB。可连续添加多张图片块。</small>
+                            <small>图文配图建议宽度 750px，使用 JPG/PNG/WebP。可连续添加多张图片块。</small>
                           </label>
                           <label v-if="block.type === 'image'">
                             <span>图片显示方式</span>
@@ -634,7 +634,7 @@
                               <el-input v-model="entry.iconUrl" placeholder="从素材库选择、上传后粘贴 URL，或填写图片地址" />
                               <el-button @click="openEntryMaterialPicker(selectedComponent, entry, 'iconUrl')">素材库</el-button>
                             </div>
-                            <small>建议 96x96 PNG/SVG，单张不超过 200KB。</small>
+                            <small>建议 96x96 PNG/SVG，图形主体居中并保留适当留白。</small>
                           </label>
                           <label>
                             <span>动态图标 <MaterialSpecHelp spec-key="animatedIcon" /></span>
@@ -642,7 +642,7 @@
                               <el-input v-model="entry.dynamicIconUrl" placeholder="可填写 GIF/APNG 动图地址；不填则使用静态图标" />
                               <el-button @click="openEntryMaterialPicker(selectedComponent, entry, 'dynamicIconUrl')">素材库</el-button>
                             </div>
-                            <small>建议 96x96 或 128x128，GIF/APNG/WebP/PNG/SVG，单张不超过 500KB。</small>
+                            <small>建议 96x96 或 128x128，使用 GIF/APNG/WebP/PNG/SVG。</small>
                           </label>
                           <label>
                             <span>内置图标</span>
@@ -1018,6 +1018,7 @@ import {
   View
 } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import CmsBusinessPreview from "../../components/cms/CmsBusinessPreview.vue";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import ThemeDynamicBackgroundPreview from "../../components/ThemeDynamicBackgroundPreview.vue";
 import type { PageDsl } from "@conference/dsl-runtime";
@@ -1946,7 +1947,9 @@ const activePresetGroupMeta = computed(() => {
     supported: group?.items.filter((preset) => canAddPreset(preset)).length ?? 0
   };
 });
-const previewComponents = computed(() => components.value.filter((item) => item.enabled));
+const previewComponents = computed(() =>
+  components.value.filter((item) => item.enabled && !(businessPreviewContext.value && item.type === "fixed-business-template"))
+);
 const unsupportedEnabledComponents = computed(() =>
   components.value.filter((item) => item.enabled && ["unsupported", "planned"].includes(componentSupport(item.type).status))
 );
@@ -3282,6 +3285,9 @@ function createFixedBusinessTemplateComponent(option: FixedBusinessTemplateOptio
       heroTitle: option.heroTitle,
       heroSubtitle: option.heroSubtitle,
       heroImageUrl: "",
+      heroShowTitle: true,
+      heroShowSubtitle: true,
+      heroImageMode: "contain",
       items: defaultFixedHomeEntries(),
       noticeText: option.noticeText || "",
       growthValue: option.growthValue || "",
@@ -4147,6 +4153,19 @@ function fieldsFor(type: string): ConfigField[] {
       { key: "heroTitle", label: "主标题", placeholder: "请输入模板主标题" },
       { key: "heroSubtitle", label: "副标题", placeholder: "请输入模板副标题" },
       { key: "heroImageUrl", label: "Hero 背景图", placeholder: "从素材库选择或粘贴图片地址" },
+      { key: "heroShowTitle", label: "显示主标题", kind: "switch", fallback: "true" },
+      { key: "heroShowSubtitle", label: "显示副标题", kind: "switch", fallback: "true" },
+      {
+        key: "heroImageMode",
+        label: "图片显示方式",
+        kind: "select",
+        fallback: "contain",
+        options: [
+          { label: "完整显示", value: "contain" },
+          { label: "等比裁切", value: "cover" },
+          { label: "宽度铺满", value: "width" }
+        ]
+      },
       { key: "items", label: "首页快捷入口", kind: "entry-list" },
       { key: "noticeText", label: "公告文案", kind: "textarea", rows: 2, placeholder: "首页公告/说明文案" },
       { key: "growthValue", label: "示例成长值", placeholder: "2568" },
@@ -4535,7 +4554,7 @@ function groupedFieldsFor(type: string): ConfigFieldGroup[] {
 
   if (type === "fixed-business-template") {
     return compactGroups([
-      { key: "template", title: "固定模板", fields: fieldsByKeys(fields, ["templateKey", "heroTitle", "heroSubtitle", "heroImageUrl", "noticeText", "growthValue"]) },
+      { key: "template", title: "固定模板", fields: fieldsByKeys(fields, ["templateKey", "heroShowTitle", "heroTitle", "heroShowSubtitle", "heroSubtitle", "heroImageUrl", "heroImageMode", "noticeText", "growthValue"]) },
       { key: "quick-entry", title: "首页快捷入口", fields: fieldsByKeys(fields, ["items"]) },
       { key: "visibility", title: "模块显隐", fields: fieldsByKeys(fields, ["noticeBar", "loginCard", "quickGrid", "highlightStrip", "statsCard", "conferenceModels", "tagRows"]) }
     ]);
@@ -5606,11 +5625,21 @@ const ComponentPreview = defineComponent({
       };
       return value("heroSubtitle", map[kind] || map.home);
     };
-    const fixedHero = (kind: string) =>
-      h("div", { class: "preview-fixed-hero", style: { backgroundImage: `url(${value("heroImageUrl") || fixedAsset(`heroes/${fixedHeroFile(kind)}`)})` } }, [
-        h("strong", fixedHeroTitle(kind)),
-        h("span", fixedHeroSubtitle(kind))
-      ]);
+    const fixedHero = (kind: string) => {
+      const mode = value("heroImageMode", "contain");
+      const children = [];
+      if (booleanConfig(props.item, "heroShowTitle", true) && fixedHeroTitle(kind)) children.push(h("strong", fixedHeroTitle(kind)));
+      if (booleanConfig(props.item, "heroShowSubtitle", true) && fixedHeroSubtitle(kind)) children.push(h("span", fixedHeroSubtitle(kind)));
+      return h("div", {
+        class: "preview-fixed-hero",
+        style: {
+          backgroundImage: `url(${value("heroImageUrl") || fixedAsset(`heroes/${fixedHeroFile(kind)}`)})`,
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+          backgroundSize: mode === "cover" ? "cover" : mode === "width" ? "100% auto" : "contain"
+        }
+      }, children);
+    };
     const fixedProductRows = () =>
       (productOptions.value.length > 0
         ? productOptions.value.slice(0, 4).map((item, index) => ({
@@ -5624,17 +5653,33 @@ const ComponentPreview = defineComponent({
             { title: "会议马克杯", price: "¥59.00", image: fixedAsset("products/product_mug.png") },
             { title: "会议礼盒", price: "¥198.00", image: fixedAsset("products/product_gift_box.png") }
           ]);
+    const fixedScheduleMonth = ref("");
+    const fixedScheduleCategory = ref("全部");
+    const fixedScheduleMonths = () => {
+      const months = new Map<string, { key: string; label: string; timestamp: number }>();
+      meetings().forEach((meeting) => {
+        const date = new Date(meeting.startAt);
+        if (Number.isNaN(date.getTime())) return;
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        if (!months.has(key)) months.set(key, { key, label: `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`, timestamp: date.getTime() });
+      });
+      return Array.from(months.values()).sort((a, b) => a.timestamp - b.timestamp);
+    };
+    const fixedScheduleRows = () => {
+      const activeMonth = fixedScheduleMonth.value || fixedScheduleMonths()[0]?.key || "";
+      const category = fixedScheduleCategory.value;
+      return meetings().filter((meeting) => {
+        const date = new Date(meeting.startAt);
+        const month = Number.isNaN(date.getTime()) ? "" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        const monthMatched = !activeMonth || month === activeMonth;
+        const categoryMatched = category === "全部" || [meeting.title, meeting.summary, meeting.location].some((item) => item?.includes(category));
+        return monthMatched && categoryMatched;
+      });
+    };
     const fixedTemplatePreview = () => {
       const kind = fixedKind();
       const rows = meetings().slice(0, 3);
-      const children = [
-        h("div", { class: "preview-fixed-brand" }, [
-          h("img", { src: fixedAsset("brand/logo_gc_mark.png"), alt: "" }),
-          h("span", "观潮会集"),
-          h("small", kind === "member-center" ? "会员中心" : kind === "cart" ? "购物车结算" : "行业会议与创始人社群平台")
-        ]),
-        fixedHero(kind)
-      ];
+      const children = [fixedHero(kind)];
       if (kind === "home") {
         const quickEntries = entryItems().slice(0, 3);
         if (booleanConfig(props.item, "noticeBar", true)) children.push(h("div", { class: "preview-fixed-notice" }, value("noticeText", "欢迎来到观潮会集，查看年度排期、会议报名与会员权益。")));
@@ -5651,11 +5696,24 @@ const ComponentPreview = defineComponent({
         if (booleanConfig(props.item, "highlightStrip", true)) children.push(h("div", { class: "preview-fixed-strip" }, [h("strong", "五大增量生态 × 五大垂类赛道"), h("button", "查看详情")]));
         if (booleanConfig(props.item, "statsCard", true)) children.push(h("div", { class: "preview-fixed-stats" }, [h("span", "1500+ 头部创始人"), h("span", "20+ 覆盖城市业态")]));
       } else if (kind === "schedule") {
-        children.push(h("div", { class: "preview-fixed-tabs" }, ["全部", "闭门会", "论坛", "沙龙"].map((item, index) => h("span", { class: index === 0 ? "active" : "" }, item))));
-        children.push(...rows.map((meeting) => h("div", { class: "preview-fixed-schedule-card" }, [h("b", previewScheduleDay(meeting.startAt)), h("div", [h("strong", meeting.title), h("small", meeting.location)]), h("button", "查看详情")])));
+        const months = fixedScheduleMonths();
+        const activeMonth = fixedScheduleMonth.value || months[0]?.key || "";
+        children.push(h("div", { class: "preview-fixed-months" }, months.map((month) => h("button", {
+          class: month.key === activeMonth ? "active" : "",
+          onClick: () => { fixedScheduleMonth.value = month.key; }
+        }, month.label))));
+        children.push(h("div", { class: "preview-fixed-tabs" }, ["全部", "闭门会", "论坛", "沙龙", "参访"].map((item) => h("button", {
+          class: fixedScheduleCategory.value === item ? "active" : "",
+          onClick: () => { fixedScheduleCategory.value = item; }
+        }, item))));
+        const filteredRows = fixedScheduleRows();
+        if (filteredRows.length === 0) children.push(h("div", { class: "preview-fixed-empty" }, [h("strong", "该月份暂无会议"), h("span", "可切换其他月份或分类查看")]))
+        else children.push(...filteredRows.map((meeting) => h("div", { class: "preview-fixed-schedule-card" }, [h("b", previewScheduleDay(meeting.startAt)), h("div", [h("strong", meeting.title), h("small", meeting.location)]), h("button", "查看详情")])));
       } else if (kind === "registration") {
+        children.push(h("div", { class: "preview-fixed-tabs" }, ["全部", "推荐", "即将开始", "闭门会"].map((item, index) => h("span", { class: index === 0 ? "active" : "" }, item))));
         children.push(...rows.map((meeting) => h("div", { class: "preview-fixed-conference-card" }, [meeting.image ? h("img", { src: meeting.image, alt: "" }) : h("span", "会"), h("div", [h("strong", meeting.title), h("small", `${meeting.time} · ${meeting.location}`), h("button", "立即报名")])])));
       } else if (kind === "mall") {
+        children.push(h("div", { class: "preview-fixed-tabs" }, ["全部", "文创周边", "办公用品", "伴手礼"].map((item, index) => h("span", { class: index === 0 ? "active" : "" }, item))));
         children.push(h("div", { class: "preview-fixed-products" }, fixedProductRows().map((item) => h("div", [h("img", { src: item.image, alt: "" }), h("strong", item.title), h("span", item.price)]))));
       } else if (kind === "cart") {
         children.push(h("div", { class: "preview-fixed-strip" }, [h("strong", "已选 3 件商品"), h("button", "编辑")]));
@@ -12096,6 +12154,93 @@ function looksLikePreviewImage(value: string): boolean {
   gap: 8px;
   padding: 12px;
   font-size: 11px;
+}
+
+.phone-screen :deep(.preview-fixed-template) {
+  gap: 9px;
+  color: #172033;
+}
+
+.phone-screen :deep(.preview-fixed-hero) {
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  padding: 15px;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgb(23 32 51 / 10%);
+}
+
+.phone-screen :deep(.preview-fixed-hero strong) {
+  font-size: 21px;
+}
+
+.phone-screen :deep(.preview-fixed-notice),
+.phone-screen :deep(.preview-fixed-login),
+.phone-screen :deep(.preview-fixed-strip),
+.phone-screen :deep(.preview-fixed-stats),
+.phone-screen :deep(.preview-fixed-schedule-card),
+.phone-screen :deep(.preview-fixed-conference-card),
+.phone-screen :deep(.preview-fixed-cart-row),
+.phone-screen :deep(.preview-fixed-member-card),
+.phone-screen :deep(.preview-fixed-menu) {
+  border-color: #e1e7ea;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgb(23 32 51 / 5%);
+}
+
+.phone-screen :deep(.preview-fixed-months),
+.phone-screen :deep(.preview-fixed-tabs) {
+  display: flex;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.phone-screen :deep(.preview-fixed-months button),
+.phone-screen :deep(.preview-fixed-tabs button),
+.phone-screen :deep(.preview-fixed-tabs span) {
+  min-width: max-content;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid #e1e6e9;
+  border-radius: 7px;
+  background: #fff;
+  color: #687384;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 26px;
+  white-space: nowrap;
+}
+
+.phone-screen :deep(.preview-fixed-months button.active),
+.phone-screen :deep(.preview-fixed-tabs button.active),
+.phone-screen :deep(.preview-fixed-tabs span.active) {
+  border-color: #172033;
+  background: #172033;
+  color: #fff;
+}
+
+.phone-screen :deep(.preview-fixed-empty) {
+  display: grid;
+  min-height: 92px;
+  place-items: center;
+  gap: 3px;
+  padding: 14px;
+  border: 1px dashed #d8dee2;
+  border-radius: 11px;
+  background: #f8faf9;
+  color: #6d7787;
+  text-align: center;
+}
+
+.phone-screen :deep(.preview-fixed-empty strong) {
+  color: #172033;
+  font-size: 13px;
+}
+
+.phone-screen :deep(.preview-fixed-template button) {
+  border-radius: 8px;
+  background: #9b762d;
+  box-shadow: none;
 }
 
 @media (max-width: 1360px) {

@@ -35,7 +35,7 @@
         <el-table-column label="普通图标" min-width="190">
           <template #header>普通图标<MaterialSpecHelp spec-key="tabbarIcon" /></template>
           <template #default="{ row }">
-            <el-input v-model="row.iconUrl" placeholder="建议 96x96 PNG/SVG，单张不超过 200KB" />
+            <el-input v-model="row.iconUrl" placeholder="建议 96x96 PNG/SVG，图标主体居中" />
             <el-select class="icon-library" placeholder="图标库" @change="(value: string) => applyIcon(row, value)">
               <el-option v-for="icon in iconLibrary" :key="icon.key" :label="icon.label" :value="icon.key" />
             </el-select>
@@ -43,7 +43,7 @@
         </el-table-column>
         <el-table-column label="选中图标" min-width="190">
           <template #header>选中图标<MaterialSpecHelp spec-key="tabbarIcon" /></template>
-          <template #default="{ row }"><el-input v-model="row.selectedIconUrl" placeholder="建议 96x96 PNG/SVG，单张不超过 200KB" /></template>
+          <template #default="{ row }"><el-input v-model="row.selectedIconUrl" placeholder="建议 96x96 PNG/SVG，图标主体居中" /></template>
         </el-table-column>
         <el-table-column label="显示" width="80">
           <template #default="{ row }"><el-switch v-model="row.visible" /></template>

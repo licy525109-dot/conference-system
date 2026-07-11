@@ -190,7 +190,7 @@
         <el-form-item label="文档标题"><el-input v-model="docForm.title" /></el-form-item>
         <el-form-item label="文档类型"><el-select v-model="docForm.sourceType"><el-option label="文本" value="TEXT" /><el-option label="Markdown" value="MD" /><el-option label="PDF" value="PDF" /></el-select></el-form-item>
         <el-form-item><template #label>文档状态<FieldHelp content="草稿不建议对用户回答；启用会参与检索；解析失败会保留失败原因；停用不参与检索。" /></template><el-select v-model="docForm.status"><el-option label="草稿" value="DRAFT" /><el-option label="处理中" value="PROCESSING" /><el-option label="启用" value="ACTIVE" /><el-option label="解析失败" value="FAILED" /><el-option label="停用" value="DISABLED" /></el-select></el-form-item>
-        <el-form-item label="上传资料文件"><input type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf" @change="readDocumentFile" /><p class="muted-text">txt/md 由浏览器读取；PDF 单个不超过 10MB，由后端解析文本。扫描图片 PDF 可能无法解析。</p></el-form-item>
+        <el-form-item label="上传资料文件"><input type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf" @change="readDocumentFile" /><p class="muted-text">txt/md 由浏览器读取；PDF 由后端解析文本，建议使用可复制文字的文档。扫描图片 PDF 可能无法解析。</p></el-form-item>
         <el-form-item label="资料内容"><el-input v-model="docForm.contentText" type="textarea" :rows="10" :placeholder="docForm.sourceType === 'PDF' ? 'PDF 将由后端解析，解析结果保存后可在列表查看分块数；也可改为 TEXT/MD 粘贴文本。' : '粘贴会议介绍、议程、嘉宾、交通、报名须知等资料'" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="docVisible = false">取消</el-button><el-button type="primary" :disabled="!canSaveDocument" @click="saveDocument">保存</el-button></template>

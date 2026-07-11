@@ -126,7 +126,7 @@
         </el-form-item>
         <el-form-item>
           <template #label>外部 URL<MaterialSpecHelp :spec="currentUploadSpec" /></template>
-          <el-input v-model="form.url" placeholder="不上传文件时填写；请确保外部素材也符合建议尺寸与大小" />
+          <el-input v-model="form.url" placeholder="不上传文件时填写；请确保外部素材符合建议尺寸与格式" />
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="3" /></el-form-item>
       </el-form>
