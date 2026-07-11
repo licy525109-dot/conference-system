@@ -149,18 +149,18 @@
       </view>
 
       <view v-else-if="component.type === 'conference-tabs'" class="cms-section">
-        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "会议分类切换" }}</text>
+        <text v-if="stringConfig(component, 'title')" class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") }}</text>
         <view class="cms-tabs">
           <text
-            v-for="(tab, index) in conferenceTabItems(component)"
+            v-for="tab in conferenceTabItems(component)"
             :key="tab.label"
-            :class="['cms-tab', index === 0 ? 'active' : '']"
+            :class="['cms-tab', isTagActive(component, tab) ? 'active' : '']"
             @click="submitTag(component, tab)"
           >
             {{ tab.label }}
           </text>
         </view>
-        <view v-if="conferences.length === 0" class="cms-empty">暂无可报名会议</view>
+        <view v-if="limitedConferences(component).length === 0" class="cms-empty">暂无匹配会议，可切换其他分类</view>
         <view v-for="(item, index) in limitedConferences(component).slice(0, 3)" :key="item.id" :class="conferenceCardClass(component, 'cms-mini-card')" :style="conferenceCardStyle(component)">
           <image
             v-if="showConferenceCover(component, item)"
@@ -516,10 +516,10 @@
       </view>
 
       <view v-else-if="component.type === 'tag-filter'" class="cms-section cms-tags">
-        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "热门主题" }}</text>
+        <text v-if="stringConfig(component, 'title')" class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") }}</text>
         <view v-if="tagItems(component).length === 0" class="cms-empty">暂无标签</view>
         <view v-else class="cms-tag-list">
-          <text v-for="item in tagItems(component)" :key="item.label" class="cms-tag" @click="submitTag(component, item)">{{ item.label }}</text>
+          <text v-for="item in tagItems(component)" :key="item.label" :class="['cms-tag', isTagActive(component, item) ? 'active' : '']" @click="submitTag(component, item)">{{ item.label }}</text>
         </view>
       </view>
 
@@ -671,6 +671,8 @@ const mallProductLoading = ref<Record<string, boolean>>({});
 const couponStatusMap = ref<Record<string, string>>({});
 const scheduleMonthMap = ref<Record<string, string>>({});
 const scheduleCategoryMap = ref<Record<string, string>>({});
+const activeTagMap = ref<Record<string, string>>({});
+const activeConferenceFilter = ref<TagFilterItem | null>(null);
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
 const visualPlatform = computed<RendererPlatform>(() => (typeof window === "undefined" ? "miniapp" : "h5"));
@@ -1676,12 +1678,22 @@ function submitTag(component: CmsComponent, item: TagFilterItem): void {
     goPath(`/pages/mall/index${query ? `?${query}` : ""}`);
     return;
   }
+  activeTagMap.value = { ...activeTagMap.value, [component.id]: item.value };
+  activeConferenceFilter.value = { ...item, target };
+  if (stringConfig(component, "interactionMode") !== "navigate") return;
   const query = stringifyQuery({
     tag: target === "tag" ? item.value : undefined,
     location: target === "location" ? item.value : undefined,
     category: target === "category" ? item.value : undefined
   });
   goPath(`/pages/index/index${query ? `?${query}` : ""}`);
+}
+
+function isTagActive(component: CmsComponent, item: TagFilterItem): boolean {
+  const selected = activeTagMap.value[component.id];
+  if (selected !== undefined) return selected === item.value;
+  const items = component.type === "conference-tabs" ? conferenceTabItems(component) : tagItems(component);
+  return items[0]?.value === item.value;
 }
 
 async function handleCouponCard(component: CmsComponent): Promise<void> {
@@ -1808,7 +1820,17 @@ function fallbackList(component: CmsComponent, fallback: string[]): string[] {
 }
 
 function limitedConferences(component: CmsComponent): ConferenceListItem[] {
-  return conferences.value.slice(0, Math.max(1, numberConfig(component, "limit", 10)));
+  const activeFilter = activeConferenceFilter.value;
+  const filtered = activeFilter && activeFilter.value && activeFilter.value !== "all"
+    ? conferences.value.filter((item) => conferenceMatchesFilter(item, activeFilter))
+    : conferences.value;
+  return filtered.slice(0, Math.max(1, numberConfig(component, "limit", 10)));
+}
+
+function conferenceMatchesFilter(item: ConferenceListItem, filter: TagFilterItem): boolean {
+  if (!filter.value || filter.value === "all" || filter.label === "全部") return true;
+  if (filter.target === "location") return Boolean(item.location?.includes(filter.value));
+  return [item.title, item.summary, item.location].some((value) => value?.includes(filter.value));
 }
 
 function scheduleMonths(component: CmsComponent): Array<{ key: string; year: string; label: string }> {
@@ -4771,7 +4793,98 @@ function readErrorText(error: unknown, fallback: string): string {
 }
 
 .cms-floating {
-  background: var(--cms-gradient-cta);
-  box-shadow: 0 18rpx 42rpx rgba(143, 107, 36, 0.24);
+  background: var(--cms-primary);
+  box-shadow: 0 14rpx 34rpx rgba(23, 32, 51, 0.16);
+}
+
+/* Cross-platform visual contract: quiet surfaces, solid actions, compact rhythm. */
+.cms-root {
+  gap: 16rpx;
+}
+
+.cms-section,
+.cms-card,
+.cms-mini-card,
+.cms-schedule-card,
+.cms-product-card {
+  border-color: var(--cms-border);
+  border-radius: 20rpx;
+  background: var(--cms-surface-elevated);
+  box-shadow: 0 8rpx 24rpx rgba(23, 32, 51, 0.05);
+}
+
+.cms-login-card,
+.cms-entry-section {
+  background: var(--cms-surface-elevated);
+}
+
+.cms-login-card::after {
+  display: none;
+}
+
+.cms-card__button,
+.cms-home-hero__button,
+.cms-schedule-card__button,
+.cms-product-card__cart,
+.cms-tab.active {
+  background: var(--cms-primary);
+  box-shadow: none;
+}
+
+.cms-card__image--empty,
+.cms-product-card__image,
+.cms-event-card__image,
+.cms-schedule-card__cover {
+  background: var(--cms-surface-muted);
+}
+
+.cms-tag {
+  min-height: 56rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid var(--cms-border);
+  background: var(--cms-surface-elevated);
+  color: var(--cms-text-secondary);
+  line-height: 56rpx;
+}
+
+.cms-tag.active {
+  border-color: var(--cms-primary);
+  background: var(--cms-primary);
+  color: var(--cms-text-inverse);
+}
+
+.cms-schedule-month,
+.cms-schedule-category,
+.cms-tab {
+  min-height: 56rpx;
+  border: 1rpx solid var(--cms-border);
+  background: var(--cms-surface-elevated);
+  line-height: 56rpx;
+}
+
+.cms-schedule-category.active,
+.cms-schedule-month.active,
+.cms-tab.active {
+  border-color: var(--cms-primary);
+  background: var(--cms-primary);
+  color: var(--cms-text-inverse);
+}
+
+.cms-schedule-card {
+  grid-template-columns: 116rpx minmax(0, 1fr);
+  gap: 18rpx;
+  padding: 20rpx;
+}
+
+.cms-schedule-card__date {
+  border-right: 1rpx solid var(--cms-divider);
+  border-radius: 0;
+  background: transparent;
+}
+
+.cms-empty {
+  border-radius: 18rpx;
+  background: var(--cms-surface-soft);
+  color: var(--cms-text-secondary);
 }
 </style>

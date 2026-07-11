@@ -2,41 +2,42 @@
 
 ## Scope
 
-- DIY page manager
-- Full-screen visual editor
-- Page template center
-- MiniApp and H5 preview switch
-- Component selection, autosave, undo, and redo
+- Fixed business templates for home, annual schedule, registration, mall, cart, and member center
+- Admin phone preview parity with real MiniApp/H5 business structure
+- Schedule month and category interactions
+- Hero image display modes and optional copy
+- Material upload guidance
 
 ## Visual Comparison
 
-The supplied Guanchao admin screenshots were compared side by side with the local implementation at the same desktop browser state. The combined comparison artifact is stored locally at `.tmp/design-qa-comparison.png`.
+The supplied MiniApp and admin screenshots were compared side by side with the local implementation. The combined comparison artifact is stored at `.tmp/design-qa-comparison.png`.
 
-The implementation now matches the reference interaction model:
+The new implementation resolves the visible regressions:
 
-- page management uses a compact searchable table with direct edit, copy, share, and delete actions;
-- the editor uses a fixed three-column workspace with a compact icon component library, centered phone canvas, and scrolling settings inspector;
-- the phone canvas renders real conference imagery and business modules instead of technical node labels;
-- the template center uses full phone-page thumbnails and business categories;
-- technical DSL and editor-mode choices are absent from the operator workflow.
+- fixed templates no longer add the duplicated brand strip below the native navigation bar;
+- schedule filters have selected states, update the visible conference list, and show a deliberate empty state;
+- registration preview uses tickets, coupon state, attendee fields, amount, and actions instead of explanatory text;
+- cart preview uses registration items, mall items, shipping information, coupons, recommendations, and settlement controls;
+- fixed hero media defaults to a complete 16:9 presentation and offers complete, crop, and full-width modes;
+- fixed hero title and subtitle can be hidden independently and blank copy is not replaced with technical fallback text;
+- cards use restrained borders, radii, shadows, spacing, and solid actions consistently across the three render targets.
 
 ## Functional Checks
 
-- Created a temporary DIY page and opened it in the visual editor.
-- Added a hero component from the component library.
-- Confirmed the phone preview refreshed immediately.
-- Confirmed autosave changed the editor state to saved.
-- Confirmed undo removed the component and redo restored it.
-- Confirmed the editor has no document-level horizontal overflow.
-- Confirmed the full-screen editor does not render the global admin header or sidebar.
-- Confirmed the template center renders 18 templates without technical component names.
-- Deleted the temporary QA page after verification.
+- Confirmed the annual schedule category filter changes to an active state.
+- Confirmed a filter with no matching conference produces a real empty state.
+- Confirmed switching back to all restores the conference card.
+- Confirmed the registration editor renders the business form structure and configured CMS blocks together.
+- Confirmed the cart editor renders the business layout without a duplicate fixed-template preview or empty placeholder.
+- Confirmed the material upload form displays dimensions, formats, and usage advice without a persistent file-size limit label.
+- Confirmed fixed-template title visibility, subtitle visibility, and image-fit controls appear in the operator form.
+- Confirmed technical node names and Render Governor warnings are not presented as user-facing content.
 
 ## Severity Review
 
 - P0 blockers: none.
-- P1 workflow or layout regressions: none.
-- P2 visual inconsistencies: none that block operator use.
-- P3 residual difference: the local admin retains the conference platform navigation and branding outside the focused editor, while the reference uses a broader store-management shell.
+- P1 interaction regressions: none in the verified schedule and editor flows.
+- P2 visual inconsistencies: no blocking mismatch remains in the checked fixed-template, registration, and cart states.
+- P3 residual risk: final MiniApp typography can vary slightly with the device font and WeChat renderer; production acceptance should still include one iOS and one Android device.
 
 final result: passed

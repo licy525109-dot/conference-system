@@ -21,6 +21,7 @@ function normalizeDslComponent(value: unknown, index: number): CmsComponent | nu
   const mergedConfig = mergedComponentConfig(value);
   const type = readText(value.type) || (hasFixedTemplateMarker(mergedConfig) ? "fixed-business-template" : "");
   if (!type) return null;
+  removeTechnicalFallbackText(mergedConfig, type, type);
   return {
     id: readText(value.id) || `cms-${index}`,
     type,

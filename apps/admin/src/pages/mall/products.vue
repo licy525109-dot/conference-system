@@ -90,7 +90,7 @@
           <template #label>封面 URL<MaterialSpecHelp spec-key="productCover" /></template>
           <div class="field-stack">
             <div class="field-row">
-              <el-input v-model="form.coverImageUrl" placeholder="建议 800×800 或 750×750，JPG/PNG/WebP，单张不超过 2MB" />
+              <el-input v-model="form.coverImageUrl" placeholder="建议 800×800 或 750×750，JPG/PNG/WebP" />
               <el-button @click="openMaterialPicker('cover')">素材库</el-button>
               <el-button @click="triggerUpload('cover')">本地上传</el-button>
             </div>
@@ -101,7 +101,7 @@
           <template #label>详情图 URL<MaterialSpecHelp spec-key="productDetail" /></template>
           <div class="field-stack">
             <div class="field-row">
-              <el-input v-model="detailUrlDraft" placeholder="粘贴详情图 URL，建议宽度 750px，JPG/PNG/WebP，单张不超过 2MB" />
+              <el-input v-model="detailUrlDraft" placeholder="粘贴详情图 URL，建议宽度 750px，JPG/PNG/WebP" />
               <el-button @click="addDetailUrl">添加 URL</el-button>
               <el-button @click="openMaterialPicker('detail')">素材库</el-button>
               <el-button @click="triggerUpload('detail')">本地上传</el-button>
@@ -154,7 +154,7 @@
           <el-input v-model="materialKeyword" clearable placeholder="搜索素材名称" @keyup.enter="loadMaterials" />
           <el-button :loading="materialLoading" @click="loadMaterials">搜索</el-button>
         </div>
-        <p class="form-help">商品封面建议 800×800 或 750×750，详情图建议宽度 750px；JPG/PNG/WebP，单张不超过 2MB。</p>
+        <p class="form-help">商品封面建议 800×800 或 750×750，详情图建议宽度 750px；优先使用 JPG/PNG/WebP。</p>
         <el-empty v-if="!materialLoading && materialAssets.length === 0" description="暂无图片素材" />
         <div v-else class="material-grid">
           <button v-for="asset in materialAssets" :key="asset.id" class="material-card" @click="chooseMaterial(asset)">

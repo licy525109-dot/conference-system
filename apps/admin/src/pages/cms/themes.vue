@@ -111,7 +111,7 @@
             <el-form-item>
               <template #label>后台图标<MaterialSpecHelp spec-key="adminBrandIcon" /></template>
               <div class="field-row">
-                <el-input v-model="form.adminBrandLogoUrl" placeholder="建议 96x96 PNG/SVG，单张不超过 300KB" />
+                <el-input v-model="form.adminBrandLogoUrl" placeholder="建议 96x96 PNG/SVG，适配深色侧栏" />
                 <el-button @click="openMaterialPicker('adminBrandLogoUrl', 'image')">应用素材库</el-button>
               </div>
             </el-form-item>
@@ -119,7 +119,7 @@
             <el-form-item>
               <template #label>浏览器图标<MaterialSpecHelp spec-key="favicon" /></template>
               <div class="field-row">
-                <el-input v-model="form.browserIconUrl" placeholder="建议 32x32 或 64x64 ICO/PNG/SVG，单张不超过 100KB" />
+                <el-input v-model="form.browserIconUrl" placeholder="建议 32x32 或 64x64 ICO/PNG/SVG" />
                 <el-button @click="openMaterialPicker('browserIconUrl', 'image')">应用素材库</el-button>
               </div>
             </el-form-item>
@@ -146,14 +146,14 @@
             <el-form-item v-if="form.backgroundMode === 'image'">
               <template #label>背景图片<MaterialSpecHelp spec-key="backgroundImage" /></template>
               <div class="field-row">
-                <el-input v-model="form.backgroundImageUrl" placeholder="建议 1920x1080 或 1440x900，JPG/WebP，单张不超过 3MB" />
+                <el-input v-model="form.backgroundImageUrl" placeholder="建议 1920x1080 或 1440x900，JPG/WebP" />
                 <el-button @click="openMaterialPicker('backgroundImageUrl', 'image')">应用素材库</el-button>
               </div>
             </el-form-item>
             <el-form-item v-if="form.backgroundMode === 'video'">
               <template #label>背景视频<MaterialSpecHelp spec-key="backgroundVideo" /></template>
               <div class="field-row">
-                <el-input v-model="form.backgroundVideoUrl" placeholder="建议 MP4/H.264，720p 或 1080p，5-15 秒，单个不超过 20MB" />
+                <el-input v-model="form.backgroundVideoUrl" placeholder="建议 MP4/H.264，720p 或 1080p，5-15 秒" />
                 <el-button @click="openMaterialPicker('backgroundVideoUrl', 'video')">应用素材库</el-button>
               </div>
               <p class="form-help">H5 和小程序端均使用静音循环播放；无法播放时会自动显示背景封面。</p>
@@ -211,7 +211,7 @@
             <el-form-item v-if="form.splashEnabled">
               <template #label>启动视频<MaterialSpecHelp spec-key="backgroundVideo" /></template>
               <div class="field-row">
-                <el-input v-model="form.splashVideoUrl" placeholder="建议 MP4/H.264，5-15 秒，单个不超过 20MB" />
+                <el-input v-model="form.splashVideoUrl" placeholder="建议 MP4/H.264，5-15 秒" />
                 <el-button @click="openMaterialPicker('splashVideoUrl', 'video')">应用素材库</el-button>
               </div>
             </el-form-item>

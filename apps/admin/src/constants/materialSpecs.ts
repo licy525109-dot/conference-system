@@ -38,7 +38,7 @@ export const materialSpecs = {
   wecomMessageImage: spec("企微群发图片", "建议 750x420 或 600x600", "JPG/PNG/WebP", 2 * MB, "群机器人图片会由后端转为企微支持的 base64+md5 格式。", ["image/jpeg", "image/png", "image/webp"]),
   wecomMessageFile: spec("企微群发文件", "按资料类型", "PDF/Office/TXT/MD", 20 * MB, "群机器人文件会由后端上传临时素材并换取 media_id。", ["application/pdf", "text/plain", "text/markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]),
   aiDocument: spec("AI 知识库文档", "文字型资料", "TXT/MD/PDF", 10 * MB, "PDF 仅支持可复制文本，扫描版 PDF 暂不支持 OCR。", ["text/plain", "text/markdown", "application/pdf"]),
-  materialUpload: spec("素材上传", "按使用位置选择", "JPG/PNG/WebP/GIF/SVG/MP4/PDF/Office/TXT/MD/TTF/OTF/WOFF/WOFF2", 20 * MB, "后端按类型限制：图片不超过 2MB，视频/文件不超过 20MB，字体不超过 5MB。", ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml", "video/mp4", "application/pdf", "text/plain", "text/markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "font/ttf", "font/otf", "font/woff", "font/woff2", "application/x-font-ttf", "application/x-font-otf", "application/font-woff", "application/font-woff2"])
+  materialUpload: spec("素材上传", "按使用位置选择", "JPG/PNG/WebP/GIF/SVG/MP4/PDF/Office/TXT/MD/TTF/OTF/WOFF/WOFF2", 20 * MB, "建议上传前压缩图片和视频，并按实际使用位置选择合适比例。", ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml", "video/mp4", "application/pdf", "text/plain", "text/markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "font/ttf", "font/otf", "font/woff", "font/woff2", "application/x-font-ttf", "application/x-font-otf", "application/font-woff", "application/font-woff2"])
 } as const satisfies Record<string, MaterialSpec>;
 
 export type MaterialSpecKey = keyof typeof materialSpecs;
@@ -63,7 +63,7 @@ export const materialUsageSpecMap: Record<string, MaterialSpecKey> = {
 };
 
 export function materialSpecText(spec: MaterialSpec): string {
-  return `建议尺寸：${spec.size}；支持格式：${spec.formats}；最大大小：${spec.maxSize}。${spec.tip}`;
+  return `建议尺寸：${spec.size}；支持格式：${spec.formats}。${spec.tip}`;
 }
 
 export function validateMaterialFile(file: File, spec: MaterialSpec): string {

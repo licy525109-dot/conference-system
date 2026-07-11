@@ -24,7 +24,7 @@
           <el-form-item label="副标题"><el-input v-model="conferenceForm.subtitle" /></el-form-item>
           <el-form-item>
             <template #label>封面 URL<MaterialSpecHelp spec-key="conferenceCover" /></template>
-            <el-input v-model="conferenceForm.coverImage" placeholder="建议 750x420，JPG/PNG/WebP，单张不超过 2MB" />
+            <el-input v-model="conferenceForm.coverImage" placeholder="建议 750x420，JPG/PNG/WebP，主体内容居中" />
           </el-form-item>
           <el-form-item label="地点"><el-input v-model="conferenceForm.location" /></el-form-item>
           <el-form-item label="开始时间"><el-date-picker v-model="conferenceForm.startAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" /></el-form-item>
