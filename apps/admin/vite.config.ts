@@ -23,7 +23,8 @@ export default defineConfig(({ mode }) => {
         "@conference/design-system": resolve(repoRoot, "design-system/index.ts"),
         "@conference/dsl-runtime": resolve(repoRoot, "runtime/src/index.ts"),
         "@conference/module-compiler": resolve(repoRoot, "module-compiler/src/index.ts"),
-        "@conference/render-governor": resolve(repoRoot, "render-governor/src/index.ts")
+        "@conference/render-governor": resolve(repoRoot, "render-governor/src/index.ts"),
+        "@conference/shared": resolve(repoRoot, "packages/shared/src/index.ts")
       }
     },
     plugins: [vue()],

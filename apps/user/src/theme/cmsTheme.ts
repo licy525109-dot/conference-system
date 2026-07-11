@@ -1,6 +1,6 @@
 import type { ThemeConfig } from "@/services/cms";
 
-export type CmsThemePresetId = "business-blue" | "tech-black-gold" | "fresh-green" | "summit-red" | "education-vitality";
+export type CmsThemePresetId = "business-blue" | "guanchao-premium" | "tech-black-gold" | "fresh-green" | "summit-red" | "education-vitality";
 
 export interface CmsResolvedTheme {
   id: CmsThemePresetId;
@@ -115,6 +115,57 @@ export const CMS_THEME_PRESETS: Record<CmsThemePresetId, CmsResolvedTheme> = {
       md: "0 14rpx 34rpx rgba(23, 32, 47, 0.07)",
       lg: "0 24rpx 56rpx rgba(23, 32, 47, 0.1)",
       floating: "0 -10rpx 30rpx rgba(23, 32, 47, 0.12)",
+      glow: "0 0 0 rgba(0,0,0,0)"
+    }
+  },
+  "guanchao-premium": {
+    id: "guanchao-premium",
+    name: "Guanchao Editorial",
+    dark: false,
+    colors: {
+      pageBg: "#F5F7F5",
+      pageBgSoft: "#ECF1ED",
+      surface: "#FFFFFF",
+      surfaceSoft: "#F9FAF9",
+      surfaceMuted: "#EEF2EF",
+      surfaceElevated: "#FFFFFF",
+      textPrimary: "#142238",
+      textSecondary: "#657083",
+      textTertiary: "#98A0AA",
+      textInverse: "#FFFFFF",
+      primary: "#10233D",
+      primaryStrong: "#08172C",
+      primarySoft: "#E8EEF4",
+      secondary: "#2F7868",
+      secondarySoft: "#E5F1ED",
+      accent: "#A97E38",
+      accentSoft: "#F5EEDF",
+      border: "#DFE5E2",
+      divider: "#EDF0EE",
+      success: "#26735B",
+      successSoft: "#E4F2ED",
+      warning: "#9B6C25",
+      warningSoft: "#F8EFDE",
+      danger: "#B33B43",
+      dangerSoft: "#F8E8E9",
+      info: "#315D7D",
+      infoSoft: "#E8F0F5",
+      overlay: "rgba(8, 23, 44, 0.44)"
+    },
+    gradients: {
+      page: "linear-gradient(180deg, #FAFBFA 0%, #ECF1ED 100%)",
+      hero: "linear-gradient(135deg, #10233D 0%, #315D7D 56%, #2F7868 118%)",
+      card: "linear-gradient(180deg, #FFFFFF 0%, #F9FAF9 100%)",
+      cta: "linear-gradient(135deg, #10233D 0%, #315D7D 100%)",
+      soft: "linear-gradient(135deg, #E8EEF4 0%, #F5EEDF 100%)"
+    },
+    radius: { sm: 8, md: 10, lg: 12, xl: 16, xxl: 20, full: 999 },
+    spacing: { pageX: 28, sectionY: 22, cardGap: 16, cardPadding: 24 },
+    shadow: {
+      sm: "0 6rpx 18rpx rgba(20, 34, 56, 0.05)",
+      md: "0 14rpx 36rpx rgba(20, 34, 56, 0.08)",
+      lg: "0 24rpx 62rpx rgba(20, 34, 56, 0.12)",
+      floating: "0 -10rpx 30rpx rgba(20, 34, 56, 0.13)",
       glow: "0 0 0 rgba(0,0,0,0)"
     }
   },
@@ -518,7 +569,7 @@ export function dynamicGradientBackground(config: ThemeConfig): string {
 }
 
 function normalizePresetId(value: unknown): CmsThemePresetId {
-  if (value === "tech-black-gold" || value === "fresh-green" || value === "summit-red" || value === "education-vitality") {
+  if (value === "guanchao-premium" || value === "tech-black-gold" || value === "fresh-green" || value === "summit-red" || value === "education-vitality") {
     return value;
   }
   return "business-blue";

@@ -47,3 +47,5 @@ export interface ConferenceListItemDto {
   startsAt: string;
   endsAt: string;
 }
+
+export * from "./cms-compositions";

@@ -1,34 +1,36 @@
-import { computed, ref, type Component } from "vue";
-import DashboardPage from "../pages/dashboard/index.vue";
-import ConferencesPage from "../pages/conferences/index.vue";
-import ConferenceConfigPage from "../pages/conferences/config.vue";
-import OrdersPage from "../pages/orders/index.vue";
-import RegistrationsPage from "../pages/registrations/index.vue";
-import RegistrationDetailPage from "../pages/registrations/detail.vue";
-import CouponsPage from "../pages/coupons/index.vue";
-import CouponCampaignsPage from "../pages/coupon-campaigns/index.vue";
-import PromotionsPage from "../pages/promotions/index.vue";
-import NotificationsPage from "../pages/notifications/index.vue";
-import WecomPage from "../pages/wecom/index.vue";
-import AiKnowledgePage from "../pages/ai/index.vue";
-import MaterialsPage from "../pages/materials/index.vue";
-import CmsPagesPage from "../pages/cms/page-manager.vue";
-import CmsPageEditorPage from "../pages/cms/pages.vue";
-import CmsTemplateLibraryPage from "../pages/cms/template-library.vue";
-import ThemesPage from "../pages/cms/themes.vue";
-import TabbarPage from "../pages/cms/tabbar.vue";
-import OperationalWorkflowsPage from "../pages/common/OperationalWorkflowsPage.vue";
-import FinancePage from "../pages/finance/index.vue";
-import MallOrdersPage from "../pages/mall/orders.vue";
-import MallProductsPage from "../pages/mall/products.vue";
-import MallWorkflowsPage from "../pages/mall/workflows.vue";
-import MemberLevelsPage from "../pages/members/levels.vue";
-import MemberUsersPage from "../pages/members/users.vue";
-import MemberBenefitsPage from "../pages/members/benefits.vue";
-import MemberPricingRulesPage from "../pages/members/pricing-rules.vue";
-import AuditLogsPage from "../pages/system/audit-logs.vue";
-import AccountsPage from "../pages/system/accounts.vue";
-import RolesPage from "../pages/system/roles.vue";
+import { computed, defineAsyncComponent, ref, type Component } from "vue";
+
+const DashboardPage = defineAsyncComponent(() => import("../pages/dashboard/index.vue"));
+const ConferencesPage = defineAsyncComponent(() => import("../pages/conferences/index.vue"));
+const ConferenceConfigPage = defineAsyncComponent(() => import("../pages/conferences/config.vue"));
+const OrdersPage = defineAsyncComponent(() => import("../pages/orders/index.vue"));
+const RegistrationsPage = defineAsyncComponent(() => import("../pages/registrations/index.vue"));
+const RegistrationDetailPage = defineAsyncComponent(() => import("../pages/registrations/detail.vue"));
+const CouponsPage = defineAsyncComponent(() => import("../pages/coupons/index.vue"));
+const CouponCampaignsPage = defineAsyncComponent(() => import("../pages/coupon-campaigns/index.vue"));
+const PromotionsPage = defineAsyncComponent(() => import("../pages/promotions/index.vue"));
+const NotificationsPage = defineAsyncComponent(() => import("../pages/notifications/index.vue"));
+const WecomPage = defineAsyncComponent(() => import("../pages/wecom/index.vue"));
+const AiKnowledgePage = defineAsyncComponent(() => import("../pages/ai/index.vue"));
+const MaterialsPage = defineAsyncComponent(() => import("../pages/materials/index.vue"));
+const CmsPagesPage = defineAsyncComponent(() => import("../pages/cms/page-manager.vue"));
+const CmsPageEditorPage = defineAsyncComponent(() => import("../pages/cms/pages.vue"));
+const CmsTemplateLibraryPage = defineAsyncComponent(() => import("../pages/cms/template-library.vue"));
+const ThemesPage = defineAsyncComponent(() => import("../pages/cms/themes.vue"));
+const TabbarPage = defineAsyncComponent(() => import("../pages/cms/tabbar.vue"));
+const OperationalWorkflowsPage = defineAsyncComponent(() => import("../pages/common/OperationalWorkflowsPage.vue"));
+const FinancePage = defineAsyncComponent(() => import("../pages/finance/index.vue"));
+const MallOrdersPage = defineAsyncComponent(() => import("../pages/mall/orders.vue"));
+const MallProductsPage = defineAsyncComponent(() => import("../pages/mall/products.vue"));
+const MallWorkflowsPage = defineAsyncComponent(() => import("../pages/mall/workflows.vue"));
+const MemberLevelsPage = defineAsyncComponent(() => import("../pages/members/levels.vue"));
+const MemberUsersPage = defineAsyncComponent(() => import("../pages/members/users.vue"));
+const MemberBenefitsPage = defineAsyncComponent(() => import("../pages/members/benefits.vue"));
+const MemberPricingRulesPage = defineAsyncComponent(() => import("../pages/members/pricing-rules.vue"));
+const AuditLogsPage = defineAsyncComponent(() => import("../pages/system/audit-logs.vue"));
+const AccountsPage = defineAsyncComponent(() => import("../pages/system/accounts.vue"));
+const RolesPage = defineAsyncComponent(() => import("../pages/system/roles.vue"));
+const PlatformPage = defineAsyncComponent(() => import("../pages/platform/index.vue"));
 
 export interface AdminRoute {
   path: string;
@@ -111,6 +113,7 @@ export const routes: AdminRoute[] = [
   { path: "/themes", title: "主题配置", menuTitle: "主题配置", group: "页面装修", description: "小程序/H5 主题色、圆角和卡片风格", permission: "theme:view", component: ThemesPage },
   { path: "/tabbar", title: "底部导航", menuTitle: "底部导航", group: "页面装修", description: "小程序动态底部导航配置", permission: "tabbar:view", component: TabbarPage },
   { path: "/materials", title: "素材管理", menuTitle: "素材管理", group: "页面装修", description: "图片、图标、视频和字体素材", permission: "material:view", component: MaterialsPage },
+  { path: "/platform", title: "SaaS 平台控制台", menuTitle: "平台控制台", group: "平台运营", description: "租户、工作区、套餐、API 接入和生产能力就绪度", permission: "platform:view", component: PlatformPage },
   { path: "/system/audit-logs", title: "操作日志", menuTitle: "操作日志", group: "系统管理", description: "登录、编辑、导出、核销和异常处理记录", permission: "system:audit", component: AuditLogsPage },
   { path: "/system/accounts", title: "管理员账号", menuTitle: "管理员账号", group: "系统管理", description: "后台账号和角色分配", permission: "system:account", component: AccountsPage },
   { path: "/system/roles", title: "角色权限", menuTitle: "角色权限", group: "系统管理", badge: "高级", description: "高级权限配置，谨慎调整", permission: "system:role", component: RolesPage }

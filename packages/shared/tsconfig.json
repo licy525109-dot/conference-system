@@ -6,7 +6,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "composite": true,
-    "module": "ESNext"
+    "module": "CommonJS"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts"]
 }

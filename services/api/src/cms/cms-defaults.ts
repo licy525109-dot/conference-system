@@ -1,11 +1,12 @@
 import { Prisma } from "@prisma/client";
+import { buildCmsPageComposition, type CmsCompositionKind } from "@conference/shared";
 
 export const DEFAULT_THEME_CONFIG = {
-  visualPreset: "business-blue",
-  primaryColor: "#315d7d",
-  secondaryColor: "#3a8f79",
-  accentColor: "#b58b47",
-  backgroundColor: "#f5f7f6",
+  visualPreset: "guanchao-premium",
+  primaryColor: "#10233d",
+  secondaryColor: "#2f7868",
+  accentColor: "#a97e38",
+  backgroundColor: "#f5f7f5",
   cardBackground: "#ffffff",
   radius: 8,
   buttonStyle: "solid",
@@ -91,7 +92,7 @@ export const DEFAULT_TABBAR_ITEMS = [
 const FIXED_TEMPLATE_ASSET_ROOT = "/static/fixed-templates";
 
 export const ENABLED_COMPONENT_PRESETS = [
-  preset("fixed-business-template", "固定业务模板", "业务固定模板", "首页、年度排期、会议报名、商城、购物车和会员中心固定业务模板", {
+  preset("fixed-business-template", "旧版整页模板", "旧页面兼容", "仅用于识别历史页面；打开编辑器时自动拆分为可自由排序的组件", {
     templateKey: "home",
     heroTitle: "",
     heroSubtitle: "",
@@ -108,7 +109,7 @@ export const ENABLED_COMPONENT_PRESETS = [
     statsCard: true,
     conferenceModels: true,
     tagRows: true
-  }),
+  }, false),
   preset("hero", "主视觉横幅", "基础展示", "页面顶部沉浸式横幅", {
     kicker: "会议报名",
     title: "选择会议，完成报名缴费",
@@ -364,35 +365,20 @@ export const ENABLED_COMPONENT_PRESETS = [
 export const RESERVED_COMPONENT_PRESETS = [] as const;
 
 export const ALL_COMPONENT_PRESETS = [...ENABLED_COMPONENT_PRESETS, ...RESERVED_COMPONENT_PRESETS] as const;
-export const ENABLED_COMPONENT_TYPES = new Set(ENABLED_COMPONENT_PRESETS.map((item) => item.type));
+export const ENABLED_COMPONENT_TYPES = new Set(ENABLED_COMPONENT_PRESETS.filter((item) => item.enabled).map((item) => item.type));
 export const ALL_COMPONENT_TYPES = new Set(ALL_COMPONENT_PRESETS.map((item) => item.type));
 
 export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
   if (pageKey === "home") {
-    return [
-      fixedTemplate("home-fixed-default", "home", {
-        heroTitle: "潮起谋局  潮落定势",
-        heroSubtitle: "行业会议与创始人社群平台"
-      })
-    ];
+    return guanchaoHomeComponents();
   }
 
   if (pageKey === "conference-list") {
-    return [
-      fixedTemplate("conference-list-fixed-default", "registration", {
-        heroTitle: "会议报名",
-        heroSubtitle: "选择感兴趣的会议，快速报名参与"
-      })
-    ];
+    return guanchaoRegistrationComponents();
   }
 
   if (pageKey === "custom:about-paiqi" || pageKey === "custom:annual-schedule") {
-    return [
-      fixedTemplate("schedule-fixed-default", "schedule", {
-        heroTitle: "年度排期",
-        heroSubtitle: "查看观潮会集全年会议安排"
-      })
-    ];
+    return guanchaoScheduleComponents();
   }
 
   if (pageKey === "conference-detail") {
@@ -442,29 +428,15 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
   }
 
   if (pageKey === "member-center") {
-    return [
-      fixedTemplate("member-center-fixed-default", "member-center", {
-        growthValue: "2568"
-      })
-    ];
+    return guanchaoMemberComponents();
   }
 
   if (pageKey === "cart") {
-    return [
-      fixedTemplate("cart-fixed-default", "cart", {
-        heroTitle: "购物车",
-        heroSubtitle: "已选商品、优惠券和结算信息都可按模块显隐控制"
-      })
-    ];
+    return guanchaoCartComponents();
   }
 
   if (pageKey === "mall") {
-    return [
-      fixedTemplate("mall-fixed-default", "mall", {
-        heroTitle: "会议周边商城",
-        heroSubtitle: "精选会议周边与品牌物料"
-      })
-    ];
+    return guanchaoMallComponents();
   }
 
   if (pageKey === "mall-detail") {
@@ -919,12 +891,12 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "参考品牌首页样式，包含主视觉、登录卡、快捷入口、赛道引导和会议推荐。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
-      visualPreset: "tech-black-gold",
-      backgroundColor: "#f8f4ec",
-      cardBackground: "#fffdf8",
-      primaryColor: "#08172c",
-      secondaryColor: "#a98443",
-      accentColor: "#c29a57",
+      visualPreset: "guanchao-premium",
+      backgroundColor: "#f5f7f5",
+      cardBackground: "#ffffff",
+      primaryColor: "#10233d",
+      secondaryColor: "#2f7868",
+      accentColor: "#a97e38",
       templateMeta: {
         category: "观潮会集",
         summary: "用于首页首屏运营、登录转化和会议报名导流。"
@@ -934,13 +906,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
         shareTitle: "欢迎来到观潮会集"
       }
     },
-    components: [
-      fixedTemplate("fixed-home-guanchao", "home", {
-        heroTitle: "潮起谋局  潮落定势",
-        heroSubtitle: "行业会议与创始人社群平台",
-        noticeText: "欢迎来到观潮会集，查看年度排期、会议报名与会员权益。"
-      })
-    ]
+    components: guanchaoHomeComponents()
   },
   {
     pageKey: "template:guanchao-schedule",
@@ -948,12 +914,12 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "参考年度排期页，支持月份、分类和即将开始会议的提前预约。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
-      visualPreset: "tech-black-gold",
-      backgroundColor: "#f8f4ec",
-      cardBackground: "#fffdf8",
-      primaryColor: "#08172c",
-      secondaryColor: "#a98443",
-      accentColor: "#c29a57",
+      visualPreset: "guanchao-premium",
+      backgroundColor: "#f5f7f5",
+      cardBackground: "#ffffff",
+      primaryColor: "#10233d",
+      secondaryColor: "#2f7868",
+      accentColor: "#a97e38",
       templateMeta: {
         category: "观潮会集",
         summary: "用于排期页或会议列表页，突出时间与分类筛选。"
@@ -963,12 +929,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
         shareTitle: "观潮会集全年会议安排"
       }
     },
-    components: [
-      fixedTemplate("fixed-schedule-guanchao", "schedule", {
-        heroTitle: "年度排期",
-        heroSubtitle: "查看观潮会集全年会议安排"
-      })
-    ]
+    components: guanchaoScheduleComponents()
   },
   {
     pageKey: "template:guanchao-registration",
@@ -976,12 +937,12 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "参考会议报名页，突出推荐、即将开始、报名人数和按钮转化。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
-      visualPreset: "tech-black-gold",
-      backgroundColor: "#f8f4ec",
-      cardBackground: "#fffdf8",
-      primaryColor: "#08172c",
-      secondaryColor: "#a98443",
-      accentColor: "#c29a57",
+      visualPreset: "guanchao-premium",
+      backgroundColor: "#f5f7f5",
+      cardBackground: "#ffffff",
+      primaryColor: "#10233d",
+      secondaryColor: "#2f7868",
+      accentColor: "#a97e38",
       templateMeta: {
         category: "观潮会集",
         summary: "用于会议报名页，兼容提前预约和立即报名。"
@@ -991,12 +952,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
         shareTitle: "选择感兴趣的会议，快速报名参与"
       }
     },
-    components: [
-      fixedTemplate("fixed-registration-guanchao", "registration", {
-        heroTitle: "会议报名",
-        heroSubtitle: "选择感兴趣的会议，快速报名参与"
-      })
-    ]
+    components: guanchaoRegistrationComponents()
   },
   {
     pageKey: "template:guanchao-member",
@@ -1004,12 +960,12 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "参考会员中心页，包含用户资料、数据入口、权益卡和我的优惠券入口。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
-      visualPreset: "business-blue",
-      backgroundColor: "#f7f3ea",
+      visualPreset: "guanchao-premium",
+      backgroundColor: "#f5f7f5",
       cardBackground: "#ffffff",
-      primaryColor: "#071426",
-      secondaryColor: "#a98443",
-      accentColor: "#d2aa64",
+      primaryColor: "#10233d",
+      secondaryColor: "#2f7868",
+      accentColor: "#a97e38",
       templateMeta: {
         category: "会员中心",
         summary: "用于我的/会员中心页面，承接我的优惠券、报名和订单入口。"
@@ -1019,11 +975,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
         shareTitle: "观潮会集会员中心"
       }
     },
-    components: [
-      fixedTemplate("fixed-member-center-guanchao", "member-center", {
-        growthValue: "2568"
-      })
-    ]
+    components: guanchaoMemberComponents()
   },
   {
     pageKey: "template:guanchao-mall",
@@ -1031,12 +983,12 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "参考商城首页，包含品牌主视觉、分类标签和商品宫格。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
-      visualPreset: "tech-black-gold",
-      backgroundColor: "#f8f4ec",
-      cardBackground: "#fffdf8",
-      primaryColor: "#08172c",
-      secondaryColor: "#a98443",
-      accentColor: "#c29a57",
+      visualPreset: "guanchao-premium",
+      backgroundColor: "#f5f7f5",
+      cardBackground: "#ffffff",
+      primaryColor: "#10233d",
+      secondaryColor: "#2f7868",
+      accentColor: "#a97e38",
       templateMeta: {
         category: "商城",
         summary: "用于会议周边商城首页，商品数据由商城模块提供。"
@@ -1046,12 +998,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
         shareTitle: "精选会议周边与品牌物料"
       }
     },
-    components: [
-      fixedTemplate("fixed-mall-guanchao", "mall", {
-        heroTitle: "会议周边商城",
-        heroSubtitle: "精选会议周边与品牌物料"
-      })
-    ]
+    components: guanchaoMallComponents()
   },
   {
     pageKey: "template:guanchao-cart",
@@ -1059,12 +1006,12 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
     description: "参考购物车页，突出商品、商品优惠券和结算动线。",
     pageType: "SYSTEM_TEMPLATE",
     themeJson: {
-      visualPreset: "business-blue",
-      backgroundColor: "#f8f4ec",
-      cardBackground: "#fffdf8",
-      primaryColor: "#071426",
-      secondaryColor: "#a98443",
-      accentColor: "#c29a57",
+      visualPreset: "guanchao-premium",
+      backgroundColor: "#f5f7f5",
+      cardBackground: "#ffffff",
+      primaryColor: "#10233d",
+      secondaryColor: "#2f7868",
+      accentColor: "#a97e38",
       templateMeta: {
         category: "商城",
         summary: "用于购物车/结算页，实际商品、优惠券和金额由业务页面读取。"
@@ -1074,12 +1021,7 @@ export const SYSTEM_PAGE_LIBRARY_TEMPLATES = [
         shareTitle: "观潮会集购物车"
       }
     },
-    components: [
-      fixedTemplate("fixed-cart-guanchao", "cart", {
-        heroTitle: "购物车",
-        heroSubtitle: "已选商品、优惠券和结算信息都可按模块显隐控制"
-      })
-    ]
+    components: guanchaoCartComponents()
   }
 ] as const;
 
@@ -1129,26 +1071,30 @@ function entry(
   };
 }
 
-function fixedTemplate(id: string, templateKey: string, config: Prisma.InputJsonObject = {}): Prisma.InputJsonObject {
-  const fixedDefaults: Prisma.InputJsonObject =
-    templateKey === "home"
-      ? {
-          items: [
-            entry("年度排期", "SCHEDULE", "calendar", "page", { iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/calendar.svg`, targetPageKey: "custom:about-paiqi" }),
-            entry("会议报名", "REGISTRATION", "registration", "page", { iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/registration.svg`, targetPageKey: "conference-list" }),
-            entry("赛道生态", "ECOSYSTEM", "team", "page", { iconUrl: `${FIXED_TEMPLATE_ASSET_ROOT}/icons/user.svg`, targetPageKey: "custom:ecosystem" })
-          ]
-        }
-      : {};
-  return {
-    id,
-    type: "fixed-business-template",
-    enabled: true,
-    config: {
-      templateKey,
-      assetRoot: FIXED_TEMPLATE_ASSET_ROOT,
-      ...fixedDefaults,
-      ...config
-    }
-  };
+function guanchaoComposition(kind: CmsCompositionKind): Prisma.InputJsonArray {
+  return buildCmsPageComposition(kind, FIXED_TEMPLATE_ASSET_ROOT) as unknown as Prisma.InputJsonArray;
+}
+
+function guanchaoHomeComponents(): Prisma.InputJsonArray {
+  return guanchaoComposition("home");
+}
+
+function guanchaoScheduleComponents(): Prisma.InputJsonArray {
+  return guanchaoComposition("schedule");
+}
+
+function guanchaoRegistrationComponents(): Prisma.InputJsonArray {
+  return guanchaoComposition("registration");
+}
+
+function guanchaoMemberComponents(): Prisma.InputJsonArray {
+  return guanchaoComposition("member-center");
+}
+
+function guanchaoMallComponents(): Prisma.InputJsonArray {
+  return guanchaoComposition("mall");
+}
+
+function guanchaoCartComponents(): Prisma.InputJsonArray {
+  return guanchaoComposition("cart");
 }

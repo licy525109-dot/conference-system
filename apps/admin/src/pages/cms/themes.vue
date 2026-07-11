@@ -367,11 +367,11 @@ interface PalettePreset {
 }
 
 const DEFAULT_THEME: ThemeConfig = {
-  visualPreset: "business-blue",
-  primaryColor: "#315d7d",
-  secondaryColor: "#3a8f79",
-  accentColor: "#b58b47",
-  backgroundColor: "#f5f7f6",
+  visualPreset: "guanchao-premium",
+  primaryColor: "#10233d",
+  secondaryColor: "#2f7868",
+  accentColor: "#a97e38",
+  backgroundColor: "#f5f7f5",
   cardBackground: "#ffffff",
   radius: 8,
   buttonStyle: "solid",
@@ -412,6 +412,23 @@ const DEFAULT_THEME: ThemeConfig = {
 };
 
 const palettePresets: PalettePreset[] = [
+  {
+    name: "Guanchao Editorial",
+    subtitle: "观潮品牌、会议运营与精品商城",
+    colors: ["#10233d", "#2f7868", "#a97e38", "#f5f7f5"],
+    values: {
+      visualPreset: "guanchao-premium",
+      primaryColor: "#10233d",
+      secondaryColor: "#2f7868",
+      accentColor: "#a97e38",
+      backgroundColor: "#f5f7f5",
+      cardBackground: "#ffffff",
+      backgroundGradientFrom: "#fafbfa",
+      backgroundGradientTo: "#ecf1ed",
+      bannerStyle: "immersive",
+      shadow: "soft"
+    }
+  },
   {
     name: "Conference Calm",
     subtitle: "商务会议、发布会、标准会务",

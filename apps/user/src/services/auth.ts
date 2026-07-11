@@ -37,6 +37,7 @@ export async function loginWithWechat(): Promise<LoginResponse> {
     auth: false
   });
   setAuthSession(data.token, data.user);
+  uni.$emit("auth:changed", data.user);
   return data;
 }
 

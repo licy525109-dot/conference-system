@@ -10,7 +10,7 @@
     "build:mp-weixin": "uni build -p mp-weixin",
     "typecheck": "vue-tsc --noEmit",
     "lint": "vue-tsc --noEmit -p tsconfig.json",
-    "test": "node -e \"console.log('user: no tests yet')\""
+    "test": "tsx --test src/**/*.spec.ts"
   },
   "dependencies": {
     "@conference/business-modules": "workspace:*",

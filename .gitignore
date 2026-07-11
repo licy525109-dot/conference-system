@@ -10,6 +10,9 @@ node_modules
 dist
 build
 coverage
+test-results/
+.playwright-cli/
+output/playwright/
 apps/**/dist
 services/**/dist
 .prisma

@@ -129,7 +129,8 @@ const GROUP_META: Record<string, { order: number; badge?: string; className?: st
   商城: { order: 80 },
   财务管理: { order: 90 },
   页面装修: { order: 100 },
-  系统管理: { order: 110 }
+  平台运营: { order: 110 },
+  系统管理: { order: 120 }
 };
 
 const menuRoutes = computed(() => routes.filter((route) => !route.hidden && hasPermission(route.permission) && isRouteVisible(route)));

@@ -12,16 +12,16 @@ export interface CmsComponentSupportDefinition {
 export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportDefinition> = {
   "fixed-business-template": {
     type: "fixed-business-template",
-    label: "固定业务模板",
+    label: "旧整页模板兼容",
     status: "supported",
     supported: true,
     platforms: ["h5", "mp-weixin"],
-    description: "用户端支持首页、排期、报名、商城、购物车和会员中心固定模板"
+    description: "历史整页模板会展开为统一的可配置组件组合"
   },
   hero: { label: "主视觉横幅", status: "supported", description: "用户端完整支持图片横幅展示" },
   "hero-banner": { label: "顶部主视觉 Banner", status: "supported", description: "用户端支持首页主视觉、双按钮、背景图和统一跳转配置" },
   "login-card": { label: "登录欢迎卡", status: "supported", description: "用户端支持微信头像昵称登录引导和登录后头像昵称展示" },
-  "quick-icon-grid": { label: "图标入口宫格", status: "supported", description: "用户端支持 2 到 4 列图标入口、动态图标图片和统一跳转配置" },
+  "quick-icon-grid": { label: "图标入口宫格", status: "supported", description: "用户端支持 2 到 5 列、列表、横滑、动态图标和统一跳转配置" },
   "member-promo-banner": { label: "会员 / 优惠横幅", status: "supported", description: "用户端支持会员、优惠券或活动横幅和统一跳转配置" },
   "event-card-carousel": { label: "活动 / 会议横滑", status: "supported", description: "用户端支持会议卡片横向滑动和详情跳转" },
   "service-shortcut-card": { label: "订单中心 / 快捷服务", status: "supported", description: "用户端支持订单、发票、售后、客服等快捷入口" },
@@ -39,7 +39,7 @@ export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportDef
   "image-grid": { label: "图片宫格", status: "supported", description: "用户端支持图片宫格展示" },
   video: { label: "视频组件", status: "supported", description: "用户端支持视频播放和封面展示" },
   notice: { label: "公告栏", status: "supported", description: "用户端支持公告提示展示" },
-  "stats-grid": { label: "数字亮点", status: "supported", description: "用户端支持数字亮点展示" },
+  "stats-grid": { label: "数字亮点", status: "supported", description: "用户端支持静态指标和当前用户报名、订单、待参会、优惠券数据" },
   "dual-track-tags": { label: "双赛道标签条", status: "supported", description: "用户端支持双行标签、右侧按钮和统一跳转配置" },
   "ticket-price-list": { label: "票种价格", status: "supported", description: "用户端支持票种价格文案展示" },
   "process-steps": { label: "报名流程", status: "supported", description: "用户端支持流程步骤展示" },
@@ -65,7 +65,7 @@ export const CMS_COMPONENT_SUPPORT_MATRIX: Record<string, CmsComponentSupportDef
   "membership-benefits": { label: "会员权益卡", status: "supported", description: "用户端支持会员权益展示和会员中心入口" },
   "user-profile-card": { label: "用户资料卡", status: "supported", description: "用户端支持登录资料和未登录引导" },
   "my-order-list": { label: "我的订单列表", status: "supported", description: "用户端支持报名和商城订单入口" },
-  "mall-product-grid": { label: "商城商品宫格", status: "supported", description: "用户端支持真实商品展示和详情跳转" },
+  "mall-product-grid": { label: "商城商品宫格", status: "supported", description: "用户端支持分类、列数、图片比例、宫格或横滑以及真实商品详情跳转" },
   "credential-header": { label: "凭证头部", status: "supported", description: "报名凭证页支持报名状态、会议名称和报名号展示" },
   "credential-qr": { label: "二维码卡片", status: "supported", description: "报名凭证页支持真实二维码展示" },
   "credential-conference-info": { label: "凭证会议信息", status: "supported", description: "报名凭证页支持会议时间、地点和票种展示" },

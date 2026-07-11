@@ -87,6 +87,7 @@ const permissionGroups = computed(() => {
     "商城",
     "财务管理",
     "页面装修",
+    "平台运营",
     "系统管理",
     "其他权限"
   ];
@@ -155,6 +156,7 @@ function permissionMenuGroup(permission: Permission): string {
   if (permission.code.startsWith("mall:")) return "商城";
   if (permission.code.startsWith("finance:") || permission.code.startsWith("refund:") || permission.code.startsWith("invoice:") || permission.code.startsWith("reconciliation:") || permission.code.startsWith("wechat-bill:")) return "财务管理";
   if (permission.code.startsWith("page:") || permission.code.startsWith("theme:") || permission.code.startsWith("tabbar:") || permission.code.startsWith("material:")) return "页面装修";
+  if (permission.code.startsWith("platform:")) return "平台运营";
   if (permission.code.startsWith("system:")) return "系统管理";
   return "其他权限";
 }

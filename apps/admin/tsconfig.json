@@ -12,6 +12,7 @@
       "@conference/dsl-runtime": ["../../runtime/src/index.ts"],
       "@conference/dsl-runtime/*": ["../../runtime/src/*"],
       "@conference/render-governor": ["../../render-governor/src/index.ts"],
+      "@conference/shared": ["../../packages/shared/src/index.ts"],
       "@/*": ["src/*"]
     }
   },

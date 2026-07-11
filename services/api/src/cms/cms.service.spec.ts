@@ -24,8 +24,8 @@ describe("CmsService public fallbacks", () => {
     const tabbar = await service.getTabbar();
 
     assert.equal(theme.code, "OK");
-    assert.equal(theme.data.config.visualPreset, "business-blue");
-    assert.equal(theme.data.config.primaryColor, "#315d7d");
+    assert.equal(theme.data.config.visualPreset, "guanchao-premium");
+    assert.equal(theme.data.config.primaryColor, "#10233d");
     assert.equal(tabbar.data.enabled, true);
     assert.equal(tabbar.data.items[0]?.pageKey, "home");
   });
@@ -84,6 +84,7 @@ describe("AdminCmsService validation", () => {
     });
 
     assert.deepEqual(blocked, []);
+    assert.equal(ENABLED_COMPONENT_TYPES.has("fixed-business-template"), false);
   });
 
   it("rejects dangerous HTML in draft DSL props", async () => {
