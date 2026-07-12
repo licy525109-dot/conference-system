@@ -65,17 +65,21 @@ test("page structure templates expand into independently editable modules", asyn
 });
 
 test("runtime preview reconnects after the user H5 service becomes available", async ({ page }) => {
-  let documentRequests = 0;
-  await page.route("http://localhost:5173/", async (route) => {
-    documentRequests += 1;
-    if (documentRequests === 1) return route.abort("connectionfailed");
+  const documentUrls: string[] = [];
+  await page.route(/^http:\/\/localhost:5173\/(?:\?.*)?$/, async (route) => {
+    documentUrls.push(route.request().url());
+    if (documentUrls.length === 1) return route.abort("connectionfailed");
     return route.continue();
   });
 
   await page.goto("http://localhost:5174/#/pages/editor?pageId=page-home");
   const runtime = page.frameLocator(".cms-runtime-preview__frame");
   await expect(runtime.locator(".cms-hero-banner").first()).toBeVisible({ timeout: 20_000 });
-  expect(documentRequests).toBeGreaterThanOrEqual(2);
+  expect(documentUrls.length).toBeGreaterThanOrEqual(2);
+  const previewRequests = documentUrls.map((value) => new URL(value));
+  expect(previewRequests.every((url) => Boolean(url.searchParams.get("cmsPreviewSession")))).toBe(true);
+  expect(previewRequests.map((url) => url.searchParams.get("cmsPreviewReload"))).toEqual(expect.arrayContaining(["0", "1"]));
+  expect(new Set(documentUrls).size).toBe(documentUrls.length);
 });
 
 test("runtime child acknowledges the first render when its initial ready message was missed", async ({ page }) => {
