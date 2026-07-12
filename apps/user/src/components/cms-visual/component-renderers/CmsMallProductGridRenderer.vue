@@ -1,7 +1,10 @@
 <template>
   <view class="cms-mall-products" :class="[`is-${layoutMode}`, `is-${cardStyle}`]">
     <view v-if="title || showMore" class="cms-mall-products__head">
-      <text v-if="title" class="cms-mall-products__title">{{ title }}</text>
+      <view v-if="title" class="cms-mall-products__heading">
+        <text class="cms-mall-products__eyebrow">PRODUCTS</text>
+        <text class="cms-mall-products__title">{{ title }}</text>
+      </view>
       <text v-if="showMore" class="cms-mall-products__more" @click.stop="emit('more')">{{ moreText }}</text>
     </view>
     <scroll-view v-if="categories.length > 1" scroll-x class="cms-mall-products__categories">
@@ -66,11 +69,7 @@ const gridStyle = computed(() => layoutMode.value === "scroll"
 <style scoped>
 .cms-mall-products {
   min-width: 0;
-  padding: 28rpx;
-  border: 1rpx solid var(--cms-border);
-  border-radius: 16rpx;
-  background: var(--cms-surface-elevated);
-  box-shadow: var(--cms-shadow-md);
+  padding: 10rpx 0 4rpx;
 }
 
 .cms-mall-products__head {
@@ -78,12 +77,27 @@ const gridStyle = computed(() => layoutMode.value === "scroll"
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
-  margin-bottom: 20rpx;
+  margin-bottom: 22rpx;
+  padding: 0 4rpx;
+}
+
+.cms-mall-products__heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.cms-mall-products__eyebrow {
+  color: var(--cms-accent);
+  font-size: 17rpx;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .cms-mall-products__title {
   color: var(--cms-text-primary);
-  font-size: 31rpx;
+  font-size: 32rpx;
   font-weight: 700;
 }
 
@@ -105,7 +119,8 @@ const gridStyle = computed(() => layoutMode.value === "scroll"
 }
 
 .cms-mall-products__category {
-  padding: 12rpx 24rpx;
+  padding: 13rpx 26rpx;
+  border: 1rpx solid transparent;
   border-radius: 999rpx;
   color: var(--cms-text-secondary);
   font-size: 22rpx;
@@ -115,12 +130,13 @@ const gridStyle = computed(() => layoutMode.value === "scroll"
 .cms-mall-products__category.active {
   color: #f8faf8;
   background: var(--cms-primary);
+  box-shadow: 0 8rpx 18rpx rgba(16, 35, 61, 0.14);
 }
 
 .cms-mall-products__grid {
   display: grid;
   min-width: 0;
-  gap: 18rpx;
+  gap: 20rpx;
 }
 
 .cms-mall-products__grid.is-scroll {
@@ -144,5 +160,9 @@ const gridStyle = computed(() => layoutMode.value === "scroll"
   color: var(--cms-text-secondary);
   font-size: 23rpx;
   text-align: center;
+}
+
+.cms-mall-products.is-plain .cms-mall-product-card {
+  box-shadow: none;
 }
 </style>

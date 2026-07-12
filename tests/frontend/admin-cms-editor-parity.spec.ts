@@ -12,25 +12,33 @@ test("admin editor uses the same configurable module composition", async ({ page
   await page.goto("http://localhost:5174/#/pages/editor?pageId=page-home");
 
   await expect(page.locator(".cms-workbench")).toBeVisible();
-  await expect(page.locator(".preview-home-hero")).toBeVisible();
-  await expect(page.locator(".preview-login-card")).toContainText("潮起东方");
-  await expect(page.locator(".preview-entry-grid").first()).toBeVisible();
-  await expect(page.locator(".phone-screen")).not.toContainText(/hero-banner|quick-icon-grid|stats-grid/);
+  const runtime = page.frameLocator(".cms-runtime-preview__frame");
+  await expect(runtime.locator(".cms-hero-banner").first()).toBeVisible();
+  await expect(runtime.locator(".cms-login-card")).toContainText("潮起东方");
+  await expect(runtime.locator(".cms-entry-module__grid").first()).toBeVisible();
+  await expect(runtime.locator("body")).not.toContainText(/hero-banner|quick-icon-grid|stats-grid/);
+  await expect(page.locator(".component-category-rail")).toBeHidden();
+  await expect(page.getByRole("combobox", { name: "组件分类" })).toBeVisible();
 
   const left = await page.locator(".cms-sidebar--left").boundingBox();
   const preview = await page.locator(".phone-shell").boundingBox();
   const right = await page.locator(".cms-sidebar--right").boundingBox();
   expect(left && preview && right).toBeTruthy();
+  expect(Math.abs(preview!.width - 375)).toBeLessThanOrEqual(2);
+  expect(Math.abs(preview!.height - 812)).toBeLessThanOrEqual(2);
   expect(left!.x + left!.width).toBeLessThan(preview!.x);
   expect(preview!.x + preview!.width).toBeLessThan(right!.x + 2);
+  const leftOverflow = await page.locator(".cms-sidebar--left").evaluate((element) => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }));
+  expect(leftOverflow.scrollWidth).toBeLessThanOrEqual(leftOverflow.clientWidth + 1);
 
   await page.getByText("访客", { exact: true }).click();
-  await expect(page.locator(".preview-login-card")).toContainText("立即登录");
+  await expect(runtime.locator(".cms-login-card")).toContainText("立即登录");
   await page.getByText("已登录", { exact: true }).click();
-  await expect(page.locator(".preview-login-card")).toContainText("黄金会员");
+  await expect(runtime.locator(".cms-login-card")).toContainText("黄金会员");
 
-  await page.locator(".preview-entry-grid").first().click();
-  await expect(page.locator(".preview-block.is-selected")).toContainText("年度排期");
+  const entryBlock = runtime.locator(".cms-block").filter({ has: runtime.locator(".cms-entry-module") }).first();
+  await entryBlock.locator(".cms-editor-preview-hit-area").click();
+  await expect(runtime.locator(".cms-block.is-editor-selected")).toContainText("年度排期");
   await expect(page.locator(".cms-sidebar--right").getByText("入口配置", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("admin-cms-editor.png", { fullPage: true, maxDiffPixelRatio: 0.02 });
 });
@@ -45,9 +53,10 @@ test("page structure templates expand into independently editable modules", asyn
   await page.getByRole("button", { name: "继续应用" }).click();
 
   await expect(page.locator(".layer-item")).toHaveCount(8);
-  await expect(page.locator(".preview-home-hero")).toBeVisible();
-  await expect(page.locator(".preview-login-card")).toBeVisible();
-  await expect(page.locator(".preview-entry-grid")).toHaveCount(2);
+  const runtime = page.frameLocator(".cms-runtime-preview__frame");
+  await expect(runtime.locator(".cms-hero-banner")).toBeVisible();
+  await expect(runtime.locator(".cms-login-card")).toBeVisible();
+  await expect(runtime.locator(".cms-entry-module")).toHaveCount(2);
   await expect(page.locator(".layer-list")).not.toContainText("旧版整页模板");
 });
 

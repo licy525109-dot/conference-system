@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { onHide, onLaunch, onShow } from "@dcloudio/uni-app";
 import { goHome } from "@/utils/navigation";
+import { shouldRelaunchHome } from "@/utils/startupRoute";
 
-const HOME_ROUTE = "pages/index/index";
-const SPLASH_ROUTE = "pages/splash/index";
 const STARTUP_FALLBACK_DELAY_MS = 500;
 const MAX_STARTUP_FALLBACK_ATTEMPTS = 5;
 let startupFallbackTimer: ReturnType<typeof setTimeout> | undefined;
@@ -58,58 +57,6 @@ function relaunchHomeIfStartupRouteIsInvalid(): void {
   }
 }
 
-function shouldRelaunchHome(route: string, options: Record<string, unknown>): boolean {
-  if (!route) {
-    return true;
-  }
-
-  if (route === HOME_ROUTE) {
-    return false;
-  }
-
-  if (route === SPLASH_ROUTE) {
-    return false;
-  }
-
-  if (route === "pages/payment/result") {
-    return !hasStringValue(options.orderNo);
-  }
-
-  if (route === "pages/conference/detail") {
-    return !hasStringValue(options.id) && !hasStringValue(options.conferenceId);
-  }
-
-  if (route === "pages/registration/form") {
-    return !hasStringValue(options.conferenceId);
-  }
-
-  if (route === "pages/registrations/my") {
-    return false;
-  }
-
-  if (route === "pages/cart/index") {
-    return false;
-  }
-
-  if (route === "pages/member/center") {
-    return false;
-  }
-
-  if (route === "pages/mall/index") {
-    return false;
-  }
-
-  if (route === "pages/mall/detail") {
-    return !hasStringValue(options.id);
-  }
-
-  if (route === "pages/custom/index") {
-    return !hasStringValue(options.pageKey);
-  }
-
-  return true;
-}
-
 function readQuery(query: unknown): Record<string, unknown> {
   return typeof query === "object" && query !== null ? (query as Record<string, unknown>) : {};
 }
@@ -121,9 +68,6 @@ function normalizeRoute(path: string | undefined): string {
   return path.startsWith("/") ? path.slice(1) : path;
 }
 
-function hasStringValue(value: unknown): boolean {
-  return typeof value === "string" && value.length > 0;
-}
 </script>
 
 <style>

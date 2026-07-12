@@ -34,6 +34,19 @@ const PAGE_TYPES_REQUIRING_PRODUCT = new Set(["PRODUCT_DETAIL_PAGE"]);
 const DEFAULT_SCOPE = "global";
 const PAGE_LIBRARY_PREFIX = "template:";
 
+interface CmsSeedVersionState {
+  versionNo: number;
+  status: string;
+  createdBy: string | null;
+}
+
+export function isUntouchedSeedDraft(versions: CmsSeedVersionState[]): boolean {
+  return versions.length === 1
+    && versions[0]?.versionNo === 1
+    && versions[0]?.status === "DRAFT"
+    && !versions[0]?.createdBy;
+}
+
 @Injectable()
 export class AdminCmsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -638,16 +651,68 @@ export class AdminCmsService {
           enabled: true
         }
       });
-      const versions = await this.prisma.pageVersion.count({ where: { templateId: template.id } });
-      if (versions === 0) {
-        await this.prisma.pageVersion.create({
-          data: {
-            templateId: template.id,
-            versionNo: 1,
-            status: "DRAFT",
-            title: page.title,
-            components: parsePageDslInput(defaultPageComponents(page.pageKey), page.pageKey) as unknown as Prisma.InputJsonObject
-          }
+      const versions = await this.prisma.pageVersion.findMany({
+        where: { templateId: template.id },
+        orderBy: { versionNo: "asc" },
+        select: {
+          id: true,
+          versionNo: true,
+          status: true,
+          title: true,
+          components: true,
+          themeJson: true,
+          createdBy: true
+        }
+      });
+      if (versions.length === 0) {
+        const dsl = parsePageDslInput(defaultPageComponents(page.pageKey), page.pageKey) as unknown as Prisma.InputJsonObject;
+        await this.prisma.$transaction(async (tx) => {
+          const published = await tx.pageVersion.create({
+            data: {
+              templateId: template.id,
+              versionNo: 1,
+              status: "PUBLISHED",
+              title: page.title,
+              components: dsl,
+              publishedAt: new Date()
+            },
+            select: { id: true }
+          });
+          await tx.pageVersion.create({
+            data: {
+              templateId: template.id,
+              versionNo: 2,
+              status: "DRAFT",
+              title: page.title,
+              components: dsl
+            }
+          });
+          await tx.pageTemplate.update({
+            where: { id: template.id },
+            data: { publishedVersionId: published.id }
+          });
+        });
+      } else if (!template.publishedVersionId && isUntouchedSeedDraft(versions)) {
+        const [seedDraft] = versions;
+        await this.prisma.$transaction(async (tx) => {
+          await tx.pageVersion.update({
+            where: { id: seedDraft.id },
+            data: { status: "PUBLISHED", publishedAt: new Date() }
+          });
+          await tx.pageVersion.create({
+            data: {
+              templateId: template.id,
+              versionNo: seedDraft.versionNo + 1,
+              status: "DRAFT",
+              title: seedDraft.title,
+              components: seedDraft.components as Prisma.InputJsonObject,
+              themeJson: readPlainObject(seedDraft.themeJson) ?? undefined
+            }
+          });
+          await tx.pageTemplate.update({
+            where: { id: template.id },
+            data: { publishedVersionId: seedDraft.id }
+          });
         });
       }
     }

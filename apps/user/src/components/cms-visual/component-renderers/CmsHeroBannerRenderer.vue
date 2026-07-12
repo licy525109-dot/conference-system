@@ -8,8 +8,8 @@
       <text v-if="showTitle && title" class="cms-hero-banner__title">{{ title }}</text>
       <text v-if="showDescription && description" class="cms-hero-banner__description">{{ description }}</text>
       <view v-if="buttonText || secondaryButtonText" class="cms-hero-banner__actions" :class="`is-${contentAlign}`">
-        <button v-if="buttonText" class="cms-hero-banner__button" @click.stop="emit('primary')">{{ buttonText }}</button>
-        <button v-if="secondaryButtonText" class="cms-hero-banner__button is-secondary" @click.stop="emit('secondary')">{{ secondaryButtonText }}</button>
+        <wd-button v-if="buttonText" size="small" :round="false" :custom-style="primaryButtonStyle" @click.stop="emit('primary')">{{ buttonText }}</wd-button>
+        <wd-button v-if="secondaryButtonText" size="small" plain :round="false" :custom-style="secondaryButtonStyle" @click.stop="emit('secondary')">{{ secondaryButtonText }}</wd-button>
       </view>
     </view>
   </view>
@@ -55,6 +55,8 @@ const copyStyle = computed(() => ({
   textAlign: contentAlign.value,
   color: stringConfig(props.component, "textColor", "#f9faf8")
 }));
+const primaryButtonStyle = "min-height:72rpx;padding:0 30rpx;border-radius:12rpx;background:var(--cms-primary);color:#f8faf8;border:0;";
+const secondaryButtonStyle = "min-height:72rpx;padding:0 30rpx;border-radius:12rpx;background:rgba(18,35,59,.28);color:#f8faf8;border-color:rgba(248,250,248,.58);";
 
 function normalizeAlign(value: string): "left" | "center" | "right" {
   return value === "center" || value === "right" ? value : "left";

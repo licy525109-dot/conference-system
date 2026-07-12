@@ -1,19 +1,25 @@
 <template>
-  <view class="page-renderer" :style="rootStyle">
-    <CmsVisualRenderer
-      v-if="useCmsVisualRenderer"
-      :components="visualComponents"
-      :theme="theme"
-      :conferences="conferences"
-      :conference="conference"
-      :products="products"
-      :user-context="effectiveUserContext"
-      :suppress-registration-cta="suppressRegistrationCta"
-      @open-conference="emit('openConference', $event)"
-      @register="emit('register')"
-    />
-    <DslRenderTree v-else :nodes="renderTree.nodes" @action="handleAction" />
-  </view>
+  <wd-config-provider :theme-vars="wotThemeVars">
+    <view class="page-renderer" :style="rootStyle">
+      <CmsVisualRenderer
+        v-if="useCmsVisualRenderer"
+        :components="visualComponents"
+        :theme="theme"
+        :conferences="conferences"
+        :conference="conference"
+        :products="products"
+        :user-context="effectiveUserContext"
+        :suppress-registration-cta="suppressRegistrationCta"
+        :editor-preview="editorPreview"
+        :selected-component-id="selectedComponentId"
+        @open-conference="emit('openConference', $event)"
+        @register="emit('register')"
+        @select-component="emit('selectComponent', $event)"
+        @reorder-component="emit('reorderComponent', $event.sourceId, $event.targetId)"
+      />
+      <DslRenderTree v-else :nodes="renderTree.nodes" @action="handleAction" />
+    </view>
+  </wd-config-provider>
 </template>
 
 <script setup lang="ts">
@@ -34,6 +40,8 @@ import { stringifyQuery } from "@/utils/query";
 const emit = defineEmits<{
   openConference: [id: string];
   register: [];
+  selectComponent: [id: string];
+  reorderComponent: [sourceId: string, targetId: string];
 }>();
 
 const props = defineProps<{
@@ -44,6 +52,9 @@ const props = defineProps<{
   products?: Product[];
   userContext?: Record<string, unknown> | null;
   suppressRegistrationCta?: boolean;
+  editorPreview?: boolean;
+  selectedComponentId?: string;
+  platform?: "h5" | "miniapp";
 }>();
 
 const { context: currentUserContext, refresh: refreshCurrentUserContext } = useCurrentUserContext();
@@ -52,7 +63,7 @@ const effectiveUserContext = computed(() => props.userContext ?? currentUserCont
 const runtimeContext = computed(() =>
   createGovernedRuntimeContext({
     page: props.dsl.page,
-    platform: typeof window === "undefined" ? "miniapp" : "h5",
+    platform: props.platform ?? (typeof window === "undefined" ? "miniapp" : "h5"),
     theme: {
       id: String(props.theme.visualPreset || "cms-theme"),
       name: "CMS Theme",
@@ -92,6 +103,16 @@ const renderTree = computed(() => ({
 }));
 const rootStyle = computed(() => ({
   ...createCmsThemeVars(props.theme)
+}));
+const wotThemeVars = computed(() => ({
+  colorTheme: props.theme.primaryColor,
+  buttonPrimaryBgColor: props.theme.primaryColor,
+  buttonPrimaryColor: "#f8faf9",
+  buttonBorderRadius: `${Math.max(4, Number(props.theme.radius) || 8)}px`,
+  tagPrimaryColor: props.theme.primaryColor,
+  tabsNavLineBgColor: props.theme.accentColor,
+  tabsNavActiveColor: props.theme.primaryColor,
+  searchInputBg: props.theme.cardBackground
 }));
 
 function isRegistrationNode(node: ResolvedDslNode): boolean {

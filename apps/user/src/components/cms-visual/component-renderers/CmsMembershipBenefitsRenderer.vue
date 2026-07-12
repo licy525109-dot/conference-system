@@ -6,7 +6,7 @@
         <text class="cms-membership-benefits__title">{{ title }}</text>
         <text v-if="subtitle" class="cms-membership-benefits__subtitle">{{ subtitle }}</text>
       </view>
-      <button class="cms-membership-benefits__button" @click.stop="emit('activate')">{{ buttonText }}</button>
+      <wd-button custom-class="cms-membership-benefits__button" size="small" type="warning" :round="false" :custom-style="benefitButtonStyle" @click.stop="emit('activate')">{{ buttonText }}</wd-button>
     </view>
     <view class="cms-membership-benefits__items">
       <view v-for="(item, index) in items" :key="`${index}-${item}`" class="cms-membership-benefits__item">
@@ -34,6 +34,7 @@ const items = computed(() => stringListConfig(props.component, "items").length >
 const rootStyle = computed(() => stringConfig(props.component, "imageUrl")
   ? { backgroundImage: `url(${stringConfig(props.component, "imageUrl")})` }
   : {});
+const benefitButtonStyle = "min-height:62rpx;padding:0 24rpx;border-radius:12rpx;background:#e7d1aa;color:#15304d;border:0;";
 </script>
 
 <style scoped>
@@ -131,5 +132,27 @@ const rootStyle = computed(() => stringConfig(props.component, "imageUrl")
   color: #e7d1aa;
   font-size: 25rpx;
   font-weight: 700;
+}
+
+@media (max-width: 430px) {
+  .cms-membership-benefits__head {
+    align-items: center;
+  }
+
+  .cms-membership-benefits__items {
+    grid-template-columns: 1fr;
+  }
+
+  .cms-membership-benefits__item {
+    min-height: 86rpx;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .cms-membership-benefits__item + .cms-membership-benefits__item {
+    border-top: 1rpx solid rgba(247, 248, 246, 0.14);
+    border-left: 0;
+  }
 }
 </style>

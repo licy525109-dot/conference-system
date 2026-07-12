@@ -67,12 +67,12 @@
         </view>
 
         <view class="cms-conference-schedule__actions">
-          <button class="cms-conference-schedule__action" @click.stop="emit('action', item)">
+          <wd-button size="small" :round="false" :custom-style="primaryActionStyle" @click.stop="emit('action', item)">
             {{ conferenceActionText(item) }}
-          </button>
-          <button v-if="showItemCalendarButton" class="cms-conference-schedule__calendar-action" @click.stop="emit('calendar', item)">
+          </wd-button>
+          <wd-button v-if="showItemCalendarButton" size="small" plain :round="false" :custom-style="calendarActionStyle" @click.stop="emit('calendar', item)">
             日历
-          </button>
+          </wd-button>
         </view>
       </view>
     </view>
@@ -164,6 +164,8 @@ const showCalendarButton = computed(() => booleanConfig(props.component, "showCa
 const showItemCalendarButton = computed(() => booleanConfig(props.component, "showItemCalendarButton", false));
 const showEndTime = computed(() => booleanConfig(props.component, "showEndTime", false));
 const calendarText = computed(() => stringConfig(props.component, "calendarText", "日历"));
+const primaryActionStyle = "min-height:64rpx;padding:0 26rpx;border-radius:12rpx;background:var(--cms-primary);color:#f8faf8;border:0;";
+const calendarActionStyle = "min-height:64rpx;padding:0 22rpx;border-radius:12rpx;background:transparent;color:var(--cms-primary);border-color:var(--cms-border);";
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -523,7 +525,7 @@ function emitFirstCalendar(): void {
   text-align: center;
 }
 
-@media (max-width: 360px) {
+@media (max-width: 430px) {
   .cms-conference-schedule__main {
     grid-template-columns: 108rpx minmax(0, 1fr);
   }

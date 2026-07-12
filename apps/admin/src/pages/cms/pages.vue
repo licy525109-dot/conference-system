@@ -10,6 +10,9 @@
         </span>
       </div>
       <div class="cms-editor-toolbar__actions">
+        <span class="cms-live-state" :class="{ 'is-unpublished': !selectedPage?.publishedVersionId }">
+          {{ selectedPage?.publishedVersionId ? "小程序线上版本已发布" : "尚未发布，小程序暂不可见" }}
+        </span>
         <span class="cms-save-state" :class="{ 'is-saving': saving, 'is-dirty': isDirty }">
           <CircleCheck v-if="!saving && !isDirty" />
           <Loading v-else-if="saving" class="is-spinning" />
@@ -46,39 +49,35 @@
           </div>
           <div class="library-filters">
             <el-input v-model="presetKeyword" clearable :prefix-icon="Search" placeholder="搜索组件" />
+            <el-select v-model="activePresetGroup" aria-label="组件分类" placeholder="选择组件分类">
+              <el-option label="全部组件" value="all" />
+              <el-option v-for="group in presetGroups" :key="group.name" :label="`${group.name}（${group.items.length}）`" :value="group.name" />
+            </el-select>
           </div>
-          <div v-if="filteredPresetGroups.length > 0" class="component-category-rail">
+          <div class="component-library-result-summary">
+            <span>{{ visiblePresets.length }} 个可用组件</span>
+            <button v-if="presetKeyword || activePresetGroup !== 'all'" type="button" @click="resetComponentLibraryFilters">清除筛选</button>
+          </div>
+          <div v-if="visiblePresets.length > 0" class="preset-grid is-operator-grid">
             <button
-              v-for="group in filteredPresetGroups"
-              :key="group.name"
-              type="button"
-              :class="{ active: activePresetGroup === group.name }"
-              @click="activePresetGroup = group.name"
+              v-for="preset in visiblePresets"
+              :key="preset.type"
+              class="preset-card"
+              :class="supportStatusClass(preset.type)"
+              :disabled="!canAddPreset(preset)"
+              @click="addComponent(preset)"
             >
-              <strong>{{ group.name }}</strong>
-              <span>{{ group.items.length }}</span>
+              <CmsPresetThumbnail :type="preset.type" :config="preset.defaultConfigJson" />
+              <span class="preset-card__label">
+                <span class="preset-card__icon"><component :is="presetIcon(preset.type)" /></span>
+                <span class="preset-card__copy">
+                  <strong>{{ preset.name }}</strong>
+                  <small>{{ preset.group }}</small>
+                </span>
+              </span>
             </button>
           </div>
-          <el-tabs v-model="activePresetGroup" class="library-tabs compact-library-tabs">
-            <el-tab-pane v-for="group in filteredPresetGroups" :key="group.name" :label="group.name" :name="group.name">
-              <div class="preset-grid is-operator-grid">
-                <button
-                  v-for="preset in group.items"
-                  :key="preset.type"
-                  class="preset-card"
-                  :class="supportStatusClass(preset.type)"
-                  :disabled="!canAddPreset(preset)"
-                  @click="addComponent(preset)"
-                >
-                  <CmsPresetThumbnail :type="preset.type" :config="preset.defaultConfigJson" />
-                  <span class="preset-card__label">
-                    <span class="preset-card__icon"><component :is="presetIcon(preset.type)" /></span>
-                    <strong>{{ preset.name }}</strong>
-                  </span>
-                </button>
-              </div>
-            </el-tab-pane>
-          </el-tabs>
+          <el-empty v-else description="没有找到匹配组件" :image-size="48" />
         </section>
 
         <section class="data-panel cms-panel layer-panel">
@@ -151,35 +150,12 @@
                 </template>
               </div>
               <div class="phone-screen">
-                <ThemeDynamicBackgroundPreview v-if="previewShowDynamicBackground" :theme="previewTheme" />
-                <div class="phone-screen__content">
-                  <CmsBusinessPreview v-if="businessPreviewContext" :context="businessPreviewContext" />
-                  <template v-if="previewComponents.length > 0">
-                    <div
-                      v-for="component in previewComponents"
-                      :id="previewComponentDomId(component.id)"
-                      :key="component.id"
-                      class="preview-block"
-                      :class="{ 'is-selected': selectedComponentId === component.id, 'is-dragging': draggingComponentId === component.id }"
-                      draggable="true"
-                      @click="selectPreviewComponent(component.id)"
-                      @dragstart="startPreviewDrag(component.id, $event)"
-                      @dragover.prevent
-                      @drop.prevent="dropPreviewComponent(component.id)"
-                      @dragend="finishPreviewDrag"
-                    >
-                      <div v-if="selectedComponentId === component.id" class="preview-block__toolbar" @click.stop @mousedown.stop>
-                        <el-tooltip content="隐藏组件" placement="top"><el-button circle :icon="Hide" @click="component.enabled = false" /></el-tooltip>
-                        <el-tooltip content="上移" placement="top"><el-button circle :icon="ArrowUp" :disabled="componentIndex(component.id) === 0" @click="moveSelectedBy(-1)" /></el-tooltip>
-                        <el-tooltip content="下移" placement="top"><el-button circle :icon="ArrowDown" :disabled="componentIndex(component.id) === components.length - 1" @click="moveSelectedBy(1)" /></el-tooltip>
-                        <el-tooltip content="复制" placement="top"><el-button circle :icon="CopyDocument" @click="duplicateSelectedComponent" /></el-tooltip>
-                        <el-tooltip content="删除" placement="top"><el-button circle type="danger" :icon="Delete" @click="removeSelectedComponent" /></el-tooltip>
-                      </div>
-                      <component-preview :item="component" :name="presetName(component.type)" :user-mode="previewUserMode" />
-                    </div>
-                  </template>
-                  <div v-else-if="!businessPreviewContext" class="preview-empty">页面暂无展示内容</div>
-                </div>
+                <CmsRuntimePreview
+                  :src="runtimePreviewUrl"
+                  :payload="runtimePreviewPayload"
+                  @select-component="selectPreviewComponent"
+                  @reorder-component="moveComponentTo"
+                />
               </div>
               <div v-if="previewTabbarItems.length > 0" class="phone-tabbar">
                 <div
@@ -1025,10 +1001,9 @@ import {
   View
 } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import CmsBusinessPreview from "../../components/cms/CmsBusinessPreview.vue";
 import CmsPresetThumbnail from "../../components/cms/CmsPresetThumbnail.vue";
+import CmsRuntimePreview from "../../components/cms/CmsRuntimePreview.vue";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
-import ThemeDynamicBackgroundPreview from "../../components/ThemeDynamicBackgroundPreview.vue";
 import type { PageDsl } from "@conference/dsl-runtime";
 import { buildCmsPageComposition, expandLegacyCmsTemplate } from "@conference/shared";
 import {
@@ -1247,18 +1222,6 @@ interface ComponentParityContractView {
   h5Adapter: string;
   miniappAdapter: string;
   rules: ComponentParityRuleView[];
-}
-
-interface BusinessPreviewContextModel {
-  kind: string;
-  label: string;
-  title: string;
-  subtitle: string;
-  rows: Array<{ label: string; value: string }>;
-  notice: string;
-  modules?: BusinessDisplayModule[];
-  cta?: string;
-  user?: PreviewUserContext;
 }
 
 interface PreviewUserContext {
@@ -1760,7 +1723,7 @@ const templatePreview = ref<PageLibraryTemplate | null>(null);
 const createForm = reactive({ slug: "", title: "", description: "", templateId: "", pageType: "CUSTOM", conferenceId: "", productId: "" });
 const saveTemplateForm = reactive({ slug: "", title: "", category: "自定义模板", description: "" });
 const presetKeyword = ref("");
-const activePresetGroup = ref("");
+const activePresetGroup = ref("all");
 const previewPlatform = ref<"miniapp" | "h5">("miniapp");
 const previewUserMode = ref<"guest" | "member">("member");
 const selectedComponentId = ref("");
@@ -1945,21 +1908,27 @@ const filteredPresetGroups = computed(() => {
     }))
     .filter((group) => group.items.length > 0);
 });
+const visiblePresets = computed(() => {
+  const keyword = presetKeyword.value.trim().toLocaleLowerCase("zh-CN");
+  return presets.value
+    .filter((preset) => preset.enabled)
+    .filter((preset) => activePresetGroup.value === "all" || preset.group === activePresetGroup.value)
+    .filter((preset) => !keyword || `${preset.name} ${preset.description || ""} ${preset.group}`.toLocaleLowerCase("zh-CN").includes(keyword));
+});
 
 const componentLibraryStats = computed(() => ({
   total: presets.value.filter((preset) => preset.enabled).length,
   supported: presets.value.filter((preset) => canAddPreset(preset)).length
 }));
 const activePresetGroupMeta = computed(() => {
-  const group = filteredPresetGroups.value.find((item) => item.name === activePresetGroup.value);
+  const items = activePresetGroup.value === "all"
+    ? presetGroups.value.flatMap((item) => item.items)
+    : filteredPresetGroups.value.find((item) => item.name === activePresetGroup.value)?.items ?? [];
   return {
-    count: group?.items.length ?? 0,
-    supported: group?.items.filter((preset) => canAddPreset(preset)).length ?? 0
+    count: items.length,
+    supported: items.filter((preset) => canAddPreset(preset)).length
   };
 });
-const previewComponents = computed(() =>
-  components.value.filter((item) => item.enabled && !(businessPreviewContext.value && item.type === "fixed-business-template"))
-);
 const unsupportedEnabledComponents = computed(() =>
   components.value.filter((item) => item.enabled && ["unsupported", "planned"].includes(componentSupport(item.type).status))
 );
@@ -1993,6 +1962,25 @@ const previewRouteHint = computed(() => {
   const route = previewRouteForPage(selectedPage.value);
   return previewPlatform.value === "miniapp" ? route.miniapp : route.h5;
 });
+const runtimePreviewUrl = computed(() => {
+  const configured = String(import.meta.env.VITE_CMS_RUNTIME_PREVIEW_URL || "").trim();
+  if (configured) return configured;
+  return import.meta.env.DEV
+    ? "http://localhost:5173/#/pages/cms-preview/index"
+    : "https://m.guanchaohuiji.com/#/pages/cms-preview/index";
+});
+const runtimePreviewUserContext = computed<Record<string, unknown> | null>(() => previewUserMode.value === "member"
+  ? { loggedIn: true, userId: "cms-preview-user", ...SAMPLE_USER_CONTEXT }
+  : { loggedIn: false });
+const runtimePreviewPayload = computed(() => ({
+  platform: previewPlatform.value,
+  dsl: dslFromComponents(selectedPage.value?.pageKey ?? "cms-preview"),
+  theme: { ...previewTheme },
+  conferences: previewContextConferences.value.map(toRuntimePreviewConference),
+  products: productOptions.value,
+  userContext: runtimePreviewUserContext.value,
+  selectedComponentId: selectedComponentId.value
+}));
 const requiresCreateConference = computed(() => PAGE_TYPES_REQUIRING_CONFERENCE_UI.includes(createForm.pageType));
 const createConferenceBindingHelp = computed(() => {
   if (createForm.pageType === "REGISTRATION_FORM_PAGE") return "指定会议报名页只对所选会议生效；未命中时用户端会回退会议报名通用页。";
@@ -2017,15 +2005,6 @@ const showBusinessDisplayEditor = computed(() => {
   const page = selectedPage.value;
   return Boolean(page && businessDisplayKeyForPage(page));
 });
-const previewBusinessModules = computed(() =>
-  businessDisplay.modules
-    .map((module) => ({
-      ...module,
-      visible: module.key === "assistant" && businessDisplay.assistantMode === "hidden" ? false : module.visible
-    }))
-    .filter((module) => module.visible)
-    .sort((a, b) => a.sort - b.sort)
-);
 const businessDisplayStats = computed(() => {
   const total = businessDisplay.modules.length;
   const visible = businessDisplay.modules.filter((module) => module.visible).length;
@@ -2121,183 +2100,6 @@ const previewContextHint = computed(() => {
   }
   return "";
 });
-const businessPreviewContext = computed<BusinessPreviewContextModel | null>(() => {
-  const page = selectedPage.value;
-  if (!page) return null;
-  const conference = selectedBoundConference.value ?? (isConferenceContextPage(page) ? previewContextConferences.value[0] : null);
-  const product = selectedBoundProduct.value ?? (page.pageType === "PRODUCT_DETAIL_TEMPLATE" || page.pageType === "PRODUCT_DETAIL_PAGE" || page.pageKey === "mall-detail" ? productOptions.value[0] ?? null : null);
-
-  if (["CONFERENCE_DETAIL", "CONFERENCE_DETAIL_TEMPLATE", "CONFERENCE_DETAIL_PAGE"].includes(page.pageType) || page.pageKey === "conference-detail") {
-    return {
-      kind: "conference-detail",
-      label: selectedBoundConference.value ? "指定会议详情" : "会议详情通用模板",
-      title: conference?.title ?? "选择会议，完成报名缴费",
-      subtitle: conference?.subtitle || "会议详情固定展示会议标题、时间、地点和报名状态，CMS 内容会显示在详情说明区域。",
-      rows: [
-        { label: "会议时间", value: conference ? formatPreviewDate(conference.startAt) : "以会议真实时间为准" },
-        { label: "会议地点", value: conference?.location || "以会议真实地点为准" },
-        { label: "报名状态", value: "由会议报名时间和票种库存实时计算" }
-      ],
-      notice: "小程序真实页会先展示会议固定信息和底部报名按钮，再展示当前 CMS 组件。",
-      modules: previewBusinessModules.value,
-      cta: businessDisplay.primaryButtonText || "立即报名"
-    };
-  }
-
-  if (page.pageType === "REGISTRATION_FORM" || page.pageType === "REGISTRATION_FORM_PAGE") {
-    return {
-      kind: "registration-form",
-      label: selectedBoundConference.value ? "指定会议报名页" : "会议报名通用页",
-      title: conference?.title ?? "会议报名",
-      subtitle: "报名页固定展示票种选择、优惠试算、参会人表单和费用确认，CMS 内容插入在报名信息与票种选择之间。",
-      rows: [
-        { label: "绑定会议", value: conference?.title ?? "进入具体会议报名时自动注入" },
-        { label: "表单字段", value: "来自该会议报名表单配置" },
-        { label: "金额计算", value: "提交订单时由后端重算" }
-      ],
-      notice: "后台预览使用所选会议上下文；用户端会按 conferenceId 读取指定页，未命中时回退通用页。",
-      modules: previewBusinessModules.value,
-      cta: "提交订单"
-    };
-  }
-
-  if (page.pageType === "REGISTRATION_CREDENTIAL" || page.pageType === "REGISTRATION_CREDENTIAL_PAGE") {
-    return {
-      kind: "registration-credential",
-      label: selectedBoundConference.value ? "指定报名凭证页" : "报名凭证通用页",
-      title: conference?.title ?? "报名凭证",
-      subtitle: "凭证页会注入真实报名号、二维码、支付信息、报名字段和签到状态。",
-      rows: [
-        { label: "绑定会议", value: conference?.title ?? "根据报名记录自动注入" },
-        { label: "凭证二维码", value: "使用真实报名凭证 token" },
-        { label: "签到状态", value: "按当前报名记录实时展示" }
-      ],
-      notice: "预览展示页面结构；小程序真实页会使用用户自己的报名凭证数据。",
-      modules: previewBusinessModules.value,
-      user: SAMPLE_USER_CONTEXT,
-      cta: "查看签到"
-    };
-  }
-
-  if (page.pageType === "PRODUCT_DETAIL_TEMPLATE" || page.pageType === "PRODUCT_DETAIL_PAGE" || page.pageKey === "mall-detail") {
-    return {
-      kind: "product-detail",
-      label: selectedBoundProduct.value ? "指定商品详情" : "商品详情通用模板",
-      title: product?.title ?? "商品详情",
-      subtitle: product?.subtitle || "商品详情固定展示商品图片、SKU 库存、数量和履约信息，CMS 内容会显示在商品说明区域。",
-      rows: [
-        { label: "绑定商品", value: product?.title ?? "进入具体商品时自动注入" },
-        { label: "库存", value: "来自商品 SKU 实时库存" },
-        { label: "订单", value: "创建商城待支付订单后再支付" }
-      ],
-      notice: "指定商品页按 productId 优先生效；未命中时回退商品详情通用模板。",
-      modules: previewBusinessModules.value,
-      cta: "创建订单"
-    };
-  }
-
-  if (page.pageKey === "cart" || page.pageType === "MALL_CHECKOUT") {
-    return {
-      kind: "cart",
-      label: "商城下单/购物车页",
-      title: "购物车",
-      subtitle: "购物车页的标题、提示、报名项、商品项、收货信息、商品券、空状态、推荐和结算条都受固定业务模块配置控制。",
-      rows: [
-        { label: "报名项", value: "沿用会议报名支付链路" },
-        { label: "商品项", value: "创建商城待支付订单" }
-      ],
-      notice: "后台预览会按模块显示/隐藏模拟购物车真实布局；订单金额和库存以用户端实时数据为准。",
-      modules: previewBusinessModules.value,
-      user: SAMPLE_USER_CONTEXT,
-      cta: "提交订单"
-    };
-  }
-
-  if (page.pageKey === "member-center") {
-    return {
-      kind: "member-center",
-      label: "会员中心页",
-      title: "会员中心",
-      subtitle: "页面固定展示当前会员、权益和等级说明，CMS 内容显示在顶部运营位。",
-      rows: [
-        { label: "会员状态", value: "来自当前登录用户" },
-        { label: "会员价", value: "报名 quote/create order 后端计算" }
-      ],
-      notice: "预览展示页面结构；真实用户数据进入小程序后注入。",
-      modules: previewBusinessModules.value,
-      user: SAMPLE_USER_CONTEXT
-    };
-  }
-
-  if (page.pageKey === "my-registrations") {
-    return {
-      kind: "my-registrations",
-      label: "我的报名页",
-      title: "我的报名",
-      subtitle: "页面固定展示当前用户报名记录、凭证入口和待参会状态。",
-      rows: [
-        { label: "当前用户", value: `${SAMPLE_USER_CONTEXT.nickname} · ${SAMPLE_USER_CONTEXT.phone}` },
-        { label: "我的报名", value: `${SAMPLE_USER_CONTEXT.registrationCount} 条` },
-        { label: "待参会", value: `${SAMPLE_USER_CONTEXT.pendingConferenceCount} 场` }
-      ],
-      notice: "后台预览使用示例用户上下文；小程序真实页会读取当前登录用户报名数据。",
-      modules: previewBusinessModules.value,
-      user: SAMPLE_USER_CONTEXT,
-      cta: "查看凭证"
-    };
-  }
-
-  if (page.pageKey === "mall" || page.pageType === "MALL") {
-    return {
-      kind: "mall-home",
-      label: "商城首页",
-      title: "商城商品",
-      subtitle: "商城首页固定展示分类、商品列表、订单中心和购物车入口，CMS 内容显示在顶部运营位。",
-      rows: [
-        { label: "商品分类", value: "来自后台商品分类" },
-        { label: "推荐商品", value: "来自已发布商品和库存" },
-        { label: "订单中心", value: "跳转商城订单页" }
-      ],
-      notice: "后台预览展示结构；小程序端会读取真实商品、分类和库存。",
-      modules: previewBusinessModules.value
-    };
-  }
-
-  if (page.pageKey === "mall-orders") {
-    return {
-      kind: "mall-orders",
-      label: page.pageType === "MALL_AFTERSALE" ? "售后申请页" : "商城订单页",
-      title: page.pageType === "MALL_AFTERSALE" ? "售后申请" : "商城订单",
-      subtitle: "固定展示订单列表、状态筛选、售后和发票入口。",
-      rows: [
-        { label: "订单数据", value: "来自当前登录用户" },
-        { label: "售后状态", value: "来自商城售后流程" }
-      ],
-      notice: "真实订单和售后状态进入小程序后注入。",
-      modules: previewBusinessModules.value,
-      user: SAMPLE_USER_CONTEXT
-    };
-  }
-
-  if (page.pageKey === "invoice" || page.pageType === "INVOICE") {
-    return {
-      kind: "invoice",
-      label: "发票申请页",
-      title: "发票申请",
-      subtitle: "固定展示可开票订单、抬头表单和提交按钮。",
-      rows: [
-        { label: "可开票订单", value: "来自报名和商城支付成功订单" },
-        { label: "发票状态", value: "后台审核后更新" }
-      ],
-      notice: "真实开票订单、审核状态和抬头信息进入小程序后注入。",
-      modules: previewBusinessModules.value,
-      user: SAMPLE_USER_CONTEXT,
-      cta: "提交发票申请"
-    };
-  }
-
-  return null;
-});
 const templateCategories = computed(() =>
   Array.from(new Set(libraryTemplates.value.map((item) => item.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-CN"))
 );
@@ -2375,7 +2177,28 @@ onMounted(async () => {
 });
 
 function preferredPresetGroup(groups: Array<{ name: string }>): string {
-  return groups.find((group) => group.name === "基础展示")?.name ?? groups[0]?.name ?? "";
+  return groups.length > 0 ? "all" : "";
+}
+
+function resetComponentLibraryFilters(): void {
+  presetKeyword.value = "";
+  activePresetGroup.value = "all";
+}
+
+function toRuntimePreviewConference(item: Conference): Record<string, unknown> {
+  return {
+    id: item.id,
+    title: item.title,
+    slug: item.slug,
+    summary: item.subtitle || "查看会议详情、时间地点与报名信息",
+    coverImageUrl: item.coverImage,
+    location: item.location,
+    startsAt: item.startAt,
+    endsAt: item.endAt,
+    registrationStartsAt: item.startAt,
+    registrationEndsAt: item.endAt,
+    registrationCount: item.counts?.registrations ?? 0
+  };
 }
 
 onBeforeUnmount(() => {
@@ -3696,8 +3519,8 @@ function buildAcceptanceChecks(): AcceptanceCheck[] {
       key: "preview",
       title: "手机实时预览",
       description: enabledComponents.length > 0 ? `当前展示 ${enabledComponents.length} 个组件，点击预览组件可定位右侧配置，预览内可拖拽排序。` : "当前页面没有启用装修组件。",
-      status: enabledComponents.length > 0 || Boolean(businessPreviewContext.value) ? "pass" : "warn",
-      action: enabledComponents.length === 0 && !businessPreviewContext.value ? "建议至少配置一个可展示组件。" : undefined
+      status: enabledComponents.length > 0 ? "pass" : "warn",
+      action: enabledComponents.length === 0 ? "建议至少配置一个可展示组件。" : undefined
     }
   ];
 
@@ -3718,7 +3541,7 @@ function buildAcceptanceChecks(): AcceptanceCheck[] {
       key: "user-context",
       title: "登录用户上下文",
       description: "后台预览使用示例用户；小程序真机会注入头像、昵称、手机号、会员等级、报名数、订单数和优惠券数。",
-      status: businessPreviewContext.value?.user || hasUserContextModule ? "pass" : "warn",
+      status: hasUserContextModule || needsUserContext ? "pass" : "warn",
       action: "请在小程序真机登录后核对会员中心、登录卡、购物车和我的报名数据。"
     });
   }
