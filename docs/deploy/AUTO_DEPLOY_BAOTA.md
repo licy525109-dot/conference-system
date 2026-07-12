@@ -48,6 +48,7 @@ BAOTA_PROJECT_DIR=/www/wwwroot/conference-system
 BAOTA_ADMIN_ROOT=/www/wwwroot/admin.guanchaohuiji.com
 BAOTA_H5_ROOT=/www/wwwroot/m.guanchaohuiji.com
 BAOTA_H5_PUBLIC_URL=https://m.guanchaohuiji.com
+BAOTA_USER_API_BASE_URL=https://guanchaohuiji.com/api
 ```
 
 如果不配置可选 Variables，workflow 使用上述默认值。
@@ -98,6 +99,7 @@ PROJECT_DIR=/www/wwwroot/conference-system
 ADMIN_ROOT=/www/wwwroot/admin.guanchaohuiji.com
 H5_ROOT=/www/wwwroot/m.guanchaohuiji.com
 H5_PUBLIC_URL=https://m.guanchaohuiji.com
+USER_API_BASE_URL=https://guanchaohuiji.com/api
 BRANCH=main
 API_HEALTH_LOCAL=http://127.0.0.1:3001/api/health
 API_HEALTH_PUBLIC=https://guanchaohuiji.com/api/health
@@ -114,6 +116,7 @@ PM2_PROCESS=conference-api
 3. 拉取最新 `main`。
 4. `pnpm install --frozen-lockfile`。
 5. 加载服务器本地 `.env.production`，不打印内容。
+   用户端前端构建所需的 `VITE_API_BASE_URL` 与 `VITE_MP_WEIXIN_API_BASE_URL` 默认使用公开的 `USER_API_BASE_URL`；无需把公开地址重复写入服务器密钥文件。
 6. `prisma generate` 和 `prisma migrate deploy`。
 7. 构建 API、用户端 H5 和 Admin。
 8. 检查 Admin dist 不含旧预留页关键字，并检查 H5 dist 包含 `pages/cms-preview/index`。
