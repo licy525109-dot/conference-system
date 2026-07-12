@@ -173,6 +173,8 @@ function reconnectFrame(): void {
 
 function appendSession(source: string, session: string, key: number): string {
   const url = new URL(source, window.location.href);
+  url.searchParams.set("cmsPreviewSession", session);
+  url.searchParams.set("cmsPreviewReload", String(key));
   const hash = url.hash || "#/pages/cms-preview/index";
   const separator = hash.includes("?") ? "&" : "?";
   url.hash = `${hash}${separator}session=${encodeURIComponent(session)}&reload=${key}`;
