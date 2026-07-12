@@ -5,6 +5,7 @@ PROJECT_DIR="${PROJECT_DIR:-/www/wwwroot/conference-system}"
 ADMIN_ROOT="${ADMIN_ROOT:-/www/wwwroot/admin.guanchaohuiji.com}"
 H5_ROOT="${H5_ROOT:-/www/wwwroot/m.guanchaohuiji.com}"
 H5_PUBLIC_URL="${H5_PUBLIC_URL:-https://m.guanchaohuiji.com}"
+USER_API_BASE_URL="${USER_API_BASE_URL:-https://guanchaohuiji.com/api}"
 BRANCH="${BRANCH:-main}"
 API_HEALTH_LOCAL="${API_HEALTH_LOCAL:-http://127.0.0.1:3001/api/health}"
 API_HEALTH_PUBLIC="${API_HEALTH_PUBLIC:-https://guanchaohuiji.com/api/health}"
@@ -162,6 +163,13 @@ fi
 set -a
 source "$PROJECT_DIR/.env.production"
 set +a
+
+# Frontend build values are public endpoints, not server secrets. Production
+# servers may only have the API env file, so provide explicit safe defaults.
+export VITE_API_BASE_URL="${VITE_API_BASE_URL:-$USER_API_BASE_URL}"
+export VITE_MP_WEIXIN_API_BASE_URL="${VITE_MP_WEIXIN_API_BASE_URL:-$USER_API_BASE_URL}"
+echo "user frontend API base: ${VITE_API_BASE_URL}"
+echo "miniapp API base: ${VITE_MP_WEIXIN_API_BASE_URL}"
 
 PHASE="prisma generate and migrate"
 log "6. Prisma"

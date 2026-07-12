@@ -37,3 +37,5 @@ pnpm dev:admin
 后台开发环境会根据当前访问后台的主机名自动连接 `5173`，因此使用局域网 IP 打开后台时不会错误连接访问设备自己的 `localhost`。连接超时会自动重试，其他环境也可通过 `VITE_CMS_RUNTIME_PREVIEW_URL` 指定已部署的用户端 H5 地址。
 
 生产发布必须同时构建并发布 Admin 与用户端 H5。`scripts/deploy/baota-deploy.sh` 会把 `apps/user/dist/build/h5` 发布到 `H5_ROOT`，并在重启服务前校验静态产物包含 `pages/cms-preview/index`。只发布 Admin 会导致后台编辑器已更新、但 `m.guanchaohuiji.com` 仍不认识预览协议，表现为持续显示“真实预览暂不可用”。
+
+宝塔部署会通过 `USER_API_BASE_URL` 为 H5 与小程序生产构建注入公开 API 地址。该值默认是 `https://guanchaohuiji.com/api`，不属于密钥；若使用其他正式域名，应通过 GitHub Variable `BAOTA_USER_API_BASE_URL` 覆盖。生产构建仍会拒绝本地地址、私网地址或与正式地址不一致的配置。
