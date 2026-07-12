@@ -19,7 +19,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeMount, onBeforeUnmount, ref, watch } from "vue";
 import {
   CMS_RUNTIME_PREVIEW_CHANNEL,
   CMS_RUNTIME_PREVIEW_VERSION,
@@ -63,7 +63,7 @@ const targetOrigin = computed(() => {
 
 watch(() => props.payload, () => sendPayload(), { deep: true, flush: "post" });
 
-onMounted(() => {
+onBeforeMount(() => {
   window.addEventListener("message", handleMessage);
   startReadyTimer();
 });

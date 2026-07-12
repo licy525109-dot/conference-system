@@ -44,6 +44,7 @@ const selectedComponentId = ref("");
 const platform = ref<"h5" | "miniapp">("miniapp");
 const sessionId = ref("");
 let resizeObserver: ResizeObserver | undefined;
+let hasAppliedPayload = false;
 const previewStyle = computed(() => ({
   ...createCmsThemeVars(theme.value),
   ...createCmsBackgroundStyle(theme.value, "body")
@@ -77,6 +78,7 @@ function handleParentMessage(event: MessageEvent<unknown>): void {
 
 function applyPayload(payload: CmsRuntimePreviewPayload): void {
   try {
+    const isFirstPayload = !hasAppliedPayload;
     sessionId.value = payload.sessionId;
     dsl.value = payload.dsl as PageDsl;
     theme.value = { ...DEFAULT_THEME, ...(payload.theme as Partial<ThemeConfig>) };
@@ -85,6 +87,8 @@ function applyPayload(payload: CmsRuntimePreviewPayload): void {
     userContext.value = payload.userContext;
     selectedComponentId.value = payload.selectedComponentId;
     platform.value = payload.platform;
+    hasAppliedPayload = true;
+    if (isFirstPayload) postReady();
     void nextTick(postContentHeight);
   } catch (error) {
     postMessageToParent({ type: "render-error", message: error instanceof Error ? error.message : "页面预览数据解析失败" });
