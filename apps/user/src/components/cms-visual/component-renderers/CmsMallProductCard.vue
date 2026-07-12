@@ -10,11 +10,15 @@
       <text>{{ product.title.slice(0, 1) }}</text>
     </view>
     <view class="cms-mall-product-card__body">
+      <view class="cms-mall-product-card__meta">
+        <wd-tag v-if="product.availableStock > 0" plain type="warning" size="small">精选</wd-tag>
+        <wd-tag v-else plain type="error" size="small">售罄</wd-tag>
+      </view>
       <text class="cms-mall-product-card__title">{{ product.title }}</text>
       <text v-if="product.subtitle && showSubtitle" class="cms-mall-product-card__subtitle">{{ product.subtitle }}</text>
       <view class="cms-mall-product-card__footer">
         <text v-if="showPrice" class="cms-mall-product-card__price">{{ product.availableStock > 0 ? priceText : "售罄" }}</text>
-        <button v-if="showCartButton" class="cms-mall-product-card__add" @click.stop="emit('add')">+</button>
+        <wd-button v-if="showCartButton" custom-class="cms-mall-product-card__add" type="icon" icon="cart" size="small" :round="false" :custom-style="cartButtonStyle" @click.stop="emit('add')" />
       </view>
     </view>
   </view>
@@ -40,6 +44,7 @@ const priceText = computed(() => {
   const prices = props.product.skus.map((item) => item.priceCent);
   return prices.length > 0 ? `¥${formatCent(Math.min(...prices))}` : "暂无价格";
 });
+const cartButtonStyle = "width:52rpx;height:52rpx;min-width:52rpx;min-height:52rpx;padding:0;border-radius:10rpx;background:var(--cms-primary);color:#f8faf8;border:0;";
 </script>
 
 <style scoped>
@@ -47,12 +52,17 @@ const priceText = computed(() => {
   min-width: 0;
   overflow: hidden;
   border: 1rpx solid var(--cms-border);
-  border-radius: 14rpx;
+  border-radius: 16rpx;
   background: var(--cms-surface-elevated);
+  transition: transform 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+.cms-mall-product-card:active {
+  transform: scale(0.985);
 }
 
 .cms-mall-product-card.is-elevated {
-  box-shadow: 0 10rpx 24rpx rgba(20, 31, 45, 0.08);
+  box-shadow: 0 12rpx 30rpx rgba(20, 31, 45, 0.09);
 }
 
 .cms-mall-product-card__image {
@@ -83,8 +93,14 @@ const priceText = computed(() => {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 12rpx;
-  padding: 18rpx 16rpx 16rpx;
+  gap: 10rpx;
+  padding: 18rpx 18rpx 17rpx;
+}
+
+.cms-mall-product-card__meta {
+  display: flex;
+  min-height: 31rpx;
+  align-items: center;
 }
 
 .cms-mall-product-card__title {
@@ -92,7 +108,7 @@ const priceText = computed(() => {
   min-height: 64rpx;
   overflow: hidden;
   color: var(--cms-text-primary);
-  font-size: 24rpx;
+  font-size: 25rpx;
   font-weight: 700;
   line-height: 1.34;
   word-break: break-word;
@@ -120,7 +136,7 @@ const priceText = computed(() => {
   min-width: 0;
   overflow: hidden;
   color: var(--cms-accent);
-  font-size: 25rpx;
+  font-size: 28rpx;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;

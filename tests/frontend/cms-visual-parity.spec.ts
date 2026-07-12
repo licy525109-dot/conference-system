@@ -70,7 +70,7 @@ test("guest and logged-in module states keep the configurable visual contract", 
   await stabilizeScreenshot(page);
   await expect(page).toHaveScreenshot("cms-modules-guest.png", { fullPage: true });
 
-  await page.locator(".cms-login-card").getByText("立即登录", { exact: true }).click();
+  await page.locator(".cms-login-card__button").click();
   await expect(page.locator(".cms-login-card")).toContainText("欢迎回来，潮起东方");
   await expect(page.locator(".cms-login-card")).toContainText("黄金会员");
   await expect(page.locator(".cms-stats-module").filter({ hasText: "我的报名" })).toContainText("6");

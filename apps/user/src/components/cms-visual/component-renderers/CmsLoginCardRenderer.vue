@@ -10,7 +10,7 @@
         <text v-if="phone">{{ phone }}</text>
       </view>
     </view>
-    <button class="cms-login-card__button" @click.stop="emit('activate')">{{ displayButton }}</button>
+    <wd-button custom-class="cms-login-card__button" size="small" :round="false" :custom-style="buttonStyle" @click.stop="emit('activate')">{{ displayButton }}</wd-button>
   </view>
 </template>
 
@@ -46,6 +46,7 @@ const rootStyle = computed(() => ({
   borderRadius: `${Math.min(48, Math.max(0, numberConfig(props.component, "radius", 18)))}rpx`,
   ...(stringConfig(props.component, "backgroundColor") ? { background: stringConfig(props.component, "backgroundColor") } : {})
 }));
+const buttonStyle = "position:relative;z-index:1;min-width:152rpx;min-height:68rpx;padding:0 24rpx;border-radius:12rpx;background:var(--cms-primary);color:#f8faf8;border:0;";
 
 function contextText(key: string): string {
   const value = props.userContext?.[key];
@@ -150,7 +151,7 @@ function contextText(key: string): string {
   border: 0;
 }
 
-@media (max-width: 360px) {
+@media (max-width: 430px) {
   .cms-login-card {
     grid-template-columns: 78rpx minmax(0, 1fr);
   }

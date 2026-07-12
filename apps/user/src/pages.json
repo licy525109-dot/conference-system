@@ -1,4 +1,10 @@
 {
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^wd-(.*)": "wot-design-uni/components/wd-$1/wd-$1.vue"
+    }
+  },
   "pages": [
     {
       "path": "pages/splash/index",
@@ -125,6 +131,13 @@
       "path": "pages/custom/index",
       "style": {
         "navigationBarTitleText": "自定义页面"
+      }
+    },
+    {
+      "path": "pages/cms-preview/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "页面预览"
       }
     }
   ],

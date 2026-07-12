@@ -6,12 +6,12 @@
     <view class="cms-member-profile__copy">
       <view class="cms-member-profile__name-row">
         <text class="cms-member-profile__name">{{ name }}</text>
-        <text v-if="loggedIn" class="cms-member-profile__badge">{{ memberLevel }}</text>
+        <wd-tag v-if="loggedIn" round plain type="warning">{{ memberLevel }}</wd-tag>
       </view>
       <text class="cms-member-profile__summary">{{ summary }}</text>
       <text v-if="loggedIn && memberStatus" class="cms-member-profile__status">{{ memberStatus }}</text>
     </view>
-    <button class="cms-member-profile__button" @click.stop="emit('activate')">{{ buttonText }}</button>
+    <wd-button custom-class="cms-member-profile__button" size="small" :round="false" :custom-style="profileButtonStyle" @click.stop="emit('activate')">{{ buttonText }}</wd-button>
   </view>
 </template>
 
@@ -37,6 +37,7 @@ const cardStyle = computed(() => stringConfig(props.component, "cardStyle", "bra
 const rootStyle = computed(() => stringConfig(props.component, "imageUrl")
   ? { backgroundImage: `url(${stringConfig(props.component, "imageUrl")})` }
   : {});
+const profileButtonStyle = "position:relative;z-index:1;min-height:68rpx;padding:0 24rpx;border-radius:12rpx;background:var(--cms-primary);color:#f8faf8;border:0;";
 
 function contextText(key: string): string {
   const value = props.userContext?.[key];
@@ -154,7 +155,7 @@ function contextText(key: string): string {
   border: 0;
 }
 
-@media (max-width: 390px) {
+@media (max-width: 430px) {
   .cms-member-profile {
     grid-template-columns: 88rpx minmax(0, 1fr);
   }

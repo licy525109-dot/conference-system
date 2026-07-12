@@ -6,6 +6,16 @@
       :class="blockClass(component, index)"
       :style="blockStyle(component, index)"
     >
+      <view
+        v-if="editorPreview"
+        class="cms-editor-preview-hit-area"
+        draggable="true"
+        @click.stop="emit('selectComponent', component.id)"
+        @dragstart.stop="startEditorDrag(component.id, $event)"
+        @dragover.prevent
+        @drop.stop.prevent="dropEditorComponent(component.id)"
+        @dragend.stop="finishEditorDrag"
+      />
       <ThemeDynamicBackground v-if="showHeaderDynamicBackground(index)" :theme="props.theme" placement="absolute" />
       <video
         v-if="showHeaderVideo && index === 0"
@@ -344,20 +354,11 @@
         </view>
       </view>
 
-      <view v-else-if="component.type === 'search'" class="cms-section cms-search">
-        <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "搜索会议" }}</text>
-        <view class="cms-search__row">
-          <input
-            class="cms-search__input"
-            :value="searchValue(component)"
-            :placeholder="stringConfig(component, 'placeholder') || '输入会议关键词'"
-            confirm-type="search"
-            @input="setSearchValue(component, $event)"
-            @confirm="submitSearch(component)"
-          />
-          <button class="cms-search__button" @click="submitSearch(component)">{{ stringConfig(component, "buttonText") || "搜索" }}</button>
-        </view>
-      </view>
+      <CmsSearchRenderer
+        v-else-if="component.type === 'search'"
+        :component="component"
+        @search="submitSearchKeyword(component, $event)"
+      />
 
       <view v-else-if="component.type === 'coupon-card'" class="cms-section cms-coupon" @click="handleCouponCard(component)">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "领取会议优惠券" }}</text>
@@ -524,6 +525,7 @@ import CmsLoginCardRenderer from "@/components/cms-visual/component-renderers/Cm
 import CmsMallProductGridRenderer from "@/components/cms-visual/component-renderers/CmsMallProductGridRenderer.vue";
 import CmsMemberProfileRenderer from "@/components/cms-visual/component-renderers/CmsMemberProfileRenderer.vue";
 import CmsMembershipBenefitsRenderer from "@/components/cms-visual/component-renderers/CmsMembershipBenefitsRenderer.vue";
+import CmsSearchRenderer from "@/components/cms-visual/component-renderers/CmsSearchRenderer.vue";
 import CmsStatsGridRenderer from "@/components/cms-visual/component-renderers/CmsStatsGridRenderer.vue";
 import type { CmsEntryItem } from "@/components/cms-visual/component-renderers/config";
 import { ensureLogin, getStoredUser } from "@/services/auth";
@@ -540,6 +542,8 @@ import { stringifyQuery } from "@/utils/query";
 const emit = defineEmits<{
   openConference: [id: string];
   register: [];
+  selectComponent: [id: string];
+  reorderComponent: [payload: { sourceId: string; targetId: string }];
 }>();
 
 const props = defineProps<{
@@ -550,6 +554,8 @@ const props = defineProps<{
   products?: Product[];
   userContext?: Record<string, unknown> | null;
   suppressRegistrationCta?: boolean;
+  editorPreview?: boolean;
+  selectedComponentId?: string;
 }>();
 
 const nowTimestamp = ref(Date.now());
@@ -561,6 +567,7 @@ const mallProductLoading = ref<Record<string, boolean>>({});
 const couponStatusMap = ref<Record<string, string>>({});
 const activeTagMap = ref<Record<string, string>>({});
 const activeConferenceFilter = ref<TagFilterItem | null>(null);
+const editorDraggedComponentId = ref("");
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
 const visibleComponents = computed(() =>
@@ -573,7 +580,11 @@ const visibleComponents = computed(() =>
 const conferences = computed(() => props.conferences ?? []);
 const products = computed(() => props.products ?? []);
 const storedUser = ref(getStoredUser());
-const isLoggedIn = computed(() => Boolean(storedUser.value || props.userContext));
+const isLoggedIn = computed(() => {
+  if (storedUser.value) return true;
+  if (!props.userContext) return false;
+  return Boolean(props.userContext.loggedIn || props.userContext.userId);
+});
 const effectiveUserContext = computed<Record<string, unknown> | null>(() => {
   if (props.userContext) return props.userContext;
   if (!storedUser.value) return null;
@@ -686,8 +697,29 @@ function blockClass(component: CmsComponent, index: number): string[] {
     props.theme.backgroundApplyTo === "header" && index === 0 ? "is-header-block" : "",
     isGenericFullBleed(component) ? "is-component-full-bleed" : "",
     isComponentTransparent(component) ? "is-component-transparent" : "",
-    entryTilesUseTransparentBackground(component) ? "is-entry-tiles-transparent" : ""
+    entryTilesUseTransparentBackground(component) ? "is-entry-tiles-transparent" : "",
+    props.editorPreview ? "is-editor-preview" : "",
+    props.editorPreview && props.selectedComponentId === component.id ? "is-editor-selected" : "",
+    props.editorPreview && editorDraggedComponentId.value === component.id ? "is-editor-dragging" : ""
   ].filter(Boolean);
+}
+
+function startEditorDrag(componentId: string, event: unknown): void {
+  editorDraggedComponentId.value = componentId;
+  if (event instanceof DragEvent && event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", componentId);
+  }
+}
+
+function dropEditorComponent(targetId: string): void {
+  const sourceId = editorDraggedComponentId.value;
+  if (sourceId && sourceId !== targetId) emit("reorderComponent", { sourceId, targetId });
+  editorDraggedComponentId.value = "";
+}
+
+function finishEditorDrag(): void {
+  editorDraggedComponentId.value = "";
 }
 
 function blockStyle(component: CmsComponent, index: number): Record<string, string> {
@@ -1544,6 +1576,11 @@ function submitSearch(component: CmsComponent): void {
     scope: stringConfig(component, "searchScope") || undefined
   });
   goPath(`/pages/index/index${query ? `?${query}` : ""}`);
+}
+
+function submitSearchKeyword(component: CmsComponent, keyword: string): void {
+  searchValues.value = { ...searchValues.value, [component.id]: keyword };
+  submitSearch(component);
 }
 
 function submitTag(component: CmsComponent, item: TagFilterItem): void {

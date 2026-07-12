@@ -1,5 +1,5 @@
 <template>
-  <view class="cms-stats-module" :class="`is-${cardStyle}`">
+  <view class="cms-stats-module" :class="[`is-${cardStyle}`, { 'has-intro': hasIntro }]">
     <view v-if="title || subtitle" class="cms-stats-module__intro">
       <text v-if="title" class="cms-stats-module__title">{{ title }}</text>
       <text v-if="subtitle" class="cms-stats-module__subtitle">{{ subtitle }}</text>
@@ -25,6 +25,7 @@ const props = defineProps<{
 
 const title = computed(() => stringConfig(props.component, "title"));
 const subtitle = computed(() => stringConfig(props.component, "subtitle"));
+const hasIntro = computed(() => Boolean(title.value || subtitle.value));
 const cardStyle = computed(() => stringConfig(props.component, "cardStyle", "split"));
 const items = computed(() => normalizeStats(props.component, props.userContext));
 const columns = computed(() => Math.min(4, Math.max(2, numberConfig(props.component, "columns", Math.min(4, Math.max(2, items.value.length))))));
@@ -33,14 +34,18 @@ const gridStyle = computed(() => ({ gridTemplateColumns: `repeat(${columns.value
 
 <style scoped>
 .cms-stats-module {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+  display: block;
   align-items: stretch;
   overflow: hidden;
   border: 1rpx solid var(--cms-border);
   border-radius: 16rpx;
   background: var(--cms-surface-elevated);
   box-shadow: var(--cms-shadow-md);
+}
+
+.cms-stats-module.has-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
 }
 
 .cms-stats-module__intro {
@@ -101,8 +106,8 @@ const gridStyle = computed(() => ({ gridTemplateColumns: `repeat(${columns.value
   box-shadow: none;
 }
 
-@media (max-width: 390px) {
-  .cms-stats-module {
+@media (max-width: 430px) {
+  .cms-stats-module.has-intro {
     grid-template-columns: 1fr;
   }
 

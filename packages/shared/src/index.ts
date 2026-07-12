@@ -49,3 +49,4 @@ export interface ConferenceListItemDto {
 }
 
 export * from "./cms-compositions";
+export * from "./cms-preview";
