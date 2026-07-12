@@ -7,7 +7,7 @@
       :conferences="conferences"
       :conference="conference"
       :products="products"
-      :user-context="userContext"
+      :user-context="effectiveUserContext"
       :suppress-registration-cta="suppressRegistrationCta"
       @open-conference="emit('openConference', $event)"
       @register="emit('register')"
@@ -23,6 +23,7 @@ import { createGovernedRuntimeContext, governRender } from "@conference/render-g
 import CmsVisualRenderer from "@/components/cms-visual/CmsVisualRenderer.vue";
 import { cmsVisualComponentsFromDsl, hasCmsVisualComponents } from "@/components/cms-visual/useCmsVisualContext";
 import DslRenderTree from "@/components/design-system/DslRenderTree.vue";
+import { useCurrentUserContext } from "@/composables/useCurrentUserContext";
 import { ensureLogin } from "@/services/auth";
 import type { ThemeConfig } from "@/services/cms";
 import type { ConferenceDetail, ConferenceListItem } from "@/services/conference";
@@ -44,6 +45,9 @@ const props = defineProps<{
   userContext?: Record<string, unknown> | null;
   suppressRegistrationCta?: boolean;
 }>();
+
+const { context: currentUserContext, refresh: refreshCurrentUserContext } = useCurrentUserContext();
+const effectiveUserContext = computed(() => props.userContext ?? currentUserContext.value);
 
 const runtimeContext = computed(() =>
   createGovernedRuntimeContext({
@@ -70,15 +74,16 @@ const runtimeContext = computed(() =>
       conferences: props.conferences ?? [],
       conference: props.conference ?? null,
       products: props.products ?? [],
-      userContext: props.userContext ?? null
+      userContext: effectiveUserContext.value
     }
   })
 );
 
 const governedResult = computed(() => governRender(props.dsl, { context: runtimeContext.value, allowLegacyDslFallback: false }));
 const visualComponents = computed(() => {
-  const components = cmsVisualComponentsFromDsl(props.dsl);
-  return hasCmsVisualComponents(props.dsl) ? components : components.filter(isFixedBusinessTemplateComponent);
+  const governedDsl = governedResult.value.dsl;
+  const components = cmsVisualComponentsFromDsl(governedDsl);
+  return hasCmsVisualComponents(governedDsl) ? components : components.filter(isFixedBusinessTemplateComponent);
 });
 const useCmsVisualRenderer = computed(() => visualComponents.value.length > 0);
 const renderTree = computed(() => ({
@@ -97,7 +102,7 @@ function isRegistrationNode(node: ResolvedDslNode): boolean {
 function withRuntimeContext(nodes: ResolvedDslNode[]): ResolvedDslNode[] {
   return nodes.map((node) => ({
     ...node,
-    props: shouldHydrateUserContext(node) ? { ...node.props, userContext: props.userContext ?? null } : node.props,
+    props: shouldHydrateUserContext(node) ? { ...node.props, userContext: effectiveUserContext.value } : node.props,
     children: withRuntimeContext(node.children)
   }));
 }
@@ -171,6 +176,7 @@ function navigateToPage(pageKey: string, action: Record<string, unknown>): void 
 async function ensureLoginAndPrompt(): Promise<void> {
   try {
     await ensureLogin();
+    await refreshCurrentUserContext({ force: true });
     uni.$emit("wechat-profile:open");
   } catch {
     uni.showToast({ title: "登录失败，请稍后重试", icon: "none" });
@@ -180,6 +186,7 @@ async function ensureLoginAndPrompt(): Promise<void> {
 async function ensureLoginAndNavigate(path: string): Promise<void> {
   try {
     await ensureLogin();
+    await refreshCurrentUserContext({ force: true });
     navigateToPath(path);
   } catch {
     uni.showToast({ title: "请先登录", icon: "none" });

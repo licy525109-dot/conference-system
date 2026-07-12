@@ -14,6 +14,8 @@
     "build:admin": "pnpm --filter @conference/admin build",
     "test": "pnpm -r test",
     "e2e": "tsx --test tests/e2e/**/*.spec.ts",
+    "test:frontend": "playwright test",
+    "test:frontend:update": "playwright test --update-snapshots",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "prisma:generate": "mkdir -p .cache .tmp && XDG_CACHE_HOME=$PWD/.cache TMPDIR=$PWD/.tmp dotenv -e .env.local -- pnpm --filter @conference/api prisma:generate",
@@ -23,6 +25,7 @@
     "seed": "mkdir -p .cache .tmp && XDG_CACHE_HOME=$PWD/.cache TMPDIR=$PWD/.tmp dotenv -e .env.local -- pnpm --filter @conference/api seed"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@prisma/client": "^6.19.3",
     "dotenv-cli": "^8.0.0",
     "tsx": "^4.20.6"

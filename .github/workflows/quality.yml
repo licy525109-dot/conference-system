@@ -1,0 +1,63 @@
+name: Pull Request Quality
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Types, tests and builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VITE_API_BASE_URL: https://guanchaohuiji.com/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @conference/api exec prisma generate --schema ../../prisma/schema.prisma
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm --filter @conference/api build
+      - run: pnpm --filter @conference/admin build
+      - run: pnpm --filter @conference/user build:h5
+      - run: pnpm --filter @conference/user build:mp-weixin
+      - run: pnpm exec tsx scripts/smoke/check-admin-permissions.ts
+      - run: bash -n scripts/deploy/baota-deploy.sh
+      - run: bash -n scripts/smoke/production-smoke.sh
+      - run: bash -n scripts/smoke/check-production-config.sh
+
+  visual-parity:
+    name: CMS visual parity
+    needs: validate
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - run: pnpm test:frontend
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-failure-artifacts
+          path: test-results/
+          if-no-files-found: ignore

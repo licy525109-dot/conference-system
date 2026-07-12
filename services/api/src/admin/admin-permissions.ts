@@ -48,6 +48,8 @@ export const ADMIN_PERMISSIONS = [
   { code: "tabbar:write", name: "编辑底部导航配置", group: "页面装修" },
   { code: "material:view", name: "查看素材", group: "页面装修" },
   { code: "material:write", name: "编辑素材", group: "页面装修" },
+  { code: "platform:view", name: "查看 SaaS 平台控制面", group: "平台运营" },
+  { code: "platform:write", name: "管理租户、套餐与平台接入", group: "平台运营" },
   { code: "member:view", name: "查看会员", group: "会员" },
   { code: "member:write", name: "编辑会员等级和会员状态", group: "会员" },
   { code: "member:benefit", name: "编辑会员权益和发放记录", group: "会员" },

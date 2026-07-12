@@ -1,58 +1,43 @@
-# P9 Fixed Business Template Execution
+# P9 Legacy Template Compatibility
 
-## Scope
+## Current Rule
 
-This pass applies the `codex_exact_fixed_template_package` assets and fixed-template contract to the CMS decoration stack without changing payment, order, refund, check-in, member pricing, WeCom, AI, notification, Prisma schema, or migrations.
+`fixed-business-template` is a compatibility input, not a page renderer. New pages are composed from independently editable CMS components and are persisted as P9 DSL.
 
-## Asset Roots
-
-- MiniApp/H5 assets: `apps/user/src/static/fixed-templates`
-- Admin preview assets: `apps/admin/public/static/fixed-templates`
-
-Both roots mirror the package `assets/` directory.
-
-## Template Contract
-
-The six fixed business templates are represented as a CMS visual component:
-
-```json
-{
-  "type": "fixed-business-template",
-  "config": {
-    "templateKey": "home",
-    "assetRoot": "/static/fixed-templates",
-    "heroTitle": "潮起谋局  潮落定势",
-    "heroSubtitle": "行业会议与创始人社群平台",
-    "heroImageUrl": "",
-    "items": [],
-    "noticeBar": true,
-    "loginCard": true,
-    "quickGrid": true
-  }
-}
+```text
+Legacy fixed template
+  -> expandLegacyCmsTemplate()
+  -> editable component composition
+  -> P9 DSL meta.editorComponents
+  -> Render Governor validation
+  -> platform visual renderer
 ```
 
-The component is saved inside P9 DSL `meta.editorComponents`; the DSL node remains a `ds-section` so Render Governor and Runtime still validate the page before the CMS visual compatibility renderer restores the fixed business visual.
-
-## Supported Templates
-
-- `home`: homepage fixed template
-- `schedule`: annual schedule fixed template
-- `registration`: conference registration list fixed template
-- `mall`: mall home fixed template
-- `cart`: cart fixed template
-- `member-center`: member center fixed template
-
-## Admin Behavior
-
-The CMS toolbar now exposes `固定模板`, which applies one of the six locked templates to the current draft. Operators edit whitelisted fields only: hero title, subtitle, hero image, notice copy, quick-entry items, and module visibility toggles. Raw DSL remains developer-mode only.
-
-## Runtime Behavior
-
-User rendering still enters through `PageRenderer -> Render Governor -> Runtime`. If the governed DSL contains `meta.editorComponents` with `fixed-business-template`, `CmsVisualRenderer` delegates to `FixedBusinessTemplateRenderer`. Otherwise the normal DS render tree is used.
-
-`fixed-business-template` is registered in the user H5/MiniApp support matrix and normalized from any of these published shapes: top-level `templateKey`, `props.templateKey`, `config.templateKey`, or a DSL node with `meta.originalType = "fixed-business-template"`. This prevents the user runtime from falling back to the unsupported component card.
+There is no `FixedBusinessTemplateRenderer.vue` and no whole-page template branch in `PageRenderer.vue`.
 
 ## Compatibility
 
-Old pages keep opening through `meta.editorComponents` compatibility. The fixed template does not read `version.components` as a user runtime source and does not add any migration.
+Historical template keys are normalized from top-level `templateKey`, `props.templateKey`, or `config.templateKey`. They expand to one of the shared compositions in `packages/shared/src/cms-compositions.ts`:
+
+- `home`
+- `schedule`
+- `registration`
+- `member-center`
+- `mall`
+- `cart`
+
+After expansion every module can be selected, configured, reordered, duplicated, hidden, or deleted in the visual editor. Saving writes the expanded P9 DSL, so an old page is not forced back into a locked template.
+
+## Runtime Boundary
+
+User rendering remains:
+
+```text
+PageRenderer
+  -> Render Governor
+  -> Runtime
+  -> CmsVisualRenderer when validated DSL contains editorComponents
+  -> DS RenderTree otherwise
+```
+
+The user runtime never reads `version.components` as its primary source. Existing pages without legacy templates continue to render unchanged.

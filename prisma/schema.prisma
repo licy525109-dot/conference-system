@@ -173,6 +173,36 @@ enum CouponClaimStatus {
   CANCELLED
 }
 
+enum SaasTenantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum SaasWorkspaceStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum SaasSubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum PlatformCredentialStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum PlatformPluginInstallStatus {
+  ACTIVE
+  DISABLED
+  FAILED
+}
+
 model User {
   id                        String                     @id @default(cuid())
   openid                    String?                    @unique
@@ -223,10 +253,252 @@ model AdminUser {
   notificationTemplates NotificationTemplate[] @relation("NotificationTemplateCreatedBy")
   notificationTasks     NotificationTask[]     @relation("NotificationTaskCreatedBy")
   checkinLogs           CheckinLog[]
+  saasTenantMemberships SaasTenantMember[]
 
   @@index([enabled])
   @@index([createdAt])
   @@map("admin_users")
+}
+
+model SaasTenant {
+  id             String                  @id @default(cuid())
+  slug           String                  @unique
+  name           String
+  status         SaasTenantStatus        @default(ACTIVE)
+  contactName    String?
+  contactEmail   String?
+  contactPhone   String?
+  settingsJson   Json?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  organizations  SaasOrganization[]
+  workspaces     SaasWorkspace[]
+  members        SaasTenantMember[]
+  subscriptions  SaasSubscription[]
+  apiKeys        PlatformApiKey[]
+  webhooks       PlatformWebhook[]
+  usageEvents    PlatformUsageEvent[]
+  pluginInstalls PlatformPluginInstall[]
+  featureFlags   PlatformFeatureFlag[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("saas_tenants")
+}
+
+model SaasOrganization {
+  id          String          @id @default(cuid())
+  tenantId    String
+  code        String
+  name        String
+  description String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  tenant      SaasTenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workspaces  SaasWorkspace[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("saas_organizations")
+}
+
+model SaasWorkspace {
+  id             String                  @id @default(cuid())
+  tenantId       String
+  organizationId String?
+  slug           String
+  name           String
+  status         SaasWorkspaceStatus     @default(ACTIVE)
+  settingsJson   Json?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  tenant         SaasTenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  organization   SaasOrganization?       @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  usageEvents    PlatformUsageEvent[]
+  pluginInstalls PlatformPluginInstall[]
+  featureFlags   PlatformFeatureFlag[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([organizationId])
+  @@index([status])
+  @@map("saas_workspaces")
+}
+
+model SaasTenantMember {
+  id          String     @id @default(cuid())
+  tenantId    String
+  adminUserId String
+  role        String     @default("OWNER")
+  enabled     Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  tenant      SaasTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  adminUser   AdminUser  @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, adminUserId])
+  @@index([adminUserId])
+  @@index([enabled])
+  @@map("saas_tenant_members")
+}
+
+model SaasPlan {
+  id               String             @id @default(cuid())
+  code             String             @unique
+  name             String
+  description      String?
+  monthlyPriceCent Int                @default(0)
+  annualPriceCent  Int                @default(0)
+  limitsJson       Json?
+  featuresJson     Json?
+  enabled          Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  subscriptions    SaasSubscription[]
+
+  @@index([enabled])
+  @@map("saas_plans")
+}
+
+model SaasSubscription {
+  id           String                 @id @default(cuid())
+  tenantId     String
+  planId       String
+  status       SaasSubscriptionStatus @default(TRIAL)
+  billingCycle String                 @default("MONTHLY")
+  startsAt     DateTime               @default(now())
+  trialEndsAt  DateTime?
+  renewsAt     DateTime?
+  endsAt       DateTime?
+  metadataJson Json?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  tenant       SaasTenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan         SaasPlan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([planId])
+  @@index([status])
+  @@index([renewsAt])
+  @@map("saas_subscriptions")
+}
+
+model PlatformApiKey {
+  id         String                   @id @default(cuid())
+  tenantId   String
+  name       String
+  keyPrefix  String
+  secretHash String
+  scopesJson Json?
+  status     PlatformCredentialStatus @default(ACTIVE)
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  createdBy  String?
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
+  tenant     SaasTenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, keyPrefix])
+  @@index([tenantId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("platform_api_keys")
+}
+
+model PlatformWebhook {
+  id                String                   @id @default(cuid())
+  tenantId          String
+  name              String
+  url               String
+  signingSecretHash String
+  eventsJson        Json?
+  status            PlatformCredentialStatus @default(ACTIVE)
+  lastDeliveredAt   DateTime?
+  lastStatusCode    Int?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  tenant            SaasTenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("platform_webhooks")
+}
+
+model PlatformUsageEvent {
+  id             String         @id @default(cuid())
+  tenantId       String
+  workspaceId    String?
+  metric         String
+  quantity       Int            @default(1)
+  unit           String         @default("COUNT")
+  idempotencyKey String?
+  metadataJson   Json?
+  occurredAt     DateTime       @default(now())
+  createdAt      DateTime       @default(now())
+  tenant         SaasTenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workspace      SaasWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, metric, occurredAt])
+  @@index([workspaceId])
+  @@map("platform_usage_events")
+}
+
+model PlatformPlugin {
+  id           String                  @id @default(cuid())
+  code         String                  @unique
+  name         String
+  version      String
+  description  String?
+  manifestJson Json
+  enabled      Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  installs     PlatformPluginInstall[]
+
+  @@index([enabled])
+  @@map("platform_plugins")
+}
+
+model PlatformPluginInstall {
+  id          String                      @id @default(cuid())
+  tenantId    String
+  workspaceId String?
+  pluginId    String
+  scopeKey    String                      @default("tenant")
+  status      PlatformPluginInstallStatus @default(ACTIVE)
+  configJson  Json?
+  installedBy String?
+  installedAt DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  tenant      SaasTenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workspace   SaasWorkspace?              @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  plugin      PlatformPlugin              @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, pluginId, scopeKey])
+  @@index([workspaceId])
+  @@index([status])
+  @@map("platform_plugin_installs")
+}
+
+model PlatformFeatureFlag {
+  id          String         @id @default(cuid())
+  tenantId    String
+  workspaceId String?
+  key         String
+  scopeKey    String         @default("tenant")
+  enabled     Boolean        @default(false)
+  configJson  Json?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  tenant      SaasTenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workspace   SaasWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key, scopeKey])
+  @@index([tenantId])
+  @@index([workspaceId])
+  @@index([enabled])
+  @@map("platform_feature_flags")
 }
 
 model Role {
@@ -428,24 +700,24 @@ model WecomAccessTokenCache {
 }
 
 model WecomCustomerGroup {
-  id            String           @id @default(cuid())
+  id            String                    @id @default(cuid())
   integrationId String
   conferenceId  String?
-  chatId        String?          @unique
+  chatId        String?                   @unique
   name          String
   ownerUserId   String?
   ownerName     String?
   groupQrUrl    String?
   joinLink      String?
-  status        String           @default("UNKNOWN")
-  syncStatus    String           @default("MANUAL")
+  status        String                    @default("UNKNOWN")
+  syncStatus    String                    @default("MANUAL")
   lastSyncedAt  DateTime?
   rawPayload    Json?
-  enabled       Boolean          @default(true)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  integration   WecomIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-  conference    Conference?      @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+  enabled       Boolean                   @default(true)
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  integration   WecomIntegration          @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  conference    Conference?               @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
   messageLogs   CustomerGroupMessageLog[]
 
   @@index([integrationId])
@@ -711,21 +983,21 @@ model MemberLevel {
 }
 
 model MemberBenefit {
-  id          String      @id @default(cuid())
+  id          String               @id @default(cuid())
   levelId     String
   title       String
   description String?
   type        String
   iconUrl     String?
-  autoGrant   Boolean     @default(false)
-  visible     Boolean     @default(true)
+  autoGrant   Boolean              @default(false)
+  visible     Boolean              @default(true)
   grantRule   String?
   configJson  Json?
-  enabled     Boolean     @default(true)
-  sortOrder   Int         @default(0)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  level       MemberLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  enabled     Boolean              @default(true)
+  sortOrder   Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  level       MemberLevel          @relation(fields: [levelId], references: [id], onDelete: Cascade)
   grants      MemberBenefitGrant[]
 
   @@index([levelId])
@@ -735,22 +1007,22 @@ model MemberBenefit {
 }
 
 model UserMembership {
-  id        String      @id @default(cuid())
-  userId    String
-  levelId   String
-  status    String      @default("ACTIVE")
-  startsAt  DateTime    @default(now())
-  endsAt    DateTime?
-  source    String?
-  remark    String?
-  renewedAt DateTime?
-  disabledAt DateTime?
+  id             String               @id @default(cuid())
+  userId         String
+  levelId        String
+  status         String               @default("ACTIVE")
+  startsAt       DateTime             @default(now())
+  endsAt         DateTime?
+  source         String?
+  remark         String?
+  renewedAt      DateTime?
+  disabledAt     DateTime?
   disabledReason String?
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  level     MemberLevel @relation(fields: [levelId], references: [id], onDelete: Restrict)
-  benefitGrants MemberBenefitGrant[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level          MemberLevel          @relation(fields: [levelId], references: [id], onDelete: Restrict)
+  benefitGrants  MemberBenefitGrant[]
 
   @@index([userId])
   @@index([levelId])
@@ -958,18 +1230,18 @@ model Product {
 }
 
 model ProductSku {
-  id             String          @id @default(cuid())
+  id             String             @id @default(cuid())
   productId      String
   name           String
   priceCent      Int
-  stock          Int             @default(0)
-  lockedStock    Int             @default(0)
-  soldCount      Int             @default(0)
-  status         String          @default("ACTIVE")
+  stock          Int                @default(0)
+  lockedStock    Int                @default(0)
+  soldCount      Int                @default(0)
+  status         String             @default("ACTIVE")
   specsJson      Json?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  product        Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
   cartItems      CartItem[]
   mallOrderItems MallOrderItem[]
   inventoryLogs  MallInventoryLog[]
@@ -1032,26 +1304,26 @@ model RegistrationCartItem {
 }
 
 model MallOrder {
-  id                 String          @id @default(cuid())
-  orderNo            String          @unique
+  id                 String                 @id @default(cuid())
+  orderNo            String                 @unique
   userId             String?
   originAmountCent   Int
-  discountAmountCent Int             @default(0)
+  discountAmountCent Int                    @default(0)
   payableAmountCent  Int
   paidAmountCent     Int?
-  status             String          @default("PENDING_PAYMENT")
+  status             String                 @default("PENDING_PAYMENT")
   receiverName       String?
   receiverPhone      String?
   receiverAddress    String?
-  fulfillmentType    String          @default("SHIPMENT")
+  fulfillmentType    String                 @default("SHIPMENT")
   remark             String?
   couponId           String?
   couponCode         String?
   paidAt             DateTime?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
-  user               User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  coupon             Coupon?         @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  user               User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  coupon             Coupon?                @relation(fields: [couponId], references: [id], onDelete: SetNull)
   items              MallOrderItem[]
   shipments          MallShipment[]
   afterSales         MallAfterSale[]
@@ -1089,18 +1361,18 @@ model MallOrderItem {
 }
 
 model MallShipment {
-  id         String    @id @default(cuid())
-  orderId    String
-  company    String?
-  trackingNo String?
-  pickupCode String?
-  remark     String?
-  status     String    @default("PENDING")
-  shippedAt  DateTime?
+  id          String    @id @default(cuid())
+  orderId     String
+  company     String?
+  trackingNo  String?
+  pickupCode  String?
+  remark      String?
+  status      String    @default("PENDING")
+  shippedAt   DateTime?
   completedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  order      MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  order       MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([status])
@@ -1108,18 +1380,18 @@ model MallShipment {
 }
 
 model MallAfterSale {
-  id        String    @id @default(cuid())
-  orderId   String
-  type      String
-  status    String    @default("REQUESTED")
-  reason    String?
-  note      String?
+  id              String       @id @default(cuid())
+  orderId         String
+  type            String
+  status          String       @default("REQUESTED")
+  reason          String?
+  note            String?
   attachmentsJson Json?
-  handledAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  order     MallOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  refunds   MallRefund[]
+  handledAt       DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  order           MallOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds         MallRefund[]
 
   @@index([orderId])
   @@index([status])
@@ -1192,7 +1464,7 @@ model MallPaymentConfig {
 }
 
 model MallInventoryLog {
-  id                String      @id @default(cuid())
+  id                String     @id @default(cuid())
   skuId             String
   orderId           String?
   action            String
@@ -1202,9 +1474,9 @@ model MallInventoryLog {
   beforeSoldCount   Int
   afterSoldCount    Int
   remark            String?
-  createdAt         DateTime    @default(now())
-  sku               ProductSku  @relation(fields: [skuId], references: [id], onDelete: Cascade)
-  order             MallOrder?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt         DateTime   @default(now())
+  sku               ProductSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  order             MallOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([skuId])
   @@index([orderId])
@@ -1586,22 +1858,22 @@ model NotificationSubscription {
 }
 
 model NotificationChannelConfig {
-  id                    String                  @id @default(cuid())
-  channel               NotificationChannelType @unique
-  enabled               Boolean                 @default(false)
-  provider              String?
-  providerSource        String                  @default("DB")
-  signature             String?
-  templateKey           String?
-  smsTemplate           String?
-  apiKeyEnc             String?
-  apiSecretEnc          String?
-  rateLimitPerMinute    Int                     @default(60)
-  retryMaxAttempts      Int                     @default(0)
-  retryIntervalSeconds  Int                     @default(60)
-  settingsJson          Json?
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
+  id                   String                  @id @default(cuid())
+  channel              NotificationChannelType @unique
+  enabled              Boolean                 @default(false)
+  provider             String?
+  providerSource       String                  @default("DB")
+  signature            String?
+  templateKey          String?
+  smsTemplate          String?
+  apiKeyEnc            String?
+  apiSecretEnc         String?
+  rateLimitPerMinute   Int                     @default(60)
+  retryMaxAttempts     Int                     @default(0)
+  retryIntervalSeconds Int                     @default(60)
+  settingsJson         Json?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
 
   @@index([enabled])
   @@index([providerSource])
@@ -1752,27 +2024,27 @@ model GroupWelcomeTemplate {
 }
 
 model CustomerGroupMessageTask {
-  id              String                     @id @default(cuid())
-  name            String
-  conferenceId    String?
-  contentJson     Json
-  targetScope     String                     @default("SELECTED_GROUPS")
-  targetGroupIds  Json?
-  status          CustomerGroupMessageStatus @default(DRAFT)
-  wecomTaskId     String?
-  wecomMsgId      String?
+  id                 String                     @id @default(cuid())
+  name               String
+  conferenceId       String?
+  contentJson        Json
+  targetScope        String                     @default("SELECTED_GROUPS")
+  targetGroupIds     Json?
+  status             CustomerGroupMessageStatus @default(DRAFT)
+  wecomTaskId        String?
+  wecomMsgId         String?
   externalResultJson Json?
-  errorCode       String?
-  errorMessage    String?
-  providerSource  String?
-  needConfirm     Boolean                    @default(true)
-  confirmDeadline DateTime?
-  sentAt          DateTime?
-  createdById     String?
-  createdAt       DateTime                   @default(now())
-  updatedAt       DateTime                   @updatedAt
-  conference      Conference?                @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
-  logs            CustomerGroupMessageLog[]
+  errorCode          String?
+  errorMessage       String?
+  providerSource     String?
+  needConfirm        Boolean                    @default(true)
+  confirmDeadline    DateTime?
+  sentAt             DateTime?
+  createdById        String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  conference         Conference?                @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+  logs               CustomerGroupMessageLog[]
 
   @@index([conferenceId])
   @@index([targetScope])
@@ -1784,21 +2056,21 @@ model CustomerGroupMessageTask {
 }
 
 model CustomerGroupMessageLog {
-  id          String                   @id @default(cuid())
-  taskId      String
-  groupId     String?
-  wecomGroupId String?
-  ownerUserId String?
-  status      String                   @default("PENDING_CONFIRM")
+  id                String                   @id @default(cuid())
+  taskId            String
+  groupId           String?
+  wecomGroupId      String?
+  ownerUserId       String?
+  status            String                   @default("PENDING_CONFIRM")
   providerMessageId String?
-  resultJson  Json?
-  errorReason String?
-  sentAt      DateTime?
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
-  task        CustomerGroupMessageTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  group       CustomerGroup?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  wecomGroup  WecomCustomerGroup?      @relation(fields: [wecomGroupId], references: [id], onDelete: SetNull)
+  resultJson        Json?
+  errorReason       String?
+  sentAt            DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  task              CustomerGroupMessageTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  group             CustomerGroup?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  wecomGroup        WecomCustomerGroup?      @relation(fields: [wecomGroupId], references: [id], onDelete: SetNull)
 
   @@index([taskId])
   @@index([groupId])
@@ -1810,21 +2082,21 @@ model CustomerGroupMessageLog {
 }
 
 model KnowledgeBase {
-  id                String              @id @default(cuid())
-  conferenceId      String
-  title             String
-  enabled           Boolean             @default(false)
-  scopeDescription  String?
-  fallbackText      String?
-  citationsEnabled  Boolean             @default(true)
-  loggingEnabled    Boolean             @default(true)
-  settingsJson      Json?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  conference        Conference          @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
-  documents         KnowledgeDocument[]
-  questionLogs      AiQuestionLog[]
-  autoRules         AutoReplyRule[]
+  id               String              @id @default(cuid())
+  conferenceId     String
+  title            String
+  enabled          Boolean             @default(false)
+  scopeDescription String?
+  fallbackText     String?
+  citationsEnabled Boolean             @default(true)
+  loggingEnabled   Boolean             @default(true)
+  settingsJson     Json?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  conference       Conference          @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  documents        KnowledgeDocument[]
+  questionLogs     AiQuestionLog[]
+  autoRules        AutoReplyRule[]
 
   @@unique([conferenceId])
   @@index([enabled])
@@ -1854,13 +2126,13 @@ model KnowledgeDocument {
 }
 
 model KnowledgeChunk {
-  id         String            @id @default(cuid())
-  documentId String
-  chunkIndex Int
-  content    String
-  keywords   Json?
-  createdAt  DateTime          @default(now())
-  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  id           String            @id @default(cuid())
+  documentId   String
+  chunkIndex   Int
+  content      String
+  keywords     Json?
+  createdAt    DateTime          @default(now())
+  document     KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   questionLogs AiQuestionLog[]
 
   @@unique([documentId, chunkIndex])
@@ -1918,21 +2190,21 @@ model AiSuggestion {
 }
 
 model AiConfig {
-  id                  String   @id @default(cuid())
-  name                String   @default("default")
-  enabled             Boolean  @default(false)
-  provider            String   @default("LOCAL_FALLBACK")
-  baseUrl             String?
-  model               String   @default("local-keyword")
-  apiKeyEnc           String?
-  temperature         Int      @default(0)
-  maxOutputTokens     Int      @default(800)
-  fallbackEnabled     Boolean  @default(true)
-  citationsEnabled    Boolean  @default(true)
-  questionLogEnabled  Boolean  @default(true)
-  settingsJson        Json?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  name               String   @default("default")
+  enabled            Boolean  @default(false)
+  provider           String   @default("LOCAL_FALLBACK")
+  baseUrl            String?
+  model              String   @default("local-keyword")
+  apiKeyEnc          String?
+  temperature        Int      @default(0)
+  maxOutputTokens    Int      @default(800)
+  fallbackEnabled    Boolean  @default(true)
+  citationsEnabled   Boolean  @default(true)
+  questionLogEnabled Boolean  @default(true)
+  settingsJson       Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   @@unique([name])
   @@index([enabled])
@@ -2096,31 +2368,31 @@ model Refund {
 }
 
 model InvoiceApplication {
-  id           String        @id @default(cuid())
-  invoiceNo    String        @unique
-  sourceType    String        @default("REGISTRATION")
-  orderNo      String
-  orderId      String?
-  userId       String?
-  title        String
-  taxNo        String?
-  invoiceType  String        @default("GENERAL")
-  amountCent   Int
-  email        String?
-  phone        String?
-  address      String?
-  bankName     String?
-  bankAccount  String?
-  status       InvoiceStatus @default(REQUESTED)
-  rejectReason String?
+  id              String        @id @default(cuid())
+  invoiceNo       String        @unique
+  sourceType      String        @default("REGISTRATION")
+  orderNo         String
+  orderId         String?
+  userId          String?
+  title           String
+  taxNo           String?
+  invoiceType     String        @default("GENERAL")
+  amountCent      Int
+  email           String?
+  phone           String?
+  address         String?
+  bankName        String?
+  bankAccount     String?
+  status          InvoiceStatus @default(REQUESTED)
+  rejectReason    String?
   issuedInvoiceNo String?
-  invoiceLink  String?
-  remark       String?
-  issuedAt     DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  order        Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  invoiceLink     String?
+  remark          String?
+  issuedAt        DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  order           Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([orderNo])
   @@index([sourceType])

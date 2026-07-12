@@ -9,12 +9,13 @@ import { HealthController } from "./health.controller";
 import { MallModule } from "./mall/mall.module";
 import { MemberModule } from "./member/member.module";
 import { PaymentsModule } from "./payments/payments.module";
+import { PlatformModule } from "./platform/platform.module";
 import { RegistrationModule } from "./registration/registration.module";
 import { RegistrationsModule } from "./registrations/registrations.module";
 import { WecomModule } from "./wecom/wecom.module";
 
 @Module({
-  imports: [AdminModule, AuthModule, CartModule, CheckinModule, CmsModule, ConferencesModule, MallModule, MemberModule, PaymentsModule, RegistrationModule, RegistrationsModule, WecomModule],
+  imports: [AdminModule, AuthModule, CartModule, CheckinModule, CmsModule, ConferencesModule, MallModule, MemberModule, PaymentsModule, PlatformModule, RegistrationModule, RegistrationsModule, WecomModule],
   controllers: [HealthController]
 })
 export class AppModule {}

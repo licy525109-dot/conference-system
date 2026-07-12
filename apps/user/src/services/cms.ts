@@ -1,5 +1,6 @@
 import { request } from "./request";
 import type { PageDsl } from "@conference/dsl-runtime";
+import { buildCmsCompositionDsl, type CmsCompositionKind } from "@conference/shared";
 
 export interface CmsComponent {
   id: string;
@@ -107,11 +108,11 @@ export interface TabbarItem {
 }
 
 export const DEFAULT_THEME: ThemeConfig = {
-  visualPreset: "business-blue",
-  primaryColor: "#315d7d",
-  secondaryColor: "#3a8f79",
-  accentColor: "#b58b47",
-  backgroundColor: "#f5f7f6",
+  visualPreset: "guanchao-premium",
+  primaryColor: "#10233d",
+  secondaryColor: "#2f7868",
+  accentColor: "#a97e38",
+  backgroundColor: "#f5f7f5",
   cardBackground: "#ffffff",
   radius: 8,
   buttonStyle: "solid",
@@ -145,6 +146,21 @@ export const DEFAULT_THEME: ThemeConfig = {
   splashBottomText: "欢迎进入会务小程序",
   splashBottomTextStyle: "light"
 };
+
+export function createDefaultPageDsl(pageKey: string): PageDsl {
+  return buildCmsCompositionDsl(defaultCompositionKind(pageKey), pageKey) as PageDsl;
+}
+
+function defaultCompositionKind(pageKey: string): CmsCompositionKind {
+  const normalized = pageKey.trim().toLowerCase();
+  if (normalized === "home") return "home";
+  if (normalized.includes("paiqi") || normalized.includes("schedule")) return "schedule";
+  if (normalized === "conference-list" || normalized.includes("registration")) return "registration";
+  if (normalized.includes("member") || normalized === "my-registrations") return "member-center";
+  if (normalized === "mall") return "mall";
+  if (normalized.includes("cart")) return "cart";
+  return "home";
+}
 
 export async function getPublishedPage(pageKey: string, params: { conferenceId?: string; productId?: string } = {}): Promise<PublishedPage | null> {
   try {
