@@ -1965,9 +1965,11 @@ const previewRouteHint = computed(() => {
 const runtimePreviewUrl = computed(() => {
   const configured = String(import.meta.env.VITE_CMS_RUNTIME_PREVIEW_URL || "").trim();
   if (configured) return configured;
-  return import.meta.env.DEV
-    ? "http://localhost:5173/#/pages/cms-preview/index"
-    : "https://m.guanchaohuiji.com/#/pages/cms-preview/index";
+  if (import.meta.env.DEV) {
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    return `${protocol}//${window.location.hostname}:5173/#/pages/cms-preview/index`;
+  }
+  return "https://m.guanchaohuiji.com/#/pages/cms-preview/index";
 });
 const runtimePreviewUserContext = computed<Record<string, unknown> | null>(() => previewUserMode.value === "member"
   ? { loggedIn: true, userId: "cms-preview-user", ...SAMPLE_USER_CONTEXT }

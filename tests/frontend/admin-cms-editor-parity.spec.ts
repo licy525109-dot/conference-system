@@ -60,6 +60,20 @@ test("page structure templates expand into independently editable modules", asyn
   await expect(page.locator(".layer-list")).not.toContainText("旧版整页模板");
 });
 
+test("runtime preview reconnects after the user H5 service becomes available", async ({ page }) => {
+  let documentRequests = 0;
+  await page.route("http://localhost:5173/", async (route) => {
+    documentRequests += 1;
+    if (documentRequests === 1) return route.abort("connectionfailed");
+    return route.continue();
+  });
+
+  await page.goto("http://localhost:5174/#/pages/editor?pageId=page-home");
+  const runtime = page.frameLocator(".cms-runtime-preview__frame");
+  await expect(runtime.locator(".cms-hero-banner").first()).toBeVisible({ timeout: 20_000 });
+  expect(documentRequests).toBeGreaterThanOrEqual(2);
+});
+
 async function installAdminFixtures(page: Page): Promise<void> {
   const dsl = buildCmsCompositionDsl("home", "home");
   const editorComponents = dsl.meta.editorComponents as Array<{ id: string; type: string; enabled: boolean; sortOrder: number; config: Record<string, unknown> }>;

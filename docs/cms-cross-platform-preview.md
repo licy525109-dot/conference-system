@@ -34,4 +34,4 @@ pnpm dev:user:h5
 pnpm dev:admin
 ```
 
-后台默认连接 `http://localhost:5173/#/pages/cms-preview/index`。其他环境可通过 `VITE_CMS_RUNTIME_PREVIEW_URL` 指定已部署的用户端 H5 地址。
+后台开发环境会根据当前访问后台的主机名自动连接 `5173`，因此使用局域网 IP 打开后台时不会错误连接访问设备自己的 `localhost`。连接超时会自动重试，其他环境也可通过 `VITE_CMS_RUNTIME_PREVIEW_URL` 指定已部署的用户端 H5 地址。
