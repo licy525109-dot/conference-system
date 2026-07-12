@@ -20,6 +20,8 @@ jobs:
     env:
       BAOTA_PROJECT_DIR: ${{ vars.BAOTA_PROJECT_DIR || '/www/wwwroot/conference-system' }}
       BAOTA_ADMIN_ROOT: ${{ vars.BAOTA_ADMIN_ROOT || '/www/wwwroot/admin.guanchaohuiji.com' }}
+      BAOTA_H5_ROOT: ${{ vars.BAOTA_H5_ROOT || '/www/wwwroot/m.guanchaohuiji.com' }}
+      BAOTA_H5_PUBLIC_URL: ${{ vars.BAOTA_H5_PUBLIC_URL || 'https://m.guanchaohuiji.com' }}
       DEPLOY_BRANCH: main
     steps:
       - name: Validate required secrets
@@ -63,7 +65,7 @@ jobs:
             -o IdentitiesOnly=yes
           )
           ssh "${SSH_OPTS[@]}" "${BAOTA_USER}@${BAOTA_HOST}" \
-            "PROJECT_DIR='${BAOTA_PROJECT_DIR}' ADMIN_ROOT='${BAOTA_ADMIN_ROOT}' BRANCH='${DEPLOY_BRANCH}' bash -s" <<'REMOTE_SCRIPT'
+            "PROJECT_DIR='${BAOTA_PROJECT_DIR}' ADMIN_ROOT='${BAOTA_ADMIN_ROOT}' H5_ROOT='${BAOTA_H5_ROOT}' H5_PUBLIC_URL='${BAOTA_H5_PUBLIC_URL}' BRANCH='${DEPLOY_BRANCH}' bash -s" <<'REMOTE_SCRIPT'
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
           echo "== Bootstrap deploy script from origin/${BRANCH} =="

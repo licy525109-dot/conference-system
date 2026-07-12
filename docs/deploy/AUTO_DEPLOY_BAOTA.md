@@ -46,6 +46,8 @@ BAOTA_SSH_KEY
 ```text
 BAOTA_PROJECT_DIR=/www/wwwroot/conference-system
 BAOTA_ADMIN_ROOT=/www/wwwroot/admin.guanchaohuiji.com
+BAOTA_H5_ROOT=/www/wwwroot/m.guanchaohuiji.com
+BAOTA_H5_PUBLIC_URL=https://m.guanchaohuiji.com
 ```
 
 如果不配置可选 Variables，workflow 使用上述默认值。
@@ -94,6 +96,8 @@ bash scripts/deploy/baota-deploy.sh
 ```bash
 PROJECT_DIR=/www/wwwroot/conference-system
 ADMIN_ROOT=/www/wwwroot/admin.guanchaohuiji.com
+H5_ROOT=/www/wwwroot/m.guanchaohuiji.com
+H5_PUBLIC_URL=https://m.guanchaohuiji.com
 BRANCH=main
 API_HEALTH_LOCAL=http://127.0.0.1:3001/api/health
 API_HEALTH_PUBLIC=https://guanchaohuiji.com/api/health
@@ -106,17 +110,17 @@ PM2_PROCESS=conference-api
 脚本按阶段输出日志，失败即退出：
 
 1. 创建部署锁，避免并发部署。
-2. 备份 `.env.production`、PostgreSQL、后台静态文件。
+2. 备份 `.env.production`、PostgreSQL、后台静态文件和用户端 H5 静态文件。
 3. 拉取最新 `main`。
 4. `pnpm install --frozen-lockfile`。
 5. 加载服务器本地 `.env.production`，不打印内容。
 6. `prisma generate` 和 `prisma migrate deploy`。
-7. 构建 API 和 Admin。
-8. 检查 Admin dist 不含旧预留页关键字。
-9. 发布后台静态文件到 `/www/wwwroot/admin.guanchaohuiji.com`。
+7. 构建 API、用户端 H5 和 Admin。
+8. 检查 Admin dist 不含旧预留页关键字，并检查 H5 dist 包含 `pages/cms-preview/index`。
+9. 发布用户端 H5 到 `/www/wwwroot/m.guanchaohuiji.com`，发布后台静态文件到 `/www/wwwroot/admin.guanchaohuiji.com`。
 10. `nginx -t && nginx -s reload`。
 11. `pm2 restart conference-api --update-env`。
-12. 检查本机和公网 API health。
+12. 检查本机、公网 API health 和用户端 H5 公网地址。
 13. 输出 PM2 状态和最近日志。
 
 ## 备份位置
@@ -133,6 +137,7 @@ PM2_PROCESS=conference-api
 .env.production
 conference_dev.sql
 admin-static/
+user-h5-static/
 ```
 
 ## 失败处理

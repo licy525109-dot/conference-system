@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 API_BASE="${API_BASE:-https://guanchaohuiji.com/api}"
 ADMIN_ROOT="${ADMIN_ROOT:-/www/wwwroot/admin.guanchaohuiji.com}"
+H5_ROOT="${H5_ROOT:-/www/wwwroot/m.guanchaohuiji.com}"
+H5_PUBLIC_URL="${H5_PUBLIC_URL:-https://m.guanchaohuiji.com}"
 PROJECT_DIR="${PROJECT_DIR:-/www/wwwroot/conference-system}"
 PM2_PROCESS="${PM2_PROCESS:-conference-api}"
 CMS_PAGE_KEY="${CMS_PAGE_KEY:-home}"
@@ -141,6 +143,15 @@ check_admin_static_bundle() {
   echo "admin static bundle: no reserved-page copy"
 }
 
+check_h5_runtime_preview_bundle() {
+  [[ -f "$H5_ROOT/index.html" ]] || fail "user H5 index not found: ${H5_ROOT}/index.html"
+  [[ -d "$H5_ROOT/assets" ]] || fail "user H5 assets not found: ${H5_ROOT}/assets"
+  if ! grep -R -F "pages/cms-preview/index" -n "$H5_ROOT/assets" >/dev/null; then
+    fail "user H5 bundle does not contain the CMS runtime preview route"
+  fi
+  echo "user H5 runtime preview bundle: ok"
+}
+
 require_cmd curl
 require_cmd grep
 require_cmd find
@@ -167,5 +178,7 @@ check_enum_value "PaymentStatus" "SUCCESS"
 log "4. Runtime process and admin static bundle"
 check_pm2_online
 check_admin_static_bundle
+curl_expect_200 "user H5" "${H5_PUBLIC_URL%/}/"
+check_h5_runtime_preview_bundle
 
 log "Production smoke passed"

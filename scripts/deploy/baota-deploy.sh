@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/www/wwwroot/conference-system}"
 ADMIN_ROOT="${ADMIN_ROOT:-/www/wwwroot/admin.guanchaohuiji.com}"
+H5_ROOT="${H5_ROOT:-/www/wwwroot/m.guanchaohuiji.com}"
+H5_PUBLIC_URL="${H5_PUBLIC_URL:-https://m.guanchaohuiji.com}"
 BRANCH="${BRANCH:-main}"
 API_HEALTH_LOCAL="${API_HEALTH_LOCAL:-http://127.0.0.1:3001/api/health}"
 API_HEALTH_PUBLIC="${API_HEALTH_PUBLIC:-https://guanchaohuiji.com/api/health}"
@@ -11,7 +13,8 @@ PM2_PROCESS="${PM2_PROCESS:-conference-api}"
 LOCK_DIR="${LOCK_DIR:-/tmp/conference-system-baota-deploy.lock}"
 PHASE="init"
 BACKUP=""
-STATIC_PUBLISHED=0
+ADMIN_STATIC_PUBLISHED=0
+H5_STATIC_PUBLISHED=0
 
 log() {
   printf '\n== %s ==\n' "$1"
@@ -30,8 +33,11 @@ on_error() {
   if [[ -n "$BACKUP" ]]; then
     echo "Backup directory: ${BACKUP}" >&2
   fi
-  if [[ "$STATIC_PUBLISHED" == "1" ]]; then
-    echo "Static files were already published. Restore manually from: ${BACKUP}/admin-static" >&2
+  if [[ "$ADMIN_STATIC_PUBLISHED" == "1" ]]; then
+    echo "Admin static files were already published. Restore manually from: ${BACKUP}/admin-static" >&2
+  fi
+  if [[ "$H5_STATIC_PUBLISHED" == "1" ]]; then
+    echo "User H5 static files were already published. Restore manually from: ${BACKUP}/user-h5-static" >&2
   fi
   exit "$exit_code"
 }
@@ -49,9 +55,19 @@ copy_admin_backup() {
   fi
 }
 
-clear_admin_root() {
-  mkdir -p "$ADMIN_ROOT"
-  find "$ADMIN_ROOT" -mindepth 1 -maxdepth 1 ! -name ".user.ini" -exec rm -rf {} +
+copy_h5_backup() {
+  mkdir -p "$BACKUP/user-h5-static"
+  if [[ -d "$H5_ROOT" ]]; then
+    cp -a "$H5_ROOT"/. "$BACKUP/user-h5-static"/
+  else
+    echo "WARN: user H5 root does not exist yet: ${H5_ROOT}"
+  fi
+}
+
+clear_static_root() {
+  local target="$1"
+  mkdir -p "$target"
+  find "$target" -mindepth 1 -maxdepth 1 ! -name ".user.ini" -exec rm -rf {} +
 }
 
 trap on_error ERR
@@ -110,8 +126,8 @@ fi
 trap cleanup_lock EXIT
 trap on_error ERR
 
-PHASE="backup env database admin static"
-log "2. 备份 env、数据库、后台静态文件"
+PHASE="backup env database frontend static"
+log "2. 备份 env、数据库、后台与用户端 H5 静态文件"
 BACKUP="${BACKUP_ROOT}/conference-system-auto-deploy-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP"
 if [[ -f "$PROJECT_DIR/.env.production" ]]; then
@@ -123,6 +139,7 @@ fi
 docker compose -f docker-compose.prod.yml exec -T postgres \
   pg_dump -U conference -d conference_dev > "$BACKUP/conference_dev.sql"
 copy_admin_backup
+copy_h5_backup
 echo "Backup directory: ${BACKUP}"
 
 PHASE="pull latest main"
@@ -151,23 +168,41 @@ log "6. Prisma"
 pnpm --filter @conference/api exec prisma generate --schema ../../prisma/schema.prisma
 pnpm --filter @conference/api exec prisma migrate deploy --schema ../../prisma/schema.prisma
 
-PHASE="build api and admin"
-log "7. 构建 API 和 Admin"
+PHASE="build api user h5 and admin"
+log "7. 构建 API、用户端 H5 和 Admin"
 pnpm --filter @conference/api build
+pnpm --filter @conference/user build:h5
 pnpm --filter @conference/admin build
 
-PHASE="check admin dist"
+PHASE="check frontend dist"
 log "8. 构建产物检查"
+if [[ ! -f apps/user/dist/build/h5/index.html ]]; then
+  echo "ERROR: user H5 dist is missing index.html" >&2
+  exit 3
+fi
+if ! grep -R -F "pages/cms-preview/index" -n apps/user/dist/build/h5/assets >/dev/null; then
+  echo "ERROR: user H5 dist is missing the CMS runtime preview route" >&2
+  exit 3
+fi
 if grep -R -E "ReservedPage|功能建设中|预留页面" -n apps/admin/dist; then
   echo "ERROR: admin dist still contains ReservedPage/功能建设中/预留页面 content" >&2
   exit 3
 fi
 
-PHASE="publish admin static"
-log "9. 发布后台静态文件"
-STATIC_PUBLISHED=1
-clear_admin_root
-cp -r "$PROJECT_DIR/apps/admin/dist/"* "$ADMIN_ROOT"/
+PHASE="publish frontend static"
+log "9. 发布用户端 H5 和后台静态文件"
+H5_STATIC_PUBLISHED=1
+clear_static_root "$H5_ROOT"
+cp -a "$PROJECT_DIR/apps/user/dist/build/h5"/. "$H5_ROOT"/
+
+ADMIN_STATIC_PUBLISHED=1
+clear_static_root "$ADMIN_ROOT"
+cp -a "$PROJECT_DIR/apps/admin/dist"/. "$ADMIN_ROOT"/
+
+if ! grep -R -F "pages/cms-preview/index" -n "$H5_ROOT/assets" >/dev/null; then
+  echo "ERROR: published user H5 files are missing the CMS runtime preview route" >&2
+  exit 3
+fi
 
 nginx -t
 nginx -s reload
@@ -183,6 +218,8 @@ curl -fsS "$API_HEALTH_LOCAL"
 echo
 curl -fsS "$API_HEALTH_PUBLIC"
 echo
+curl -fsS "${H5_PUBLIC_URL%/}/" >/dev/null
+echo "User H5: ok (${H5_PUBLIC_URL%/}/)"
 
 PHASE="pm2 status"
 log "12. 输出 PM2 状态"
