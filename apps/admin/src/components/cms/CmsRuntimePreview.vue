@@ -7,12 +7,13 @@
       title="用户端真实运行时预览"
       sandbox="allow-scripts allow-same-origin"
       @load="handleFrameLoad"
+      @error="handleFrameError"
     />
     <div v-if="!ready" class="cms-runtime-preview__state" :class="{ 'is-error': Boolean(errorText) }">
       <span class="cms-runtime-preview__indicator" />
       <strong>{{ errorText ? "真实预览暂不可用" : "正在连接用户端运行时" }}</strong>
       <small>{{ errorText || "预览使用与 H5、小程序相同的 PageRenderer 和组件源码。" }}</small>
-      <button v-if="errorText" type="button" @click="reloadFrame">重新连接</button>
+      <button v-if="errorText" type="button" @click="reloadFrame">立即重试</button>
     </div>
   </div>
 </template>
@@ -43,8 +44,13 @@ const frame = ref<HTMLIFrameElement | null>(null);
 const ready = ref(false);
 const errorText = ref("");
 const reloadKey = ref(0);
+const retryCount = ref(0);
 const sessionId = createSessionId();
 let readyTimer: number | undefined;
+let retryTimer: number | undefined;
+const READY_TIMEOUT_MS = 7000;
+const AUTO_RETRY_DELAY_MS = 2400;
+const MAX_AUTO_RETRIES = 5;
 
 const frameSrc = computed(() => appendSession(props.src, sessionId, reloadKey.value));
 const targetOrigin = computed(() => {
@@ -65,13 +71,22 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener("message", handleMessage);
   if (readyTimer) clearTimeout(readyTimer);
+  if (retryTimer) clearTimeout(retryTimer);
 });
 
 function handleFrameLoad(): void {
   ready.value = false;
   errorText.value = "";
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+  }
   startReadyTimer();
   window.setTimeout(sendPayload, 120);
+}
+
+function handleFrameError(): void {
+  markUnavailable();
 }
 
 function handleMessage(event: MessageEvent<unknown>): void {
@@ -79,8 +94,16 @@ function handleMessage(event: MessageEvent<unknown>): void {
   if (event.data.sessionId !== sessionId) return;
   if (event.data.type === "ready") {
     ready.value = true;
+    retryCount.value = 0;
     errorText.value = "";
-    if (readyTimer) clearTimeout(readyTimer);
+    if (readyTimer) {
+      clearTimeout(readyTimer);
+      readyTimer = undefined;
+    }
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    }
     sendPayload();
     return;
   }
@@ -109,11 +132,40 @@ function sendPayload(): void {
 function startReadyTimer(): void {
   if (readyTimer) clearTimeout(readyTimer);
   readyTimer = window.setTimeout(() => {
-    if (!ready.value) errorText.value = "请确认用户端 H5 已部署；本地开发请同时运行 pnpm dev:user:h5。";
-  }, 7000);
+    readyTimer = undefined;
+    if (!ready.value) markUnavailable();
+  }, READY_TIMEOUT_MS);
 }
 
 function reloadFrame(): void {
+  retryCount.value = 0;
+  reconnectFrame();
+}
+
+function markUnavailable(): void {
+  if (ready.value) return;
+  errorText.value = "用户端预览服务暂未响应，系统正在自动重试；保存与发布不受影响。";
+  scheduleAutoRetry();
+}
+
+function scheduleAutoRetry(): void {
+  if (retryTimer || retryCount.value >= MAX_AUTO_RETRIES) return;
+  retryTimer = window.setTimeout(() => {
+    retryTimer = undefined;
+    retryCount.value += 1;
+    reconnectFrame();
+  }, AUTO_RETRY_DELAY_MS);
+}
+
+function reconnectFrame(): void {
+  if (readyTimer) {
+    clearTimeout(readyTimer);
+    readyTimer = undefined;
+  }
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+  }
   ready.value = false;
   errorText.value = "";
   reloadKey.value += 1;
