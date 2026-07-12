@@ -1,4 +1,8 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import {
+  CMS_RUNTIME_PREVIEW_CHANNEL,
+  CMS_RUNTIME_PREVIEW_VERSION
+} from "../../packages/shared/src/cms-preview";
 import { buildCmsCompositionDsl } from "../../packages/shared/src/cms-compositions";
 
 test.use({ viewport: { width: 1440, height: 1000 } });
@@ -72,6 +76,49 @@ test("runtime preview reconnects after the user H5 service becomes available", a
   const runtime = page.frameLocator(".cms-runtime-preview__frame");
   await expect(runtime.locator(".cms-hero-banner").first()).toBeVisible({ timeout: 20_000 });
   expect(documentRequests).toBeGreaterThanOrEqual(2);
+});
+
+test("runtime child acknowledges the first render when its initial ready message was missed", async ({ page }) => {
+  const sessionId = "late-parent-listener";
+  await page.goto("http://localhost:5174/");
+  await page.setContent(`<iframe id="runtime" src="http://localhost:5173/#/pages/cms-preview/index?session=${sessionId}"></iframe>`);
+  await expect(page.locator("#runtime")).toBeVisible();
+  await page.waitForTimeout(800);
+
+  const messages = await page.evaluate(async ({ channel, version, session, dsl }) => {
+    const received: Array<Record<string, unknown>> = [];
+    const listener = (event: MessageEvent<Record<string, unknown>>) => received.push(event.data);
+    window.addEventListener("message", listener);
+    const frame = document.querySelector<HTMLIFrameElement>("#runtime");
+    frame?.contentWindow?.postMessage({
+      channel,
+      version,
+      sessionId: session,
+      type: "render",
+      platform: "miniapp",
+      dsl,
+      theme: {},
+      conferences: [],
+      products: [],
+      userContext: { loggedIn: false },
+      selectedComponentId: ""
+    }, "http://localhost:5173");
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
+    window.removeEventListener("message", listener);
+    return received;
+  }, {
+    channel: CMS_RUNTIME_PREVIEW_CHANNEL,
+    version: CMS_RUNTIME_PREVIEW_VERSION,
+    session: sessionId,
+    dsl: buildCmsCompositionDsl("home", "home")
+  });
+
+  expect(messages).toContainEqual(expect.objectContaining({
+    channel: CMS_RUNTIME_PREVIEW_CHANNEL,
+    version: CMS_RUNTIME_PREVIEW_VERSION,
+    sessionId,
+    type: "ready"
+  }));
 });
 
 async function installAdminFixtures(page: Page): Promise<void> {
