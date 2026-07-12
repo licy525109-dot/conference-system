@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import {
   BadRequestException,
   ConflictException,
@@ -20,7 +20,7 @@ import { WechatPaySigner } from "./wechat-pay.signer";
 
 const now = new Date("2026-06-06T15:20:00.000Z");
 const successTime = "2026-06-06T15:21:00.000Z";
-const readableTestKeyPath = fileURLToPath(new URL("../../../../package.json", import.meta.url));
+const readableTestKeyPath = resolve(__dirname, "../../../../package.json");
 const currentUser: CurrentUser = {
   id: "user-1",
   openid: "real-openid-1",

@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AuditAction, PaymentProvider, PaymentStatus, RefundStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
@@ -12,7 +12,7 @@ import { MallPaymentCompletionService } from "./mall-payment-completion.service"
 import { MallPaymentService } from "./mall-payment.service";
 
 const now = new Date("2026-06-18T12:00:00.000Z");
-const readableTestKeyPath = fileURLToPath(new URL("../../../../package.json", import.meta.url));
+const readableTestKeyPath = resolve(__dirname, "../../../../package.json");
 const currentUser: CurrentUser = { id: "user-1", openid: "real-openid-1", nickname: "用户" };
 const currentAdmin: CurrentAdmin = { id: "admin-1", username: "admin", displayName: "管理员", permissions: ["*"] };
 
