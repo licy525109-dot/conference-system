@@ -44,7 +44,7 @@ cd /www/wwwroot/conference-system
 bash scripts/deploy/baota-deploy.sh
 ```
 
-The script backs up `.env.production`, PostgreSQL, and admin static files before publishing. It then installs dependencies, runs Prisma generate/migrate deploy, builds API/Admin, publishes Admin static files, reloads Nginx, restarts PM2, and checks local/public API health. See `docs/deploy/AUTO_DEPLOY_BAOTA.md`.
+The script backs up `.env.production`, PostgreSQL, Admin static files, and user H5 static files before publishing. It then installs dependencies, runs Prisma generate/migrate deploy, builds API/user H5/Admin, publishes both frontend applications, reloads Nginx, restarts PM2, and checks local/public API and H5 health. The release is rejected if the H5 bundle does not contain the CMS runtime preview route. See `docs/deploy/AUTO_DEPLOY_BAOTA.md`.
 
 Use this path for normal production deployment after merging to `main`, including backend/API and Prisma migration changes.
 

@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 30
     env:
       VITE_API_BASE_URL: https://guanchaohuiji.com/api
+      VITE_MP_WEIXIN_API_BASE_URL: https://guanchaohuiji.com/api
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import {
   BadRequestException,
   ConflictException,
@@ -19,6 +20,7 @@ import { WechatPaySigner } from "./wechat-pay.signer";
 
 const now = new Date("2026-06-06T15:20:00.000Z");
 const successTime = "2026-06-06T15:21:00.000Z";
+const readableTestKeyPath = resolve(__dirname, "../../../../package.json");
 const currentUser: CurrentUser = {
   id: "user-1",
   openid: "real-openid-1",
@@ -176,9 +178,9 @@ function withWechatPayConfig(): void {
   process.env.WECHAT_PAY_MCH_ID = "1900000001";
   process.env.WECHAT_PAY_MCH_SERIAL_NO = "merchant-serial";
   process.env.WECHAT_PAY_API_V3_KEY = "12345678901234567890123456789012";
-  process.env.WECHAT_PAY_PRIVATE_KEY_PATH = "/Users/yangyang/Projects/conference-system/package.json";
+  process.env.WECHAT_PAY_PRIVATE_KEY_PATH = readableTestKeyPath;
   process.env.WECHAT_PAY_NOTIFY_URL = "https://example.com/api/payments/wechat/notify";
-  process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH = "/Users/yangyang/Projects/conference-system/package.json";
+  process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH = readableTestKeyPath;
 }
 
 function createService(prisma: PrismaMockShape & PrismaService, options: NotifyOptions = {}) {
