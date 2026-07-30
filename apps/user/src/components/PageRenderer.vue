@@ -8,12 +8,18 @@
         :conferences="conferences"
         :conference="conference"
         :products="products"
+        :product-categories="productCategories"
+        :active-product-category-id="activeProductCategoryId"
+        :product-loading="productLoading"
+        :page-key="governedResult.dsl.page"
         :user-context="effectiveUserContext"
         :suppress-registration-cta="suppressRegistrationCta"
         :editor-preview="editorPreview"
         :selected-component-id="selectedComponentId"
         @open-conference="emit('openConference', $event)"
         @register="emit('register')"
+        @edit-profile="emit('editProfile')"
+        @select-product-category="emit('selectProductCategory', $event)"
         @select-component="emit('selectComponent', $event)"
         @reorder-component="emit('reorderComponent', $event.sourceId, $event.targetId)"
       />
@@ -27,19 +33,21 @@ import { computed } from "vue";
 import type { PageDsl, ResolvedDslNode } from "@conference/dsl-runtime";
 import { createGovernedRuntimeContext, governRender } from "@conference/render-governor";
 import CmsVisualRenderer from "@/components/cms-visual/CmsVisualRenderer.vue";
-import { cmsVisualComponentsFromDsl, hasCmsVisualComponents } from "@/components/cms-visual/useCmsVisualContext";
+import { cmsVisualComponentsFromDsl, expandCmsVisualComponent, expandedCmsVisualComponentsFromDsl, hasCmsVisualComponents } from "@/components/cms-visual/useCmsVisualContext";
 import DslRenderTree from "@/components/design-system/DslRenderTree.vue";
 import { useCurrentUserContext } from "@/composables/useCurrentUserContext";
 import { ensureLogin } from "@/services/auth";
 import type { ThemeConfig } from "@/services/cms";
 import type { ConferenceDetail, ConferenceListItem } from "@/services/conference";
-import type { Product } from "@/services/mall";
+import type { Product, ProductCategory } from "@/services/mall";
 import { createCmsThemeVars } from "@/theme/cmsTheme";
 import { stringifyQuery } from "@/utils/query";
 
 const emit = defineEmits<{
   openConference: [id: string];
   register: [];
+  editProfile: [];
+  selectProductCategory: [id: string];
   selectComponent: [id: string];
   reorderComponent: [sourceId: string, targetId: string];
 }>();
@@ -50,11 +58,15 @@ const props = defineProps<{
   conferences?: ConferenceListItem[];
   conference?: ConferenceDetail | null;
   products?: Product[];
+  productCategories?: ProductCategory[];
+  activeProductCategoryId?: string;
+  productLoading?: boolean;
   userContext?: Record<string, unknown> | null;
   suppressRegistrationCta?: boolean;
   editorPreview?: boolean;
   selectedComponentId?: string;
   platform?: "h5" | "miniapp";
+  includeVisualComponentTypes?: string[];
 }>();
 
 const { context: currentUserContext, refresh: refreshCurrentUserContext } = useCurrentUserContext();
@@ -93,8 +105,11 @@ const runtimeContext = computed(() =>
 const governedResult = computed(() => governRender(props.dsl, { context: runtimeContext.value, allowLegacyDslFallback: false }));
 const visualComponents = computed(() => {
   const governedDsl = governedResult.value.dsl;
-  const components = cmsVisualComponentsFromDsl(governedDsl);
-  return hasCmsVisualComponents(governedDsl) ? components : components.filter(isFixedBusinessTemplateComponent);
+  const components = hasCmsVisualComponents(governedDsl)
+    ? expandedCmsVisualComponentsFromDsl(governedDsl)
+    : cmsVisualComponentsFromDsl(governedDsl).filter(isFixedBusinessTemplateComponent).flatMap(expandCmsVisualComponent);
+  const includeTypes = props.includeVisualComponentTypes;
+  return includeTypes?.length ? components.filter((component) => includeTypes.includes(component.type)) : components;
 });
 const useCmsVisualRenderer = computed(() => visualComponents.value.length > 0);
 const renderTree = computed(() => ({

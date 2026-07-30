@@ -107,6 +107,7 @@ function contextText(key: string): string {
 .cms-member-profile__name-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12rpx;
 }
 
@@ -131,9 +132,13 @@ function contextText(key: string): string {
 
 .cms-member-profile__summary,
 .cms-member-profile__status {
+  display: block;
+  min-width: 0;
   color: var(--cms-text-secondary);
   font-size: 22rpx;
   line-height: 1.45;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .cms-member-profile__status {
@@ -158,6 +163,9 @@ function contextText(key: string): string {
 @media (max-width: 430px) {
   .cms-member-profile {
     grid-template-columns: 88rpx minmax(0, 1fr);
+    gap: 18rpx;
+    min-height: 0;
+    padding: 28rpx;
   }
 
   .cms-member-profile__avatar {
@@ -168,6 +176,7 @@ function contextText(key: string): string {
   .cms-member-profile__button {
     grid-column: 2;
     justify-self: start;
+    max-width: 100%;
   }
 }
 </style>

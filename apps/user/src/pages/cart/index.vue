@@ -3,26 +3,14 @@
     <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
-    <view v-if="showCartTitle" class="topbar ui-card" :class="[`is-${cartDisplay.title.style}`, `align-${cartDisplay.title.align}`]" :style="cartTitleStyle">
-      <view>
-        <text class="eyebrow">购物车</text>
+    <view v-if="showCartTitle" class="cart-header" :class="[`is-${cartDisplay.title.style}`, `align-${cartDisplay.title.align}`]" :style="cartTitleStyle">
+      <view class="cart-header__copy">
+        <text class="eyebrow">{{ cartItemSummary }}</text>
         <text class="title">{{ cartDisplay.title.text }}</text>
         <text v-if="cartDisplay.title.description" class="subtitle">{{ cartDisplay.title.description }}</text>
       </view>
-      <button class="ui-button-secondary ui-button-compact" @click="loadCart">刷新</button>
+      <button class="refresh-button" aria-label="刷新购物车" @click="loadCart"><wd-icon name="refresh" size="18px" /></button>
     </view>
-
-    <view v-if="cartDisplay.couponNotice.visible" class="coupon-notice ui-card" :class="`is-${cartDisplay.couponNotice.style}`">
-      <view>
-        <text class="section-title">{{ cartDisplay.couponNotice.title }}</text>
-        <text v-if="cartDisplay.couponNotice.description" class="muted">{{ cartDisplay.couponNotice.description }}</text>
-      </view>
-      <button v-if="cartDisplay.couponNotice.buttonText && cartDisplay.couponNotice.action !== 'none'" class="ui-button-secondary ui-button-compact" @click="handleCouponNoticeAction">
-        {{ cartDisplay.couponNotice.buttonText }}
-      </button>
-    </view>
-
-    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" />
 
     <LoadingState v-if="loading" title="加载购物车中" description="正在同步会议报名项和商品项。" />
     <ErrorState v-else-if="error" :message="error" primary-text="重试" secondary-text="返回首页" @retry="loadCart" @secondary="goHome" />
@@ -36,15 +24,15 @@
     />
 
     <template v-else>
-      <view v-if="showRegistrationSection" class="section">
+      <view v-if="showRegistrationSection" class="section cart-section">
         <view class="section-head">
           <view>
             <text class="section-title">{{ cartDisplay.registrationItems.title }}</text>
             <text v-if="cartDisplay.registrationItems.description" class="muted">{{ cartDisplay.registrationItems.description }}</text>
           </view>
-          <StatusTag label="已可用" tone="success" />
+          <text class="section-count">{{ registrationItems.length }} 项</text>
         </view>
-        <view v-for="item in registrationItems" :key="item.id" class="card selectable-card ui-card">
+        <view v-for="item in registrationItems" :key="item.id" class="card registration-card selectable-card ui-card">
           <view class="select-dot" :class="{ active: selectedRegistrationIds.includes(item.id) }" @click="toggleRegistration(item.id)">
             <text>{{ selectedRegistrationIds.includes(item.id) ? "✓" : "" }}</text>
           </view>
@@ -76,34 +64,13 @@
         </view>
       </view>
 
-      <view v-if="showMallSection" class="section">
+      <view v-if="showMallSection" class="section cart-section">
         <view class="section-head">
           <view>
             <text class="section-title">{{ cartDisplay.mallItems.title }}</text>
             <text v-if="cartDisplay.mallItems.description" class="muted">{{ cartDisplay.mallItems.description }}</text>
           </view>
-          <StatusTag label="待支付订单" tone="info" />
-        </view>
-        <view v-if="showShippingInfoCard && hasPhysicalProduct" class="receiver-card ui-card">
-          <text class="section-title">{{ cartDisplay.shippingInfo.title }}</text>
-          <input v-if="cartDisplay.shippingInfo.showName" v-model="receiver.name" class="field" placeholder="收货人" />
-          <input v-if="cartDisplay.shippingInfo.showPhone" v-model="receiver.phone" class="field" placeholder="手机号" />
-          <input v-if="cartDisplay.shippingInfo.showAddress" v-model="receiver.address" class="field" placeholder="收货地址" />
-          <view v-if="cartDisplay.shippingInfo.showUseCommon || cartDisplay.shippingInfo.showSaveCommon" class="receiver-actions">
-            <button v-if="cartDisplay.shippingInfo.showUseCommon" class="ui-button-secondary ui-button-compact" @click="loadSavedReceiver">使用常用信息</button>
-            <button v-if="cartDisplay.shippingInfo.showSaveCommon" class="ui-button-secondary ui-button-compact" @click="saveReceiverProfile()">保存为常用</button>
-          </view>
-        </view>
-        <view v-else-if="showShippingInfoCard" class="receiver-card ui-card">
-          <text class="section-title">{{ cartDisplay.shippingInfo.title || "履约信息" }}</text>
-          <text class="muted">当前商品均为虚拟/服务商品，无需填写收货地址。</text>
-        </view>
-        <view v-if="cartDisplay.productCoupons.visible" class="coupon-card ui-card">
-          <view>
-            <text class="section-title">{{ cartDisplay.productCoupons.title }}</text>
-            <text class="muted">{{ productCouponCode ? `已选择 ${productCouponCode}` : cartDisplay.productCoupons.description }}</text>
-          </view>
-          <button class="ui-button-secondary ui-button-compact" @click="selectProductCoupon">{{ productCouponCode ? "更换" : cartDisplay.productCoupons.buttonText }}</button>
+          <text class="section-count">{{ productItems.length }} 件</text>
         </view>
         <view v-for="item in productItems" :key="item.id" class="card product-card selectable-card ui-card">
           <view class="select-dot" :class="{ active: selectedProductIds.includes(item.id) }" @click="toggleProduct(item.id)">
@@ -138,12 +105,60 @@
             </view>
           </view>
         </view>
+
+        <view v-if="cartDisplay.productCoupons.visible || showShippingInfoCard" class="checkout-details">
+          <view v-if="cartDisplay.productCoupons.visible" class="coupon-card ui-card">
+            <view class="checkout-details__copy">
+              <text class="section-title compact-title">{{ cartDisplay.productCoupons.title }}</text>
+              <text class="muted">{{ productCouponCode ? `已选择 ${productCouponCode}` : cartDisplay.productCoupons.description }}</text>
+            </view>
+            <button class="ui-button-secondary ui-button-compact" @click="selectProductCoupon">{{ productCouponCode ? "更换" : cartDisplay.productCoupons.buttonText }}</button>
+          </view>
+          <view v-if="showShippingInfoCard && hasPhysicalProduct" class="receiver-card ui-card">
+            <view class="receiver-card__head">
+              <view>
+                <text class="section-title compact-title">{{ cartDisplay.shippingInfo.title }}</text>
+                <text v-if="cartDisplay.shippingInfo.description" class="muted">{{ cartDisplay.shippingInfo.description }}</text>
+              </view>
+              <button v-if="cartDisplay.shippingInfo.showUseCommon" class="text-button" @click="loadSavedReceiver">使用常用信息</button>
+            </view>
+            <view class="receiver-fields">
+              <input v-if="cartDisplay.shippingInfo.showName" v-model="receiver.name" class="field" placeholder="收货人" />
+              <input v-if="cartDisplay.shippingInfo.showPhone" v-model="receiver.phone" class="field" type="number" placeholder="手机号" />
+              <input v-if="cartDisplay.shippingInfo.showAddress" v-model="receiver.address" class="field field--wide" placeholder="收货地址" />
+            </view>
+            <view v-if="cartDisplay.shippingInfo.showSaveCommon" class="receiver-actions">
+              <button class="text-button" @click="saveReceiverProfile()">保存为常用收货信息</button>
+            </view>
+          </view>
+          <view v-else-if="showShippingInfoCard" class="receiver-card ui-card">
+            <text class="section-title compact-title">{{ cartDisplay.shippingInfo.title || "履约信息" }}</text>
+            <text class="muted">当前商品均为虚拟或服务商品，无需填写收货地址。</text>
+          </view>
+        </view>
       </view>
     </template>
 
-    <view v-if="!loading && !error && cartDisplay.recommendations.visible" class="recommendation-card ui-card">
+    <view v-if="!loading && !error && cartDisplay.couponNotice.visible" class="coupon-notice" :class="`is-${cartDisplay.couponNotice.style}`">
       <view>
-        <text class="section-title">{{ cartDisplay.recommendations.title }}</text>
+        <text class="notice-kicker">优惠说明</text>
+        <text class="section-title compact-title">{{ cartDisplay.couponNotice.title }}</text>
+        <text v-if="cartDisplay.couponNotice.description" class="muted">{{ cartDisplay.couponNotice.description }}</text>
+      </view>
+      <button v-if="cartDisplay.couponNotice.buttonText && cartDisplay.couponNotice.action !== 'none'" class="text-button" @click="handleCouponNoticeAction">{{ cartDisplay.couponNotice.buttonText }}</button>
+    </view>
+
+    <PageRenderer
+      v-if="cmsPage && hasCmsRecommendation && cartDisplay.recommendations.visible"
+      class="cart-recommendations"
+      :dsl="cmsPage.version.dsl"
+      :theme="theme"
+      :include-visual-component-types="['mall-product-grid']"
+    />
+
+    <view v-if="!loading && !error && cartDisplay.recommendations.visible && !hasCmsRecommendation" class="recommendation-card ui-card">
+      <view>
+        <text class="section-title compact-title">{{ cartDisplay.recommendations.title }}</text>
         <text v-if="cartDisplay.recommendations.description" class="muted">{{ cartDisplay.recommendations.description }}</text>
       </view>
       <button class="ui-button-secondary ui-button-compact" @click="goMall">{{ cartDisplay.recommendations.buttonText }}</button>
@@ -185,6 +200,7 @@ import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
+import { expandedCmsVisualComponentsFromDsl } from "@/components/cms-visual/useCmsVisualContext";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
@@ -282,8 +298,8 @@ const DEFAULT_CART_DISPLAY: CartDisplay = {
     visible: true,
     title: "页面标题",
     text: "购物车",
-    description: "会议报名项可继续支付；商城商品可创建订单后前往订单页支付。",
-    style: "capsule",
+    description: "",
+    style: "title",
     align: "left",
     backgroundColor: "",
     textColor: ""
@@ -394,9 +410,17 @@ const cmsPage = ref<PublishedPage | null>(null);
 const selectedRegistrationIds = ref<string[]>([]);
 const selectedProductIds = ref<string[]>([]);
 const isEmpty = computed(() => registrationItems.value.length === 0 && productItems.value.length === 0);
+const cartItemSummary = computed(() => {
+  const count = registrationItems.value.length + productItems.value.length;
+  return count > 0 ? `${count} 项待处理` : "购物车";
+});
 const hasPhysicalProduct = computed(() => productItems.value.some((item) => !["VIRTUAL", "SERVICE"].includes(String(item.sku.product.productType || "PHYSICAL"))));
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("cart");
 const cartDisplay = computed(() => resolveCartDisplay(cmsPage.value));
+const hasCmsRecommendation = computed(() => {
+  const dsl = cmsPage.value?.version.dsl;
+  return Boolean(dsl && expandedCmsVisualComponentsFromDsl(dsl).some((component) => component.enabled && component.type === "mall-product-grid"));
+});
 const cartTitleStyle = computed(() => ({
   background: cartDisplay.value.title.backgroundColor || undefined,
   color: cartDisplay.value.title.textColor || undefined,
@@ -489,7 +513,7 @@ function applyCartModuleConfig(display: CartDisplay, key: CartDisplayKey, module
   if (style) target.style = style;
 
   if (key === "title") {
-    display.title.text = readString(module.text) || content || title || display.title.text;
+    display.title.text = readString(module.text) || content || display.title.text;
     display.title.description = readString(module.description) || display.title.description;
     display.title.align = normalizeAlign(readString(module.align)) || display.title.align;
     display.title.backgroundColor = readString(module.backgroundColor) || display.title.backgroundColor;
@@ -930,11 +954,11 @@ function checkoutMessage(err: unknown, fallback: string): string {
 .page {
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
-  padding-bottom: calc(420rpx + env(safe-area-inset-bottom));
+  gap: 24rpx;
+  padding: 26rpx 28rpx calc(300rpx + env(safe-area-inset-bottom));
 }
 
-.topbar,
+.cart-header,
 .section-head,
 .card-head,
 .card-actions {
@@ -944,23 +968,61 @@ function checkoutMessage(err: unknown, fallback: string): string {
   gap: 20rpx;
 }
 
-.topbar {
-  padding: 28rpx;
+.cart-header {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28rpx;
+  padding: 12rpx 2rpx 22rpx;
+  border-bottom: 1rpx solid var(--ui-color-border);
 }
 
-.topbar.align-center {
+.cart-header__copy {
+  min-width: 0;
+}
+
+.cart-header.align-center {
   text-align: center;
 }
 
-.topbar.align-right {
+.cart-header.align-right {
   text-align: right;
 }
 
-.topbar.is-title,
-.topbar.is-hidden {
+.cart-header.is-capsule {
+  padding: 28rpx;
+  border: 1rpx solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface);
+  box-shadow: var(--ui-shadow-card);
+}
+
+.cart-header.is-title,
+.cart-header.is-hidden {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
+}
+
+.refresh-button {
+  display: flex;
+  width: 72rpx;
+  height: 72rpx;
+  min-width: 72rpx;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 1rpx solid var(--ui-color-border);
+  border-radius: 50%;
+  background: var(--ui-color-surface);
+  color: var(--ui-color-text);
+  line-height: 72rpx;
+}
+
+.refresh-button::after {
+  border: 0;
 }
 
 .eyebrow,
@@ -998,6 +1060,21 @@ function checkoutMessage(err: unknown, fallback: string): string {
   gap: 18rpx;
 }
 
+.cart-section {
+  gap: 16rpx;
+}
+
+.section-head {
+  align-items: flex-end;
+  padding: 8rpx 4rpx 4rpx;
+}
+
+.section-count {
+  flex: none;
+  color: var(--ui-color-muted);
+  font-size: 23rpx;
+}
+
 .section-title {
   color: var(--ui-color-text);
   font-size: 32rpx;
@@ -1012,6 +1089,17 @@ function checkoutMessage(err: unknown, fallback: string): string {
 
 .card {
   padding: 26rpx;
+}
+
+.registration-card,
+.product-card,
+.receiver-card,
+.coupon-card,
+.recommendation-card,
+.customer-service-card {
+  border-color: var(--ui-color-border);
+  background: var(--ui-color-surface);
+  box-shadow: 0 10rpx 28rpx rgba(23, 34, 49, 0.07);
 }
 
 .selectable-card {
@@ -1047,14 +1135,59 @@ function checkoutMessage(err: unknown, fallback: string): string {
 .receiver-card {
   display: flex;
   flex-direction: column;
+  gap: 20rpx;
+  padding: 26rpx;
+}
+
+.receiver-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.receiver-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14rpx;
-  padding: 24rpx;
+}
+
+.field--wide {
+  grid-column: 1 / -1;
 }
 
 .receiver-actions {
   display: flex;
   justify-content: flex-end;
   gap: 14rpx;
+}
+
+.text-button {
+  width: auto;
+  min-height: 52rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-color-primary);
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 52rpx;
+}
+
+.text-button::after {
+  border: 0;
+}
+
+.checkout-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 6rpx;
+}
+
+.checkout-details__copy {
+  min-width: 0;
 }
 
 .coupon-card {
@@ -1076,8 +1209,10 @@ function checkoutMessage(err: unknown, fallback: string): string {
 }
 
 .coupon-notice.is-bar {
-  border-color: rgba(181, 139, 71, 0.22);
-  background: rgba(255, 250, 238, 0.94);
+  padding: 22rpx 4rpx;
+  border-top: 1rpx solid var(--ui-color-border);
+  border-bottom: 1rpx solid var(--ui-color-border);
+  background: transparent;
 }
 
 .coupon-notice.is-text {
@@ -1086,12 +1221,25 @@ function checkoutMessage(err: unknown, fallback: string): string {
   box-shadow: none;
 }
 
+.notice-kicker {
+  display: block;
+  margin-bottom: 5rpx;
+  color: var(--ui-color-primary);
+  font-size: 19rpx;
+  font-weight: 800;
+}
+
+.compact-title {
+  font-size: 28rpx;
+}
+
 .field {
   min-height: 78rpx;
   padding: 0 20rpx;
   border: 1rpx solid var(--ui-color-border);
   border-radius: var(--ui-radius-md);
-  background: #fff;
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-text);
   font-size: 26rpx;
 }
 
@@ -1160,9 +1308,9 @@ function checkoutMessage(err: unknown, fallback: string): string {
   display: flex;
   align-items: flex-start;
   gap: 20rpx;
-  border-radius: 26rpx;
-  padding-top: 30rpx;
-  padding-bottom: 30rpx;
+  border-radius: var(--ui-radius);
+  padding-top: 26rpx;
+  padding-bottom: 26rpx;
 }
 
 .product-cover {
@@ -1209,7 +1357,7 @@ function checkoutMessage(err: unknown, fallback: string): string {
 .settlement-bar {
   position: fixed;
   right: 24rpx;
-  bottom: calc(220rpx + env(safe-area-inset-bottom));
+  bottom: calc(148rpx + env(safe-area-inset-bottom));
   left: 24rpx;
   z-index: 20;
   display: flex;
@@ -1218,7 +1366,7 @@ function checkoutMessage(err: unknown, fallback: string): string {
   padding: 20rpx 24rpx;
   border: 1rpx solid rgba(8, 23, 44, 0.08);
   border-radius: 34rpx;
-  background: rgba(255, 255, 255, 0.96);
+  background: var(--ui-color-surface);
   box-shadow: 0 18rpx 50rpx rgba(15, 23, 42, 0.14);
   backdrop-filter: blur(14px);
 }
@@ -1232,7 +1380,7 @@ function checkoutMessage(err: unknown, fallback: string): string {
 }
 
 .settlement-bar:not(.avoid-tabbar) {
-  bottom: calc(40rpx + env(safe-area-inset-bottom));
+  bottom: calc(24rpx + env(safe-area-inset-bottom));
 }
 
 .settlement-select {
@@ -1261,7 +1409,7 @@ function checkoutMessage(err: unknown, fallback: string): string {
   border: 0;
   border-radius: 999rpx;
   background: var(--ui-color-primary);
-  color: #fff;
+  color: var(--ui-color-on-primary, #f8faf8);
   font-size: 28rpx;
   font-weight: 900;
   line-height: 72rpx;
@@ -1269,5 +1417,53 @@ function checkoutMessage(err: unknown, fallback: string): string {
 
 .settlement-button[disabled] {
   opacity: 0.55;
+}
+
+.cart-recommendations {
+  margin-top: 4rpx;
+}
+
+@media (max-width: 390px) {
+  .page {
+    padding-right: 20rpx;
+    padding-left: 20rpx;
+  }
+
+  .product-cover {
+    width: 152rpx;
+    height: 152rpx;
+    flex-basis: 152rpx;
+  }
+
+  .product-body .card-head,
+  .product-body .card-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .product-body .card-actions {
+    width: 100%;
+  }
+
+  .action-button {
+    width: 100%;
+  }
+
+  .receiver-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .field--wide {
+    grid-column: auto;
+  }
+
+  .settlement-bar {
+    gap: 12rpx;
+    padding: 18rpx 20rpx;
+  }
+
+  .settlement-button {
+    min-width: 176rpx;
+  }
 }
 </style>

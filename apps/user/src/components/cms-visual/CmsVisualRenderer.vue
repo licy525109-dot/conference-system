@@ -339,6 +339,7 @@
         v-else-if="component.type === 'stats-grid'"
         :component="component"
         :user-context="effectiveUserContext"
+        @activate="handleUserStatAction"
       />
 
       <view v-else-if="component.type === 'dual-track-tags'" class="cms-section cms-track-tags" :style="homePanelStyle(component)">
@@ -370,14 +371,13 @@
       <CmsMembershipBenefitsRenderer
         v-else-if="component.type === 'membership-benefits'"
         :component="component"
-        @activate="goLoginPath('/pages/member/center')"
       />
 
       <CmsMemberProfileRenderer
         v-else-if="component.type === 'user-profile-card'"
         :component="component"
         :user-context="effectiveUserContext"
-        @activate="goLoginPath(profileTargetPath(component))"
+        @activate="handleMemberProfile(component)"
       />
 
       <view v-else-if="component.type === 'my-order-list'" class="cms-section cms-orders">
@@ -393,17 +393,21 @@
         v-else-if="component.type === 'mall-product-grid'"
         :component="component"
         :products="mallProducts(component)"
-        :loading="mallProductLoading[component.id]"
+        :category-options="mallCategoryOptions(component)"
+        :active-category-id="activeMallCategoryId(component)"
+        :show-categories="!hasMallCategoryFilter"
+        :loading="mallLoading(component)"
         @open="goPath(`/pages/mall/detail?id=${encodeURIComponent($event.id)}`)"
         @add="addMallProductToCart($event, component)"
+        @category="handleMallCategorySelection(component, $event)"
         @more="goPath(mallListPath(component))"
       />
 
       <view v-else-if="component.type === 'tag-filter'" class="cms-section cms-tags">
         <text v-if="stringConfig(component, 'title')" class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") }}</text>
-        <view v-if="tagItems(component).length === 0" class="cms-empty">暂无标签</view>
+        <view v-if="displayTagItems(component).length === 0" class="cms-empty">暂无标签</view>
         <view v-else class="cms-tag-list">
-          <text v-for="item in tagItems(component)" :key="item.label" :class="['cms-tag', isTagActive(component, item) ? 'active' : '']" @click="submitTag(component, item)">{{ item.label }}</text>
+          <text v-for="item in displayTagItems(component)" :key="`${item.target}-${item.value}`" :class="['cms-tag', isTagActive(component, item) ? 'active' : '']" @click="submitTag(component, item)">{{ item.label }}</text>
         </view>
       </view>
 
@@ -528,20 +532,23 @@ import CmsMembershipBenefitsRenderer from "@/components/cms-visual/component-ren
 import CmsSearchRenderer from "@/components/cms-visual/component-renderers/CmsSearchRenderer.vue";
 import CmsStatsGridRenderer from "@/components/cms-visual/component-renderers/CmsStatsGridRenderer.vue";
 import type { CmsEntryItem } from "@/components/cms-visual/component-renderers/config";
-import { ensureLogin, getStoredUser } from "@/services/auth";
+import { ensureLogin, getStoredUser, getToken } from "@/services/auth";
 import type { CmsComponent, ThemeConfig } from "@/services/cms";
 import { reserveConferenceAppointment, type ConferenceDetail, type ConferenceListItem } from "@/services/conference";
-import { getProducts, type Product } from "@/services/mall";
+import { getProductCategories, getProducts, type Product, type ProductCategory } from "@/services/mall";
 import { claimCoupon, getCouponCampaignPublic } from "@/services/operations";
 import { addProductCartItem } from "@/services/cart";
 import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
 import { getCmsComponentSupport, isCmsRegistrationCta } from "@/utils/cmsComponents";
 import { formatDateTime } from "@/utils/date";
+import { productCategoriesFromProducts, resolveMallCategoryOptions, type MallCategoryOption } from "@/utils/mallCatalog";
 import { stringifyQuery } from "@/utils/query";
 
 const emit = defineEmits<{
   openConference: [id: string];
   register: [];
+  editProfile: [];
+  selectProductCategory: [id: string];
   selectComponent: [id: string];
   reorderComponent: [payload: { sourceId: string; targetId: string }];
 }>();
@@ -552,6 +559,10 @@ const props = defineProps<{
   conferences?: ConferenceListItem[];
   conference?: ConferenceDetail | null;
   products?: Product[];
+  productCategories?: ProductCategory[];
+  activeProductCategoryId?: string;
+  productLoading?: boolean;
+  pageKey?: string;
   userContext?: Record<string, unknown> | null;
   suppressRegistrationCta?: boolean;
   editorPreview?: boolean;
@@ -564,6 +575,8 @@ const searchValues = ref<Record<string, string>>({});
 const faqOpenMap = ref<Record<string, boolean>>({});
 const mallProductMap = ref<Record<string, Product[]>>({});
 const mallProductLoading = ref<Record<string, boolean>>({});
+const mallCategories = ref<ProductCategory[]>([]);
+const activeMallCategoryMap = ref<Record<string, string>>({});
 const couponStatusMap = ref<Record<string, string>>({});
 const activeTagMap = ref<Record<string, string>>({});
 const activeConferenceFilter = ref<TagFilterItem | null>(null);
@@ -577,17 +590,18 @@ const visibleComponents = computed(() =>
     .filter((item) => !(props.suppressRegistrationCta && isCmsRegistrationCta(normalizedComponentType(item))))
     .sort((a, b) => a.sortOrder - b.sortOrder)
 );
+const hasMallCategoryFilter = computed(() => visibleComponents.value.some(isMallCategoryFilter));
 const conferences = computed(() => props.conferences ?? []);
 const products = computed(() => props.products ?? []);
 const storedUser = ref(getStoredUser());
 const isLoggedIn = computed(() => {
-  if (storedUser.value) return true;
+  if (storedUser.value && getToken()) return true;
   if (!props.userContext) return false;
   return Boolean(props.userContext.loggedIn || props.userContext.userId);
 });
 const effectiveUserContext = computed<Record<string, unknown> | null>(() => {
   if (props.userContext) return props.userContext;
-  if (!storedUser.value) return null;
+  if (!storedUser.value || !getToken()) return null;
   return {
     loggedIn: true,
     userId: storedUser.value.id,
@@ -646,6 +660,7 @@ onMounted(() => {
   loadCustomFonts();
   refreshStoredUser();
   uni.$on("wechat-profile:updated", handleWechatProfileUpdated);
+  uni.$on("auth:changed", refreshStoredUser);
   void loadMallProductComponents();
   countdownTimer = setInterval(() => {
     nowTimestamp.value = Date.now();
@@ -653,6 +668,7 @@ onMounted(() => {
 });
 onUnmounted(() => {
   uni.$off("wechat-profile:updated", handleWechatProfileUpdated);
+  uni.$off("auth:changed", refreshStoredUser);
   if (countdownTimer) {
     clearInterval(countdownTimer);
   }
@@ -1115,6 +1131,30 @@ async function handleLoginCard(component: CmsComponent): Promise<void> {
   await runAction({ ...action, type: action.type === "register" ? "member" : action.type || "member" });
 }
 
+async function handleMemberProfile(component: CmsComponent): Promise<void> {
+  if (!isLoggedIn.value) {
+    await promptWechatLogin();
+    return;
+  }
+  const actionType = stringConfig(component, "actionTargetType");
+  if (actionType && actionType !== "none") {
+    await runAction(readComponentAction(component));
+    return;
+  }
+  emit("editProfile");
+}
+
+function handleUserStatAction(id: string): void {
+  const routes: Record<string, string> = {
+    registrations: "/pages/registrations/my",
+    orders: "/pages/mall/orders",
+    pending: "/pages/registrations/my",
+    coupons: "/pages/coupon/my"
+  };
+  if (!routes[id]) return;
+  void goLoginPath(routes[id]);
+}
+
 function promotionBarStyle(component: CmsComponent): Record<string, string> {
   const background = stringConfig(component, "backgroundColor") || stringConfig(component, "cardBackground");
   const height = numberConfig(component, "barHeight", 0) || numberConfig(component, "moduleHeight", 0);
@@ -1258,6 +1298,27 @@ function tagItems(component: CmsComponent): TagFilterItem[] {
       target: parts[2] || stringConfig(component, "target") || "tag"
     };
   });
+}
+
+function displayTagItems(component: CmsComponent): TagFilterItem[] {
+  if (!isMallCategoryFilter(component)) return tagItems(component);
+  return [
+    { label: "全部", value: "", target: "product-category" },
+    ...mallCategoryOptionsForFilter(component).map((category) => ({
+      label: category.name,
+      value: category.id,
+      target: "product-category"
+    }))
+  ];
+}
+
+function isMallCategoryFilter(component: CmsComponent): boolean {
+  if (component.type !== "tag-filter") return false;
+  const target = stringConfig(component, "target");
+  const scope = stringConfig(component, "scope");
+  return (scope === "mall" && target !== "productKeyword")
+    || ["product-category", "mall-category"].includes(target)
+    || (props.pageKey === "mall" && ["", "category"].includes(target));
 }
 
 function downloadItems(component: CmsComponent): DownloadItem[] {
@@ -1415,6 +1476,7 @@ async function promptWechatLogin(): Promise<void> {
   try {
     await ensureLogin();
     refreshStoredUser();
+    uni.$emit("auth:changed", storedUser.value);
     uni.$emit("wechat-profile:open");
   } catch (error) {
     uni.showToast({ title: readErrorText(error, "登录失败，请稍后重试"), icon: "none" });
@@ -1550,13 +1612,6 @@ function parseJsonRecord(value: string): Record<string, unknown> | undefined {
   }
 }
 
-function profileTargetPath(component: CmsComponent): string {
-  const target = stringConfig(component, "target");
-  if (target === "registrations") return "/pages/registrations/my";
-  if (target === "member") return "/pages/member/center";
-  return "/pages/member/center";
-}
-
 function searchValue(component: CmsComponent): string {
   return searchValues.value[component.id] ?? "";
 }
@@ -1584,6 +1639,10 @@ function submitSearchKeyword(component: CmsComponent, keyword: string): void {
 }
 
 function submitTag(component: CmsComponent, item: TagFilterItem): void {
+  if (isMallCategoryFilter(component)) {
+    handleMallCategorySelection(component, item.value === "all" ? "" : item.value);
+    return;
+  }
   const target = item.target || stringConfig(component, "target") || "tag";
   if (["product-category", "mall-category", "productKeyword"].includes(target) || stringConfig(component, "scope") === "mall") {
     const value = item.value === "all" ? "" : item.value;
@@ -1606,6 +1665,9 @@ function submitTag(component: CmsComponent, item: TagFilterItem): void {
 }
 
 function isTagActive(component: CmsComponent, item: TagFilterItem): boolean {
+  if (isMallCategoryFilter(component)) {
+    return activeMallCategoryId(firstMallProductComponent()) === item.value;
+  }
   const selected = activeTagMap.value[component.id];
   if (selected !== undefined) return selected === item.value;
   const items = component.type === "conference-tabs" ? conferenceTabItems(component) : tagItems(component);
@@ -1652,7 +1714,68 @@ function showMallOrders(component: CmsComponent): boolean {
 }
 
 function mallProducts(component: CmsComponent): Product[] {
-  return mallProductMap.value[component.id] ?? [];
+  const limit = Math.min(Math.max(numberConfig(component, "limit", 4), 1), 50);
+  const source = props.products !== undefined ? products.value : mallProductMap.value[component.id] ?? [];
+  const categoryId = activeMallCategoryId(component);
+  const filtered = categoryId ? source.filter((item) => item.category?.id === categoryId) : source;
+  return filtered.slice(0, limit);
+}
+
+function mallLoading(component: CmsComponent): boolean {
+  return props.productLoading ?? Boolean(mallProductLoading.value[component.id]);
+}
+
+function mallCategoryOptions(component: CmsComponent): MallCategoryOption[] {
+  return resolveMallCategoryOptions(stringListConfig(component, "categories"), availableMallCategories());
+}
+
+function mallCategoryOptionsForFilter(component: CmsComponent): MallCategoryOption[] {
+  const configured = tagItems(component).map((item) => item.value || item.label);
+  return resolveMallCategoryOptions(configured, availableMallCategories());
+}
+
+function availableMallCategories(): ProductCategory[] {
+  if (props.productCategories !== undefined) return props.productCategories;
+  const derived = productCategoriesFromProducts(products.value);
+  return derived.length > 0 ? derived : mallCategories.value;
+}
+
+function firstMallProductComponent(): CmsComponent | undefined {
+  return visibleComponents.value.find((item) => item.type === "mall-product-grid");
+}
+
+function activeMallCategoryId(component?: CmsComponent): string {
+  if (props.activeProductCategoryId !== undefined) return props.activeProductCategoryId;
+  if (!component) return "";
+  return activeMallCategoryMap.value[component.id]
+    ?? resolveConfiguredCategoryId(component)
+    ?? "";
+}
+
+function resolveConfiguredCategoryId(component: CmsComponent): string {
+  const configured = stringConfig(component, "productCategoryId") || stringConfig(component, "categoryId");
+  if (!configured) return "";
+  const matched = availableMallCategories().find((category) =>
+    [category.id, category.code, category.name].some((value) => value.toLowerCase() === configured.toLowerCase())
+  );
+  return matched?.id || configured;
+}
+
+function handleMallCategorySelection(_source: CmsComponent, categoryId: string): void {
+  if (props.activeProductCategoryId !== undefined) {
+    emit("selectProductCategory", categoryId);
+    return;
+  }
+
+  const targets = visibleComponents.value.filter((item) => item.type === "mall-product-grid");
+  activeMallCategoryMap.value = targets.reduce<Record<string, string>>((result, component) => {
+    result[component.id] = categoryId;
+    return result;
+  }, { ...activeMallCategoryMap.value });
+
+  if (props.products === undefined) {
+    for (const component of targets) void loadMallProductComponent(component);
+  }
 }
 
 async function addMallProductToCart(item: Product, component: CmsComponent): Promise<void> {
@@ -1679,24 +1802,32 @@ function mallListPath(component: CmsComponent): string {
 
 async function loadMallProductComponents(): Promise<void> {
   const targets = visibleComponents.value.filter((item) => item.type === "mall-product-grid");
-  await Promise.all(
-    targets.map(async (component) => {
-      mallProductLoading.value = { ...mallProductLoading.value, [component.id]: true };
-      try {
-        const response = await getProducts({
-          page: 1,
-          pageSize: Math.min(Math.max(numberConfig(component, "limit", 4), 1), 20),
-          keyword: stringConfig(component, "keyword"),
-          categoryId: stringConfig(component, "productCategoryId") || stringConfig(component, "categoryId")
-        });
-        mallProductMap.value = { ...mallProductMap.value, [component.id]: response.items };
-      } catch {
-        mallProductMap.value = { ...mallProductMap.value, [component.id]: [] };
-      } finally {
-        mallProductLoading.value = { ...mallProductLoading.value, [component.id]: false };
-      }
-    })
-  );
+  if (targets.length === 0 || props.products !== undefined) return;
+  if (mallCategories.value.length === 0) {
+    try {
+      mallCategories.value = (await getProductCategories()).items;
+    } catch {
+      mallCategories.value = [];
+    }
+  }
+  await Promise.all(targets.map(loadMallProductComponent));
+}
+
+async function loadMallProductComponent(component: CmsComponent): Promise<void> {
+  mallProductLoading.value = { ...mallProductLoading.value, [component.id]: true };
+  try {
+    const response = await getProducts({
+      page: 1,
+      pageSize: Math.min(Math.max(numberConfig(component, "limit", 4), 1), 20),
+      keyword: stringConfig(component, "keyword"),
+      categoryId: activeMallCategoryId(component)
+    });
+    mallProductMap.value = { ...mallProductMap.value, [component.id]: response.items };
+  } catch {
+    mallProductMap.value = { ...mallProductMap.value, [component.id]: [] };
+  } finally {
+    mallProductLoading.value = { ...mallProductLoading.value, [component.id]: false };
+  }
 }
 
 function copyText(value: string, title = "已复制"): void {

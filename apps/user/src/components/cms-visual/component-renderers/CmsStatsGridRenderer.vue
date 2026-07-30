@@ -5,7 +5,12 @@
       <text v-if="subtitle" class="cms-stats-module__subtitle">{{ subtitle }}</text>
     </view>
     <view class="cms-stats-module__grid" :style="gridStyle">
-      <view v-for="item in items" :key="item.id" class="cms-stats-module__item">
+      <view
+        v-for="item in items"
+        :key="item.id"
+        :class="['cms-stats-module__item', { 'is-actionable': actionable }]"
+        @click="activate(item.id)"
+      >
         <text class="cms-stats-module__value">{{ item.value }}</text>
         <text v-if="item.label" class="cms-stats-module__label">{{ item.label }}</text>
       </view>
@@ -16,20 +21,26 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { CmsComponent } from "@/services/cms";
-import { normalizeStats, numberConfig, stringConfig } from "./config";
+import { normalizeStats, numberConfig, stringConfig, usesCurrentUserStats } from "./config";
 
 const props = defineProps<{
   component: CmsComponent;
   userContext?: Record<string, unknown> | null;
 }>();
+const emit = defineEmits<{ activate: [id: string] }>();
 
 const title = computed(() => stringConfig(props.component, "title"));
 const subtitle = computed(() => stringConfig(props.component, "subtitle"));
 const hasIntro = computed(() => Boolean(title.value || subtitle.value));
 const cardStyle = computed(() => stringConfig(props.component, "cardStyle", "split"));
 const items = computed(() => normalizeStats(props.component, props.userContext));
+const actionable = computed(() => usesCurrentUserStats(props.component));
 const columns = computed(() => Math.min(4, Math.max(2, numberConfig(props.component, "columns", Math.min(4, Math.max(2, items.value.length))))));
 const gridStyle = computed(() => ({ gridTemplateColumns: `repeat(${columns.value}, minmax(0, 1fr))` }));
+
+function activate(id: string): void {
+  if (actionable.value) emit("activate", id);
+}
 </script>
 
 <style scoped>
@@ -86,6 +97,10 @@ const gridStyle = computed(() => ({ gridTemplateColumns: `repeat(${columns.value
   padding: 26rpx 14rpx;
 }
 
+.cms-stats-module__item.is-actionable:active {
+  background: var(--cms-surface-muted);
+}
+
 .cms-stats-module__item + .cms-stats-module__item {
   border-left: 1rpx solid var(--cms-border);
 }
@@ -99,6 +114,14 @@ const gridStyle = computed(() => ({ gridTemplateColumns: `repeat(${columns.value
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cms-stats-module__label {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+  white-space: normal;
+  word-break: keep-all;
 }
 
 .cms-stats-module.is-plain {

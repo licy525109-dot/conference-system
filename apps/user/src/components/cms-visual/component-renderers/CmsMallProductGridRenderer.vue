@@ -7,56 +7,60 @@
       </view>
       <text v-if="showMore" class="cms-mall-products__more" @click.stop="emit('more')">{{ moreText }}</text>
     </view>
-    <scroll-view v-if="categories.length > 1" scroll-x class="cms-mall-products__categories">
+    <scroll-view v-if="showCategories && categoryOptions.length > 0" scroll-x class="cms-mall-products__categories">
       <view class="cms-mall-products__category-track">
         <text
-          v-for="category in categories"
-          :key="category"
-          :class="['cms-mall-products__category', activeCategory === category ? 'active' : '']"
-          @click="activeCategory = category"
-        >{{ category }}</text>
+          :class="['cms-mall-products__category', !activeCategoryId ? 'active' : '']"
+          @click="emit('category', '')"
+        >全部</text>
+        <text
+          v-for="category in categoryOptions"
+          :key="category.id"
+          :class="['cms-mall-products__category', activeCategoryId === category.id ? 'active' : '']"
+          @click="emit('category', category.id)"
+        >{{ category.name }}</text>
       </view>
     </scroll-view>
 
     <view v-if="loading" class="cms-mall-products__empty">商品加载中</view>
-    <view v-else-if="visibleProducts.length === 0" class="cms-mall-products__empty">暂无可展示商品</view>
+    <view v-else-if="products.length === 0" class="cms-mall-products__empty">暂无可展示商品</view>
     <scroll-view v-else-if="layoutMode === 'scroll'" scroll-x class="cms-mall-products__scroll">
       <view class="cms-mall-products__grid is-scroll" :style="gridStyle">
-        <CmsMallProductCard v-for="product in visibleProducts" :key="product.id" :product="product" :component="component" @open="emit('open', product)" @add="emit('add', product)" />
+        <CmsMallProductCard v-for="product in products" :key="product.id" :product="product" :component="component" @open="emit('open', product)" @add="emit('add', product)" />
       </view>
     </scroll-view>
     <view v-else class="cms-mall-products__grid" :style="gridStyle">
-      <CmsMallProductCard v-for="product in visibleProducts" :key="product.id" :product="product" :component="component" @open="emit('open', product)" @add="emit('add', product)" />
+      <CmsMallProductCard v-for="product in products" :key="product.id" :product="product" :component="component" @open="emit('open', product)" @add="emit('add', product)" />
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 import CmsMallProductCard from "./CmsMallProductCard.vue";
 import type { CmsComponent } from "@/services/cms";
 import type { Product } from "@/services/mall";
-import { booleanConfig, numberConfig, stringConfig, stringListConfig } from "./config";
+import type { MallCategoryOption } from "@/utils/mallCatalog";
+import { booleanConfig, numberConfig, stringConfig } from "./config";
 
-const props = defineProps<{ component: CmsComponent; products: Product[]; loading?: boolean }>();
-const emit = defineEmits<{ open: [product: Product]; add: [product: Product]; more: [] }>();
+const props = withDefaults(defineProps<{
+  component: CmsComponent;
+  products: Product[];
+  categoryOptions?: MallCategoryOption[];
+  activeCategoryId?: string;
+  showCategories?: boolean;
+  loading?: boolean;
+}>(), {
+  categoryOptions: () => [],
+  activeCategoryId: "",
+  showCategories: true,
+  loading: false
+});
+const emit = defineEmits<{ open: [product: Product]; add: [product: Product]; more: []; category: [id: string] }>();
 
 const title = computed(() => stringConfig(props.component, "title"));
 const showMore = computed(() => booleanConfig(props.component, "showMoreButton", false));
 const moreText = computed(() => stringConfig(props.component, "moreButtonText", "查看更多"));
-const categories = computed(() => {
-  const configured = stringListConfig(props.component, "categories").map((item) => item.split(/[｜|]/)[0]?.trim()).filter(Boolean);
-  const actual = Array.from(new Set(props.products.map((item) => item.category?.name || "").filter(Boolean)));
-  const rows = configured.length > 0 ? configured : actual;
-  return rows.length > 0 && rows[0] !== "全部" ? ["全部", ...rows] : rows.length > 0 ? rows : ["全部"];
-});
-const activeCategory = ref("全部");
-watch(categories, (value) => {
-  if (!value.includes(activeCategory.value)) activeCategory.value = value[0] || "全部";
-}, { immediate: true });
-const visibleProducts = computed(() => activeCategory.value === "全部"
-  ? props.products
-  : props.products.filter((item) => item.category?.name === activeCategory.value));
 const columns = computed(() => Math.min(4, Math.max(2, numberConfig(props.component, "columns", 2))));
 const layoutMode = computed<"grid" | "scroll">(() => stringConfig(props.component, "layoutMode") === "scroll" ? "scroll" : "grid");
 const cardStyle = computed(() => stringConfig(props.component, "cardStyle", "elevated"));

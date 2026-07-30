@@ -46,7 +46,7 @@ export function stringListConfig(component: CmsComponent, key: string): string[]
 }
 
 export function normalizeStats(component: CmsComponent, userContext?: Record<string, unknown> | null): CmsStatItem[] {
-  if (stringConfig(component, "dataSource") === "current-user") {
+  if (usesCurrentUserStats(component)) {
     return [
       { id: "registrations", value: contextCount(userContext, "registrationCount"), label: "我的报名" },
       { id: "orders", value: contextCount(userContext, "orderCount"), label: "我的订单" },
@@ -65,6 +65,13 @@ export function normalizeStats(component: CmsComponent, userContext?: Record<str
       label: match?.[2] || ""
     };
   });
+}
+
+export function usesCurrentUserStats(component: CmsComponent): boolean {
+  if (stringConfig(component, "dataSource") === "current-user") return true;
+  const standardLabels = new Set(["我的报名", "我的订单", "待参会", "优惠券"]);
+  const configured = stringListConfig(component, "items");
+  return configured.length > 0 && configured.every((item) => standardLabels.has(item.trim()));
 }
 
 function contextCount(context: Record<string, unknown> | null | undefined, key: string): string {

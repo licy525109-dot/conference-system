@@ -6,9 +6,9 @@
         <text class="cms-membership-benefits__title">{{ title }}</text>
         <text v-if="subtitle" class="cms-membership-benefits__subtitle">{{ subtitle }}</text>
       </view>
-      <wd-button custom-class="cms-membership-benefits__button" size="small" type="warning" :round="false" :custom-style="benefitButtonStyle" @click.stop="emit('activate')">{{ buttonText }}</wd-button>
+      <wd-button custom-class="cms-membership-benefits__button" size="small" type="warning" :round="false" :custom-style="benefitButtonStyle" @click.stop="toggleExpanded">{{ displayButtonText }}</wd-button>
     </view>
-    <view class="cms-membership-benefits__items">
+    <view v-if="expanded" class="cms-membership-benefits__items">
       <view v-for="(item, index) in items" :key="`${index}-${item}`" class="cms-membership-benefits__item">
         <text class="cms-membership-benefits__index">{{ index + 1 }}</text>
         <text>{{ item }}</text>
@@ -18,16 +18,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { CmsComponent } from "@/services/cms";
-import { stringConfig, stringListConfig } from "./config";
+import { booleanConfig, stringConfig, stringListConfig } from "./config";
 
 const props = defineProps<{ component: CmsComponent }>();
-const emit = defineEmits<{ activate: [] }>();
 
 const title = computed(() => stringConfig(props.component, "title", "会员权益"));
 const subtitle = computed(() => stringConfig(props.component, "subtitle"));
 const buttonText = computed(() => stringConfig(props.component, "buttonText", "查看权益"));
+const collapseButtonText = computed(() => stringConfig(props.component, "collapseButtonText", "收起权益"));
+const expanded = ref(booleanConfig(props.component, "defaultExpanded", false));
+const displayButtonText = computed(() => expanded.value ? collapseButtonText.value : buttonText.value);
 const items = computed(() => stringListConfig(props.component, "items").length > 0
   ? stringListConfig(props.component, "items")
   : ["优先获取会议排期", "会员专享报名通道", "尊享活动与服务特权"]);
@@ -35,6 +37,14 @@ const rootStyle = computed(() => stringConfig(props.component, "imageUrl")
   ? { backgroundImage: `url(${stringConfig(props.component, "imageUrl")})` }
   : {});
 const benefitButtonStyle = "min-height:62rpx;padding:0 24rpx;border-radius:12rpx;background:#e7d1aa;color:#15304d;border:0;";
+
+watch(() => props.component.id, () => {
+  expanded.value = booleanConfig(props.component, "defaultExpanded", false);
+});
+
+function toggleExpanded(): void {
+  expanded.value = !expanded.value;
+}
 </script>
 
 <style scoped>
@@ -67,7 +77,11 @@ const benefitButtonStyle = "min-height:62rpx;padding:0 24rpx;border-radius:12rpx
   align-items: flex-start;
   justify-content: space-between;
   gap: 24rpx;
-  margin-bottom: 26rpx;
+  margin-bottom: 0;
+}
+
+.cms-membership-benefits__items {
+  margin-top: 26rpx;
 }
 
 .cms-membership-benefits__copy {

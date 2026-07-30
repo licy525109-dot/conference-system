@@ -21,13 +21,19 @@
       tone="info"
     />
 
-    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" :user-context="cmsUserContext" />
+    <PageRenderer
+      v-if="cmsPage"
+      :dsl="cmsPage.version.dsl"
+      :theme="theme"
+      :user-context="cmsUserContext"
+      @edit-profile="openProfileEditor"
+    />
 
-    <view v-if="user" class="session-actions ui-card">
+    <view v-if="!hasCmsContent && user" class="session-actions ui-card">
       <button class="ui-button-secondary" @click="openProfileEditor">编辑资料</button>
       <button class="ui-button-secondary" @click="logout">退出登录</button>
     </view>
-    <view v-else class="session-actions session-actions--login ui-card">
+    <view v-else-if="!hasCmsContent" class="session-actions session-actions--login ui-card">
       <view>
         <text class="section-title">登录后查看会员权益</text>
         <text class="muted">点击后使用微信登录，并可授权头像和昵称。</text>
@@ -163,10 +169,11 @@ import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { createMobileAdminSession, getCheckinStaffMe } from "@/services/admin-mobile";
-import { clearAuthSession, ensureLogin, getStoredUser, type CurrentUser } from "@/services/auth";
-import { getMemberCenter, type CurrentMembership, type MemberBenefitGrant, type MemberLevel } from "@/services/member";
+import { clearAuthSession, ensureLogin, getStoredUser, isAuthSessionExpiredError, type CurrentUser } from "@/services/auth";
+import { getMemberCenter, getMemberLevels, type CurrentMembership, type MemberBenefitGrant, type MemberLevel } from "@/services/member";
 import { getMyCoupons, getMyInvoiceProfile, getMyMallOrders, saveMyInvoiceProfile } from "@/services/operations";
 import { getMyRegistrations } from "@/services/registration";
+import { getToken } from "@/services/session";
 import { goHome } from "@/utils/navigation";
 
 const COMMON_PROFILE_STORAGE_KEY = "conference_user_common_profile";
@@ -194,8 +201,12 @@ const profileForm = ref({
   taxNo: "",
   invoiceEmail: ""
 });
+let privateLoadPromise: Promise<void> | null = null;
+const loggedIn = computed(() => Boolean(user.value && getToken()));
 const displayName = computed(() => user.value?.wechatNickname || user.value?.nickname || "微信用户");
 const cmsUserContext = computed(() => ({
+  loggedIn: loggedIn.value,
+  userId: user.value?.id || "",
   avatarUrl: user.value?.wechatAvatarUrl || "",
   nickname: displayName.value,
   phone: user.value?.phone || "",
@@ -211,6 +222,7 @@ const hasCmsContent = computed(() => Boolean(cmsPage.value?.version.dsl.dsl.node
 
 onMounted(() => {
   uni.$on("wechat-profile:updated", handleProfileUpdated);
+  uni.$on("auth:changed", handleAuthChanged);
   void refreshTheme();
   loadCommonProfile();
   void load();
@@ -220,36 +232,74 @@ onMounted(() => {
 
 onUnmounted(() => {
   uni.$off("wechat-profile:updated", handleProfileUpdated);
+  uni.$off("auth:changed", handleAuthChanged);
 });
 
 async function load() {
   loading.value = true;
   error.value = "";
   try {
-    await ensureLogin();
-    user.value = getStoredUser();
-    const [data, page, registrations, mallOrders, coupons] = await Promise.all([
-      getMemberCenter(),
+    const [page, publicLevels] = await Promise.all([
       getPublishedPage("member-center"),
-      getMyRegistrations().catch(() => []),
-      getMyMallOrders().catch(() => ({ items: [] })),
-      getMyCoupons().catch(() => ({ items: [] }))
+      getMemberLevels().catch(() => ({ items: [] }))
     ]);
-    levels.value = data.levels;
-    membership.value = data.membership;
-    grants.value = data.grants;
-    registrationCount.value = registrations.length;
-    pendingConferenceCount.value = registrations.filter((item) => item.status !== "CANCELLED").length;
-    mallOrderCount.value = mallOrders.items.length;
-    couponCount.value = coupons.items.length;
     cmsPage.value = page;
-    purchaseMessage.value = data.purchase.message;
+    levels.value = publicLevels.items;
+    user.value = getStoredUser();
+    if (getToken()) {
+      await refreshPrivateMemberData();
+    } else {
+      resetPrivateMemberData();
+    }
   } catch (err) {
     console.error("[MEMBER_CENTER_LOAD_ERROR]", err);
     error.value = "会员信息加载失败，请稍后重试";
   } finally {
     loading.value = false;
   }
+}
+
+async function refreshPrivateMemberData(): Promise<void> {
+  if (privateLoadPromise) return privateLoadPromise;
+  privateLoadPromise = (async () => {
+    try {
+      const [data, registrations, mallOrders, coupons] = await Promise.all([
+        getMemberCenter(),
+        getMyRegistrations().catch(() => []),
+        getMyMallOrders().catch(() => ({ items: [] })),
+        getMyCoupons().catch(() => ({ items: [] }))
+      ]);
+      user.value = getStoredUser();
+      levels.value = data.levels;
+      membership.value = data.membership;
+      grants.value = data.grants;
+      registrationCount.value = registrations.length;
+      pendingConferenceCount.value = registrations.filter((item) => !["CANCELLED", "REFUNDED"].includes(String(item.status))).length;
+      mallOrderCount.value = mallOrders.items.length;
+      couponCount.value = coupons.items.length;
+      purchaseMessage.value = data.purchase.message;
+    } catch (err) {
+      if (isAuthSessionExpiredError(err)) {
+        clearAuthSession();
+        user.value = null;
+        resetPrivateMemberData();
+        return;
+      }
+      throw err;
+    }
+  })().finally(() => {
+    privateLoadPromise = null;
+  });
+  return privateLoadPromise;
+}
+
+function resetPrivateMemberData() {
+  membership.value = null;
+  grants.value = [];
+  registrationCount.value = 0;
+  pendingConferenceCount.value = 0;
+  mallOrderCount.value = 0;
+  couponCount.value = 0;
 }
 
 async function checkAdminAccess() {
@@ -281,8 +331,8 @@ function goPage(url: string) {
 function logout() {
   clearAuthSession();
   user.value = null;
-  membership.value = null;
-  grants.value = [];
+  resetPrivateMemberData();
+  uni.$emit("auth:changed", null);
   uni.$emit("wechat-profile:updated");
   uni.showToast({ title: "已退出登录", icon: "success" });
 }
@@ -291,8 +341,8 @@ async function loginAgain() {
   try {
     await ensureLogin();
     user.value = getStoredUser();
+    await refreshPrivateMemberData();
     uni.$emit("wechat-profile:open");
-    await load();
   } catch (err) {
     console.error("[MEMBER_LOGIN_ERROR]", err);
     uni.showToast({ title: "登录失败，请稍后重试", icon: "none" });
@@ -301,6 +351,11 @@ async function loginAgain() {
 
 function handleProfileUpdated() {
   user.value = getStoredUser();
+}
+
+function handleAuthChanged() {
+  user.value = getStoredUser();
+  if (user.value && getToken()) void refreshPrivateMemberData();
 }
 
 async function openProfileEditor() {

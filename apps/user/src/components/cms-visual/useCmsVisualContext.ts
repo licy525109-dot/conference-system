@@ -1,4 +1,5 @@
 import type { DslNode, PageDsl } from "@conference/dsl-runtime";
+import { expandLegacyCmsTemplate } from "@conference/shared";
 import type { CmsComponent } from "@/services/cms";
 
 export function hasCmsVisualComponents(dsl: PageDsl): boolean {
@@ -14,6 +15,15 @@ export function cmsVisualComponentsFromDsl(dsl: PageDsl): CmsComponent[] {
   }
 
   return (dsl.dsl?.nodes ?? []).map((node, index) => componentFromDslNode(node, index)).filter((item): item is CmsComponent => Boolean(item));
+}
+
+export function expandedCmsVisualComponentsFromDsl(dsl: PageDsl): CmsComponent[] {
+  return cmsVisualComponentsFromDsl(dsl).flatMap(expandCmsVisualComponent);
+}
+
+export function expandCmsVisualComponent(component: CmsComponent): CmsComponent[] {
+  if (component.type !== "fixed-business-template") return [component];
+  return expandLegacyCmsTemplate(component);
 }
 
 function normalizeDslComponent(value: unknown, index: number): CmsComponent | null {

@@ -20,7 +20,16 @@
       tone="info"
     />
 
-    <PageRenderer v-if="cmsPage" :dsl="cmsPage.version.dsl" :theme="theme" :products="products" />
+    <PageRenderer
+      v-if="cmsPage"
+      :dsl="cmsPage.version.dsl"
+      :theme="theme"
+      :products="products"
+      :product-categories="categories"
+      :active-product-category-id="categoryId"
+      :product-loading="loading"
+      @select-product-category="selectCategory"
+    />
 
     <view v-if="!hasCmsContent" class="toolbar ui-card">
       <input v-model="keyword" class="search" placeholder="搜索商品" @confirm="loadProducts" />
@@ -121,6 +130,7 @@ async function loadProducts() {
 }
 
 function selectCategory(id: string) {
+  if (categoryId.value === id && products.value.length > 0) return;
   categoryId.value = id;
   void loadProducts();
 }
