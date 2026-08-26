@@ -80,39 +80,9 @@
       }
     },
     {
-      "path": "pages/cart/index",
-      "style": {
-        "navigationBarTitleText": "购物车"
-      }
-    },
-    {
-      "path": "pages/member/center",
-      "style": {
-        "navigationBarTitleText": "会员中心"
-      }
-    },
-    {
       "path": "pages/admin/notifications/index",
       "style": {
         "navigationBarTitleText": "管理员通知中心"
-      }
-    },
-    {
-      "path": "pages/mall/index",
-      "style": {
-        "navigationBarTitleText": "商城"
-      }
-    },
-    {
-      "path": "pages/mall/detail",
-      "style": {
-        "navigationBarTitleText": "商品详情"
-      }
-    },
-    {
-      "path": "pages/mall/orders",
-      "style": {
-        "navigationBarTitleText": "我的商城订单"
       }
     },
     {
@@ -139,6 +109,53 @@
         "navigationStyle": "custom",
         "navigationBarTitleText": "页面预览"
       }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "pages/cart",
+      "pages": [
+        {
+          "path": "index",
+          "style": {
+            "navigationBarTitleText": "购物车"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages/member",
+      "pages": [
+        {
+          "path": "center",
+          "style": {
+            "navigationBarTitleText": "会员中心"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages/mall",
+      "pages": [
+        {
+          "path": "index",
+          "style": {
+            "navigationBarTitleText": "商城"
+          }
+        },
+        {
+          "path": "detail",
+          "style": {
+            "navigationBarTitleText": "商品详情"
+          }
+        },
+        {
+          "path": "orders",
+          "style": {
+            "navigationBarTitleText": "我的商城订单"
+          }
+        }
+      ]
     }
   ],
   "globalStyle": {

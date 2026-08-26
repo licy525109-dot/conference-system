@@ -26,6 +26,14 @@ The WeChat public platform review and release steps still require manual confirm
 6. Upload as experience version.
 7. Share the experience QR code for QA.
 
+Do not reuse an old build directory for release. Run the production build immediately before every upload and wait for the terminal to print the package-size summary, for example:
+
+```text
+[mp-weixin] final package sizes: main 1483.92 KiB, pages/cart 41.31 KiB, pages/member 21.48 KiB, pages/mall 40.09 KiB
+```
+
+The build fails when the main package or any subpackage exceeds WeChat's 2048 KiB per-package limit. In WeChat DevTools, keep script, WXSS, and WXML upload compression enabled and make sure the imported project remains `apps/user/dist/build/mp-weixin`, not `dist/dev/mp-weixin` or the source directory.
+
 ## 3. Mini Program Pre-Release Checklist
 
 - Legal request domains are configured in WeChat public platform.
