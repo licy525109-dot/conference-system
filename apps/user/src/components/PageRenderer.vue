@@ -33,7 +33,7 @@ import { computed } from "vue";
 import type { PageDsl, ResolvedDslNode } from "@conference/dsl-runtime";
 import { createGovernedRuntimeContext, governRender } from "@conference/render-governor";
 import CmsVisualRenderer from "@/components/cms-visual/CmsVisualRenderer.vue";
-import { cmsVisualComponentsFromDsl, expandCmsVisualComponent, expandedCmsVisualComponentsFromDsl, hasCmsVisualComponents } from "@/components/cms-visual/useCmsVisualContext";
+import { runtimeCmsVisualComponentsFromDsl } from "@/components/cms-visual/useCmsVisualContext";
 import DslRenderTree from "@/components/design-system/DslRenderTree.vue";
 import { useCurrentUserContext } from "@/composables/useCurrentUserContext";
 import { ensureLogin } from "@/services/auth";
@@ -104,10 +104,7 @@ const runtimeContext = computed(() =>
 
 const governedResult = computed(() => governRender(props.dsl, { context: runtimeContext.value, allowLegacyDslFallback: false }));
 const visualComponents = computed(() => {
-  const governedDsl = governedResult.value.dsl;
-  const components = hasCmsVisualComponents(governedDsl)
-    ? expandedCmsVisualComponentsFromDsl(governedDsl)
-    : cmsVisualComponentsFromDsl(governedDsl).filter(isFixedBusinessTemplateComponent).flatMap(expandCmsVisualComponent);
+  const components = runtimeCmsVisualComponentsFromDsl(governedResult.value.dsl);
   const includeTypes = props.includeVisualComponentTypes;
   return includeTypes?.length ? components.filter((component) => includeTypes.includes(component.type)) : components;
 });
@@ -146,11 +143,6 @@ function withRuntimeContext(nodes: ResolvedDslNode[]): ResolvedDslNode[] {
 function shouldHydrateUserContext(node: ResolvedDslNode): boolean {
   const originalType = readString(node.meta.originalType);
   return ["login-card", "user-profile-card", "membership-benefits", "my-order-list"].includes(originalType);
-}
-
-function isFixedBusinessTemplateComponent(component: { type: string; config: Record<string, unknown> }): boolean {
-  if (readString(component.type) === "fixed-business-template") return true;
-  return Boolean(readString(component.config.templateKey || component.config.kind || component.config.pageType || component.config.template));
 }
 
 async function handleAction(action: Record<string, unknown>): Promise<void> {
