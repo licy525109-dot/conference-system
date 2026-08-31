@@ -120,17 +120,16 @@
       <el-tab-pane label="详情内容" name="detail">
         <div class="detail-tab-stack">
           <section class="form-panel">
-            <ConferenceDetailContentEditor
-              v-model="detailBlocks"
+            <ConferenceDetailRichTextEditor
+              ref="detailRichTextEditorRef"
+              v-model="detailRichTextHtml"
               :title="conferenceForm.title"
               :subtitle="conferenceForm.subtitle"
               :cover-image="conferenceForm.coverImage"
               :saving="savingDetailContent"
-              :uploading-block-id="uploadingDetailBlockId"
               :long-image-segments="detailImage.segments"
               @save="saveDetailContent"
-              @upload-image="triggerDetailBlockImageUpload"
-              @choose-material="openDetailMaterialPicker"
+              @choose-material="openDetailMaterialPicker('rich-text')"
             />
           </section>
 
@@ -138,7 +137,7 @@
           <div class="detail-image-heading">
             <div>
               <h3>整页长图（可选）</h3>
-              <p class="muted-text">适合已有完整设计稿的会议。长图会排在内容块之后，并自动压缩、切片以保证小程序稳定展示。</p>
+              <p class="muted-text">适合已有完整设计稿的会议。长图会排在富文本内容之后，并自动压缩、切片以保证小程序稳定展示。</p>
             </div>
             <AdminStatusBadge :status="detailImage.segments.length > 0" :label="detailImage.segments.length > 0 ? '已配置' : '未配置'" />
           </div>
@@ -155,7 +154,7 @@
               <span>{{ detailImage.width || "-" }} × {{ detailImage.height || "-" }} px</span>
               <span>{{ detailImage.segments.length }} 个展示分片</span>
               <span v-if="detailImage.sizeBytes">{{ formatFileSize(detailImage.sizeBytes) }}</span>
-              <p>源图会按顺序无缝展示。若需要经常调整文字和图片，建议使用上方内容块编辑器。</p>
+              <p>源图会按顺序无缝展示。若需要经常调整文字和图片，建议使用上方可视化编辑器。</p>
             </div>
           </div>
 
@@ -170,7 +169,7 @@
             <el-button type="primary" :icon="Upload" :loading="uploadingDetailImage" @click="triggerDetailImageUpload">
               {{ detailImage.segments.length ? "替换长图" : "上传长图" }}
             </el-button>
-            <el-button :icon="FolderOpened" :disabled="uploadingDetailImage" @click="openDetailMaterialPicker()">从素材库选择</el-button>
+            <el-button :icon="FolderOpened" :disabled="uploadingDetailImage" @click="openDetailMaterialPicker('long-image')">从素材库选择</el-button>
             <el-button v-if="detailImage.segments.length" type="danger" plain :icon="Delete" :disabled="uploadingDetailImage" @click="removeDetailImage">删除长图</el-button>
           </div>
           </section>
@@ -229,9 +228,9 @@
 
     <el-dialog
       v-model="detailMaterialVisible"
-      :title="detailMaterialTargetBlockId ? '选择内容图片' : '选择会议详情长图'"
+      :title="detailMaterialTarget === 'rich-text' ? '选择详情内容图片' : '选择会议详情长图'"
       width="820px"
-      @closed="detailMaterialTargetBlockId = ''"
+      @closed="detailMaterialTarget = 'long-image'"
     >
       <div class="material-picker">
         <div class="material-search">
@@ -239,7 +238,7 @@
           <el-button :loading="detailMaterialLoading" @click="loadDetailMaterials">搜索</el-button>
         </div>
         <p class="form-help">
-          {{ detailMaterialTargetBlockId ? "选择后会填入当前图片块，保存详情内容后发布到用户端。" : "选择已有素材时将作为一张完整详情图展示；超长源图建议使用“上传长图”，系统会自动压缩切片。" }}
+          {{ detailMaterialTarget === "rich-text" ? "选择后会插入当前光标位置，保存详情后同步发布到 H5 和小程序。" : "选择已有素材时将作为一张完整详情图展示；超长源图建议使用“上传长图”，系统会自动压缩切片。" }}
         </p>
         <el-empty v-if="!detailMaterialLoading && detailMaterialAssets.length === 0" description="暂无可用图片素材" />
         <div v-else class="material-grid">
@@ -253,7 +252,6 @@
     </el-dialog>
 
     <input ref="detailImageInput" class="hidden-file" type="file" accept="image/jpeg,image/png,image/webp" @change="handleDetailImageUpload" />
-    <input ref="detailBlockImageInput" class="hidden-file" type="file" accept="image/jpeg,image/png,image/webp" @change="handleDetailBlockImageUpload" />
   </section>
 </template>
 
@@ -265,7 +263,7 @@ import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
-import ConferenceDetailContentEditor from "../../components/conference/ConferenceDetailContentEditor.vue";
+import ConferenceDetailRichTextEditor from "../../components/conference/ConferenceDetailRichTextEditor.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import CouponsPage from "../coupons/index.vue";
@@ -289,10 +287,15 @@ import {
 import type { Conference, FormField, MaterialAsset, Sku } from "../../services/types";
 import { isConferenceDetailImageAsset, prepareConferenceDetailImage } from "../../utils/conferenceDetailImage";
 import {
+  hasConferenceDetailRichTextContract,
   normalizeConferenceDetailContent,
-  serializeConferenceDetailContent,
-  type ConferenceDetailContentBlock
+  normalizeConferenceDetailRichText
 } from "@conference/shared";
+import {
+  conferenceDetailBlocksToEditorHtml,
+  conferenceDetailRichTextToEditorHtml,
+  createConferenceDetailRichText
+} from "../../utils/conferenceDetailRichText";
 
 const conferences = ref<Conference[]>([]);
 const conferenceId = ref("");
@@ -308,12 +311,10 @@ const detailMaterialLoading = ref(false);
 const detailMaterialKeyword = ref("");
 const detailMaterialAssets = ref<MaterialAsset[]>([]);
 const detailImageInput = ref<HTMLInputElement | null>(null);
-const detailBlockImageInput = ref<HTMLInputElement | null>(null);
+const detailRichTextEditorRef = ref<{ insertImage: (url: string, alt?: string) => boolean } | null>(null);
 const uploadingDetailImage = ref(false);
 const detailImageUploadProgress = ref(0);
-const detailBlockUploadTargetId = ref("");
-const uploadingDetailBlockId = ref("");
-const detailMaterialTargetBlockId = ref("");
+const detailMaterialTarget = ref<"rich-text" | "long-image">("long-image");
 const savingDetailContent = ref(false);
 const fieldTypes = ["TEXT", "TEXTAREA", "PHONE", "EMAIL", "SELECT", "RADIO", "CHECKBOX", "DATE"] as const;
 
@@ -337,7 +338,7 @@ const conferenceForm = reactive({
   maxTicketsPerOrder: 0
 });
 const detailImage = reactive(createEmptyDetailImage());
-const detailBlocks = ref<ConferenceDetailContentBlock[]>([]);
+const detailRichTextHtml = ref("");
 const skuForm = reactive({ id: "", name: "", description: "", priceYuan: 0, stock: 0, status: "ACTIVE" });
 const fieldForm = reactive({
   id: "",
@@ -423,7 +424,11 @@ function syncConferenceForm() {
     maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0
   });
   Object.assign(detailImage, normalizeDetailImage(contentJson));
-  detailBlocks.value = normalizeConferenceDetailContent(contentJson).blocks;
+  if (hasConferenceDetailRichTextContract(contentJson)) {
+    detailRichTextHtml.value = conferenceDetailRichTextToEditorHtml(normalizeConferenceDetailRichText(contentJson));
+  } else {
+    detailRichTextHtml.value = conferenceDetailBlocksToEditorHtml(normalizeConferenceDetailContent(contentJson).blocks);
+  }
 }
 
 async function saveConference() {
@@ -599,8 +604,8 @@ async function handleDetailImageUpload(event: Event) {
   }
 }
 
-async function openDetailMaterialPicker(blockId = "") {
-  detailMaterialTargetBlockId.value = blockId;
+async function openDetailMaterialPicker(target: "rich-text" | "long-image" = "long-image") {
+  detailMaterialTarget.value = target;
   detailMaterialVisible.value = true;
   await loadDetailMaterials();
 }
@@ -616,11 +621,15 @@ async function loadDetailMaterials() {
 }
 
 async function chooseDetailMaterial(asset: MaterialAsset) {
-  if (detailMaterialTargetBlockId.value) {
-    updateDetailBlockImage(detailMaterialTargetBlockId.value, asset.url, asset.name);
+  if (detailMaterialTarget.value === "rich-text") {
+    const inserted = detailRichTextEditorRef.value?.insertImage(asset.url, asset.name);
+    if (!inserted) {
+      ElMessage.warning("编辑器尚未就绪，请稍后重试");
+      return;
+    }
     detailMaterialVisible.value = false;
-    detailMaterialTargetBlockId.value = "";
-    ElMessage.success("图片已填入，请保存详情内容");
+    detailMaterialTarget.value = "long-image";
+    ElMessage.success("图片已插入，请保存详情内容");
     return;
   }
   Object.assign(detailImage, {
@@ -675,65 +684,20 @@ async function saveDetailContent() {
   savingDetailContent.value = true;
   try {
     const contentJson = { ...readRecord(conference.value.contentJson) };
-    contentJson.detailContent = {
-      ...serializeConferenceDetailContent(detailBlocks.value),
+    const detailRichText = createConferenceDetailRichText(detailRichTextHtml.value);
+    contentJson.detailRichText = {
+      ...detailRichText,
       updatedAt: new Date().toISOString()
     };
     const updated = await updateConference(conferenceId.value, { contentJson });
     applyUpdatedConference(updated);
-    detailBlocks.value = normalizeConferenceDetailContent(updated.contentJson).blocks;
+    detailRichTextHtml.value = conferenceDetailRichTextToEditorHtml(normalizeConferenceDetailRichText(updated.contentJson));
     ElMessage.success("会议详情内容已保存");
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "会议详情内容保存失败");
   } finally {
     savingDetailContent.value = false;
   }
-}
-
-function triggerDetailBlockImageUpload(blockId: string) {
-  detailBlockUploadTargetId.value = blockId;
-  detailBlockImageInput.value?.click();
-}
-
-async function handleDetailBlockImageUpload(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
-  const blockId = detailBlockUploadTargetId.value;
-  detailBlockUploadTargetId.value = "";
-  if (!file || !blockId) {
-    return;
-  }
-  if (!isConferenceDetailImageAsset(file.type, file.name)) {
-    ElMessage.warning("仅支持 JPG、PNG 或 WebP 图片");
-    return;
-  }
-  if (file.size > 20 * 1024 * 1024) {
-    ElMessage.warning("图片不能超过 20MB");
-    return;
-  }
-
-  uploadingDetailBlockId.value = blockId;
-  try {
-    const asset = await createMaterial({
-      name: file.name,
-      usage: "conference_detail_content",
-      remark: "会议详情内容块图片",
-      file
-    });
-    updateDetailBlockImage(blockId, asset.url, asset.name);
-    ElMessage.success("图片已上传，请保存详情内容");
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "图片上传失败");
-  } finally {
-    uploadingDetailBlockId.value = "";
-  }
-}
-
-function updateDetailBlockImage(blockId: string, imageUrl: string, caption = "") {
-  detailBlocks.value = detailBlocks.value.map((block) => block.id === blockId
-    ? { ...block, imageUrl, caption: block.caption || caption }
-    : block);
 }
 
 function applyUpdatedConference(updated: Conference) {

@@ -5,15 +5,15 @@ const coverImage = "/static/fixed-templates/heroes/hero_registration_bg.png";
 const detailImage = "/static/fixed-templates/products/product_gift_box.png";
 const now = "2026-08-31T10:00:00.000Z";
 
-test("conference detail renders configurable content and keeps fixed actions clear of the tabbar", async ({ page }) => {
+test("conference detail renders safe rich content and keeps fixed actions clear of the tabbar", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installUserFixtures(page);
   await page.goto(`/#/pages/conference/detail?id=${conferenceId}`);
 
   await expect(page.locator(".conference-summary")).toContainText("观潮会集 · 第五届行业闭门会");
-  await expect(page.locator(".detail-content")).toContainText("费用包含");
-  await expect(page.locator(".detail-content")).toContainText("会期资料包");
-  await expect(page.locator(".detail-content .content-image")).toBeVisible();
+  await expect(page.locator(".conference-detail-rich-text")).toContainText("费用包含");
+  await expect(page.locator(".conference-detail-rich-text")).toContainText("会期资料包");
+  await expect(page.locator(".conference-detail-rich-text img")).toBeVisible();
   await expect(page.locator(".long-image .image")).toBeVisible();
   await expect(page.locator(".custom-tabbar")).toBeVisible();
   await expect(page.locator(".bar.with-tabbar")).toBeVisible();
@@ -32,25 +32,38 @@ test("admin detail editor reloads the full conference contract instead of the li
   await page.setViewportSize({ width: 1440, height: 1000 });
   const detailRequests: string[] = [];
   const savedBodies: Array<Record<string, unknown>> = [];
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
   await installAdminFixtures(page, detailRequests, savedBodies);
   await page.addInitScript(() => localStorage.setItem("conference_admin_token", "conference-detail-admin"));
   await page.goto(`http://localhost:5174/#/conferences/config?id=${conferenceId}`);
 
   await page.getByRole("tab", { name: "详情内容" }).click();
-  await expect(page.locator(".detail-composer")).toBeVisible();
-  await expect(page.locator(".content-block")).toHaveCount(3);
+  await expect(page.locator(".conference-rich-editor")).toBeVisible();
+  await expect(page.locator(".editor-toolbar")).toBeVisible();
+  await expect(page.locator(".editor-canvas")).toContainText("费用包含");
+  await expect(page.getByRole("button", { name: "素材库", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "预览", exact: true })).toBeVisible();
   await expect(page.locator(".detail-image-panel--secondary")).toContainText("已配置");
   expect(detailRequests).toContain(`/api/admin/conferences/${conferenceId}`);
 
-  await page.locator(".insert-toolbar").getByRole("button", { name: "列表" }).click();
-  await expect(page.locator(".content-block")).toHaveCount(4);
-  await expect(page.locator(".detail-composer .phone-preview")).toContainText("第一项内容");
-  await page.getByRole("button", { name: "保存详情内容" }).click();
+  await page.getByRole("button", { name: "预览", exact: true }).click();
+  const previewDialog = page.getByRole("dialog", { name: "会议详情手机预览" });
+  await expect(previewDialog.locator(".rich-preview")).toContainText("费用包含");
+  await page.keyboard.press("Escape");
+  await expect(previewDialog).toBeHidden();
+
+  await page.getByRole("button", { name: "保存详情" }).click();
   await expect.poll(() => savedBodies.length).toBe(1);
   const savedContent = savedBodies[0]?.contentJson as Record<string, unknown>;
-  const savedDetailContent = savedContent.detailContent as { blocks?: unknown[] };
-  expect(savedDetailContent.blocks).toHaveLength(4);
+  const savedRichText = savedContent.detailRichText as { html?: string; nodes?: unknown[] };
+  expect(savedRichText.html).toContain("费用包含");
+  expect(savedRichText.nodes?.length).toBeGreaterThan(0);
   expect(savedContent.detailLongImage).toBeTruthy();
+  expect(browserErrors).toEqual([]);
   await expect(page).toHaveScreenshot("admin-conference-detail-editor.png", { fullPage: true, maxDiffPixelRatio: 0.02 });
 });
 
@@ -103,6 +116,29 @@ async function installAdminFixtures(
 
 function contentJson() {
   return {
+    detailRichText: {
+      version: 1,
+      html: `<h2 style="color:#8b6822">费用包含</h2><p>报名费用包括以下服务内容：</p><ul><li>参会费与会期资料包</li><li>会期交流活动</li><li>主办方指定服务</li></ul><p><img src="${detailImage}" alt="会议详情示意" style="width:100%;max-width:100%;height:auto;display:block"></p>`,
+      nodes: [
+        { name: "h2", attrs: { style: "color:#8b6822" }, children: [{ type: "text", text: "费用包含" }] },
+        { name: "p", attrs: {}, children: [{ type: "text", text: "报名费用包括以下服务内容：" }] },
+        {
+          name: "ul",
+          attrs: {},
+          children: [
+            { name: "li", attrs: {}, children: [{ type: "text", text: "参会费与会期资料包" }] },
+            { name: "li", attrs: {}, children: [{ type: "text", text: "会期交流活动" }] },
+            { name: "li", attrs: {}, children: [{ type: "text", text: "主办方指定服务" }] }
+          ]
+        },
+        {
+          name: "p",
+          attrs: {},
+          children: [{ name: "img", attrs: { src: detailImage, alt: "会议详情示意", style: "width:100%;max-width:100%;height:auto;display:block" }, children: [] }]
+        }
+      ],
+      updatedAt: now
+    },
     detailContent: {
       version: 1,
       blocks: [

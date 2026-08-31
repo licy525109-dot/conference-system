@@ -16,6 +16,55 @@ export type ConferenceDetailImageRatio = "auto" | "16:9" | "4:3" | "1:1";
 export type ConferenceDetailButtonStyle = "primary" | "secondary" | "text";
 export type ConferenceDetailActionType = "none" | "registration" | "phone" | "copy" | "external-h5";
 
+export const CONFERENCE_DETAIL_RICH_TEXT_ELEMENTS = [
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "blockquote",
+  "ul",
+  "ol",
+  "li",
+  "strong",
+  "b",
+  "em",
+  "i",
+  "u",
+  "s",
+  "del",
+  "span",
+  "a",
+  "img",
+  "br",
+  "hr",
+  "code",
+  "pre"
+] as const;
+
+export type ConferenceDetailRichTextElementName = typeof CONFERENCE_DETAIL_RICH_TEXT_ELEMENTS[number];
+
+export interface ConferenceDetailRichTextTextNode {
+  type: "text";
+  text: string;
+}
+
+export interface ConferenceDetailRichTextElementNode {
+  name: ConferenceDetailRichTextElementName;
+  attrs: Record<string, string>;
+  children: ConferenceDetailRichTextNode[];
+}
+
+export type ConferenceDetailRichTextNode =
+  | ConferenceDetailRichTextTextNode
+  | ConferenceDetailRichTextElementNode;
+
+export interface ConferenceDetailRichTextContent {
+  version: 1;
+  html: string;
+  nodes: ConferenceDetailRichTextNode[];
+}
+
 export interface ConferenceDetailContentBlock {
   id: string;
   enabled: boolean;
@@ -41,6 +90,43 @@ export interface ConferenceDetailContentBlock {
 export interface ConferenceDetailContent {
   version: 1;
   blocks: ConferenceDetailContentBlock[];
+}
+
+export function normalizeConferenceDetailRichText(value: unknown): ConferenceDetailRichTextContent {
+  const root = readRecord(value);
+  const nested = readRecord(root.detailRichText ?? root.conferenceDetailRichText);
+  const source = Object.keys(nested).length > 0
+    ? nested
+    : root.version === 1 && (typeof root.html === "string" || Array.isArray(root.nodes))
+      ? root
+      : {};
+  const rawNodes = Array.isArray(source.nodes) ? source.nodes : [];
+
+  return {
+    version: 1,
+    html: readRawString(source.html).slice(0, 500_000),
+    nodes: rawNodes
+      .slice(0, 2_000)
+      .map((node) => normalizeConferenceDetailRichTextNode(node, 0))
+      .filter((node): node is ConferenceDetailRichTextNode => node !== null)
+  };
+}
+
+export function hasConferenceDetailRichTextContract(value: unknown): boolean {
+  const root = readRecord(value);
+  const source = readRecord(root.detailRichText ?? root.conferenceDetailRichText);
+  return source.version === 1 && (typeof source.html === "string" || Array.isArray(source.nodes));
+}
+
+export function serializeConferenceDetailRichText(
+  html: string,
+  nodes: ConferenceDetailRichTextNode[]
+): ConferenceDetailRichTextContent {
+  return normalizeConferenceDetailRichText({ version: 1, html, nodes });
+}
+
+export function isConferenceDetailRichTextRenderable(content: ConferenceDetailRichTextContent): boolean {
+  return content.nodes.some(isRenderableRichTextNode);
 }
 
 export function normalizeConferenceDetailContent(value: unknown): ConferenceDetailContent {
@@ -152,6 +238,10 @@ function readString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function readRawString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(readString).filter(Boolean) : [];
 }
@@ -168,4 +258,96 @@ function readEnum<TValue extends string>(
 ): TValue {
   const parsed = readString(value) as TValue;
   return values.includes(parsed) ? parsed : fallback;
+}
+
+function normalizeConferenceDetailRichTextNode(
+  value: unknown,
+  depth: number
+): ConferenceDetailRichTextNode | null {
+  if (depth > 20) return null;
+  const source = readRecord(value);
+  if (source.type === "text") {
+    const text = readRawString(source.text).slice(0, 100_000);
+    return text ? { type: "text", text } : null;
+  }
+
+  const name = readString(source.name).toLowerCase();
+  if (!CONFERENCE_DETAIL_RICH_TEXT_ELEMENTS.includes(name as ConferenceDetailRichTextElementName)) {
+    return null;
+  }
+  const children = (Array.isArray(source.children) ? source.children : [])
+    .slice(0, 1_000)
+    .map((child) => normalizeConferenceDetailRichTextNode(child, depth + 1))
+    .filter((child): child is ConferenceDetailRichTextNode => child !== null);
+
+  return {
+    name: name as ConferenceDetailRichTextElementName,
+    attrs: normalizeRichTextAttrs(source.attrs),
+    children
+  };
+}
+
+function normalizeRichTextAttrs(value: unknown): Record<string, string> {
+  const source = readRecord(value);
+  const attrs: Record<string, string> = {};
+  for (const key of ["alt", "title", "target", "rel"] as const) {
+    const attrValue = readString(source[key]).slice(0, 500);
+    if (attrValue) attrs[key] = attrValue;
+  }
+  for (const key of ["src", "href"] as const) {
+    const attrValue = readString(source[key]).slice(0, 2_000);
+    if (isSafeRichTextUrl(attrValue)) attrs[key] = attrValue;
+  }
+  const style = normalizeRichTextStyle(source.style);
+  if (style) attrs.style = style;
+  return attrs;
+}
+
+function normalizeRichTextStyle(value: unknown): string {
+  const source = readRawString(value).slice(0, 2_000);
+  if (!source) return "";
+  const allowed = new Set([
+    "color",
+    "background-color",
+    "font-size",
+    "font-weight",
+    "font-style",
+    "text-decoration",
+    "text-align",
+    "line-height",
+    "letter-spacing",
+    "margin-left",
+    "padding-left",
+    "width",
+    "max-width",
+    "height",
+    "display",
+    "border-radius"
+  ]);
+  return source
+    .split(";")
+    .map((declaration) => declaration.trim())
+    .filter(Boolean)
+    .map((declaration) => {
+      const separator = declaration.indexOf(":");
+      if (separator <= 0) return "";
+      const property = declaration.slice(0, separator).trim().toLowerCase();
+      const propertyValue = declaration.slice(separator + 1).trim();
+      if (!allowed.has(property) || !propertyValue || /url\s*\(|expression|javascript:/i.test(propertyValue)) return "";
+      return `${property}:${propertyValue}`;
+    })
+    .filter(Boolean)
+    .join(";");
+}
+
+function isSafeRichTextUrl(value: string): boolean {
+  return Boolean(value) && /^(https?:\/\/|\/)/i.test(value) && !/^javascript:/i.test(value);
+}
+
+function isRenderableRichTextNode(node: ConferenceDetailRichTextNode): boolean {
+  if ("text" in node) return Boolean(node.text.trim());
+  if (node.name === "img") return Boolean(node.attrs.src);
+  if (node.name === "br") return false;
+  if (node.name === "hr") return true;
+  return node.children.some(isRenderableRichTextNode);
 }

@@ -11,13 +11,14 @@
     "test": "node -e \"console.log('admin: no tests yet')\""
   },
   "dependencies": {
-    "@element-plus/icons-vue": "^2.3.2",
     "@conference/business-modules": "workspace:*",
     "@conference/design-system": "workspace:*",
     "@conference/dsl-runtime": "workspace:*",
     "@conference/module-compiler": "workspace:*",
     "@conference/render-governor": "workspace:*",
     "@conference/shared": "workspace:*",
+    "@element-plus/icons-vue": "^2.3.2",
+    "@wangeditor/editor": "5.1.23",
     "element-plus": "^2.9.3",
     "vue": "^3.5.13"
   },

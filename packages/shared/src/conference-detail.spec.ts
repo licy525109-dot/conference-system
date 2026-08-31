@@ -1,8 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  hasConferenceDetailRichTextContract,
   isConferenceDetailBlockRenderable,
+  isConferenceDetailRichTextRenderable,
   normalizeConferenceDetailContent,
+  normalizeConferenceDetailRichText,
+  serializeConferenceDetailRichText,
   serializeConferenceDetailContent
 } from "./conference-detail";
 
@@ -59,5 +63,56 @@ describe("conference detail content contract", () => {
     });
 
     assert.deepEqual(content.blocks, []);
+  });
+
+  it("normalizes the cross-platform rich-text node contract", () => {
+    const content = normalizeConferenceDetailRichText({
+      detailRichText: {
+        version: 1,
+        html: "<h2>费用包含</h2>",
+        nodes: [
+          {
+            name: "h2",
+            attrs: { style: "color:#8b6822;position:fixed;background-image:url(javascript:bad)" },
+            children: [{ type: "text", text: "费用包含" }]
+          },
+          { name: "script", attrs: {}, children: [{ type: "text", text: "bad" }] },
+          { name: "img", attrs: { src: "javascript:alert(1)", alt: "bad" }, children: [] }
+        ]
+      }
+    });
+
+    assert.equal(content.nodes.length, 2);
+    assert.deepEqual(content.nodes[0], {
+      name: "h2",
+      attrs: { style: "color:#8b6822" },
+      children: [{ type: "text", text: "费用包含" }]
+    });
+    assert.deepEqual(content.nodes[1], { name: "img", attrs: { alt: "bad" }, children: [] });
+    assert.equal(isConferenceDetailRichTextRenderable(content), true);
+  });
+
+  it("serializes rich text without accepting unrelated contentJson fields", () => {
+    const unrelated = normalizeConferenceDetailRichText({ html: "<p>技术内容</p>", nodes: [] });
+    assert.equal(isConferenceDetailRichTextRenderable(unrelated), false);
+
+    const serialized = serializeConferenceDetailRichText("<p>会议说明</p>", [
+      { name: "p", attrs: {}, children: [{ type: "text", text: "会议说明" }] }
+    ]);
+    assert.equal(serialized.version, 1);
+    assert.equal(serialized.html, "<p>会议说明</p>");
+    assert.equal(isConferenceDetailRichTextRenderable(serialized), true);
+  });
+
+  it("distinguishes an intentionally empty rich-text document from a legacy page", () => {
+    assert.equal(hasConferenceDetailRichTextContract({ detailRichText: { version: 1, html: "", nodes: [] } }), true);
+    assert.equal(hasConferenceDetailRichTextContract({ detailContent: { version: 1, blocks: [] } }), false);
+    assert.equal(isConferenceDetailRichTextRenderable(normalizeConferenceDetailRichText({
+      detailRichText: {
+        version: 1,
+        html: "<p><br></p>",
+        nodes: [{ name: "p", attrs: {}, children: [{ name: "br", attrs: {}, children: [] }] }]
+      }
+    })), false);
   });
 });
