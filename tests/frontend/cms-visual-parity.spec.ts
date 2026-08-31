@@ -55,6 +55,14 @@ const products = [
   product("product-pen", "金属签字笔", "/static/fixed-templates/products/product_pen.png", 8800, "办公用品")
 ];
 
+const productCategories = ["办公用品", "文创周边", "伴手礼"].map((name, sortOrder) => ({
+  id: `category-${name}`,
+  name,
+  code: name,
+  description: null,
+  sortOrder
+}));
+
 test.beforeEach(async ({ page }) => {
   await installApiFixtures(page);
 });
@@ -115,6 +123,7 @@ async function installApiFixtures(page: Page): Promise<void> {
     if (path === "/api/app/theme") return ok(route, { scope: "global", themePresetId: "guanchao-premium", config: theme, publishedAt: null, updatedAt: null });
     if (path === "/api/app/tabbar") return ok(route, { enabled: false, items: [], updatedAt: null });
     if (path === "/api/conferences") return ok(route, { items: conferences });
+    if (path === "/api/mall/categories") return ok(route, { items: productCategories });
     if (path === "/api/mall/products") return ok(route, { items: products, total: products.length, page: 1, pageSize: 20 });
     if (path === "/api/pages/home/published") return ok(route, publishedPage("home", "观潮会集", homeDsl));
     if (decodedPath === "/api/pages/custom:about-paiqi/published") return ok(route, publishedPage("custom:about-paiqi", "年度排期", scheduleDsl));
