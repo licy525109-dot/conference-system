@@ -98,6 +98,10 @@ export function listConferences(params: { page?: number; pageSize?: number; keyw
   return apiRequest<ApiList<Conference>>(`/admin/conferences${toQuery(params)}`);
 }
 
+export function getConference(id: string) {
+  return apiRequest<Conference>(`/admin/conferences/${encodeURIComponent(id)}`);
+}
+
 export function createConference(input: Record<string, unknown>) {
   return apiRequest<Conference>("/admin/conferences", {
     method: "POST",

@@ -12,37 +12,62 @@
       />
 
       <view v-else-if="conference" class="content">
-        <view class="conference-summary">
-          <image
-            v-if="conference.coverImageUrl"
-            class="cover"
-            :src="conference.coverImageUrl"
-            mode="aspectFill"
-          />
+        <view :class="['conference-summary', { 'has-cover': conference.coverImageUrl }]">
+          <view v-if="conference.coverImageUrl" class="cover-wrap">
+            <image class="cover" :src="conference.coverImageUrl" mode="aspectFill" />
+            <view class="cover-brand">
+              <text>观潮会集</text>
+              <text>GUANCHAO CONFERENCE</text>
+            </view>
+          </view>
+          <view v-else class="summary-identity">
+            <view class="brand-seal">观</view>
+            <view>
+              <text class="brand-name">观潮会集</text>
+              <text class="brand-tagline">行业会议与创始人社群平台</text>
+            </view>
+          </view>
           <view class="summary-content">
             <view class="status-row">
-              <text :class="['status', `status--${registrationStatus.tone}`]">{{ registrationStatus.label }}</text>
+              <view class="status-group">
+                <text :class="['status', `status--${registrationStatus.tone}`]">{{ registrationStatus.label }}</text>
+                <text class="summary-eyebrow">会议报名</text>
+              </view>
               <text v-if="conference.location" class="location">{{ conference.location }}</text>
             </view>
             <text class="title">{{ conference.title }}</text>
             <text v-if="conference.summary" class="summary">{{ conference.summary }}</text>
             <view class="facts">
               <view class="fact">
-                <text class="fact-label">会议时间</text>
-                <text class="fact-value">{{ formatDateTime(conference.startsAt) }} 至 {{ formatDateTime(conference.endsAt) }}</text>
+                <text class="fact-icon">日</text>
+                <view class="fact-copy">
+                  <text class="fact-label">会议时间</text>
+                  <text class="fact-value">{{ formatDateTime(conference.startsAt) }} 至 {{ formatDateTime(conference.endsAt) }}</text>
+                </view>
               </view>
               <view v-if="conference.location" class="fact">
-                <text class="fact-label">会议地点</text>
-                <text class="fact-value">{{ conference.location }}</text>
+                <text class="fact-icon">地</text>
+                <view class="fact-copy">
+                  <text class="fact-label">会议地点</text>
+                  <text class="fact-value">{{ conference.location }}</text>
+                </view>
               </view>
               <view class="fact">
-                <text class="fact-label">报名截止</text>
-                <text class="fact-value">{{ registrationDeadline }}</text>
+                <text class="fact-icon">止</text>
+                <view class="fact-copy">
+                  <text class="fact-label">报名截止</text>
+                  <text class="fact-value">{{ registrationDeadline }}</text>
+                </view>
               </view>
             </view>
           </view>
         </view>
 
+        <ConferenceDetailContent
+          v-if="detailContentBlocks.length"
+          :blocks="detailContentBlocks"
+          @action="handleDetailAction"
+        />
         <ConferenceDetailLongImage
           v-if="detailLongImage"
           :segments="detailLongImage.segments"
@@ -67,6 +92,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { onLoad, onShareAppMessage } from "@dcloudio/uni-app";
+import ConferenceDetailContent from "@/components/conference/ConferenceDetailContent.vue";
 import ConferenceDetailLongImage from "@/components/conference/ConferenceDetailLongImage.vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
@@ -78,6 +104,10 @@ import { getConferenceDetail, reserveConferenceAppointment, type ConferenceDetai
 import { ensureLogin } from "@/services/auth";
 import { createCmsThemeVars } from "@/theme/cmsTheme";
 import { normalizeConferenceDetailLongImage } from "@/utils/conferenceDetail";
+import {
+  normalizeConferenceDetailContent,
+  type ConferenceDetailContentBlock
+} from "@conference/shared";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
@@ -91,6 +121,7 @@ const error = ref("");
 
 const pageStyle = computed(() => createCmsThemeVars(theme.value));
 const detailLongImage = computed(() => normalizeConferenceDetailLongImage(conference.value?.contentJson));
+const detailContentBlocks = computed(() => normalizeConferenceDetailContent(conference.value?.contentJson).blocks);
 const registrationSkus = computed(() => {
   const skus = conference.value?.skus;
   return Array.isArray(skus) ? skus : [];
@@ -185,6 +216,43 @@ async function reserveAppointment() {
   }
 }
 
+async function handleDetailAction(block: ConferenceDetailContentBlock) {
+  if (block.actionTargetType === "registration") {
+    await goRegisterFirst();
+    return;
+  }
+  if (block.actionTargetType === "phone") {
+    if (!block.phone) return showMissingAction("联系电话未配置");
+    uni.makePhoneCall({ phoneNumber: block.phone, fail: () => undefined });
+    return;
+  }
+  if (block.actionTargetType === "copy") {
+    if (!block.copyText) return showMissingAction("复制内容未配置");
+    uni.setClipboardData({
+      data: block.copyText,
+      success: () => uni.showToast({ title: "内容已复制", icon: "none" }),
+      fail: () => uni.showToast({ title: "复制失败", icon: "none" })
+    });
+    return;
+  }
+  if (block.actionTargetType === "external-h5") {
+    if (!block.externalUrl) return showMissingAction("外部链接未配置");
+    // #ifdef H5
+    window.open(block.externalUrl, "_blank", "noopener,noreferrer");
+    // #endif
+    // #ifndef H5
+    uni.setClipboardData({
+      data: block.externalUrl,
+      success: () => uni.showToast({ title: "链接已复制", icon: "none" })
+    });
+    // #endif
+  }
+}
+
+function showMissingAction(title: string) {
+  uni.showToast({ title, icon: "none" });
+}
+
 function remainingStock(sku: RegistrationSku): number {
   return Math.max(sku.stock - sku.soldCount, 0);
 }
@@ -209,9 +277,10 @@ function parseDateTime(value: string | null | undefined): number {
 .page {
   position: relative;
   min-height: 100vh;
-  padding: 0 0 calc(250rpx + env(safe-area-inset-bottom));
+  padding: 0 0 calc(268rpx + env(safe-area-inset-bottom));
   overflow: visible;
-  background: #f4f5f3;
+  background: #eef1ef;
+  box-sizing: border-box;
 }
 
 .page-content {
@@ -221,25 +290,103 @@ function parseDateTime(value: string | null | undefined): number {
 
 .content {
   width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
 }
 
 .conference-summary {
+  position: relative;
   background: #fff;
+}
+
+.cover-wrap {
+  position: relative;
+  height: 430rpx;
+  overflow: hidden;
+  background: #e7e9e6;
 }
 
 .cover {
   display: block;
   width: 100%;
-  height: 420rpx;
+  height: 430rpx;
   background: #e7e9e6;
+}
+
+.cover-brand {
+  position: absolute;
+  left: 26rpx;
+  bottom: 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+  padding: 12rpx 18rpx;
+  border-radius: 10rpx;
+  background: rgba(15, 31, 51, 0.88);
+  color: #ffffff;
+}
+
+.cover-brand text:first-child {
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.cover-brand text:last-child {
+  color: #d7c08c;
+  font-size: 14rpx;
+  letter-spacing: 0;
+}
+
+.summary-identity {
+  display: flex;
+  min-height: 164rpx;
+  align-items: center;
+  gap: 22rpx;
+  padding: 28rpx 32rpx;
+  border-bottom: 1px solid #e8ece9;
+  background: #10243e;
+  box-sizing: border-box;
+}
+
+.brand-seal {
+  display: flex;
+  width: 82rpx;
+  height: 82rpx;
+  flex: 0 0 82rpx;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(213, 187, 126, 0.7);
+  border-radius: 50%;
+  color: #d5bb7e;
+  font-family: serif;
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.brand-name,
+.brand-tagline {
+  display: block;
+}
+
+.brand-name {
+  color: #ffffff;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+.brand-tagline {
+  margin-top: 8rpx;
+  color: #c8d1dc;
+  font-size: 21rpx;
 }
 
 .summary-content {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
-  padding: 34rpx 32rpx 38rpx;
-  border-bottom: 1px solid #e6e9e6;
+  gap: 20rpx;
+  padding: 36rpx 32rpx 42rpx;
+  border-bottom: 1px solid #e2e7e3;
+  box-sizing: border-box;
 }
 
 .status-row {
@@ -247,6 +394,18 @@ function parseDateTime(value: string | null | undefined): number {
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.summary-eyebrow {
+  color: #9a752d;
+  font-size: 22rpx;
+  font-weight: 700;
 }
 
 .status {
@@ -285,9 +444,9 @@ function parseDateTime(value: string | null | undefined): number {
 
 .title {
   color: #152033;
-  font-size: 42rpx;
+  font-size: 40rpx;
   font-weight: 800;
-  line-height: 1.42;
+  line-height: 1.38;
 }
 
 .summary {
@@ -297,24 +456,55 @@ function parseDateTime(value: string | null | undefined): number {
 }
 
 .facts {
-  display: flex;
-  flex-direction: column;
-  gap: 15rpx;
-  margin-top: 4rpx;
-  padding-top: 22rpx;
-  border-top: 1px solid #edf0ed;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin-top: 8rpx;
+  border: 1px solid #e2e7e3;
+  border-radius: 14rpx;
+  background: #f7f8f6;
+  overflow: hidden;
 }
 
 .fact {
-  display: grid;
-  grid-template-columns: 128rpx minmax(0, 1fr);
-  gap: 18rpx;
-  align-items: start;
+  display: flex;
+  align-items: flex-start;
+  gap: 20rpx;
+  padding: 22rpx 24rpx;
+  border-bottom: 1px solid #e4e8e5;
+}
+
+.fact:last-child {
+  border-bottom: 0;
+}
+
+.fact-icon {
+  display: flex;
+  width: 44rpx;
+  height: 44rpx;
+  flex: 0 0 44rpx;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10rpx;
+  background: #10243e;
+  color: #d9c18a;
+  font-size: 20rpx;
+  font-weight: 800;
+  line-height: 44rpx;
+  text-align: center;
+}
+
+.fact-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 5rpx;
 }
 
 .fact-label {
   color: #8a938d;
-  font-size: 24rpx;
+  font-size: 21rpx;
   line-height: 1.55;
 }
 
@@ -323,5 +513,11 @@ function parseDateTime(value: string | null | undefined): number {
   font-size: 25rpx;
   font-weight: 600;
   line-height: 1.55;
+}
+
+@media (min-width: 760px) {
+  .content {
+    box-shadow: 0 20px 60px rgba(24, 39, 57, 0.1);
+  }
 }
 </style>

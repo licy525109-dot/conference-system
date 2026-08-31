@@ -108,12 +108,14 @@ function isTabbarLikePage(url: string): boolean {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  min-height: 124rpx;
+  height: calc(124rpx + env(safe-area-inset-bottom));
+  min-height: calc(124rpx + env(safe-area-inset-bottom));
   padding: 14rpx 18rpx calc(14rpx + env(safe-area-inset-bottom));
   border-top: 1px solid var(--cms-border);
   background: rgba(255, 255, 255, 0.88);
   box-shadow: var(--ui-shadow-bottom);
   backdrop-filter: blur(12px);
+  box-sizing: border-box;
 }
 
 .custom-tabbar__item {

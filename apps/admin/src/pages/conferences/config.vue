@@ -117,12 +117,28 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="详情长图" name="detail">
-        <section class="form-panel detail-image-panel">
+      <el-tab-pane label="详情内容" name="detail">
+        <div class="detail-tab-stack">
+          <section class="form-panel">
+            <ConferenceDetailContentEditor
+              v-model="detailBlocks"
+              :title="conferenceForm.title"
+              :subtitle="conferenceForm.subtitle"
+              :cover-image="conferenceForm.coverImage"
+              :saving="savingDetailContent"
+              :uploading-block-id="uploadingDetailBlockId"
+              :long-image-segments="detailImage.segments"
+              @save="saveDetailContent"
+              @upload-image="triggerDetailBlockImageUpload"
+              @choose-material="openDetailMaterialPicker"
+            />
+          </section>
+
+          <section class="form-panel detail-image-panel detail-image-panel--secondary">
           <div class="detail-image-heading">
             <div>
-              <h3>会议详情长图</h3>
-              <p class="muted-text">用户端仅展示会议基本信息、这张详情长图和底部报名按钮。上传后会自动压缩并按小程序稳定高度切片。</p>
+              <h3>整页长图（可选）</h3>
+              <p class="muted-text">适合已有完整设计稿的会议。长图会排在内容块之后，并自动压缩、切片以保证小程序稳定展示。</p>
             </div>
             <AdminStatusBadge :status="detailImage.segments.length > 0" :label="detailImage.segments.length > 0 ? '已配置' : '未配置'" />
           </div>
@@ -139,7 +155,7 @@
               <span>{{ detailImage.width || "-" }} × {{ detailImage.height || "-" }} px</span>
               <span>{{ detailImage.segments.length }} 个展示分片</span>
               <span v-if="detailImage.sizeBytes">{{ formatFileSize(detailImage.sizeBytes) }}</span>
-              <p>运营只需维护一张源图，前台会按顺序无缝展示，不再展开嘉宾、日程、地点、指南或咨询模块。</p>
+              <p>源图会按顺序无缝展示。若需要经常调整文字和图片，建议使用上方内容块编辑器。</p>
             </div>
           </div>
 
@@ -154,10 +170,11 @@
             <el-button type="primary" :icon="Upload" :loading="uploadingDetailImage" @click="triggerDetailImageUpload">
               {{ detailImage.segments.length ? "替换长图" : "上传长图" }}
             </el-button>
-            <el-button :icon="FolderOpened" :disabled="uploadingDetailImage" @click="openDetailMaterialPicker">从素材库选择</el-button>
+            <el-button :icon="FolderOpened" :disabled="uploadingDetailImage" @click="openDetailMaterialPicker()">从素材库选择</el-button>
             <el-button v-if="detailImage.segments.length" type="danger" plain :icon="Delete" :disabled="uploadingDetailImage" @click="removeDetailImage">删除长图</el-button>
           </div>
-        </section>
+          </section>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="发布设置" name="publish">
@@ -210,13 +227,20 @@
       <template #footer><el-button @click="fieldDialogVisible = false">取消</el-button><el-button type="primary" @click="saveField">保存</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="detailMaterialVisible" title="选择会议详情图片" width="820px">
+    <el-dialog
+      v-model="detailMaterialVisible"
+      :title="detailMaterialTargetBlockId ? '选择内容图片' : '选择会议详情长图'"
+      width="820px"
+      @closed="detailMaterialTargetBlockId = ''"
+    >
       <div class="material-picker">
         <div class="material-search">
           <el-input v-model="detailMaterialKeyword" clearable placeholder="搜索图片素材" @keyup.enter="loadDetailMaterials" />
           <el-button :loading="detailMaterialLoading" @click="loadDetailMaterials">搜索</el-button>
         </div>
-        <p class="form-help">选择已有素材时将作为一张完整详情图展示；超长源图建议使用“上传长图”，系统会自动压缩切片。</p>
+        <p class="form-help">
+          {{ detailMaterialTargetBlockId ? "选择后会填入当前图片块，保存详情内容后发布到用户端。" : "选择已有素材时将作为一张完整详情图展示；超长源图建议使用“上传长图”，系统会自动压缩切片。" }}
+        </p>
         <el-empty v-if="!detailMaterialLoading && detailMaterialAssets.length === 0" description="暂无可用图片素材" />
         <div v-else class="material-grid">
           <button v-for="asset in detailMaterialAssets" :key="asset.id" class="material-card" @click="chooseDetailMaterial(asset)">
@@ -229,6 +253,7 @@
     </el-dialog>
 
     <input ref="detailImageInput" class="hidden-file" type="file" accept="image/jpeg,image/png,image/webp" @change="handleDetailImageUpload" />
+    <input ref="detailBlockImageInput" class="hidden-file" type="file" accept="image/jpeg,image/png,image/webp" @change="handleDetailBlockImageUpload" />
   </section>
 </template>
 
@@ -240,6 +265,7 @@ import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import ConferenceDetailContentEditor from "../../components/conference/ConferenceDetailContentEditor.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
 import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import CouponsPage from "../coupons/index.vue";
@@ -250,6 +276,7 @@ import {
   createMaterial,
   createSku,
   disableFormField,
+  getConference,
   listConferences,
   listFormFields,
   listMaterials,
@@ -261,10 +288,16 @@ import {
 } from "../../services/admin";
 import type { Conference, FormField, MaterialAsset, Sku } from "../../services/types";
 import { isConferenceDetailImageAsset, prepareConferenceDetailImage } from "../../utils/conferenceDetailImage";
+import {
+  normalizeConferenceDetailContent,
+  serializeConferenceDetailContent,
+  type ConferenceDetailContentBlock
+} from "@conference/shared";
 
 const conferences = ref<Conference[]>([]);
 const conferenceId = ref("");
-const conference = computed(() => conferences.value.find((item) => item.id === conferenceId.value) ?? null);
+const selectedConference = ref<Conference | null>(null);
+const conference = computed(() => selectedConference.value);
 const skus = ref<Sku[]>([]);
 const fields = ref<FormField[]>([]);
 const activeTab = ref("basic");
@@ -275,8 +308,13 @@ const detailMaterialLoading = ref(false);
 const detailMaterialKeyword = ref("");
 const detailMaterialAssets = ref<MaterialAsset[]>([]);
 const detailImageInput = ref<HTMLInputElement | null>(null);
+const detailBlockImageInput = ref<HTMLInputElement | null>(null);
 const uploadingDetailImage = ref(false);
 const detailImageUploadProgress = ref(0);
+const detailBlockUploadTargetId = ref("");
+const uploadingDetailBlockId = ref("");
+const detailMaterialTargetBlockId = ref("");
+const savingDetailContent = ref(false);
 const fieldTypes = ["TEXT", "TEXTAREA", "PHONE", "EMAIL", "SELECT", "RADIO", "CHECKBOX", "DATE"] as const;
 
 const conferenceForm = reactive({
@@ -299,6 +337,7 @@ const conferenceForm = reactive({
   maxTicketsPerOrder: 0
 });
 const detailImage = reactive(createEmptyDetailImage());
+const detailBlocks = ref<ConferenceDetailContentBlock[]>([]);
 const skuForm = reactive({ id: "", name: "", description: "", priceYuan: 0, stock: 0, status: "ACTIVE" });
 const fieldForm = reactive({
   id: "",
@@ -344,10 +383,20 @@ async function loadAll() {
   if (!conferenceId.value && conferences.value[0]) {
     conferenceId.value = conferences.value[0].id;
   }
-  syncConferenceForm();
   if (conferenceId.value) {
-    skus.value = (await listSkus(conferenceId.value)).items;
-    fields.value = (await listFormFields(conferenceId.value)).items;
+    const [detail, skuResponse, fieldResponse] = await Promise.all([
+      getConference(conferenceId.value),
+      listSkus(conferenceId.value),
+      listFormFields(conferenceId.value)
+    ]);
+    selectedConference.value = detail;
+    skus.value = skuResponse.items;
+    fields.value = fieldResponse.items;
+    syncConferenceForm();
+  } else {
+    selectedConference.value = null;
+    skus.value = [];
+    fields.value = [];
   }
 }
 
@@ -374,6 +423,7 @@ function syncConferenceForm() {
     maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0
   });
   Object.assign(detailImage, normalizeDetailImage(contentJson));
+  detailBlocks.value = normalizeConferenceDetailContent(contentJson).blocks;
 }
 
 async function saveConference() {
@@ -549,7 +599,8 @@ async function handleDetailImageUpload(event: Event) {
   }
 }
 
-async function openDetailMaterialPicker() {
+async function openDetailMaterialPicker(blockId = "") {
+  detailMaterialTargetBlockId.value = blockId;
   detailMaterialVisible.value = true;
   await loadDetailMaterials();
 }
@@ -565,6 +616,13 @@ async function loadDetailMaterials() {
 }
 
 async function chooseDetailMaterial(asset: MaterialAsset) {
+  if (detailMaterialTargetBlockId.value) {
+    updateDetailBlockImage(detailMaterialTargetBlockId.value, asset.url, asset.name);
+    detailMaterialVisible.value = false;
+    detailMaterialTargetBlockId.value = "";
+    ElMessage.success("图片已填入，请保存详情内容");
+    return;
+  }
   Object.assign(detailImage, {
     sourceUrl: asset.url,
     width: asset.width,
@@ -578,7 +636,7 @@ async function chooseDetailMaterial(asset: MaterialAsset) {
 }
 
 async function removeDetailImage() {
-  await ElMessageBox.confirm("删除后用户端将只显示会议基本信息和报名按钮，确认删除详情长图？", "删除详情长图", {
+  await ElMessageBox.confirm("删除后用户端仍会保留会议基本信息和内容块，确认删除整页长图？", "删除详情长图", {
     confirmButtonText: "确认删除",
     cancelButtonText: "取消",
     type: "warning"
@@ -608,8 +666,80 @@ async function persistDetailImage() {
       updatedAt: new Date().toISOString()
     };
   }
-  await updateConference(conferenceId.value, { contentJson });
-  await loadAll();
+  const updated = await updateConference(conferenceId.value, { contentJson });
+  applyUpdatedConference(updated);
+}
+
+async function saveDetailContent() {
+  if (!conferenceId.value || !conference.value) return;
+  savingDetailContent.value = true;
+  try {
+    const contentJson = { ...readRecord(conference.value.contentJson) };
+    contentJson.detailContent = {
+      ...serializeConferenceDetailContent(detailBlocks.value),
+      updatedAt: new Date().toISOString()
+    };
+    const updated = await updateConference(conferenceId.value, { contentJson });
+    applyUpdatedConference(updated);
+    detailBlocks.value = normalizeConferenceDetailContent(updated.contentJson).blocks;
+    ElMessage.success("会议详情内容已保存");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "会议详情内容保存失败");
+  } finally {
+    savingDetailContent.value = false;
+  }
+}
+
+function triggerDetailBlockImageUpload(blockId: string) {
+  detailBlockUploadTargetId.value = blockId;
+  detailBlockImageInput.value?.click();
+}
+
+async function handleDetailBlockImageUpload(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  const blockId = detailBlockUploadTargetId.value;
+  detailBlockUploadTargetId.value = "";
+  if (!file || !blockId) {
+    return;
+  }
+  if (!isConferenceDetailImageAsset(file.type, file.name)) {
+    ElMessage.warning("仅支持 JPG、PNG 或 WebP 图片");
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.warning("图片不能超过 20MB");
+    return;
+  }
+
+  uploadingDetailBlockId.value = blockId;
+  try {
+    const asset = await createMaterial({
+      name: file.name,
+      usage: "conference_detail_content",
+      remark: "会议详情内容块图片",
+      file
+    });
+    updateDetailBlockImage(blockId, asset.url, asset.name);
+    ElMessage.success("图片已上传，请保存详情内容");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "图片上传失败");
+  } finally {
+    uploadingDetailBlockId.value = "";
+  }
+}
+
+function updateDetailBlockImage(blockId: string, imageUrl: string, caption = "") {
+  detailBlocks.value = detailBlocks.value.map((block) => block.id === blockId
+    ? { ...block, imageUrl, caption: block.caption || caption }
+    : block);
+}
+
+function applyUpdatedConference(updated: Conference) {
+  selectedConference.value = updated;
+  const index = conferences.value.findIndex((item) => item.id === updated.id);
+  if (index >= 0) conferences.value[index] = { ...conferences.value[index], ...updated };
 }
 
 function formatCent(value: number) {
@@ -722,6 +852,12 @@ interface DetailImageState {
   margin-top: 14px;
 }
 
+.detail-tab-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .publish-panel {
   display: flex;
   align-items: center;
@@ -754,6 +890,10 @@ interface DetailImageState {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.detail-image-panel--secondary {
+  border-top: 3px solid #d9e2e9;
 }
 
 .detail-image-heading,

@@ -74,7 +74,8 @@ withDefaults(
 }
 
 .with-tabbar {
-  bottom: 112rpx;
+  bottom: calc(124rpx + env(safe-area-inset-bottom));
+  padding-bottom: 18rpx;
 }
 
 .summary {
