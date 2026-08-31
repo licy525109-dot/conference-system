@@ -60,21 +60,32 @@ describe("Platform control plane", () => {
       aiConfig: { findFirst: async () => ({ enabled: true, provider: "OPENAI_COMPATIBLE", apiKeyEnc: "encrypted" }) }
     } as unknown as PrismaService;
     const service = new PlatformService(prisma);
-    const previous = { appId: process.env.WECHAT_APP_ID, appSecret: process.env.WECHAT_APP_SECRET, template: process.env.WECHAT_SUBSCRIBE_TEMPLATE_ID };
+    const previous = {
+      appId: process.env.WECHAT_APP_ID,
+      appSecret: process.env.WECHAT_APP_SECRET,
+      template: process.env.WECHAT_SUBSCRIBE_TEMPLATE_ID,
+      payMode: process.env.WECHAT_PAY_MODE,
+      payEnabled: process.env.WECHAT_PAY_ENABLED
+    };
     process.env.WECHAT_APP_ID = "app";
     process.env.WECHAT_APP_SECRET = "secret";
     process.env.WECHAT_SUBSCRIBE_TEMPLATE_ID = "template";
+    process.env.WECHAT_PAY_MODE = "real";
+    process.env.WECHAT_PAY_ENABLED = "false";
     try {
       const response = await service.getOverview();
       const providers = response.data.providers as Array<{ id: string; status: string; productionReady: boolean }>;
       assert.equal(providers.find((item) => item.id === "wechat-subscribe")?.status, "CONFIGURED");
       assert.equal(providers.find((item) => item.id === "wechat-subscribe")?.productionReady, false);
       assert.equal(providers.find((item) => item.id === "wecom")?.status, "CONFIGURED");
+      assert.equal(providers.find((item) => item.id === "wechat-registration-pay")?.status, "NOT_CONFIGURED");
       assert.equal(providers.find((item) => item.id === "tenant-isolation")?.status, "FOUNDATION_ONLY");
     } finally {
       restoreEnv("WECHAT_APP_ID", previous.appId);
       restoreEnv("WECHAT_APP_SECRET", previous.appSecret);
       restoreEnv("WECHAT_SUBSCRIBE_TEMPLATE_ID", previous.template);
+      restoreEnv("WECHAT_PAY_MODE", previous.payMode);
+      restoreEnv("WECHAT_PAY_ENABLED", previous.payEnabled);
     }
   });
 });

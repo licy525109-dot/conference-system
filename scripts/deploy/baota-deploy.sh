@@ -171,19 +171,23 @@ export VITE_MP_WEIXIN_API_BASE_URL="${VITE_MP_WEIXIN_API_BASE_URL:-$USER_API_BAS
 echo "user frontend API base: ${VITE_API_BASE_URL}"
 echo "miniapp API base: ${VITE_MP_WEIXIN_API_BASE_URL}"
 
+PHASE="check production configuration"
+log "6. 生产配置核查"
+PROJECT_DIR="$PROJECT_DIR" bash scripts/smoke/check-production-config.sh
+
 PHASE="prisma generate and migrate"
-log "6. Prisma"
+log "7. Prisma"
 pnpm --filter @conference/api exec prisma generate --schema ../../prisma/schema.prisma
 pnpm --filter @conference/api exec prisma migrate deploy --schema ../../prisma/schema.prisma
 
 PHASE="build api user h5 and admin"
-log "7. 构建 API、用户端 H5 和 Admin"
+log "8. 构建 API、用户端 H5 和 Admin"
 pnpm --filter @conference/api build
 pnpm --filter @conference/user build:h5
 pnpm --filter @conference/admin build
 
 PHASE="check frontend dist"
-log "8. 构建产物检查"
+log "9. 构建产物检查"
 if [[ ! -f apps/user/dist/build/h5/index.html ]]; then
   echo "ERROR: user H5 dist is missing index.html" >&2
   exit 3
@@ -198,7 +202,7 @@ if grep -R -E "ReservedPage|功能建设中|预留页面" -n apps/admin/dist; th
 fi
 
 PHASE="publish frontend static"
-log "9. 发布用户端 H5 和后台静态文件"
+log "10. 发布用户端 H5 和后台静态文件"
 H5_STATIC_PUBLISHED=1
 clear_static_root "$H5_ROOT"
 cp -a "$PROJECT_DIR/apps/user/dist/build/h5"/. "$H5_ROOT"/
@@ -216,11 +220,11 @@ nginx -t
 nginx -s reload
 
 PHASE="restart api"
-log "10. 重启 API"
+log "11. 重启 API"
 pm2 restart "$PM2_PROCESS" --update-env
 
 PHASE="health check"
-log "11. 健康检查"
+log "12. 健康检查"
 sleep 5
 curl -fsS "$API_HEALTH_LOCAL"
 echo
@@ -230,7 +234,7 @@ curl -fsS "${H5_PUBLIC_URL%/}/" >/dev/null
 echo "User H5: ok (${H5_PUBLIC_URL%/}/)"
 
 PHASE="pm2 status"
-log "12. 输出 PM2 状态"
+log "13. 输出 PM2 状态"
 pm2 list
 pm2 logs "$PM2_PROCESS" --lines 60 --nostream
 

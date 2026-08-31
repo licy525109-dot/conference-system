@@ -52,7 +52,7 @@ export const routes: AdminRoute[] = [
     title: "会议配置详情",
     menuTitle: "会议配置详情",
     group: "会议管理",
-    description: "票种、表单字段、优惠和页面装修",
+    description: "票种、表单字段、优惠和详情长图",
     permission: "conference:view",
     component: ConferenceConfigPage,
     hidden: true

@@ -501,6 +501,8 @@ export function createMaterial(input: {
   fileType?: string;
   url?: string;
   remark?: string;
+  width?: number;
+  height?: number;
   file?: File;
   onProgress?: (percent: number) => void;
 }) {
@@ -511,6 +513,8 @@ export function createMaterial(input: {
     formData.set("usage", input.usage);
     if (input.categoryId) formData.set("categoryId", input.categoryId);
     if (input.remark) formData.set("remark", input.remark);
+    if (input.width) formData.set("width", String(input.width));
+    if (input.height) formData.set("height", String(input.height));
     return uploadMaterialWithProgress(formData, input.onProgress);
   }
 

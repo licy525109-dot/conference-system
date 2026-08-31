@@ -59,7 +59,7 @@
           </template>
         </el-table-column>
         <template #empty>
-          <AdminEmptyState title="暂无会议" description="创建第一场会议后，可以继续配置票种、报名字段和页面装修。" mark="会" action-text="新建会议" @action="openCreate" />
+          <AdminEmptyState title="暂无会议" description="创建第一场会议后，可以继续配置票种、报名字段和详情长图。" mark="会" action-text="新建会议" @action="openCreate" />
         </template>
       </el-table>
     </section>

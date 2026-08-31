@@ -117,17 +117,46 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="页面装修" name="page">
-        <section class="form-panel">
-          <h3>页面装修集中配置</h3>
-          <p class="muted-text">会议详情、报名页、订单页、凭证页、会员中心和商城详情的固定业务模块统一在「页面装修」中查看接入状态和预览效果。会议配置页只维护会议、票种、报名字段和签到规则。</p>
-          <el-alert
-            type="info"
-            :closable="false"
-            show-icon
-            title="会议详情页已接入页面装修模板；报名页金额仍以后端 quote/create order 重新计算，当前不在会议配置页直接编辑装修模块。"
-          />
-          <el-button type="primary" class="page-builder-button" @click="openPageBuilder">打开页面装修</el-button>
+      <el-tab-pane label="详情长图" name="detail">
+        <section class="form-panel detail-image-panel">
+          <div class="detail-image-heading">
+            <div>
+              <h3>会议详情长图</h3>
+              <p class="muted-text">用户端仅展示会议基本信息、这张详情长图和底部报名按钮。上传后会自动压缩并按小程序稳定高度切片。</p>
+            </div>
+            <AdminStatusBadge :status="detailImage.segments.length > 0" :label="detailImage.segments.length > 0 ? '已配置' : '未配置'" />
+          </div>
+
+          <div v-if="detailImage.segments.length" class="detail-image-workspace">
+            <div class="phone-preview">
+              <div class="phone-preview-header">{{ conferenceForm.title || "会议详情" }}</div>
+              <div class="phone-preview-scroll">
+                <img v-for="segment in detailImage.segments" :key="segment.url" :src="segment.url" alt="会议详情长图预览" />
+              </div>
+            </div>
+            <div class="detail-image-meta">
+              <strong>当前长图</strong>
+              <span>{{ detailImage.width || "-" }} × {{ detailImage.height || "-" }} px</span>
+              <span>{{ detailImage.segments.length }} 个展示分片</span>
+              <span v-if="detailImage.sizeBytes">{{ formatFileSize(detailImage.sizeBytes) }}</span>
+              <p>运营只需维护一张源图，前台会按顺序无缝展示，不再展开嘉宾、日程、地点、指南或咨询模块。</p>
+            </div>
+          </div>
+
+          <div v-else class="detail-image-empty">
+            <Picture class="detail-image-empty-icon" />
+            <strong>还没有会议详情长图</strong>
+            <span>建议源图宽度不低于 750px，JPG、PNG 或 WebP，原图不超过 20MB。</span>
+          </div>
+
+          <el-progress v-if="uploadingDetailImage" :percentage="detailImageUploadProgress" :stroke-width="8" />
+          <div class="detail-image-actions">
+            <el-button type="primary" :icon="Upload" :loading="uploadingDetailImage" @click="triggerDetailImageUpload">
+              {{ detailImage.segments.length ? "替换长图" : "上传长图" }}
+            </el-button>
+            <el-button :icon="FolderOpened" :disabled="uploadingDetailImage" @click="openDetailMaterialPicker">从素材库选择</el-button>
+            <el-button v-if="detailImage.segments.length" type="danger" plain :icon="Delete" :disabled="uploadingDetailImage" @click="removeDetailImage">删除长图</el-button>
+          </div>
         </section>
       </el-tab-pane>
 
@@ -180,12 +209,33 @@
       </el-form>
       <template #footer><el-button @click="fieldDialogVisible = false">取消</el-button><el-button type="primary" @click="saveField">保存</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="detailMaterialVisible" title="选择会议详情图片" width="820px">
+      <div class="material-picker">
+        <div class="material-search">
+          <el-input v-model="detailMaterialKeyword" clearable placeholder="搜索图片素材" @keyup.enter="loadDetailMaterials" />
+          <el-button :loading="detailMaterialLoading" @click="loadDetailMaterials">搜索</el-button>
+        </div>
+        <p class="form-help">选择已有素材时将作为一张完整详情图展示；超长源图建议使用“上传长图”，系统会自动压缩切片。</p>
+        <el-empty v-if="!detailMaterialLoading && detailMaterialAssets.length === 0" description="暂无可用图片素材" />
+        <div v-else class="material-grid">
+          <button v-for="asset in detailMaterialAssets" :key="asset.id" class="material-card" @click="chooseDetailMaterial(asset)">
+            <img :src="asset.url" :alt="asset.name" />
+            <strong>{{ asset.name }}</strong>
+            <span>{{ asset.width || "-" }} × {{ asset.height || "-" }}</span>
+          </button>
+        </div>
+      </div>
+    </el-dialog>
+
+    <input ref="detailImageInput" class="hidden-file" type="file" accept="image/jpeg,image/png,image/webp" @change="handleDetailImageUpload" />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { Delete, FolderOpened, Picture, Upload } from "@element-plus/icons-vue";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
@@ -197,17 +247,20 @@ import PromotionsPage from "../promotions/index.vue";
 import { navigateTo, routeQuery } from "../../router";
 import {
   createFormField,
+  createMaterial,
   createSku,
   disableFormField,
   listConferences,
   listFormFields,
+  listMaterials,
   listSkus,
   updateConference,
   updateConferenceCheckInConfig,
   updateFormField,
   updateSku
 } from "../../services/admin";
-import type { Conference, FormField, Sku } from "../../services/types";
+import type { Conference, FormField, MaterialAsset, Sku } from "../../services/types";
+import { isConferenceDetailImageAsset, prepareConferenceDetailImage } from "../../utils/conferenceDetailImage";
 
 const conferences = ref<Conference[]>([]);
 const conferenceId = ref("");
@@ -217,6 +270,13 @@ const fields = ref<FormField[]>([]);
 const activeTab = ref("basic");
 const skuDialogVisible = ref(false);
 const fieldDialogVisible = ref(false);
+const detailMaterialVisible = ref(false);
+const detailMaterialLoading = ref(false);
+const detailMaterialKeyword = ref("");
+const detailMaterialAssets = ref<MaterialAsset[]>([]);
+const detailImageInput = ref<HTMLInputElement | null>(null);
+const uploadingDetailImage = ref(false);
+const detailImageUploadProgress = ref(0);
 const fieldTypes = ["TEXT", "TEXTAREA", "PHONE", "EMAIL", "SELECT", "RADIO", "CHECKBOX", "DATE"] as const;
 
 const conferenceForm = reactive({
@@ -236,12 +296,9 @@ const conferenceForm = reactive({
     customFieldKeys: [] as string[]
   },
   groupRegistrationEnabled: true,
-  maxTicketsPerOrder: 0,
-  detailPageDisplay: defaultDetailPageDisplay(),
-  detailDisplay: defaultDetailDisplay(),
-  contentJsonText: "{}",
-  styleJsonText: "{}"
+  maxTicketsPerOrder: 0
 });
+const detailImage = reactive(createEmptyDetailImage());
 const skuForm = reactive({ id: "", name: "", description: "", priceYuan: 0, stock: 0, status: "ACTIVE" });
 const fieldForm = reactive({
   id: "",
@@ -314,21 +371,13 @@ function syncConferenceForm() {
       customFieldKeys: readStringArray(conference.value.checkInFieldBindings?.customFieldKeys)
     },
     groupRegistrationEnabled: conference.value.groupRegistrationEnabled,
-    maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0,
-    detailPageDisplay: normalizeDetailPageDisplay(contentJson.detailPageDisplay ?? contentJson.detailDisplay),
-    detailDisplay: normalizeDetailDisplay(contentJson.detailDisplay),
-    contentJsonText: JSON.stringify(conference.value.contentJson ?? {}, null, 2),
-    styleJsonText: JSON.stringify(conference.value.styleJson ?? {}, null, 2)
+    maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0
   });
+  Object.assign(detailImage, normalizeDetailImage(contentJson));
 }
 
 async function saveConference() {
   if (!conferenceId.value) return;
-  const contentJson = {
-    ...parseJsonObject(conferenceForm.contentJsonText),
-    detailPageDisplay: normalizeDetailPageDisplay(conferenceForm.detailPageDisplay),
-    detailDisplay: normalizeDetailDisplay(conferenceForm.detailDisplay)
-  };
   await updateConference(conferenceId.value, {
     title: conferenceForm.title,
     subtitle: conferenceForm.subtitle,
@@ -337,9 +386,7 @@ async function saveConference() {
     startAt: conferenceForm.startAt,
     endAt: conferenceForm.endAt,
     groupRegistrationEnabled: conferenceForm.groupRegistrationEnabled,
-    maxTicketsPerOrder: conferenceForm.maxTicketsPerOrder > 0 ? conferenceForm.maxTicketsPerOrder : null,
-    contentJson,
-    styleJson: parseJsonObject(conferenceForm.styleJsonText)
+    maxTicketsPerOrder: conferenceForm.maxTicketsPerOrder > 0 ? conferenceForm.maxTicketsPerOrder : null
   });
   await updateConferenceCheckInConfig(conferenceId.value, {
     checkInEnabled: conferenceForm.checkInEnabled,
@@ -449,28 +496,129 @@ function goBack() {
   navigateTo("/conferences");
 }
 
-function openPageBuilder() {
-  navigateTo("/pages", { pageKey: "conference-detail", conferenceId: conferenceId.value });
+function triggerDetailImageUpload() {
+  detailImageInput.value?.click();
 }
 
-function parseJsonObject(text: string): Record<string, unknown> {
-  const value = JSON.parse(text || "{}") as unknown;
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("JSON 必须是对象");
-  return value as Record<string, unknown>;
+async function handleDetailImageUpload(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !conferenceId.value) return;
+
+  uploadingDetailImage.value = true;
+  detailImageUploadProgress.value = 1;
+  try {
+    const prepared = await prepareConferenceDetailImage(file);
+    const assets: MaterialAsset[] = [];
+    for (let index = 0; index < prepared.segments.length; index += 1) {
+      const segment = prepared.segments[index];
+      const asset = await createMaterial({
+        name: `${file.name.replace(/\.[^.]+$/, "")} ${index + 1}/${prepared.segments.length}`,
+        usage: "conference_detail",
+        remark: `会议详情长图自动切片 ${index + 1}/${prepared.segments.length}`,
+        file: segment.file,
+        width: segment.width,
+        height: segment.height,
+        onProgress: (percent) => {
+          detailImageUploadProgress.value = Math.round(((index + percent / 100) / prepared.segments.length) * 100);
+        }
+      });
+      assets.push(asset);
+    }
+
+    Object.assign(detailImage, {
+      sourceUrl: assets[0]?.url ?? "",
+      width: prepared.width,
+      height: prepared.height,
+      sizeBytes: assets.reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0),
+      segments: assets.map((asset, index) => ({
+        url: asset.url,
+        materialId: asset.id,
+        width: prepared.segments[index].width,
+        height: prepared.segments[index].height
+      }))
+    });
+    await persistDetailImage();
+    ElMessage.success("详情长图已上传并保存");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "详情长图上传失败");
+  } finally {
+    uploadingDetailImage.value = false;
+    detailImageUploadProgress.value = 0;
+  }
 }
 
-function parseJsonArray(text: string): unknown[] {
-  const value = JSON.parse(text || "[]") as unknown;
-  if (!Array.isArray(value)) throw new Error("选项 JSON 必须是数组");
-  return value;
+async function openDetailMaterialPicker() {
+  detailMaterialVisible.value = true;
+  await loadDetailMaterials();
+}
+
+async function loadDetailMaterials() {
+  detailMaterialLoading.value = true;
+  try {
+    const response = await listMaterials({ page: 1, pageSize: 80, keyword: detailMaterialKeyword.value, enabled: true });
+    detailMaterialAssets.value = response.items.filter((asset) => isConferenceDetailImageAsset(asset.fileType, asset.url));
+  } finally {
+    detailMaterialLoading.value = false;
+  }
+}
+
+async function chooseDetailMaterial(asset: MaterialAsset) {
+  Object.assign(detailImage, {
+    sourceUrl: asset.url,
+    width: asset.width,
+    height: asset.height,
+    sizeBytes: asset.sizeBytes,
+    segments: [{ url: asset.url, materialId: asset.id, width: asset.width, height: asset.height }]
+  });
+  detailMaterialVisible.value = false;
+  await persistDetailImage();
+  ElMessage.success("详情长图已应用");
+}
+
+async function removeDetailImage() {
+  await ElMessageBox.confirm("删除后用户端将只显示会议基本信息和报名按钮，确认删除详情长图？", "删除详情长图", {
+    confirmButtonText: "确认删除",
+    cancelButtonText: "取消",
+    type: "warning"
+  });
+  Object.assign(detailImage, createEmptyDetailImage());
+  await persistDetailImage();
+  ElMessage.success("详情长图已删除");
+}
+
+async function persistDetailImage() {
+  if (!conferenceId.value || !conference.value) return;
+  const contentJson = { ...readRecord(conference.value.contentJson) };
+  if (detailImage.segments.length === 0) {
+    delete contentJson.detailLongImage;
+    delete contentJson.detailLongImageUrl;
+    delete contentJson.detailImage;
+    delete contentJson.detailImages;
+  } else {
+    contentJson.detailLongImage = {
+      version: 1,
+      sourceUrl: detailImage.sourceUrl,
+      displayUrls: detailImage.segments.map((segment) => segment.url),
+      segments: detailImage.segments,
+      width: detailImage.width,
+      height: detailImage.height,
+      sizeBytes: detailImage.sizeBytes,
+      updatedAt: new Date().toISOString()
+    };
+  }
+  await updateConference(conferenceId.value, { contentJson });
+  await loadAll();
 }
 
 function formatCent(value: number) {
   return (value / 100).toFixed(2);
 }
 
-function skuStatusText(value: string) {
-  return { ACTIVE: "启用", INACTIVE: "停用" }[value] ?? value;
+function formatFileSize(value: number) {
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / 1024 / 1024).toFixed(2)} MB`;
 }
 
 function fieldTypeText(value: string) {
@@ -494,92 +642,75 @@ function textToOptions(value: string) {
   return value.split("\n").map((item) => item.trim()).filter(Boolean);
 }
 
-function readStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function defaultDetailDisplay() {
+function createEmptyDetailImage(): DetailImageState {
+  return { sourceUrl: "", width: null, height: null, sizeBytes: null, segments: [] };
+}
+
+function normalizeDetailImage(contentJson: Record<string, unknown>): DetailImageState {
+  const raw = contentJson.detailLongImage ?? contentJson.detailLongImageUrl ?? contentJson.detailImage;
+  const source = typeof raw === "string" ? { sourceUrl: raw } : readRecord(raw);
+  const sourceUrl = readString(source.sourceUrl) || readString(source.url);
+  const rawSegments = Array.isArray(source.segments) ? source.segments : [];
+  const segments = rawSegments.map(normalizeDetailSegment).filter((item): item is DetailImageSegment => item !== null);
+  const displayUrls = [
+    ...readStringArray(source.displayUrls),
+    ...readStringArray(contentJson.detailImages),
+    sourceUrl
+  ].filter(Boolean);
+  for (const url of [...new Set(displayUrls)]) {
+    if (!segments.some((segment) => segment.url === url)) segments.push({ url, materialId: null, width: null, height: null });
+  }
   return {
-    visibleModules: ["conferenceInfo", "assistant", "skus", "inventory", "submitOrder", "guide"] as string[],
-    assistantMode: "ai",
-    skusTitle: "报名规格",
-    guideTitle: "会议详情",
-    primaryButtonText: "立即报名",
-    inventoryDisplayMode: "STATUS",
-    lowStockThreshold: 10
+    sourceUrl: sourceUrl || segments[0]?.url || "",
+    width: readPositiveNumber(source.width),
+    height: readPositiveNumber(source.height),
+    sizeBytes: readPositiveNumber(source.sizeBytes),
+    segments
   };
 }
 
-function defaultDetailPageDisplay() {
-  return {
-    modules: [
-      { key: "conferenceInfo", label: "会议信息", visible: true, title: "会议信息", content: "", sort: 10, style: "card" },
-      { key: "speakers", label: "嘉宾介绍", visible: true, title: "嘉宾介绍", content: "", sort: 20, style: "card" },
-      { key: "schedule", label: "日程安排", visible: true, title: "日程安排", content: "", sort: 30, style: "card" },
-      { key: "location", label: "会议地点", visible: true, title: "会议地点", content: "", sort: 40, style: "card" },
-      { key: "guide", label: "参会指南", visible: true, title: "参会指南", content: "", sort: 50, style: "card" },
-      { key: "assistant", label: "会议助手", visible: true, title: "会议助手", content: "", sort: 60, style: "card" },
-      { key: "skus", label: "报名规格", visible: true, title: "报名规格", content: "", sort: 70, style: "card" },
-      { key: "inventory", label: "库存展示", visible: true, title: "库存展示", content: "", sort: 80, style: "compact" },
-      { key: "customerService", label: "联系客服", visible: false, title: "联系客服", content: "", sort: 90, style: "compact" },
-      { key: "customerGroup", label: "加入客户群", visible: false, title: "加入客户群", content: "", sort: 100, style: "compact" },
-      { key: "calendar", label: "添加到日历", visible: false, title: "添加到日历", content: "", sort: 110, style: "compact" },
-      { key: "registrationButton", label: "立即报名按钮", visible: true, title: "立即报名", content: "", sort: 120, style: "accent" },
-      { key: "shareButton", label: "分享按钮", visible: true, title: "分享会议", content: "", sort: 130, style: "compact" }
-    ],
-    primaryButtonText: "立即报名",
-    inventoryDisplayMode: "STATUS",
-    lowStockThreshold: 10
-  };
-}
-
-function normalizeDetailPageDisplay(value: unknown) {
-  const defaults = defaultDetailPageDisplay();
+function normalizeDetailSegment(value: unknown): DetailImageSegment | null {
+  if (typeof value === "string") return value.trim() ? { url: value.trim(), materialId: null, width: null, height: null } : null;
   const source = readRecord(value);
-  const sourceModules = Array.isArray(source.modules) ? source.modules : [];
-  const oldVisibleModules = readStringArray(source.visibleModules);
-  const oldVisible = new Set(oldVisibleModules);
-  const modules = defaults.modules
-    .map((defaultModule) => {
-      const raw = sourceModules.find((item) => readRecord(item).key === defaultModule.key);
-      const record = readRecord(raw);
-      const hasOldVisible = oldVisibleModules.length > 0;
-      return {
-        ...defaultModule,
-        visible: typeof record.visible === "boolean" ? record.visible : hasOldVisible ? oldVisible.has(defaultModule.key) || (defaultModule.key === "registrationButton" && oldVisible.has("submitOrder")) : defaultModule.visible,
-        title: typeof record.title === "string" && record.title.trim() ? record.title.trim() : defaultModule.title,
-        content: typeof record.content === "string" ? record.content : defaultModule.content,
-        sort: Number.isFinite(Number(record.sort)) ? Number(record.sort) : defaultModule.sort,
-        style: typeof record.style === "string" && ["card", "list", "accent", "compact"].includes(record.style) ? record.style : defaultModule.style
-      };
-    })
-    .sort((a, b) => a.sort - b.sort);
-  return {
-    ...defaults,
-    modules,
-    primaryButtonText: typeof source.primaryButtonText === "string" && source.primaryButtonText.trim() ? source.primaryButtonText.trim() : defaults.primaryButtonText,
-    inventoryDisplayMode: ["EXACT", "STATUS", "HIDDEN"].includes(String(source.inventoryDisplayMode)) ? String(source.inventoryDisplayMode) : defaults.inventoryDisplayMode,
-    lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : defaults.lowStockThreshold
-  };
+  const url = readString(source.url);
+  return url ? {
+    url,
+    materialId: readString(source.materialId) || null,
+    width: readPositiveNumber(source.width),
+    height: readPositiveNumber(source.height)
+  } : null;
 }
 
-function normalizeDetailDisplay(value: unknown) {
-  const defaults = defaultDetailDisplay();
-  const source = readRecord(value);
-  return {
-    ...defaults,
-    visibleModules: readStringArray(source.visibleModules).length ? readStringArray(source.visibleModules) : defaults.visibleModules,
-    assistantMode: typeof source.assistantMode === "string" ? source.assistantMode : defaults.assistantMode,
-    skusTitle: typeof source.skusTitle === "string" && source.skusTitle.trim() ? source.skusTitle.trim() : defaults.skusTitle,
-    guideTitle: typeof source.guideTitle === "string" && source.guideTitle.trim() ? source.guideTitle.trim() : defaults.guideTitle,
-    primaryButtonText: typeof source.primaryButtonText === "string" && source.primaryButtonText.trim() ? source.primaryButtonText.trim() : defaults.primaryButtonText,
-    inventoryDisplayMode: ["EXACT", "STATUS", "HIDDEN"].includes(String(source.inventoryDisplayMode)) ? String(source.inventoryDisplayMode) : defaults.inventoryDisplayMode,
-    lowStockThreshold: Number.isFinite(Number(source.lowStockThreshold)) ? Math.max(1, Number(source.lowStockThreshold)) : defaults.lowStockThreshold
-  };
+function readString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(readString).filter(Boolean) : [];
+}
+
+function readPositiveNumber(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+interface DetailImageSegment {
+  url: string;
+  materialId: string | null;
+  width: number | null;
+  height: number | null;
+}
+
+interface DetailImageState {
+  sourceUrl: string;
+  width: number | null;
+  height: number | null;
+  sizeBytes: number | null;
+  segments: DetailImageSegment[];
 }
 </script>
 
@@ -619,21 +750,175 @@ function normalizeDetailDisplay(value: unknown) {
   color: #b45309;
 }
 
-.display-form {
-  margin-top: 12px;
+.detail-image-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
-.page-builder-button {
+.detail-image-heading,
+.detail-image-actions,
+.material-search {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-image-heading h3,
+.detail-image-heading p {
+  margin: 0;
+}
+
+.detail-image-heading p {
+  margin-top: 6px;
+}
+
+.detail-image-workspace {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  padding: 20px;
+  border: 1px solid var(--admin-color-border);
+  background: #f5f7fa;
+}
+
+.phone-preview {
+  overflow: hidden;
+  border: 1px solid #cfd6df;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(24, 39, 57, 0.08);
+}
+
+.phone-preview-header {
+  height: 48px;
+  border-bottom: 1px solid #edf0f3;
+  color: #172236;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 48px;
+  text-align: center;
+}
+
+.phone-preview-scroll {
+  height: 540px;
+  overflow-y: auto;
+  background: #f4f5f3;
+}
+
+.phone-preview-scroll img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+
+.detail-image-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--admin-color-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.detail-image-meta strong {
+  color: var(--admin-color-text);
+  font-size: 16px;
+}
+
+.detail-image-meta p {
+  max-width: 560px;
+  margin: 12px 0 0;
+}
+
+.detail-image-empty {
+  display: flex;
+  min-height: 240px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed #cbd3dc;
+  background: #f8fafc;
+  color: var(--admin-color-muted);
+}
+
+.detail-image-empty strong {
+  color: var(--admin-color-text);
+  font-size: 16px;
+}
+
+.detail-image-empty-icon {
+  width: 40px;
+  color: #8b98a8;
+}
+
+.detail-image-actions {
+  justify-content: flex-start;
+}
+
+.material-search .el-input {
+  flex: 1;
+}
+
+.material-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
   margin-top: 14px;
 }
 
-.module-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px 14px;
+.material-card {
+  padding: 8px;
+  border: 1px solid var(--admin-color-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--admin-color-text);
+  cursor: pointer;
+  text-align: left;
 }
 
-.detail-module-table {
-  margin: 12px 0 18px;
+.material-card:hover {
+  border-color: var(--el-color-primary);
+}
+
+.material-card img {
+  display: block;
+  width: 100%;
+  height: 112px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #f3f6fb;
+}
+
+.material-card strong,
+.material-card span {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-card span {
+  color: var(--admin-color-muted);
+}
+
+.hidden-file {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .detail-image-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .phone-preview {
+    max-width: 360px;
+  }
 }
 </style>

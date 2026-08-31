@@ -11,11 +11,12 @@ export interface WechatPayConfig {
 }
 
 export function isWechatPayEnabled(): boolean {
-  if (process.env.WECHAT_PAY_MODE === "mock" || process.env.WECHAT_PAY_ENABLED === "false") {
+  const mode = process.env.WECHAT_PAY_MODE?.trim().toLowerCase();
+  if (mode === "mock" || process.env.WECHAT_PAY_ENABLED === "false") {
     return false;
   }
 
-  return process.env.WECHAT_PAY_MODE === "real" || process.env.WECHAT_PAY_ENABLED === "true";
+  return mode === "real" || mode === "wechat" || process.env.WECHAT_PAY_ENABLED === "true";
 }
 
 export function readWechatPayConfig(): WechatPayConfig {
@@ -23,17 +24,19 @@ export function readWechatPayConfig(): WechatPayConfig {
   validateNotifyUrl(notifyUrl);
 
   return {
-    appId: readRequiredEnv("WECHAT_PAY_APP_ID"),
+    appId: readRequiredEnv("WECHAT_PAY_APP_ID", ["WECHAT_APP_ID"]),
     mchId: readRequiredEnv("WECHAT_PAY_MCH_ID"),
-    mchSerialNo: readRequiredEnv("WECHAT_PAY_MCH_SERIAL_NO"),
+    mchSerialNo: readRequiredEnv("WECHAT_PAY_MCH_SERIAL_NO", ["WECHAT_PAY_SERIAL_NO", "WECHAT_PAY_CERT_SERIAL_NO"]),
     apiV3Key: readRequiredEnv("WECHAT_PAY_API_V3_KEY"),
     privateKeyPem: readPrivateKey(readRequiredEnv("WECHAT_PAY_PRIVATE_KEY_PATH")),
     notifyUrl
   };
 }
 
-function readRequiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
+function readRequiredEnv(name: string, aliases: string[] = []): string {
+  const value = [name, ...aliases]
+    .map((key) => process.env[key]?.trim())
+    .find((entry): entry is string => Boolean(entry));
   if (!value) {
     throw new InternalServerErrorException(`${name} is not configured for WeChat Pay`);
   }

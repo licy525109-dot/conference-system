@@ -18,6 +18,16 @@ configured() {
   [[ -n "${!name:-}" ]]
 }
 
+configured_any() {
+  local name
+  for name in "$@"; do
+    if configured "$name"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 print_required() {
   local name="$1"
   if configured "$name"; then
@@ -61,6 +71,20 @@ require_when_enabled() {
   fi
 }
 
+require_any_when_enabled() {
+  local enabled="$1"
+  local label="$2"
+  shift 2
+  if [[ "$enabled" == "true" ]] && ! configured_any "$@"; then
+    echo "${label}: missing, required while enabled"
+    FAILED=1
+  elif configured_any "$@"; then
+    echo "${label}: configured"
+  else
+    echo "${label}: missing, disabled"
+  fi
+}
+
 load_production_env
 
 echo "== Required core configuration =="
@@ -73,15 +97,32 @@ echo
 echo "== Registration WeChat Pay =="
 print_mode WECHAT_PAY_MODE mock
 print_mode WECHAT_PAY_ENABLED false
-if [[ "${WECHAT_PAY_ENABLED:-false}" == "true" || "${WECHAT_PAY_MODE:-mock}" == "wechat" ]]; then
+WECHAT_PAY_ACTIVE=false
+if [[ "${WECHAT_PAY_ENABLED:-}" != "false" ]] && { [[ "${WECHAT_PAY_ENABLED:-}" == "true" ]] || [[ "${WECHAT_PAY_MODE:-mock}" == "real" ]] || [[ "${WECHAT_PAY_MODE:-mock}" == "wechat" ]]; }; then
+  WECHAT_PAY_ACTIVE=true
+fi
+if [[ "${WECHAT_PAY_MODE:-mock}" == "wechat" ]]; then
+  echo "WECHAT_PAY_MODE=wechat: legacy value detected, migrate to WECHAT_PAY_MODE=real"
+fi
+if [[ "$WECHAT_PAY_ACTIVE" == "true" ]]; then
+  require_any_when_enabled true WECHAT_PAY_APP_ID WECHAT_PAY_APP_ID WECHAT_APP_ID
   require_when_enabled true WECHAT_PAY_MCH_ID
-  require_when_enabled true WECHAT_PAY_SERIAL_NO
+  require_any_when_enabled true WECHAT_PAY_MCH_SERIAL_NO WECHAT_PAY_MCH_SERIAL_NO WECHAT_PAY_SERIAL_NO WECHAT_PAY_CERT_SERIAL_NO
   require_when_enabled true WECHAT_PAY_NOTIFY_URL
   require_when_enabled true WECHAT_PAY_PRIVATE_KEY_PATH
   require_when_enabled true WECHAT_PAY_API_V3_KEY
+  if configured WECHAT_PAY_PRIVATE_KEY_PATH && [[ ! -r "${WECHAT_PAY_PRIVATE_KEY_PATH}" ]]; then
+    echo "WECHAT_PAY_PRIVATE_KEY_PATH: configured but file is not readable"
+    FAILED=1
+  fi
+  if configured WECHAT_PAY_NOTIFY_URL && [[ "${WECHAT_PAY_NOTIFY_URL}" != https://*/api/payments/wechat/notify ]]; then
+    echo "WECHAT_PAY_NOTIFY_URL: must be an HTTPS URL ending in /api/payments/wechat/notify"
+    FAILED=1
+  fi
 else
+  require_any_when_enabled false WECHAT_PAY_APP_ID WECHAT_PAY_APP_ID WECHAT_APP_ID
   require_when_enabled false WECHAT_PAY_MCH_ID
-  require_when_enabled false WECHAT_PAY_SERIAL_NO
+  require_any_when_enabled false WECHAT_PAY_MCH_SERIAL_NO WECHAT_PAY_MCH_SERIAL_NO WECHAT_PAY_SERIAL_NO WECHAT_PAY_CERT_SERIAL_NO
   require_when_enabled false WECHAT_PAY_NOTIFY_URL
 fi
 

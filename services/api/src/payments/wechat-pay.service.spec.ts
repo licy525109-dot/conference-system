@@ -84,9 +84,27 @@ describe("WechatPayService prepay", () => {
   it("returns a configuration error when required config is missing", async () => {
     withWechatPayConfig();
     delete process.env.WECHAT_PAY_APP_ID;
+    delete process.env.WECHAT_APP_ID;
     const service = createService(createPrismaMock());
 
     await assert.rejects(() => service.prepay({ orderNo: "REG001" }, currentUser), InternalServerErrorException);
+  });
+
+  it("accepts legacy production aliases while canonical variables are rolled out", async () => {
+    withWechatPayConfig();
+    process.env.WECHAT_PAY_MODE = "wechat";
+    delete process.env.WECHAT_PAY_ENABLED;
+    process.env.WECHAT_APP_ID = process.env.WECHAT_PAY_APP_ID;
+    process.env.WECHAT_PAY_SERIAL_NO = process.env.WECHAT_PAY_MCH_SERIAL_NO;
+    delete process.env.WECHAT_PAY_APP_ID;
+    delete process.env.WECHAT_PAY_MCH_SERIAL_NO;
+    const service = createService(createPrismaMock());
+
+    const response = await service.prepay({ orderNo: "REG001" }, currentUser);
+
+    assert.equal(response.outTradeNo, "WECHAT_REG001");
+    assert.equal(service.lastPrepayBody?.appid, "wx-real-app");
+    assert.equal(service.lastPrepayBody?.mchid, "1900000001");
   });
 });
 
@@ -172,6 +190,8 @@ describe("WechatPayService notify", () => {
 });
 
 function withWechatPayConfig(): void {
+  delete process.env.WECHAT_PAY_SERIAL_NO;
+  delete process.env.WECHAT_PAY_CERT_SERIAL_NO;
   process.env.WECHAT_PAY_MODE = "real";
   process.env.WECHAT_PAY_ENABLED = "true";
   process.env.WECHAT_PAY_APP_ID = "wx-real-app";

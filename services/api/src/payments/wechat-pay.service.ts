@@ -260,12 +260,13 @@ export class WechatPayService {
       });
 
       const payload = (await response.json().catch(() => ({}))) as unknown;
+      const requestId = response.headers.get("request-id") ?? response.headers.get("Request-ID");
       if (!response.ok) {
-        throw new WechatPayPrepayHttpError(response.status, payload);
+        throw new WechatPayPrepayHttpError(response.status, payload, undefined, requestId);
       }
 
       if (!isRecord(payload) || typeof payload.prepay_id !== "string" || payload.prepay_id.length === 0) {
-        throw new WechatPayPrepayHttpError(response.status, payload, "WeChat Pay prepay response is invalid");
+        throw new WechatPayPrepayHttpError(response.status, payload, "WeChat Pay prepay response is invalid", requestId);
       }
 
       return payload.prepay_id;
@@ -384,6 +385,7 @@ function logWechatPrepayError(error: unknown): void {
       "error.code": readUnknownString(record.code),
       "error.status": readUnknownNumber(record.status),
       "error.response.status": readUnknownNumber(response.status),
+      "error.response.requestId": readUnknownString(response.requestId),
       "error.response.data": sanitizeWechatPayLogValue(response.data),
       "error.stack": readUnknownString(record.stack)
     })
@@ -485,15 +487,17 @@ class WechatPayPrepayHttpError extends Error {
   readonly response: {
     status: number;
     data: unknown;
+    requestId: string | null;
   };
 
-  constructor(status: number, data: unknown, message = "WeChat Pay prepay request failed") {
+  constructor(status: number, data: unknown, message = "WeChat Pay prepay request failed", requestId: string | null = null) {
     super(readWechatPayResponseMessage(data) ?? message);
     this.name = "WechatPayPrepayHttpError";
     this.status = status;
     this.response = {
       status,
-      data
+      data,
+      requestId
     };
   }
 }

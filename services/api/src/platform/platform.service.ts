@@ -382,6 +382,12 @@ export class PlatformService {
     const smsConfigured = Boolean(sms?.enabled && (sms.provider || process.env.SMS_PROVIDER) && (sms.apiKeyEnc || process.env.SMS_ENABLED === "true"));
     const wecomConfigured = Boolean(wecom?.enabled && wecom.corpId && wecom.agentId && (wecom.customerContactSecretEnc || wecom.appSecretEnc));
     const aiConfigured = Boolean((ai?.enabled && ai.provider !== "LOCAL_FALLBACK" && ai.apiKeyEnc) || (process.env.AI_PROVIDER && process.env.AI_PROVIDER !== "LOCAL_FALLBACK" && process.env.AI_API_KEY));
+    const registrationPayMode = process.env.WECHAT_PAY_MODE?.trim().toLowerCase() ?? "";
+    const registrationPayEnabled = process.env.WECHAT_PAY_ENABLED !== "false"
+      && registrationPayMode !== "mock"
+      && (["real", "wechat"].includes(registrationPayMode) || process.env.WECHAT_PAY_ENABLED === "true");
+    const registrationPayMissing = missingRegistrationWechatPayEnv();
+    const registrationPayConfigured = registrationPayEnabled && registrationPayMissing.length === 0;
     const refundConfigured = requiredEnv(["WECHAT_PAY_MCH_ID", "WECHAT_PAY_API_V3_KEY", "WECHAT_PAY_PRIVATE_KEY_PATH", "WECHAT_PAY_REFUND_NOTIFY_URL"]);
     const billConfigured = requiredEnv(["WECHAT_PAY_MCH_ID", "WECHAT_PAY_API_V3_KEY", "WECHAT_PAY_PRIVATE_KEY_PATH", "WECHAT_PAY_BILL_STORAGE_PATH"]);
 
@@ -390,6 +396,7 @@ export class PlatformService {
       readiness("sms", "短信", smsConfigured ? "CONFIGURED" : sms?.enabled ? "PARTIAL" : "NOT_CONFIGURED", smsConfigured, false, smsConfigured ? [] : ["供应商账号、签名、模板或发送适配器"], "通道配置不代表供应商侧已审核通过，需灰度发送验证。"),
       readiness("wecom", "企业微信客户群", wecom?.verified ? "READY" : wecomConfigured ? "CONFIGURED" : "NOT_CONFIGURED", wecomConfigured, Boolean(wecom?.verified), wecomConfigured ? [] : ["CorpID、AgentID、客户联系 Secret、回调验证"], "READY 仅表示接入验证通过，群主确认和失败码仍需持续监控。"),
       readiness("ai", "AI Provider", aiConfigured ? "CONFIGURED" : "NOT_CONFIGURED", aiConfigured, false, aiConfigured ? [] : ["真实 provider、API Key、模型与 baseURL"], "LOCAL_FALLBACK 不计为真实 LLM；需独立评估答案质量和引用命中。"),
+      readiness("wechat-registration-pay", "报名微信支付", registrationPayConfigured ? "CONFIGURED" : registrationPayEnabled ? "PARTIAL" : "NOT_CONFIGURED", registrationPayConfigured, false, registrationPayEnabled ? registrationPayMissing : ["WECHAT_PAY_MODE=real 或 WECHAT_PAY_ENABLED=true"], "配置完整后仍需完成真机预支付、收银台、回调和重复通知专项验收。"),
       readiness("wechat-refund", "微信真实退款", refundConfigured ? "CONFIGURED" : "NOT_CONFIGURED", refundConfigured, false, missingEnv(["WECHAT_PAY_MCH_ID", "WECHAT_PAY_API_V3_KEY", "WECHAT_PAY_PRIVATE_KEY_PATH", "WECHAT_PAY_REFUND_NOTIFY_URL"]), "必须完成真实出款与退款回调专项验收，本控制面不触碰退款状态机。"),
       readiness("wechat-bill", "微信账单自动下载", billConfigured ? "CONFIGURED" : "NOT_CONFIGURED", billConfigured, false, missingEnv(["WECHAT_PAY_MCH_ID", "WECHAT_PAY_API_V3_KEY", "WECHAT_PAY_PRIVATE_KEY_PATH", "WECHAT_PAY_BILL_STORAGE_PATH"]), "手动导入可继续使用；自动下载需商户权限和定时任务实测。"),
       readiness("tenant-isolation", "租户数据面隔离", "FOUNDATION_ONLY", true, false, ["核心业务表 tenant_id", "请求租户上下文", "行级授权与迁移策略"], "本轮只建立控制面，未修改支付、订单、报名等核心表。")
@@ -457,6 +464,21 @@ function requiredEnv(names: string[]): boolean {
 
 function missingEnv(names: string[]): string[] {
   return names.filter((name) => !process.env[name]?.trim());
+}
+
+function missingRegistrationWechatPayEnv(): string[] {
+  const missing: string[] = [];
+  if (!hasAnyEnv(["WECHAT_PAY_APP_ID", "WECHAT_APP_ID"])) missing.push("WECHAT_PAY_APP_ID");
+  if (!hasAnyEnv(["WECHAT_PAY_MCH_ID"])) missing.push("WECHAT_PAY_MCH_ID");
+  if (!hasAnyEnv(["WECHAT_PAY_MCH_SERIAL_NO", "WECHAT_PAY_SERIAL_NO", "WECHAT_PAY_CERT_SERIAL_NO"])) missing.push("WECHAT_PAY_MCH_SERIAL_NO");
+  if (!hasAnyEnv(["WECHAT_PAY_API_V3_KEY"])) missing.push("WECHAT_PAY_API_V3_KEY");
+  if (!hasAnyEnv(["WECHAT_PAY_PRIVATE_KEY_PATH"])) missing.push("WECHAT_PAY_PRIVATE_KEY_PATH");
+  if (!hasAnyEnv(["WECHAT_PAY_NOTIFY_URL"])) missing.push("WECHAT_PAY_NOTIFY_URL");
+  return missing;
+}
+
+function hasAnyEnv(names: string[]): boolean {
+  return names.some((name) => Boolean(process.env[name]?.trim()));
 }
 
 function ok<T>(data: T) {

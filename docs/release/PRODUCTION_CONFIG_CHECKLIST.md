@@ -1,6 +1,6 @@
 # 生产配置核查清单
 
-更新时间：2026-06-18
+更新时间：2026-08-31
 
 ## 原则
 
@@ -37,17 +37,19 @@ ${PROJECT_DIR}/.env.production
 
 | 配置 | 必须条件 | 说明 |
 | --- | --- | --- |
-| `WECHAT_PAY_MODE` | 建议显式配置 | `mock` 或 `wechat`。 |
+| `WECHAT_PAY_MODE` | 建议显式配置 | `mock` 或 `real`。旧值 `wechat` 仅作兼容，不再用于新环境。 |
 | `WECHAT_PAY_ENABLED` | 建议显式配置 | 真实微信支付开启时为 `true`。 |
+| `WECHAT_PAY_APP_ID` | 开启微信支付时必须 | 支付所用小程序 AppID；未配置时兼容读取 `WECHAT_APP_ID`。 |
 | `WECHAT_PAY_MCH_ID` | 开启微信支付时必须 | 商户号。 |
-| `WECHAT_PAY_SERIAL_NO` | 开启微信支付时必须 | 商户证书序列号。 |
+| `WECHAT_PAY_MCH_SERIAL_NO` | 开启微信支付时必须 | 与商户私钥匹配的商户证书序列号。旧变量 `WECHAT_PAY_SERIAL_NO`、`WECHAT_PAY_CERT_SERIAL_NO` 仅作兼容。 |
 | `WECHAT_PAY_PRIVATE_KEY_PATH` | 开启微信支付时必须 | 私钥文件路径，文件不进 Git。 |
 | `WECHAT_PAY_API_V3_KEY` | 开启微信支付时必须 | API v3 Key，不打印。 |
-| `WECHAT_PAY_NOTIFY_URL` | 开启微信支付时必须 | 必须是 HTTPS 生产回调。 |
+| `WECHAT_PAY_NOTIFY_URL` | 开启微信支付时必须 | 必须是以 `/api/payments/wechat/notify` 结尾的 HTTPS 生产回调。 |
 
 验收：
 
 - prepay 能创建微信预支付。
+- API 日志记录微信响应 `Request-ID` 与脱敏错误码，便于商户平台定位，不记录 OpenID、私钥或 API v3 Key。
 - notify 走验签、解密、金额校验、事务和幂等。
 - 金额不一致、订单不存在、验签失败不能更新订单。
 

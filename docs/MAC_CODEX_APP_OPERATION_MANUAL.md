@@ -975,12 +975,14 @@ WECHAT_PAY_MOCK=true
 `.env.production` 需要：
 
 ```env
-WECHAT_PAY_MOCK=false
+WECHAT_PAY_MODE=real
+WECHAT_PAY_ENABLED=true
 WECHAT_APP_ID="小程序AppID"
 WECHAT_APP_SECRET="小程序AppSecret"
+WECHAT_PAY_APP_ID="小程序AppID"
 WECHAT_PAY_MCH_ID="商户号"
 WECHAT_PAY_API_V3_KEY="APIv3密钥"
-WECHAT_PAY_CERT_SERIAL_NO="证书序列号"
+WECHAT_PAY_MCH_SERIAL_NO="与商户私钥匹配的商户证书序列号"
 WECHAT_PAY_PRIVATE_KEY_PATH="/secure/path/apiclient_key.pem"
 WECHAT_PAY_NOTIFY_URL="https://api.yourdomain.com/api/payments/wechat/notify"
 ```
