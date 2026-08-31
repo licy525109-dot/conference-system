@@ -63,8 +63,12 @@
           </view>
         </view>
 
+        <ConferenceDetailRichText
+          v-if="detailRichTextRenderable"
+          :content="detailRichText"
+        />
         <ConferenceDetailContent
-          v-if="detailContentBlocks.length"
+          v-else-if="!hasDetailRichText && detailContentBlocks.length"
           :blocks="detailContentBlocks"
           @action="handleDetailAction"
         />
@@ -94,6 +98,7 @@ import { computed, ref } from "vue";
 import { onLoad, onShareAppMessage } from "@dcloudio/uni-app";
 import ConferenceDetailContent from "@/components/conference/ConferenceDetailContent.vue";
 import ConferenceDetailLongImage from "@/components/conference/ConferenceDetailLongImage.vue";
+import ConferenceDetailRichText from "@/components/conference/ConferenceDetailRichText.vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import FixedBottomActionBar from "@/components/ui/FixedBottomActionBar.vue";
@@ -105,7 +110,10 @@ import { ensureLogin } from "@/services/auth";
 import { createCmsThemeVars } from "@/theme/cmsTheme";
 import { normalizeConferenceDetailLongImage } from "@/utils/conferenceDetail";
 import {
+  hasConferenceDetailRichTextContract,
+  isConferenceDetailRichTextRenderable,
   normalizeConferenceDetailContent,
+  normalizeConferenceDetailRichText,
   type ConferenceDetailContentBlock
 } from "@conference/shared";
 import { formatDateTime } from "@/utils/date";
@@ -121,6 +129,9 @@ const error = ref("");
 
 const pageStyle = computed(() => createCmsThemeVars(theme.value));
 const detailLongImage = computed(() => normalizeConferenceDetailLongImage(conference.value?.contentJson));
+const detailRichText = computed(() => normalizeConferenceDetailRichText(conference.value?.contentJson));
+const hasDetailRichText = computed(() => hasConferenceDetailRichTextContract(conference.value?.contentJson));
+const detailRichTextRenderable = computed(() => isConferenceDetailRichTextRenderable(detailRichText.value));
 const detailContentBlocks = computed(() => normalizeConferenceDetailContent(conference.value?.contentJson).blocks);
 const registrationSkus = computed(() => {
   const skus = conference.value?.skus;
