@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -105,6 +106,24 @@ describe("WechatPayService prepay", () => {
     assert.equal(response.outTradeNo, "WECHAT_REG001");
     assert.equal(service.lastPrepayBody?.appid, "wx-real-app");
     assert.equal(service.lastPrepayBody?.mchid, "1900000001");
+  });
+
+  it("records the sanitized WeChat prepay failure for operations and keeps the order retryable", async () => {
+    withWechatPayConfig();
+    const prisma = createPrismaMock();
+    const service = createService(prisma, {
+      prepayError: new BadGatewayException({
+        code: "WECHAT_PAY_PREPAY_FAILED",
+        message: "WeChat Pay prepay request failed",
+        detail: "APPID_MCHID_NOT_MATCH"
+      })
+    });
+
+    await assert.rejects(() => service.prepay({ orderNo: "REG001" }, currentUser), BadGatewayException);
+
+    assert.equal(prisma.orders[0]?.status, OrderStatus.PENDING);
+    assert.equal(prisma.payments[0]?.status, PaymentStatus.FAILED);
+    assert.match(prisma.payments[0]?.failedReason ?? "", /APPID_MCHID_NOT_MATCH/);
   });
 });
 
@@ -217,6 +236,7 @@ function createService(prisma: PrismaMockShape & PrismaService, options: NotifyO
 
     protected override async createJsapiPrepay(input: { body: Record<string, any> }): Promise<string> {
       this.lastPrepayBody = input.body;
+      if (options.prepayError) throw options.prepayError;
       return "prepay-test";
     }
   }
@@ -471,6 +491,7 @@ interface NotifyOptions {
   amountTotal?: number;
   decryptFails?: boolean;
   signatureValid?: boolean;
+  prepayError?: Error;
 }
 
 interface PrismaMockOptions {

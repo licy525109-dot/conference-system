@@ -6,7 +6,7 @@
     <LoadingState v-if="loading" title="查询支付状态中" description="正在确认订单与报名记录。" />
     <ErrorState
       v-else-if="error"
-      title="支付状态查询异常"
+      :title="errorTitle"
       :message="error"
       primary-text="刷新状态"
       secondary-text="返回首页"
@@ -50,7 +50,7 @@ import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getPaymentActionLabel, getPaymentStatus, startOrderPayment, type PaymentStatusResponse } from "@/services/payment";
-import { ApiRequestError } from "@/services/request";
+import { buildPaymentErrorMessage } from "@/services/paymentError";
 import { formatDateTime } from "@/utils/date";
 import { goHome } from "@/utils/navigation";
 
@@ -59,6 +59,7 @@ const paymentStatus = ref<PaymentStatusResponse | null>(null);
 const loading = ref(false);
 const confirming = ref(false);
 const error = ref("");
+const errorContext = ref<"status" | "payment">("status");
 const paymentActionLabel = getPaymentActionLabel();
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("payment-result");
 
@@ -96,6 +97,7 @@ const resultTone = computed<"success" | "warning" | "danger" | "info">(() => {
   if (paymentStatus.value?.status === "PENDING") return "warning";
   return "info";
 });
+const errorTitle = computed(() => errorContext.value === "payment" ? "支付未完成" : "支付状态查询异常");
 
 onLoad((query) => {
   orderNo.value = String(query?.orderNo || "");
@@ -104,6 +106,7 @@ onLoad((query) => {
 });
 
 async function loadStatus() {
+  errorContext.value = "status";
   if (!orderNo.value) {
     error.value = "页面信息不完整，请返回首页重新进入";
     return;
@@ -130,6 +133,7 @@ async function loadStatus() {
 }
 
 async function confirmPay() {
+  errorContext.value = "payment";
   confirming.value = true;
   error.value = "";
 
@@ -150,7 +154,7 @@ async function confirmPay() {
       return;
     }
 
-    error.value = buildPaymentErrorMessage(err);
+    error.value = buildPaymentErrorMessage(err, EXPIRED_LOGIN_REENTRY_MESSAGE);
 
     uni.showToast({
       title: error.value,
@@ -159,38 +163,6 @@ async function confirmPay() {
   } finally {
     confirming.value = false;
   }
-}
-
-function buildPaymentErrorMessage(err: unknown): string {
-  if (err instanceof ApiRequestError) {
-    if (isInvalidWechatIdentityMessage(err.responseMessage)) {
-      return "当前订单未绑定有效微信身份，请返回重新下单支付。";
-    }
-    if (err.statusCode === 401 || err.statusCode === 403) {
-      return EXPIRED_LOGIN_REENTRY_MESSAGE;
-    }
-    if (err.statusCode === 404) {
-      return "未找到订单，请返回后重新进入支付页";
-    }
-    if (err.statusCode === 409) {
-      return "订单当前状态不支持支付，请刷新状态后重试";
-    }
-    if (typeof err.statusCode === "number" && err.statusCode >= 500) {
-      return "支付服务暂时不可用，请稍后重试";
-    }
-    return err.errMsg ? "网络异常，请检查网络后重试" : "支付发起失败，请稍后重试";
-  }
-
-  if (err instanceof Error && err.message.includes("cancel")) {
-    return "你已取消支付，订单仍为待支付，可稍后继续支付。";
-  }
-  return "支付未完成，请稍后重试";
-}
-
-function isInvalidWechatIdentityMessage(message: string | undefined): boolean {
-  return Boolean(
-    message?.includes("当前订单未绑定有效微信身份") || message?.includes("A real WeChat openid is required for WeChat Pay")
-  );
 }
 
 function goMyRegistrations() {

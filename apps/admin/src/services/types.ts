@@ -21,6 +21,8 @@ export interface Conference {
   location: string | null;
   startAt: string;
   endAt: string;
+  registrationStartsAt: string | null;
+  registrationEndsAt: string | null;
   status: "DRAFT" | "PUBLISHED" | "CLOSED" | "ARCHIVED";
   sortOrder: number;
   checkInEnabled: boolean;

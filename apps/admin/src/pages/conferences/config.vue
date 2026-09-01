@@ -20,15 +20,41 @@
     <el-tabs v-if="conference" v-model="activeTab" class="data-panel">
       <el-tab-pane label="基础信息" name="basic">
         <el-form :model="conferenceForm" label-width="120px" class="form-panel">
+          <div class="form-section-heading">
+            <strong>会议信息</strong>
+            <span>用于会议列表、详情页和分享卡片展示。</span>
+          </div>
           <el-form-item label="标题"><el-input v-model="conferenceForm.title" /></el-form-item>
           <el-form-item label="副标题"><el-input v-model="conferenceForm.subtitle" /></el-form-item>
-          <el-form-item>
-            <template #label>封面 URL<MaterialSpecHelp spec-key="conferenceCover" /></template>
-            <el-input v-model="conferenceForm.coverImage" placeholder="建议 750x420，JPG/PNG/WebP，主体内容居中" />
-          </el-form-item>
+          <el-form-item label="会议封面"><ConferenceCoverPicker v-model="conferenceForm.coverImage" /></el-form-item>
           <el-form-item label="地点"><el-input v-model="conferenceForm.location" /></el-form-item>
-          <el-form-item label="开始时间"><el-date-picker v-model="conferenceForm.startAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" /></el-form-item>
-          <el-form-item label="结束时间"><el-date-picker v-model="conferenceForm.endAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" /></el-form-item>
+
+          <div class="form-section-heading">
+            <strong>会议时间</strong>
+            <span>表示会议实际举办的开始和结束时间，会展示在用户端详情页。</span>
+          </div>
+          <el-form-item label="会议开始时间">
+            <el-date-picker v-model="conferenceForm.startAt" class="date-picker" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="选择会议开始时间" />
+          </el-form-item>
+          <el-form-item label="会议结束时间">
+            <el-date-picker v-model="conferenceForm.endAt" class="date-picker" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="选择会议结束时间" />
+          </el-form-item>
+
+          <div class="form-section-heading">
+            <strong>报名开放时间</strong>
+            <span>控制用户何时可以报名，不是会议举办时间；两项都不填时默认跟随会议时间。</span>
+          </div>
+          <el-form-item label="报名开始时间">
+            <el-date-picker v-model="conferenceForm.registrationStartsAt" class="date-picker" clearable type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="不填则跟随会议开始时间" />
+          </el-form-item>
+          <el-form-item label="报名截止时间">
+            <el-date-picker v-model="conferenceForm.registrationEndsAt" class="date-picker" clearable type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="不填则跟随会议结束时间" />
+          </el-form-item>
+
+          <div class="form-section-heading">
+            <strong>报名与签到</strong>
+            <span>设置报名数量规则以及现场签到方式。</span>
+          </div>
           <el-form-item label="启用签到"><el-switch v-model="conferenceForm.checkInEnabled" /></el-form-item>
           <template v-if="conferenceForm.checkInEnabled">
             <el-form-item label="签到时间">
@@ -263,9 +289,9 @@ import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import ConferenceCoverPicker from "../../components/conference/ConferenceCoverPicker.vue";
 import ConferenceDetailRichTextEditor from "../../components/conference/ConferenceDetailRichTextEditor.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
-import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
 import CouponsPage from "../coupons/index.vue";
 import PromotionsPage from "../promotions/index.vue";
 import { navigateTo, routeQuery } from "../../router";
@@ -325,6 +351,8 @@ const conferenceForm = reactive({
   location: "",
   startAt: "",
   endAt: "",
+  registrationStartsAt: "",
+  registrationEndsAt: "",
   checkInEnabled: false,
   checkInStartsAt: "",
   checkInEndsAt: "",
@@ -411,6 +439,8 @@ function syncConferenceForm() {
     location: conference.value.location ?? "",
     startAt: conference.value.startAt,
     endAt: conference.value.endAt,
+    registrationStartsAt: conference.value.registrationStartsAt ?? "",
+    registrationEndsAt: conference.value.registrationEndsAt ?? "",
     checkInEnabled: conference.value.checkInEnabled,
     checkInStartsAt: conference.value.checkInStartsAt ?? "",
     checkInEndsAt: conference.value.checkInEndsAt ?? "",
@@ -433,6 +463,7 @@ function syncConferenceForm() {
 
 async function saveConference() {
   if (!conferenceId.value) return;
+  if (!validateConferenceTimes()) return;
   await updateConference(conferenceId.value, {
     title: conferenceForm.title,
     subtitle: conferenceForm.subtitle,
@@ -440,6 +471,8 @@ async function saveConference() {
     location: conferenceForm.location,
     startAt: conferenceForm.startAt,
     endAt: conferenceForm.endAt,
+    registrationStartsAt: conferenceForm.registrationStartsAt || null,
+    registrationEndsAt: conferenceForm.registrationEndsAt || null,
     groupRegistrationEnabled: conferenceForm.groupRegistrationEnabled,
     maxTicketsPerOrder: conferenceForm.maxTicketsPerOrder > 0 ? conferenceForm.maxTicketsPerOrder : null
   });
@@ -452,6 +485,32 @@ async function saveConference() {
   });
   await loadAll();
   ElMessage.success("会议配置已保存");
+}
+
+function validateConferenceTimes(): boolean {
+  if (!conferenceForm.startAt || !conferenceForm.endAt) {
+    ElMessage.warning("请完整填写会议开始和结束时间");
+    return false;
+  }
+  if (new Date(conferenceForm.startAt) >= new Date(conferenceForm.endAt)) {
+    ElMessage.warning("会议开始时间必须早于会议结束时间");
+    return false;
+  }
+  const hasRegistrationStart = Boolean(conferenceForm.registrationStartsAt);
+  const hasRegistrationEnd = Boolean(conferenceForm.registrationEndsAt);
+  if (hasRegistrationStart !== hasRegistrationEnd) {
+    ElMessage.warning("报名开始和截止时间请同时填写，或同时留空跟随会议时间");
+    return false;
+  }
+  if (
+    conferenceForm.registrationStartsAt
+    && conferenceForm.registrationEndsAt
+    && new Date(conferenceForm.registrationStartsAt) >= new Date(conferenceForm.registrationEndsAt)
+  ) {
+    ElMessage.warning("报名开始时间必须早于报名截止时间");
+    return false;
+  }
+  return true;
 }
 
 function openSku(row?: Sku) {
@@ -836,6 +895,33 @@ interface DetailImageState {
 .date-range {
   display: flex;
   gap: 10px;
+}
+
+.date-picker {
+  width: min(100%, 360px);
+}
+
+.form-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 6px 0 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--admin-color-border);
+}
+
+.form-section-heading:not(:first-child) {
+  margin-top: 30px;
+}
+
+.form-section-heading strong {
+  color: var(--admin-color-text);
+  font-size: 15px;
+}
+
+.form-section-heading span {
+  color: var(--admin-color-muted);
+  font-size: 12px;
 }
 
 .form-help,

@@ -74,6 +74,7 @@ export class AdminManagementService {
     const title = ensureDefined(request.title, "title");
     const startAt = ensureDefined(request.startAt, "startAt");
     const endAt = ensureDefined(request.endAt, "endAt");
+    validateConferenceDateInput(request);
     const conference = await this.prisma.conference.create({
       data: {
         title,
@@ -82,6 +83,8 @@ export class AdminManagementService {
         coverImageUrl: request.coverImage,
         startsAt: startAt,
         endsAt: endAt,
+        registrationStartsAt: request.registrationStartsAt,
+        registrationEndsAt: request.registrationEndsAt,
         location: request.location,
         groupRegistrationEnabled: request.groupRegistrationEnabled ?? true,
         maxTicketsPerOrder: request.maxTicketsPerOrder,
@@ -124,8 +127,9 @@ export class AdminManagementService {
   }
 
   async updateConference(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
-    await this.ensureConference(id);
+    const existing = await this.ensureConference(id);
     const request = parseConferenceInput(input, true);
+    validateConferenceDateInput(request, existing);
     const conference = await this.prisma.conference.update({
       where: { id },
       data: {
@@ -134,6 +138,8 @@ export class AdminManagementService {
         ...(typeof request.coverImage !== "undefined" ? { coverImageUrl: request.coverImage } : {}),
         ...(typeof request.startAt !== "undefined" ? { startsAt: request.startAt } : {}),
         ...(typeof request.endAt !== "undefined" ? { endsAt: request.endAt } : {}),
+        ...(typeof request.registrationStartsAt !== "undefined" ? { registrationStartsAt: request.registrationStartsAt } : {}),
+        ...(typeof request.registrationEndsAt !== "undefined" ? { registrationEndsAt: request.registrationEndsAt } : {}),
         ...(typeof request.location !== "undefined" ? { location: request.location } : {}),
         ...(typeof request.groupRegistrationEnabled !== "undefined"
           ? { groupRegistrationEnabled: request.groupRegistrationEnabled }
@@ -972,14 +978,21 @@ export class AdminManagementService {
     return `${base}-${suffix}`;
   }
 
-  private async ensureConference(id: string): Promise<void> {
+  private async ensureConference(id: string) {
     const conference = await this.prisma.conference.findUnique({
       where: { id },
-      select: { id: true }
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        registrationStartsAt: true,
+        registrationEndsAt: true
+      }
     });
     if (!conference) {
       throw new NotFoundException("Conference not found");
     }
+    return conference;
   }
 
   private async ensureFormDefinition(conferenceId: string): Promise<{ id: string }> {
@@ -1064,6 +1077,8 @@ const conferenceListSelect = {
   location: true,
   startsAt: true,
   endsAt: true,
+  registrationStartsAt: true,
+  registrationEndsAt: true,
   status: true,
   sortOrder: true,
   createdAt: true,
@@ -1079,8 +1094,6 @@ const conferenceListSelect = {
 
 const conferenceDetailSelect = {
   ...conferenceListSelect,
-  registrationStartsAt: true,
-  registrationEndsAt: true,
   checkInEnabled: true,
   checkInStartsAt: true,
   checkInEndsAt: true,
@@ -1408,6 +1421,8 @@ interface ConferenceListShape {
   location: string | null;
   startsAt: Date;
   endsAt: Date;
+  registrationStartsAt: Date | null;
+  registrationEndsAt: Date | null;
   status: ConferenceStatus;
   sortOrder: number;
   createdAt: Date;
@@ -1420,8 +1435,6 @@ interface ConferenceListShape {
 }
 
 interface ConferenceDetailShape extends ConferenceListShape {
-  registrationStartsAt?: Date | null;
-  registrationEndsAt?: Date | null;
   checkInEnabled?: boolean;
   checkInStartsAt?: Date | null;
   checkInEndsAt?: Date | null;
@@ -1445,6 +1458,8 @@ function formatConferenceListItem(conference: ConferenceListShape) {
     location: conference.location,
     startAt: conference.startsAt.toISOString(),
     endAt: conference.endsAt.toISOString(),
+    registrationStartsAt: conference.registrationStartsAt?.toISOString() ?? null,
+    registrationEndsAt: conference.registrationEndsAt?.toISOString() ?? null,
     status: conference.status,
     sortOrder: conference.sortOrder,
     createdAt: conference.createdAt.toISOString(),
@@ -1456,8 +1471,6 @@ function formatConferenceListItem(conference: ConferenceListShape) {
 function formatConferenceDetail(conference: ConferenceDetailShape) {
   return {
     ...formatConferenceListItem(conference),
-    registrationStartsAt: conference.registrationStartsAt?.toISOString() ?? null,
-    registrationEndsAt: conference.registrationEndsAt?.toISOString() ?? null,
     checkInEnabled: conference.checkInEnabled ?? false,
     checkInStartsAt: conference.checkInStartsAt?.toISOString() ?? null,
     checkInEndsAt: conference.checkInEndsAt?.toISOString() ?? null,
@@ -1728,6 +1741,8 @@ function parseConferenceInput(input: unknown, partial: boolean) {
     coverImage: readOptionalString(body, "coverImage"),
     startAt,
     endAt,
+    registrationStartsAt: readOptionalNullableDate(body, "registrationStartsAt"),
+    registrationEndsAt: readOptionalNullableDate(body, "registrationEndsAt"),
     location: readOptionalString(body, "location"),
     status: readOptionalEnum(body, "status", ConferenceStatus),
     groupRegistrationEnabled: readOptionalBoolean(body, "groupRegistrationEnabled"),
@@ -1736,6 +1751,40 @@ function parseConferenceInput(input: unknown, partial: boolean) {
     contentJson: readOptionalJsonObject(body, "contentJson"),
     styleJson: readOptionalJsonObject(body, "styleJson")
   };
+}
+
+function validateConferenceDateInput(
+  request: ReturnType<typeof parseConferenceInput>,
+  existing?: {
+    startsAt: Date;
+    endsAt: Date;
+    registrationStartsAt: Date | null;
+    registrationEndsAt: Date | null;
+  }
+): void {
+  const startAt = request.startAt ?? existing?.startsAt;
+  const endAt = request.endAt ?? existing?.endsAt;
+  if (startAt && endAt && startAt >= endAt) {
+    throw new BadRequestException("会议开始时间必须早于会议结束时间");
+  }
+
+  const registrationChanged =
+    typeof request.registrationStartsAt !== "undefined"
+    || typeof request.registrationEndsAt !== "undefined";
+  if (!registrationChanged) return;
+
+  const registrationStartsAt = typeof request.registrationStartsAt !== "undefined"
+    ? request.registrationStartsAt
+    : existing?.registrationStartsAt;
+  const registrationEndsAt = typeof request.registrationEndsAt !== "undefined"
+    ? request.registrationEndsAt
+    : existing?.registrationEndsAt;
+  if (Boolean(registrationStartsAt) !== Boolean(registrationEndsAt)) {
+    throw new BadRequestException("报名开始和截止时间必须同时填写，或同时留空");
+  }
+  if (registrationStartsAt && registrationEndsAt && registrationStartsAt >= registrationEndsAt) {
+    throw new BadRequestException("报名开始时间必须早于报名截止时间");
+  }
 }
 
 function parseCheckInConfigInput(

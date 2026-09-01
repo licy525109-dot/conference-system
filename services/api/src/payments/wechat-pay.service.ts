@@ -100,8 +100,19 @@ export class WechatPayService {
       throw new ConflictException("当前订单未绑定有效微信身份，请重新下单支付。");
     }
 
-    const config = readWechatPayConfig();
     const outTradeNo = toWechatOutTradeNo(order.orderNo);
+    let config: WechatPayConfig;
+    try {
+      config = readWechatPayConfig();
+    } catch (error) {
+      await this.recordPrepayFailure({
+        orderId: order.id,
+        outTradeNo,
+        amountCent: order.payableAmountCent,
+        error
+      });
+      throw error;
+    }
 
     await this.prisma.payment.upsert({
       where: { outTradeNo },
@@ -120,23 +131,34 @@ export class WechatPayService {
       }
     });
 
-    const prepayId = await this.createJsapiPrepay({
-      config,
-      body: {
-        appid: config.appId,
-        mchid: config.mchId,
-        description: buildDescription(order.conference.title, order.orderNo),
-        out_trade_no: outTradeNo,
-        notify_url: config.notifyUrl,
-        amount: {
-          total: order.payableAmountCent,
-          currency: "CNY"
-        },
-        payer: {
-          openid
+    let prepayId: string;
+    try {
+      prepayId = await this.createJsapiPrepay({
+        config,
+        body: {
+          appid: config.appId,
+          mchid: config.mchId,
+          description: buildDescription(order.conference.title, order.orderNo),
+          out_trade_no: outTradeNo,
+          notify_url: config.notifyUrl,
+          amount: {
+            total: order.payableAmountCent,
+            currency: "CNY"
+          },
+          payer: {
+            openid
+          }
         }
-      }
-    });
+      });
+    } catch (error) {
+      await this.recordPrepayFailure({
+        orderId: order.id,
+        outTradeNo,
+        amountCent: order.payableAmountCent,
+        error
+      });
+      throw error;
+    }
 
     return {
       orderNo: order.orderNo,
@@ -231,6 +253,42 @@ export class WechatPayService {
 
   protected getCurrentTime(): Date {
     return new Date();
+  }
+
+  private async recordPrepayFailure(input: {
+    orderId: string;
+    outTradeNo: string;
+    amountCent: number;
+    error: unknown;
+  }): Promise<void> {
+    try {
+      await this.prisma.payment.upsert({
+        where: { outTradeNo: input.outTradeNo },
+        update: {
+          provider: PaymentProvider.WECHAT,
+          status: PaymentStatus.FAILED,
+          amountCent: input.amountCent,
+          failedReason: buildStoredPrepayFailureReason(input.error)
+        },
+        create: {
+          orderId: input.orderId,
+          provider: PaymentProvider.WECHAT,
+          status: PaymentStatus.FAILED,
+          outTradeNo: input.outTradeNo,
+          amountCent: input.amountCent,
+          failedReason: buildStoredPrepayFailureReason(input.error)
+        }
+      });
+    } catch (persistenceError) {
+      console.error(
+        JSON.stringify({
+          event: "WECHAT_PAY_PREPAY_FAILURE_PERSIST_ERROR",
+          outTradeNo: input.outTradeNo,
+          "error.name": readErrorName(persistenceError),
+          "error.message": readErrorMessage(persistenceError)
+        })
+      );
+    }
   }
 
   protected async createJsapiPrepay(input: {
@@ -425,6 +483,24 @@ function buildWechatPrepayErrorResponse(error: unknown, fallbackMessage: string)
     statusCode: 502,
     detail: sanitizeWechatPayLogValue(detail)
   };
+}
+
+function buildStoredPrepayFailureReason(error: unknown): string {
+  const httpResponse = readHttpExceptionResponse(error);
+  const responseRecord = isRecord(httpResponse) ? httpResponse : {};
+  const detail = responseRecord.detail ?? responseRecord.message ?? readErrorMessage(error) ?? "未知错误";
+  const sanitized = sanitizeWechatPayLogValue(detail);
+  const detailText = typeof sanitized === "string" ? sanitized : JSON.stringify(sanitized);
+  return `微信预支付失败：${detailText}`.slice(0, 500);
+}
+
+function readHttpExceptionResponse(error: unknown): unknown {
+  if (!isRecord(error) || typeof error.getResponse !== "function") return undefined;
+  try {
+    return error.getResponse();
+  } catch {
+    return undefined;
+  }
 }
 
 function readWechatPayResponseMessage(value: unknown): string | undefined {

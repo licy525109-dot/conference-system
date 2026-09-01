@@ -36,7 +36,7 @@
             <div class="muted-text">{{ row.counts?.registrations ?? 0 }} 报名 / {{ row.counts?.orders ?? 0 }} 订单</div>
           </template>
         </el-table-column>
-        <el-table-column label="时间" min-width="220">
+        <el-table-column label="会议时间" min-width="220">
           <template #default="{ row }">{{ formatDate(row.startAt) }} - {{ formatDate(row.endAt) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="310" fixed="right">
@@ -64,20 +64,35 @@
       </el-table>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑会议' : '新建会议'" width="720px">
+    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑会议' : '新建会议'" width="760px">
       <el-form :model="form" label-width="120px">
+        <div class="dialog-section-heading">
+          <strong>会议信息</strong>
+          <span>用户端列表和详情页展示的基本内容。</span>
+        </div>
         <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
         <el-form-item label="副标题"><el-input v-model="form.subtitle" /></el-form-item>
-        <el-form-item>
-          <template #label>封面 URL<MaterialSpecHelp spec-key="conferenceCover" /></template>
-          <div class="cover-row">
-            <el-input v-model="form.coverImage" placeholder="建议 750x420，JPG/PNG/WebP，主体内容居中" />
-            <el-button @click="openMaterialPicker">应用素材库</el-button>
-          </div>
-        </el-form-item>
+        <el-form-item label="会议封面"><ConferenceCoverPicker v-model="form.coverImage" /></el-form-item>
         <el-form-item label="地点"><el-input v-model="form.location" /></el-form-item>
-        <el-form-item label="开始时间"><el-date-picker v-model="form.startAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" /></el-form-item>
-        <el-form-item label="结束时间"><el-date-picker v-model="form.endAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" /></el-form-item>
+
+        <div class="dialog-section-heading">
+          <strong>会议时间</strong>
+          <span>会议实际举办的开始和结束时间。</span>
+        </div>
+        <el-form-item label="会议开始时间"><el-date-picker v-model="form.startAt" class="date-picker" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="选择会议开始时间" /></el-form-item>
+        <el-form-item label="会议结束时间"><el-date-picker v-model="form.endAt" class="date-picker" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="选择会议结束时间" /></el-form-item>
+
+        <div class="dialog-section-heading">
+          <strong>报名开放时间</strong>
+          <span>控制用户可报名的时间；两项都不填时默认跟随会议时间。</span>
+        </div>
+        <el-form-item label="报名开始时间"><el-date-picker v-model="form.registrationStartsAt" class="date-picker" clearable type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="不填则跟随会议开始时间" /></el-form-item>
+        <el-form-item label="报名截止时间"><el-date-picker v-model="form.registrationEndsAt" class="date-picker" clearable type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.sssZ" placeholder="不填则跟随会议结束时间" /></el-form-item>
+
+        <div class="dialog-section-heading">
+          <strong>管理设置</strong>
+          <span>控制会议状态和列表顺序。</span>
+        </div>
         <el-form-item label="状态">
           <el-select v-model="form.status">
             <el-option label="草稿" value="DRAFT" />
@@ -94,22 +109,6 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="materialVisible" title="选择会议封面" width="820px">
-      <div class="material-picker">
-        <div class="material-picker__head">
-          <el-input v-model="materialKeyword" clearable placeholder="搜索素材名称" @keyup.enter="loadMaterials" />
-          <el-button :loading="materialLoading" @click="loadMaterials">搜索</el-button>
-        </div>
-        <el-empty v-if="!materialLoading && materialImages.length === 0" description="暂无可用图片素材" />
-        <div v-else class="material-grid">
-          <button v-for="asset in materialImages" :key="asset.id" class="material-card" @click="chooseMaterial(asset)">
-            <img :src="asset.url" :alt="asset.name" />
-            <strong>{{ asset.name }}</strong>
-            <small>{{ asset.usage || "通用素材" }}</small>
-          </button>
-        </div>
-      </div>
-    </el-dialog>
   </section>
 </template>
 
@@ -120,9 +119,9 @@ import AdminEmptyState from "../../components/AdminEmptyState.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
-import MaterialSpecHelp from "../../components/MaterialSpecHelp.vue";
-import { createConference, listConferences, listMaterials, updateConference, updateConferenceStatus } from "../../services/admin";
-import type { Conference, MaterialAsset } from "../../services/types";
+import ConferenceCoverPicker from "../../components/conference/ConferenceCoverPicker.vue";
+import { createConference, listConferences, updateConference, updateConferenceStatus } from "../../services/admin";
+import type { Conference } from "../../services/types";
 import { navigateTo } from "../../router";
 
 const items = ref<Conference[]>([]);
@@ -130,10 +129,6 @@ const keyword = ref("");
 const status = ref("");
 const loading = ref(false);
 const dialogVisible = ref(false);
-const materialVisible = ref(false);
-const materialLoading = ref(false);
-const materialKeyword = ref("");
-const materialImages = ref<MaterialAsset[]>([]);
 const form = reactive({
   id: "",
   title: "",
@@ -142,6 +137,8 @@ const form = reactive({
   location: "",
   startAt: "",
   endAt: "",
+  registrationStartsAt: "",
+  registrationEndsAt: "",
   status: "DRAFT",
   sortOrder: 0
 });
@@ -160,14 +157,19 @@ async function load() {
 }
 
 function openCreate() {
+  const registrationStart = new Date();
+  const meetingStart = new Date(Date.now() + 7 * 86400000);
+  const meetingEnd = new Date(meetingStart.getTime() + 8 * 60 * 60 * 1000);
   Object.assign(form, {
     id: "",
     title: "",
     subtitle: "",
     coverImage: "",
     location: "",
-    startAt: new Date().toISOString(),
-    endAt: new Date(Date.now() + 86400000).toISOString(),
+    startAt: meetingStart.toISOString(),
+    endAt: meetingEnd.toISOString(),
+    registrationStartsAt: registrationStart.toISOString(),
+    registrationEndsAt: meetingStart.toISOString(),
     status: "DRAFT",
     sortOrder: 0
   });
@@ -183,6 +185,8 @@ function openEdit(row: Conference) {
     location: row.location ?? "",
     startAt: row.startAt,
     endAt: row.endAt,
+    registrationStartsAt: row.registrationStartsAt ?? "",
+    registrationEndsAt: row.registrationEndsAt ?? "",
     status: row.status,
     sortOrder: row.sortOrder
   });
@@ -190,6 +194,7 @@ function openEdit(row: Conference) {
 }
 
 async function save() {
+  if (!validateConferenceTimes()) return;
   const payload = {
     title: form.title,
     subtitle: form.subtitle,
@@ -197,6 +202,8 @@ async function save() {
     location: form.location,
     startAt: form.startAt,
     endAt: form.endAt,
+    registrationStartsAt: form.registrationStartsAt || null,
+    registrationEndsAt: form.registrationEndsAt || null,
     status: form.status,
     sortOrder: form.sortOrder
   };
@@ -208,6 +215,32 @@ async function save() {
   dialogVisible.value = false;
   await load();
   ElMessage.success("会议已保存");
+}
+
+function validateConferenceTimes(): boolean {
+  if (!form.startAt || !form.endAt) {
+    ElMessage.warning("请完整填写会议开始和结束时间");
+    return false;
+  }
+  if (new Date(form.startAt) >= new Date(form.endAt)) {
+    ElMessage.warning("会议开始时间必须早于会议结束时间");
+    return false;
+  }
+  const hasRegistrationStart = Boolean(form.registrationStartsAt);
+  const hasRegistrationEnd = Boolean(form.registrationEndsAt);
+  if (hasRegistrationStart !== hasRegistrationEnd) {
+    ElMessage.warning("报名开始和截止时间请同时填写，或同时留空跟随会议时间");
+    return false;
+  }
+  if (
+    form.registrationStartsAt
+    && form.registrationEndsAt
+    && new Date(form.registrationStartsAt) >= new Date(form.registrationEndsAt)
+  ) {
+    ElMessage.warning("报名开始时间必须早于报名截止时间");
+    return false;
+  }
+  return true;
 }
 
 async function changeStatus(id: string, nextStatus: string) {
@@ -228,27 +261,6 @@ function goConfig(id: string) {
   navigateTo("/conferences/config", { id });
 }
 
-async function openMaterialPicker() {
-  materialVisible.value = true;
-  await loadMaterials();
-}
-
-async function loadMaterials() {
-  materialLoading.value = true;
-  try {
-    const response = await listMaterials({ page: 1, pageSize: 80, keyword: materialKeyword.value, enabled: true });
-    materialImages.value = response.items.filter((asset) => asset.enabled && (asset.fileType.startsWith("image/") || /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(asset.url)));
-  } finally {
-    materialLoading.value = false;
-  }
-}
-
-function chooseMaterial(asset: MaterialAsset) {
-  form.coverImage = asset.url;
-  materialVisible.value = false;
-  ElMessage.success("已应用会议封面");
-}
-
 function formatDate(value: string) {
   return new Date(value).toLocaleString();
 }
@@ -263,67 +275,30 @@ function requiresStatusConfirm(value: string) {
 </script>
 
 <style scoped>
-.cover-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  width: 100%;
+.date-picker {
+  width: min(100%, 360px);
 }
 
-.material-picker {
+.dialog-section-heading {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.material-picker__head {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-}
-
-.material-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  align-items: baseline;
   gap: 12px;
-  max-height: 520px;
-  overflow: auto;
+  margin: 4px 0 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--admin-color-border);
 }
 
-.material-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--admin-color-border);
-  border-radius: 8px;
-  background: #ffffff;
+.dialog-section-heading:not(:first-child) {
+  margin-top: 28px;
+}
+
+.dialog-section-heading strong {
   color: var(--admin-color-text);
-  text-align: left;
-  cursor: pointer;
+  font-size: 15px;
 }
 
-.material-card:hover {
-  border-color: var(--admin-color-primary);
-  box-shadow: var(--admin-shadow-soft);
-}
-
-.material-card img {
-  width: 100%;
-  height: 100px;
-  object-fit: cover;
-  border-radius: 8px;
-  background: #eef3fb;
-}
-
-.material-card strong,
-.material-card small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.material-card small {
+.dialog-section-heading span {
   color: var(--admin-color-muted);
+  font-size: 12px;
 }
 </style>

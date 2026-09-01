@@ -76,6 +76,8 @@ describe("Admin management", () => {
         title: "新会议",
         startAt: "2026-08-01T09:00:00.000Z",
         endAt: "2026-08-01T18:00:00.000Z",
+        registrationStartsAt: "2026-07-01T00:00:00.000Z",
+        registrationEndsAt: "2026-07-31T16:00:00.000Z",
         location: "上海",
         contentJson: { blocks: [] },
         styleJson: {}
@@ -84,8 +86,26 @@ describe("Admin management", () => {
     );
 
     assert.equal((response.data as { title: string }).title, "新会议");
+    assert.equal((response.data as { registrationStartsAt: string }).registrationStartsAt, "2026-07-01T00:00:00.000Z");
+    assert.equal((response.data as { registrationEndsAt: string }).registrationEndsAt, "2026-07-31T16:00:00.000Z");
     assert.equal(prisma.conferences.length, 2);
     assert.equal(prisma.auditLogs.some((log) => log.entityType === "Conference" && log.action === AuditAction.CREATE), true);
+  });
+
+  it("rejects ambiguous or reversed conference registration windows", async () => {
+    const service = new AdminManagementService(createPrismaMock());
+
+    await assert.rejects(
+      () => service.updateConference("conference-1", { registrationStartsAt: "2026-07-01T00:00:00.000Z" }, currentAdmin),
+      BadRequestException
+    );
+    await assert.rejects(
+      () => service.updateConference("conference-1", {
+        registrationStartsAt: "2026-08-01T00:00:00.000Z",
+        registrationEndsAt: "2026-07-01T00:00:00.000Z"
+      }, currentAdmin),
+      BadRequestException
+    );
   });
 
   it("updates conference status", async () => {
@@ -453,8 +473,8 @@ function createPrismaMock() {
           location: typeof args.data.location === "string" ? args.data.location : null,
           startsAt: args.data.startsAt as Date,
           endsAt: args.data.endsAt as Date,
-          registrationStartsAt: null,
-          registrationEndsAt: null,
+          registrationStartsAt: args.data.registrationStartsAt instanceof Date ? args.data.registrationStartsAt : null,
+          registrationEndsAt: args.data.registrationEndsAt instanceof Date ? args.data.registrationEndsAt : null,
           checkInEnabled: false,
           checkInStartsAt: null,
           checkInEndsAt: null,
@@ -481,7 +501,7 @@ function createPrismaMock() {
         return conference;
       },
       findUnique: async (args: { where: { id?: string } }) => conferences.find((conference) => conference.id === args.where.id) ?? null,
-      update: async (args: { where: { id: string }; data: { status?: ConferenceStatus; checkInEnabled?: boolean; checkInStartsAt?: Date | null; checkInEndsAt?: Date | null; checkInMethods?: unknown; checkInFieldBindings?: unknown } }) => {
+      update: async (args: { where: { id: string }; data: { status?: ConferenceStatus; registrationStartsAt?: Date | null; registrationEndsAt?: Date | null; checkInEnabled?: boolean; checkInStartsAt?: Date | null; checkInEndsAt?: Date | null; checkInMethods?: unknown; checkInFieldBindings?: unknown } }) => {
         const conference = conferences.find((item) => item.id === args.where.id);
         if (!conference) {
           throw new Error("missing conference");
@@ -489,6 +509,8 @@ function createPrismaMock() {
         if (args.data.status) {
           conference.status = args.data.status;
         }
+        if ("registrationStartsAt" in args.data) conference.registrationStartsAt = args.data.registrationStartsAt ?? null;
+        if ("registrationEndsAt" in args.data) conference.registrationEndsAt = args.data.registrationEndsAt ?? null;
         if (typeof args.data.checkInEnabled === "boolean") {
           conference.checkInEnabled = args.data.checkInEnabled;
         }
