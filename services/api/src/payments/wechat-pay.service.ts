@@ -13,6 +13,7 @@ import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { PaymentSuccessService } from "./payment-success.service";
 import { isWechatPayEnabled, readWechatPayConfig, WechatPayConfig } from "./wechat-pay.config";
+import { buildWechatPayDescription } from "./wechat-pay.description";
 import { WechatPayNotifyVerifier, WechatPayEncryptedResource, WechatPayHeaders } from "./wechat-pay.notify-verifier";
 import { WechatPaySigner } from "./wechat-pay.signer";
 
@@ -138,7 +139,7 @@ export class WechatPayService {
         body: {
           appid: config.appId,
           mchid: config.mchId,
-          description: buildDescription(order.conference.title, order.orderNo),
+          description: buildWechatPayDescription("会议报名", order.conference.title, order.orderNo),
           out_trade_no: outTradeNo,
           notify_url: config.notifyUrl,
           amount: {
@@ -413,10 +414,6 @@ function readRequiredString(input: Record<string, unknown>, field: string): stri
   }
 
   return value;
-}
-
-function buildDescription(conferenceTitle: string, orderNo: string): string {
-  return `会议报名-${conferenceTitle}-${orderNo}`.slice(0, 127);
 }
 
 export function toWechatOutTradeNo(orderNo: string): string {

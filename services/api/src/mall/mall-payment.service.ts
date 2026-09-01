@@ -10,6 +10,7 @@ import { PaymentProvider, PaymentStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { readWechatPayConfig } from "../payments/wechat-pay.config";
+import { buildWechatPayDescription } from "../payments/wechat-pay.description";
 import { WechatPayEncryptedResource, WechatPayHeaders, WechatPayNotifyVerifier } from "../payments/wechat-pay.notify-verifier";
 import { WechatPayPrepayClient } from "../payments/wechat-pay.prepay-client";
 import { WechatNotifySuccessResponse, WechatPrepayResponse } from "../payments/wechat-pay.service";
@@ -67,7 +68,7 @@ export class MallPaymentService {
       body: {
         appid: config.appId,
         mchid: config.mchId,
-        description: buildMallDescription(order.items[0]?.productTitle, order.orderNo),
+        description: buildWechatPayDescription("商城", order.items[0]?.productTitle || "商品", order.orderNo),
         out_trade_no: outTradeNo,
         notify_url: readMallWechatNotifyUrl(paymentConfig),
         amount: {
@@ -224,10 +225,6 @@ export function toMallMockOutTradeNo(orderNo: string): string {
 function assertMallOrderPayable(status: string, amountCent: number): void {
   if (status !== "PENDING_PAYMENT") throw new ConflictException("Only pending mall orders can be paid");
   if (amountCent <= 0) throw new ConflictException("Mall order payable amount must be greater than 0");
-}
-
-function buildMallDescription(productTitle: string | undefined, orderNo: string): string {
-  return `商城-${productTitle || "商品"}-${orderNo}`.slice(0, 127);
 }
 
 function readNotifyBody(input: unknown): NotifyBody {
