@@ -5,12 +5,15 @@ const coverImage = "/static/fixed-templates/heroes/hero_registration_bg.png";
 const detailImage = "/static/fixed-templates/products/product_gift_box.png";
 const now = "2026-08-31T10:00:00.000Z";
 
-test("conference detail renders safe rich content and keeps fixed actions clear of the tabbar", async ({ page }) => {
+test("conference detail renders polished content, real ticket selection, and clear fixed actions", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installUserFixtures(page);
   await page.goto(`/#/pages/conference/detail?id=${conferenceId}`);
 
-  await expect(page.locator(".conference-summary")).toContainText("观潮会集 · 第五届行业闭门会");
+  await expect(page.locator(".detail-overview")).toContainText("观潮会集 · 第五届行业闭门会");
+  await expect(page.locator(".detail-overview")).toContainText("2 个可选票种");
+  await expect(page.locator(".detail-tabs")).toContainText("活动详情");
+  await expect(page.locator(".detail-tabs")).toContainText("可选票种");
   await expect(page.locator(".conference-detail-rich-text")).toContainText("费用包含");
   await expect(page.locator(".conference-detail-rich-text")).toContainText("会期资料包");
   await expect(page.locator(".conference-detail-rich-text img")).toBeVisible();
@@ -25,7 +28,20 @@ test("conference detail renders safe rich content and keeps fixed actions clear 
 
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
   await page.waitForTimeout(180);
-  await expect(page).toHaveScreenshot("conference-detail-content.png", { fullPage: true, maxDiffPixelRatio: 0.02 });
+  await expect(page).toHaveScreenshot("conference-detail-content.png", { fullPage: false, maxDiffPixelRatio: 0.02 });
+
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+  await page.locator(".detail-tabs__item", { hasText: "可选票种" }).click({ force: true });
+  await expect(page.locator(".ticket-selector")).toBeVisible();
+  await expect(page.locator(".ticket-selector")).toContainText("标准席位");
+  await expect(page.locator(".ticket-selector")).toContainText("创始人闭门席");
+  await expect(page.locator(".ticket-selector")).toContainText("已售罄");
+  await page.locator(".ticket-selector__sku", { hasText: "创始人闭门席" }).click();
+  await expect(page.locator(".ticket-selector__selected-value")).toHaveText("创始人闭门席");
+  await expect(page).toHaveScreenshot("conference-ticket-selector.png", { fullPage: false, maxDiffPixelRatio: 0.02 });
+
+  await page.locator(".ticket-selector__confirm").click({ force: true });
+  await page.waitForURL(/\/pages\/registration\/form\?conferenceId=conference-detail-visual&skuId=sku-founder/);
 });
 
 test("admin detail editor reloads the full conference contract instead of the lightweight list item", async ({ page }) => {
@@ -73,6 +89,8 @@ async function installUserFixtures(page: Page): Promise<void> {
     if (path === "/api/app/theme") return ok(route, { scope: "conference-detail", config: theme(), publishedAt: null, updatedAt: now });
     if (path === "/api/app/tabbar") return ok(route, tabbar());
     if (path === `/api/conferences/${conferenceId}`) return ok(route, publicConference());
+    if (path === `/api/conferences/${conferenceId}/form`) return ok(route, { formId: "form-visual", title: "报名信息", description: null, fields: [] });
+    if (path === "/api/pages/registration-form/published") return ok(route, null);
     return ok(route, {});
   });
 }
@@ -172,8 +190,13 @@ function publicConference() {
     endsAt: "2026-09-20T18:00:00.000Z",
     registrationStartsAt: "2026-08-01T00:00:00.000Z",
     registrationEndsAt: "2026-09-18T23:59:59.000Z",
+    registrationCount: 128,
     contentJson: contentJson(),
-    skus: [{ id: "sku-visual", name: "标准席位", description: null, priceCent: 268000, stock: 100, soldCount: 18 }]
+    skus: [
+      { id: "sku-visual", name: "标准席位", description: "适合个人参会，含会期资料包", priceCent: 268000, stock: 100, soldCount: 18 },
+      { id: "sku-founder", name: "创始人闭门席", description: "含闭门交流席位和会后社群权益", priceCent: 288000, stock: 50, soldCount: 36 },
+      { id: "sku-sold-out", name: "伙伴同行席", description: "双人同行报名规格", priceCent: 498000, stock: 20, soldCount: 20 }
+    ]
   };
 }
 

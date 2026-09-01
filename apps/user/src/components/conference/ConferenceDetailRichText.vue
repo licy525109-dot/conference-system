@@ -26,11 +26,11 @@ const defaultStyles: Partial<Record<ConferenceDetailRichTextElementNode["name"],
   h2: "margin:28px 0 12px;color:#132033;font-size:24px;font-weight:800;line-height:1.42",
   h3: "margin:24px 0 10px;color:#132033;font-size:20px;font-weight:800;line-height:1.45",
   h4: "margin:22px 0 9px;color:#132033;font-size:18px;font-weight:800;line-height:1.5",
-  blockquote: "margin:20px 0;padding:15px 16px;border-left:3px solid #a9863d;background-color:#faf7ef;color:#4b5565;font-size:16px;line-height:1.75",
+  blockquote: "margin:20px 0;padding:15px 16px;border:1px solid #eadfca;border-radius:12px;background-color:#faf7ef;color:#4b5565;font-size:16px;line-height:1.75",
   ul: "margin:0 0 18px;padding-left:24px;color:#344054;font-size:16px;line-height:1.75",
   ol: "margin:0 0 18px;padding-left:24px;color:#344054;font-size:16px;line-height:1.75",
   li: "margin:0 0 8px",
-  img: "width:100%;max-width:100%;height:auto;display:block;margin:18px 0",
+  img: "width:100%;max-width:100%;height:auto;display:block;margin:18px 0;border-radius:12px",
   a: "color:#2f6484;text-decoration:underline",
   hr: "margin:26px 0;border:0;border-top:1px solid #dfe4e1",
   pre: "margin:18px 0;padding:14px;background-color:#f4f6f8;color:#293445;font-size:14px;line-height:1.65;overflow-wrap:anywhere",
@@ -70,9 +70,8 @@ function mergeStyles(base: string, override: string): string {
 
 <style scoped>
 .conference-detail-rich-text {
-  padding: 38rpx 32rpx 54rpx;
-  border-top: 12rpx solid #f2f3f1;
-  background: #ffffff;
+  padding: 16rpx 32rpx 46rpx;
+  background: #fbfcfa;
   box-sizing: border-box;
 }
 
