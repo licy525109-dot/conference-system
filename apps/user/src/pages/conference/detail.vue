@@ -12,75 +12,53 @@
       />
 
       <view v-else-if="conference" class="content">
-        <view :class="['conference-summary', { 'has-cover': conference.coverImageUrl }]">
-          <view v-if="conference.coverImageUrl" class="cover-wrap">
-            <image class="cover" :src="conference.coverImageUrl" mode="aspectFill" />
-            <view class="cover-brand">
-              <text>观潮会集</text>
-              <text>GUANCHAO CONFERENCE</text>
-            </view>
-          </view>
-          <view v-else class="summary-identity">
-            <view class="brand-seal">观</view>
-            <view>
-              <text class="brand-name">观潮会集</text>
-              <text class="brand-tagline">行业会议与创始人社群平台</text>
-            </view>
-          </view>
-          <view class="summary-content">
-            <view class="status-row">
-              <view class="status-group">
-                <text :class="['status', `status--${registrationStatus.tone}`]">{{ registrationStatus.label }}</text>
-                <text class="summary-eyebrow">会议报名</text>
-              </view>
-              <text v-if="conference.location" class="location">{{ conference.location }}</text>
-            </view>
-            <text class="title">{{ conference.title }}</text>
-            <text v-if="conference.summary" class="summary">{{ conference.summary }}</text>
-            <view class="facts">
-              <view class="fact">
-                <text class="fact-icon">日</text>
-                <view class="fact-copy">
-                  <text class="fact-label">会议时间</text>
-                  <text class="fact-value">{{ formatDateTime(conference.startsAt) }} 至 {{ formatDateTime(conference.endsAt) }}</text>
-                </view>
-              </view>
-              <view v-if="conference.location" class="fact">
-                <text class="fact-icon">地</text>
-                <view class="fact-copy">
-                  <text class="fact-label">会议地点</text>
-                  <text class="fact-value">{{ conference.location }}</text>
-                </view>
-              </view>
-              <view class="fact">
-                <text class="fact-icon">止</text>
-                <view class="fact-copy">
-                  <text class="fact-label">报名截止</text>
-                  <text class="fact-value">{{ registrationDeadline }}</text>
-                </view>
-              </view>
-            </view>
-          </view>
+        <ConferenceDetailOverview
+          :conference="conference"
+          :status-label="registrationStatus.label"
+          :status-tone="registrationStatus.tone"
+          :registration-deadline="registrationDeadline"
+          :price-range-text="priceRangeText"
+          :skus="registrationSkus"
+          @open-tickets="openTicketSelector"
+        />
+
+        <view class="detail-tabs" aria-label="会议详情切换">
+          <button class="detail-tabs__item is-active">活动详情</button>
+          <button class="detail-tabs__item" @click="openTicketSelector">可选票种</button>
         </view>
 
-        <ConferenceDetailRichText
-          v-if="detailRichTextRenderable"
-          :content="detailRichText"
-        />
-        <ConferenceDetailContent
-          v-else-if="!hasDetailRichText && detailContentBlocks.length"
-          :blocks="detailContentBlocks"
-          @action="handleDetailAction"
-        />
-        <ConferenceDetailLongImage
-          v-if="detailLongImage"
-          :segments="detailLongImage.segments"
-        />
+        <view class="detail-section" aria-label="活动详情">
+          <view class="detail-section__header">
+            <view>
+              <text class="detail-section__title">活动详情</text>
+              <text class="detail-section__subtitle">主办方发布的图文内容</text>
+            </view>
+          </view>
+          <ConferenceDetailRichText v-if="detailRichTextRenderable" :content="detailRichText" />
+          <ConferenceDetailContent
+            v-else-if="!hasDetailRichText && detailContentBlocks.length"
+            :blocks="detailContentBlocks"
+            @action="handleDetailAction"
+          />
+          <ConferenceDetailLongImage v-if="detailLongImage" :segments="detailLongImage.segments" />
+          <view v-if="!detailHasContent" class="detail-section__empty">
+            <wd-icon name="info-circle" size="24px" />
+            <text>主办方暂未上传活动详情</text>
+          </view>
+        </view>
       </view>
       <WechatProfilePrompt />
     </view>
 
     <CustomTabbar active-page-key="conference-detail" />
+    <ConferenceTicketSelector
+      :visible="ticketSheetVisible"
+      :skus="registrationSkus"
+      :selected-sku-id="selectedSkuId"
+      @close="ticketSheetVisible = false"
+      @select="selectSku"
+      @confirm="confirmTicketSelection"
+    />
     <FixedBottomActionBar
       v-if="conference"
       amount-label="报名费用"
@@ -98,7 +76,9 @@ import { computed, ref } from "vue";
 import { onLoad, onShareAppMessage } from "@dcloudio/uni-app";
 import ConferenceDetailContent from "@/components/conference/ConferenceDetailContent.vue";
 import ConferenceDetailLongImage from "@/components/conference/ConferenceDetailLongImage.vue";
+import ConferenceDetailOverview from "@/components/conference/ConferenceDetailOverview.vue";
 import ConferenceDetailRichText from "@/components/conference/ConferenceDetailRichText.vue";
+import ConferenceTicketSelector from "@/components/conference/ConferenceTicketSelector.vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import FixedBottomActionBar from "@/components/ui/FixedBottomActionBar.vue";
@@ -126,6 +106,8 @@ const conference = ref<ConferenceDetail | null>(null);
 const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const loading = ref(false);
 const error = ref("");
+const ticketSheetVisible = ref(false);
+const selectedSkuId = ref("");
 
 const pageStyle = computed(() => createCmsThemeVars(theme.value));
 const detailLongImage = computed(() => normalizeConferenceDetailLongImage(conference.value?.contentJson));
@@ -133,6 +115,7 @@ const detailRichText = computed(() => normalizeConferenceDetailRichText(conferen
 const hasDetailRichText = computed(() => hasConferenceDetailRichTextContract(conference.value?.contentJson));
 const detailRichTextRenderable = computed(() => isConferenceDetailRichTextRenderable(detailRichText.value));
 const detailContentBlocks = computed(() => normalizeConferenceDetailContent(conference.value?.contentJson).blocks);
+const detailHasContent = computed(() => detailRichTextRenderable.value || (!hasDetailRichText.value && detailContentBlocks.value.length > 0) || Boolean(detailLongImage.value?.segments.length));
 const registrationSkus = computed(() => {
   const skus = conference.value?.skus;
   return Array.isArray(skus) ? skus : [];
@@ -145,7 +128,7 @@ const priceRangeText = computed(() => {
   return min === max ? `¥${formatCent(min)}` : `¥${formatCent(min)} 起`;
 });
 const registrationAvailability = computed<"OPEN" | "NOT_STARTED" | "ENDED">(() => getRegistrationAvailability(conference.value));
-const registrationStatus = computed(() => {
+const registrationStatus = computed<{ label: string; tone: "success" | "warning" | "neutral" }>(() => {
   if (registrationAvailability.value === "NOT_STARTED") return { label: "即将报名", tone: "warning" };
   if (registrationAvailability.value === "ENDED") return { label: "报名截止", tone: "neutral" };
   return { label: "报名中", tone: "success" };
@@ -153,7 +136,7 @@ const registrationStatus = computed(() => {
 const registrationPrimaryText = computed(() => {
   if (registrationAvailability.value === "NOT_STARTED") return "预约报名";
   if (registrationAvailability.value === "ENDED") return "报名已截止";
-  return "立即报名";
+  return "我要报名";
 });
 const registrationDeadline = computed(() => {
   return conference.value?.registrationEndsAt ? formatDateTime(conference.value.registrationEndsAt) : "以主办方通知为准";
@@ -186,6 +169,7 @@ async function loadDetail() {
     ]);
     conference.value = detail;
     theme.value = themeConfig;
+    selectedSkuId.value = firstAvailableSku(detail.skus)?.id ?? detail.skus[0]?.id ?? "";
     uni.setNavigationBarTitle({ title: detail.title || "会议详情" });
   } catch (err) {
     console.error("[CONFERENCE_DETAIL_LOAD_ERROR]", err);
@@ -204,11 +188,39 @@ async function goRegisterFirst() {
     await reserveAppointment();
     return;
   }
-  const sku = registrationSkus.value.find((item) => remainingStock(item) > 0) ?? registrationSkus.value[0];
+  openTicketSelector();
+}
+
+function openTicketSelector() {
+  if (registrationAvailability.value === "ENDED") {
+    uni.showToast({ title: "报名已截止", icon: "none" });
+    return;
+  }
+  if (registrationAvailability.value === "NOT_STARTED") {
+    void reserveAppointment();
+    return;
+  }
+  const skus = registrationSkus.value;
+  const selectedSku = skus.find((sku) => sku.id === selectedSkuId.value && remainingStock(sku) > 0);
+  if (!selectedSku) selectedSkuId.value = firstAvailableSku(skus)?.id ?? "";
+  if (!selectedSkuId.value) {
+    uni.showToast({ title: "暂无可报名规格", icon: "none" });
+    return;
+  }
+  ticketSheetVisible.value = true;
+}
+
+function selectSku(skuId: string) {
+  selectedSkuId.value = skuId;
+}
+
+function confirmTicketSelection() {
+  const sku = registrationSkus.value.find((item) => item.id === selectedSkuId.value && remainingStock(item) > 0);
   if (!sku) {
     uni.showToast({ title: "暂无可报名规格", icon: "none" });
     return;
   }
+  ticketSheetVisible.value = false;
   const couponQuery = couponCode.value ? `&couponCode=${encodeURIComponent(couponCode.value)}` : "";
   uni.navigateTo({
     url: `/pages/registration/form?conferenceId=${encodeURIComponent(conferenceId.value)}&skuId=${encodeURIComponent(sku.id)}${couponQuery}`
@@ -268,6 +280,10 @@ function remainingStock(sku: RegistrationSku): number {
   return Math.max(sku.stock - sku.soldCount, 0);
 }
 
+function firstAvailableSku(skus: RegistrationSku[]): RegistrationSku | null {
+  return skus.find((item) => remainingStock(item) > 0) ?? null;
+}
+
 function getRegistrationAvailability(detail: ConferenceDetail | null): "OPEN" | "NOT_STARTED" | "ENDED" {
   if (!detail) return "OPEN";
   const now = Date.now();
@@ -288,9 +304,9 @@ function parseDateTime(value: string | null | undefined): number {
 .page {
   position: relative;
   min-height: 100vh;
-  padding: 0 0 calc(268rpx + env(safe-area-inset-bottom));
+  padding: 0 0 calc(360rpx + env(safe-area-inset-bottom));
   overflow: visible;
-  background: #eef1ef;
+  background: #f3f5f3;
   box-sizing: border-box;
 }
 
@@ -305,225 +321,98 @@ function parseDateTime(value: string | null | undefined): number {
   margin: 0 auto;
 }
 
-.conference-summary {
-  position: relative;
-  background: #fff;
-}
-
-.cover-wrap {
-  position: relative;
-  height: 430rpx;
-  overflow: hidden;
-  background: #e7e9e6;
-}
-
-.cover {
-  display: block;
-  width: 100%;
-  height: 430rpx;
-  background: #e7e9e6;
-}
-
-.cover-brand {
-  position: absolute;
-  left: 26rpx;
-  bottom: 24rpx;
+.detail-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
-  flex-direction: column;
-  gap: 2rpx;
-  padding: 12rpx 18rpx;
-  border-radius: 10rpx;
-  background: rgba(15, 31, 51, 0.88);
-  color: #ffffff;
-}
-
-.cover-brand text:first-child {
-  font-size: 24rpx;
-  font-weight: 800;
-}
-
-.cover-brand text:last-child {
-  color: #d7c08c;
-  font-size: 14rpx;
-  letter-spacing: 0;
-}
-
-.summary-identity {
-  display: flex;
-  min-height: 164rpx;
   align-items: center;
-  gap: 22rpx;
-  padding: 28rpx 32rpx;
-  border-bottom: 1px solid #e8ece9;
-  background: #10243e;
+  gap: 16rpx;
+  margin: 0 30rpx 24rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 999px;
+  background: rgba(251, 252, 250, 0.94);
+  box-shadow: 0 10rpx 28rpx rgba(24, 39, 57, 0.06);
   box-sizing: border-box;
+  backdrop-filter: blur(12rpx);
 }
 
-.brand-seal {
-  display: flex;
-  width: 82rpx;
-  height: 82rpx;
-  flex: 0 0 82rpx;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(213, 187, 126, 0.7);
-  border-radius: 50%;
-  color: #d5bb7e;
-  font-family: serif;
-  font-size: 38rpx;
-  font-weight: 700;
-}
-
-.brand-name,
-.brand-tagline {
-  display: block;
-}
-
-.brand-name {
-  color: #ffffff;
-  font-size: 30rpx;
-  font-weight: 800;
-}
-
-.brand-tagline {
-  margin-top: 8rpx;
-  color: #c8d1dc;
-  font-size: 21rpx;
-}
-
-.summary-content {
-  display: flex;
-  flex-direction: column;
-  gap: 20rpx;
-  padding: 36rpx 32rpx 42rpx;
-  border-bottom: 1px solid #e2e7e3;
-  box-sizing: border-box;
-}
-
-.status-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20rpx;
-}
-
-.status-group {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-}
-
-.summary-eyebrow {
-  color: #9a752d;
-  font-size: 22rpx;
-  font-weight: 700;
-}
-
-.status {
-  display: inline-flex;
-  min-height: 46rpx;
-  align-items: center;
-  padding: 0 18rpx;
-  border-radius: 23rpx;
-  font-size: 23rpx;
-  font-weight: 700;
-}
-
-.status--success {
-  background: #e7f6ee;
-  color: #137a4b;
-}
-
-.status--warning {
-  background: #fff4dc;
-  color: #9a6412;
-}
-
-.status--neutral {
-  background: #edf0ee;
-  color: #667069;
-}
-
-.location {
-  max-width: 440rpx;
-  overflow: hidden;
-  color: #68716b;
-  font-size: 24rpx;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.title {
-  color: #152033;
-  font-size: 40rpx;
-  font-weight: 800;
-  line-height: 1.38;
-}
-
-.summary {
-  color: #667085;
-  font-size: 27rpx;
-  line-height: 1.65;
-}
-
-.facts {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0;
-  margin-top: 8rpx;
-  border: 1px solid #e2e7e3;
-  border-radius: 14rpx;
-  background: #f7f8f6;
-  overflow: hidden;
-}
-
-.fact {
-  display: flex;
-  align-items: flex-start;
-  gap: 20rpx;
-  padding: 22rpx 24rpx;
-  border-bottom: 1px solid #e4e8e5;
-}
-
-.fact:last-child {
-  border-bottom: 0;
-}
-
-.fact-icon {
-  display: flex;
-  width: 44rpx;
-  height: 44rpx;
-  flex: 0 0 44rpx;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10rpx;
-  background: #10243e;
-  color: #d9c18a;
-  font-size: 20rpx;
-  font-weight: 800;
-  line-height: 44rpx;
-  text-align: center;
-}
-
-.fact-copy {
-  display: flex;
+.detail-tabs__item {
   min-width: 0;
+  height: 64rpx;
   flex: 1;
-  flex-direction: column;
-  gap: 5rpx;
+  padding: 0 18rpx;
+  border-radius: 999px;
+  background: #edf1f4;
+  color: #667085;
+  font-size: 26rpx;
+  font-weight: 800;
+  line-height: 64rpx;
 }
 
-.fact-label {
-  color: #8a938d;
-  font-size: 21rpx;
-  line-height: 1.55;
+.detail-tabs__item::after {
+  border: 0;
 }
 
-.fact-value {
-  color: #293445;
-  font-size: 25rpx;
-  font-weight: 600;
-  line-height: 1.55;
+.detail-tabs__item.is-active {
+  background: #10233d;
+  color: #f8faf8;
+  box-shadow: 0 10rpx 22rpx rgba(16, 35, 61, 0.2);
+}
+
+.detail-section {
+  margin: 0 30rpx 32rpx;
+  overflow: hidden;
+  border-radius: 26rpx;
+  background: #fbfcfa;
+  box-shadow: 0 12rpx 34rpx rgba(24, 39, 57, 0.07);
+}
+
+.detail-section__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 34rpx 32rpx 16rpx;
+  box-sizing: border-box;
+}
+
+.detail-section__title,
+.detail-section__subtitle {
+  display: block;
+}
+
+.detail-section__title {
+  color: #121d2f;
+  font-size: 36rpx;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.detail-section__title::after {
+  display: block;
+  width: 58rpx;
+  height: 7rpx;
+  margin-top: 14rpx;
+  border-radius: 999px;
+  background: #1d6fe8;
+  content: "";
+}
+
+.detail-section__subtitle {
+  margin-top: 10rpx;
+  color: #8a93a2;
+  font-size: 23rpx;
+  line-height: 1.4;
+}
+
+.detail-section__empty {
+  display: flex;
+  min-height: 220rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  color: #6f7a88;
+  font-size: 26rpx;
 }
 
 @media (min-width: 760px) {

@@ -44,6 +44,47 @@ final result: passed
 
 ---
 
+# Conference Detail Registration Redesign QA
+
+**Comparison Target**
+
+- Source detail references: `/var/folders/y2/qc5lvsx15w592g1vqkdpkgc00000gn/T/codex-clipboard-6b6d619b-d911-4389-9941-6e17d32517cd.png`, `/var/folders/y2/qc5lvsx15w592g1vqkdpkgc00000gn/T/codex-clipboard-be02f4b8-38ba-4fd9-887f-12a8cbd36452.png`
+- Source ticket reference: `/var/folders/y2/qc5lvsx15w592g1vqkdpkgc00000gn/T/codex-clipboard-e0d3134b-c10a-43df-aed6-3e4e1d3154d1.png`
+- Implementation screenshots: `/Users/yangyang/Projects/conference-system/tests/frontend/conference-detail-content.spec.ts-snapshots/conference-detail-content-darwin.png`, `/Users/yangyang/Projects/conference-system/tests/frontend/conference-detail-content.spec.ts-snapshots/conference-ticket-selector-darwin.png`
+- State: published conference detail loaded on a 390 x 844 viewport; ticket selector opened and switched to a second available SKU.
+
+**Visual Comparison Evidence**
+
+- The detail page now follows the selected marketplace/event pattern: large real cover image, overlapping title card, concise meta rows, activity detail tab, and a fixed bottom registration CTA.
+- The first viewport avoids the old scattered module stack. Only the event identity, status, time, location, registration deadline, and ticket entry are surfaced before the long content.
+- The ticket selector matches the reference interaction model with a bottom sheet, selected state, sold-out disabled state, stock copy, price emphasis, and a single next action.
+- The rich-text and long-image detail area remains controlled by the admin editor content, so uploaded detail material still renders from the backend contract rather than from hard-coded page modules.
+
+**Interaction Verification**
+
+- Opening “可选票种” displays real backend SKU data.
+- Selecting “创始人闭门席” updates the selected state and footer summary.
+- Confirming the selector navigates to `/pages/registration/form` with the selected `skuId`.
+- Sold-out tickets remain visible for context but cannot be selected.
+- The fixed registration action stays above the custom tabbar, and the page keeps extra bottom padding so long content can scroll clear of fixed controls.
+
+**Risk Review**
+
+- P0 blockers: none.
+- P1 interaction regressions: none in the verified detail and ticket-selection flow.
+- P2 visual inconsistencies: no blocking mismatch remains against the selected reference structure.
+- P3 residual risk: real uploaded poster crops depend on source image aspect ratio; production acceptance should verify one representative wide poster and one tall long-image detail on an actual iPhone and Android WeChat client.
+
+**Release Checks**
+
+- Amounts remain display-only on the detail page. The registration form and backend order quote still own payable calculation.
+- No payment, callback, order amount, secret, admin-auth, or Prisma files were changed for this redesign.
+- H5 build and mp-weixin build completed successfully.
+
+final result: passed
+
+---
+
 # Conference Rich Text Editor Design QA
 
 **Comparison Target**
