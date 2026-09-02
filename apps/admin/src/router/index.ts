@@ -6,6 +6,7 @@ const ConferenceConfigPage = defineAsyncComponent(() => import("../pages/confere
 const OrdersPage = defineAsyncComponent(() => import("../pages/orders/index.vue"));
 const RegistrationsPage = defineAsyncComponent(() => import("../pages/registrations/index.vue"));
 const RegistrationDetailPage = defineAsyncComponent(() => import("../pages/registrations/detail.vue"));
+const GuestSchedulesPage = defineAsyncComponent(() => import("../pages/guest-schedules/index.vue"));
 const CouponsPage = defineAsyncComponent(() => import("../pages/coupons/index.vue"));
 const CouponCampaignsPage = defineAsyncComponent(() => import("../pages/coupon-campaigns/index.vue"));
 const PromotionsPage = defineAsyncComponent(() => import("../pages/promotions/index.vue"));
@@ -59,6 +60,7 @@ export const routes: AdminRoute[] = [
   },
   { path: "/registrations", title: "报名名单", menuTitle: "报名名单", group: "会议管理", description: "报名记录、参会人、备注和核销", permission: "registration:view", component: RegistrationsPage },
   { path: "/registrations/detail", title: "报名详情", menuTitle: "报名详情", group: "会议管理", description: "报名、订单、支付、表单快照和操作日志", permission: "registration:view", component: RegistrationDetailPage, hidden: true },
+  { path: "/guest-schedules", title: "嘉宾会务安排", menuTitle: "嘉宾会务", group: "会议管理", description: "企微智能表同步、嘉宾事项审核发布与小程序提醒", permission: "guest-schedule:view", component: GuestSchedulesPage },
   { path: "/inventory-alerts", title: "库存预警", menuTitle: "库存预警", group: "会议管理", description: "会议库存阈值、扫描任务和预警日志入口。", permission: "inventory:view", component: OperationalWorkflowsPage },
   { path: "/checkin/verify", title: "签到核销", menuTitle: "签到核销", group: "会议管理", description: "工作人员扫码、客户自助和后台应急补签入口。", permission: "checkin:view", component: OperationalWorkflowsPage },
   { path: "/checkin/logs", title: "签到记录", menuTitle: "签到记录", group: "会议管理", description: "签到核销日志、方式、操作人和失败原因。", permission: "checkin:view", component: OperationalWorkflowsPage },

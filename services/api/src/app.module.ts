@@ -5,6 +5,7 @@ import { CartModule } from "./cart/cart.module";
 import { CheckinModule } from "./checkin/checkin.module";
 import { CmsModule } from "./cms/cms.module";
 import { ConferencesModule } from "./conferences/conferences.module";
+import { GuestScheduleModule } from "./guest-schedule/guest-schedule.module";
 import { HealthController } from "./health.controller";
 import { MallModule } from "./mall/mall.module";
 import { MemberModule } from "./member/member.module";
@@ -15,7 +16,7 @@ import { RegistrationsModule } from "./registrations/registrations.module";
 import { WecomModule } from "./wecom/wecom.module";
 
 @Module({
-  imports: [AdminModule, AuthModule, CartModule, CheckinModule, CmsModule, ConferencesModule, MallModule, MemberModule, PaymentsModule, PlatformModule, RegistrationModule, RegistrationsModule, WecomModule],
+  imports: [AdminModule, AuthModule, CartModule, CheckinModule, CmsModule, ConferencesModule, GuestScheduleModule, MallModule, MemberModule, PaymentsModule, PlatformModule, RegistrationModule, RegistrationsModule, WecomModule],
   controllers: [HealthController]
 })
 export class AppModule {}

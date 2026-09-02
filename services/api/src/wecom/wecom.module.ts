@@ -34,6 +34,7 @@ import { WecomWelcomeTemplateService } from "./services/wecom-welcome-template.s
     WecomTokenService,
     WecomWelcomeTemplateService,
     PrismaService
-  ]
+  ],
+  exports: [WecomClientAdapter, WecomConfigService, WecomTokenService]
 })
 export class WecomModule {}

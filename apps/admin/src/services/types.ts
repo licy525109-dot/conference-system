@@ -1355,3 +1355,108 @@ export interface MallInventoryLog {
   orderNo: string | null;
   createdAt: string;
 }
+
+export type GuestScheduleType = "WORKSHOP" | "DINNER" | "SPEECH" | "REHEARSAL" | "RECEPTION" | "OTHER";
+export type GuestScheduleState = "DRAFT" | "CHANGED" | "PUBLISHED" | "ARCHIVED";
+
+export interface GuestScheduleAttendeeOption {
+  id: string;
+  name: string;
+  phone: string;
+  company: string | null;
+  title: string | null;
+  sku: { id: string; name: string };
+  registrationId: string;
+  registrationNo: string;
+  canReceiveMiniProgramMessage: boolean;
+}
+
+export interface GuestScheduleAssignment {
+  id: string;
+  conferenceId: string;
+  attendeeId: string;
+  connectionId: string | null;
+  type: GuestScheduleType;
+  typeLabel: string;
+  name: string;
+  startsAt: string;
+  endsAt: string | null;
+  location: string | null;
+  role: string | null;
+  tableNo: string | null;
+  isTableLeader: boolean;
+  shareTopic: string | null;
+  notes: string | null;
+  source: "ADMIN" | "WECOM_SMART_SHEET";
+  remoteRecordId: string | null;
+  remoteUpdatedAt: string | null;
+  hasUnpublishedChanges: boolean;
+  publishedAt: string | null;
+  lastNotifiedAt: string | null;
+  state: GuestScheduleState;
+  createdAt: string;
+  updatedAt: string;
+  conference: { id: string; title: string };
+  attendee: GuestScheduleAttendeeOption & {
+    registration: { id: string; registrationNo: string; userId: string | null; status: string };
+  };
+  connection: { id: string; docUrl: string | null; assignmentSheetId: string; lastSyncAt: string | null } | null;
+  publishedBy: { id: string; displayName: string | null; username: string } | null;
+}
+
+export interface GuestScheduleList {
+  items: GuestScheduleAssignment[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: { total: number; draft: number; changed: number; published: number };
+}
+
+export interface GuestScheduleSmartSheetConnection {
+  id: string;
+  conferenceId: string;
+  integrationId: string;
+  docId: string;
+  docUrl: string | null;
+  guestSheetId: string;
+  assignmentSheetId: string;
+  guestFieldMapping: Record<string, string>;
+  assignmentFieldMapping: Record<string, string>;
+  enabled: boolean;
+  syncIntervalSeconds: number;
+  syncing: boolean;
+  lastGuestPushedAt: string | null;
+  lastAssignmentPulledAt: string | null;
+  lastSyncAt: string | null;
+  lastSyncStatus: string;
+  lastError: string | null;
+  integration: { id: string; name: string; enabled: boolean; verified: boolean; configured: boolean };
+}
+
+export interface GuestScheduleSmartSheetConfig {
+  connection: GuestScheduleSmartSheetConnection | null;
+  integrations: Array<{ id: string; name: string; enabled: boolean; verified: boolean; configured: boolean }>;
+  defaults: {
+    guestFieldMapping: Record<string, string>;
+    assignmentFieldMapping: Record<string, string>;
+    syncIntervalSeconds: number;
+  };
+  requiredAssignmentFields: string[];
+}
+
+export interface GuestScheduleSyncRun {
+  id: string;
+  trigger: string;
+  status: "RUNNING" | "SUCCESS" | "PARTIAL_FAILED" | "FAILED";
+  guestReadCount: number;
+  guestCreatedCount: number;
+  guestUpdatedCount: number;
+  assignmentReadCount: number;
+  assignmentCreatedCount: number;
+  assignmentUpdatedCount: number;
+  skippedCount: number;
+  errorCount: number;
+  errorMessage: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}

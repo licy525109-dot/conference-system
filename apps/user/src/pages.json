@@ -80,6 +80,12 @@
       }
     },
     {
+      "path": "pages/registrations/schedule",
+      "style": {
+        "navigationBarTitleText": "我的会务安排"
+      }
+    },
+    {
       "path": "pages/admin/notifications/index",
       "style": {
         "navigationBarTitleText": "管理员通知中心"

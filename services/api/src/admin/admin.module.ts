@@ -34,6 +34,7 @@ import { AdminPaymentExceptionsService } from "./admin-payment-exceptions.servic
 import { AdminPermissionGuard } from "./admin-permission.guard";
 import { PublicOperationsController } from "./public-operations.controller";
 import { PublicOperationsService } from "./public-operations.service";
+import { WechatSubscribeClient } from "./wechat-subscribe-client";
 
 @Module({
   imports: [AuthModule],
@@ -75,8 +76,9 @@ import { PublicOperationsService } from "./public-operations.service";
     AdminOperationsService,
     PublicOperationsService,
     AdminPaymentExceptionsService,
+    WechatSubscribeClient,
     PrismaService
   ],
-  exports: [AdminAuthService, AdminJwtAuthGuard, AdminPermissionGuard]
+  exports: [AdminAuthService, AdminJwtAuthGuard, AdminPermissionGuard, AdminNotificationsService]
 })
 export class AdminModule {}

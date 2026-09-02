@@ -58,6 +58,7 @@
           <text>会议时间：{{ formatDateTime(item.conference.startsAt) }}</text>
         </view>
         <view class="card-actions">
+          <button class="ui-button-secondary schedule-button" @click="goSchedule(item)">查看会务安排</button>
           <button class="ui-button-primary credential-button" @click="goCredential(item)">查看报名凭证</button>
           <button class="ui-button-secondary credential-button" @click="goCheckin(item)">签到</button>
         </view>
@@ -148,6 +149,12 @@ function goCredential(item: MyRegistrationItem) {
 function goCheckin(item: MyRegistrationItem) {
   uni.navigateTo({
     url: `/pages/checkin/self?conferenceId=${encodeURIComponent(item.conference.id)}&registrationId=${encodeURIComponent(item.id)}`
+  });
+}
+
+function goSchedule(item: MyRegistrationItem) {
+  uni.navigateTo({
+    url: `/pages/registrations/schedule?conferenceId=${encodeURIComponent(item.conference.id)}`
   });
 }
 </script>
@@ -283,6 +290,11 @@ function goCheckin(item: MyRegistrationItem) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16rpx;
   margin-top: 22rpx;
+}
+
+.schedule-button {
+  grid-column: 1 / -1;
+  width: 100%;
 }
 
 .credential-button {

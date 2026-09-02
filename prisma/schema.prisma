@@ -141,6 +141,27 @@ enum WecomAuthMode {
   LEGACY_CUSTOMER_CONTACT
 }
 
+enum GuestScheduleType {
+  WORKSHOP
+  DINNER
+  SPEECH
+  REHEARSAL
+  RECEPTION
+  OTHER
+}
+
+enum GuestScheduleSource {
+  ADMIN
+  WECOM_SMART_SHEET
+}
+
+enum GuestScheduleSyncStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL_FAILED
+  FAILED
+}
+
 enum CheckinActionType {
   VERIFY
   MANUAL
@@ -240,20 +261,21 @@ model User {
 }
 
 model AdminUser {
-  id                    String                 @id @default(cuid())
-  username              String                 @unique
-  passwordHash          String
-  displayName           String?
-  enabled               Boolean                @default(true)
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  auditLogs             AuditLog[]
-  roles                 AdminUserRole[]
-  mobileBindings        AdminWechatBinding[]
-  notificationTemplates NotificationTemplate[] @relation("NotificationTemplateCreatedBy")
-  notificationTasks     NotificationTask[]     @relation("NotificationTaskCreatedBy")
-  checkinLogs           CheckinLog[]
-  saasTenantMemberships SaasTenantMember[]
+  id                      String                    @id @default(cuid())
+  username                String                    @unique
+  passwordHash            String
+  displayName             String?
+  enabled                 Boolean                   @default(true)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  auditLogs               AuditLog[]
+  roles                   AdminUserRole[]
+  mobileBindings          AdminWechatBinding[]
+  notificationTemplates   NotificationTemplate[]    @relation("NotificationTemplateCreatedBy")
+  notificationTasks       NotificationTask[]        @relation("NotificationTaskCreatedBy")
+  publishedGuestSchedules GuestScheduleAssignment[] @relation("GuestScheduleAssignmentPublishedBy")
+  checkinLogs             CheckinLog[]
+  saasTenantMemberships   SaasTenantMember[]
 
   @@index([enabled])
   @@index([createdAt])
@@ -643,6 +665,8 @@ model Conference {
   customerGroupTasks       CustomerGroupMessageTask[]
   wecomCustomerGroups      WecomCustomerGroup[]
   checkinStaffAssignments  CheckinStaffAssignment[]
+  guestScheduleAssignments GuestScheduleAssignment[]
+  smartSheetConnection     WecomSmartSheetConnection?
 
   @@index([status])
   @@index([createdAt])
@@ -651,8 +675,8 @@ model Conference {
 }
 
 model WecomIntegration {
-  id                         String                  @id @default(cuid())
-  name                       String                  @default("default")
+  id                         String                      @id @default(cuid())
+  name                       String                      @default("default")
   authMode                   WecomAuthMode?
   corpId                     String?
   agentId                    String?
@@ -660,23 +684,24 @@ model WecomIntegration {
   appSecretEnc               String?
   callbackTokenEnc           String?
   callbackEncodingAesKeyEnc  String?
-  groupRobotEnabled          Boolean                 @default(false)
+  groupRobotEnabled          Boolean                     @default(false)
   groupRobotWebhookUrlEnc    String?
   groupRobotSecretEnc        String?
   groupRobotName             String?
   customerContactCallbackUrl String?
   appCallbackUrl             String?
-  enabled                    Boolean                 @default(false)
-  verified                   Boolean                 @default(false)
+  enabled                    Boolean                     @default(false)
+  verified                   Boolean                     @default(false)
   lastTokenCheckedAt         DateTime?
   lastGroupSyncedAt          DateTime?
   lastCallbackAt             DateTime?
   remark                     String?
-  createdAt                  DateTime                @default(now())
-  updatedAt                  DateTime                @updatedAt
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
   accessTokens               WecomAccessTokenCache[]
   customerGroups             WecomCustomerGroup[]
   callbackEvents             WecomCallbackEvent[]
+  smartSheetConnections      WecomSmartSheetConnection[]
 
   @@unique([name])
   @@index([enabled])
@@ -697,6 +722,126 @@ model WecomAccessTokenCache {
   @@unique([integrationId, tokenType])
   @@index([expiresAt])
   @@map("wecom_access_token_caches")
+}
+
+model WecomSmartSheetConnection {
+  id                         String                       @id @default(cuid())
+  conferenceId               String                       @unique
+  integrationId              String
+  docId                      String
+  docUrl                     String?
+  guestSheetId               String
+  assignmentSheetId          String
+  guestFieldMappingJson      Json?
+  assignmentFieldMappingJson Json?
+  enabled                    Boolean                      @default(false)
+  syncIntervalSeconds        Int                          @default(60)
+  syncLockedAt               DateTime?
+  lastGuestPushedAt          DateTime?
+  lastAssignmentPulledAt     DateTime?
+  lastSyncAt                 DateTime?
+  lastSyncStatus             String                       @default("NEVER")
+  lastError                  String?
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime                     @updatedAt
+  conference                 Conference                   @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  integration                WecomIntegration             @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  guestRecords               WecomSmartSheetGuestRecord[]
+  assignments                GuestScheduleAssignment[]
+  syncRuns                   GuestScheduleSyncRun[]
+
+  @@index([integrationId])
+  @@index([enabled])
+  @@index([lastSyncAt])
+  @@map("wecom_smart_sheet_connections")
+}
+
+model WecomSmartSheetGuestRecord {
+  id             String                    @id @default(cuid())
+  connectionId   String
+  attendeeId     String
+  remoteRecordId String?
+  payloadHash    String?
+  lastPushedAt   DateTime?
+  lastError      String?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  connection     WecomSmartSheetConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  attendee       RegistrationAttendee      @relation(fields: [attendeeId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, attendeeId])
+  @@unique([connectionId, remoteRecordId])
+  @@index([attendeeId])
+  @@index([lastPushedAt])
+  @@map("wecom_smart_sheet_guest_records")
+}
+
+model GuestScheduleAssignment {
+  id                    String                     @id @default(cuid())
+  conferenceId          String
+  attendeeId            String
+  connectionId          String?
+  type                  GuestScheduleType
+  name                  String
+  startsAt              DateTime
+  endsAt                DateTime?
+  location              String?
+  role                  String?
+  tableNo               String?
+  isTableLeader         Boolean                    @default(false)
+  shareTopic            String?
+  notes                 String?
+  source                GuestScheduleSource        @default(ADMIN)
+  remoteRecordId        String?
+  remoteUpdatedAt       DateTime?
+  draftHash             String
+  hasUnpublishedChanges Boolean                    @default(true)
+  publishedSnapshotJson Json?
+  publishedHash         String?
+  publishedAt           DateTime?
+  publishedById         String?
+  lastNotifiedAt        DateTime?
+  archivedAt            DateTime?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  conference            Conference                 @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  attendee              RegistrationAttendee       @relation(fields: [attendeeId], references: [id], onDelete: Cascade)
+  connection            WecomSmartSheetConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  publishedBy           AdminUser?                 @relation("GuestScheduleAssignmentPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([connectionId, remoteRecordId])
+  @@index([conferenceId])
+  @@index([attendeeId])
+  @@index([type])
+  @@index([startsAt])
+  @@index([publishedAt])
+  @@index([archivedAt])
+  @@map("guest_schedule_assignments")
+}
+
+model GuestScheduleSyncRun {
+  id                     String                    @id @default(cuid())
+  connectionId           String
+  trigger                String
+  status                 GuestScheduleSyncStatus   @default(RUNNING)
+  guestReadCount         Int                       @default(0)
+  guestCreatedCount      Int                       @default(0)
+  guestUpdatedCount      Int                       @default(0)
+  assignmentReadCount    Int                       @default(0)
+  assignmentCreatedCount Int                       @default(0)
+  assignmentUpdatedCount Int                       @default(0)
+  skippedCount           Int                       @default(0)
+  errorCount             Int                       @default(0)
+  errorMessage           String?
+  detailsJson            Json?
+  startedAt              DateTime                  @default(now())
+  finishedAt             DateTime?
+  connection             WecomSmartSheetConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("guest_schedule_sync_runs")
 }
 
 model WecomCustomerGroup {
@@ -1792,23 +1937,25 @@ model Registration {
 }
 
 model RegistrationAttendee {
-  id             String          @id @default(cuid())
-  registrationId String
-  skuId          String
-  name           String
-  phone          String
-  company        String?
-  title          String?
-  formDataJson   Json?
-  checkInStatus  CheckInStatus   @default(NOT_REQUIRED)
-  checkedInAt    DateTime?
-  checkedInBy    String?
-  adminRemark    String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  registration   Registration    @relation(fields: [registrationId], references: [id], onDelete: Cascade)
-  sku            RegistrationSku @relation(fields: [skuId], references: [id], onDelete: Restrict)
-  checkinLogs    CheckinLog[]
+  id                       String                       @id @default(cuid())
+  registrationId           String
+  skuId                    String
+  name                     String
+  phone                    String
+  company                  String?
+  title                    String?
+  formDataJson             Json?
+  checkInStatus            CheckInStatus                @default(NOT_REQUIRED)
+  checkedInAt              DateTime?
+  checkedInBy              String?
+  adminRemark              String?
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+  registration             Registration                 @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  sku                      RegistrationSku              @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  checkinLogs              CheckinLog[]
+  guestScheduleAssignments GuestScheduleAssignment[]
+  smartSheetGuestRecords   WecomSmartSheetGuestRecord[]
 
   @@index([registrationId])
   @@index([skuId])

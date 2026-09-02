@@ -33,6 +33,12 @@ import type {
   FinanceRefundConfig,
   FinanceRefund,
   FormField,
+  GuestScheduleAssignment,
+  GuestScheduleAttendeeOption,
+  GuestScheduleList,
+  GuestScheduleSmartSheetConfig,
+  GuestScheduleSmartSheetConnection,
+  GuestScheduleSyncRun,
   MaterialAsset,
   MaterialCategory,
   MallAfterSale,
@@ -252,6 +258,69 @@ export function updateRegistrationFormValues(id: string, formDataJson: Record<st
     method: "PATCH",
     body: JSON.stringify({ formDataJson })
   });
+}
+
+export function listGuestSchedules(params: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  conferenceId?: string;
+  type?: string;
+  state?: string;
+}) {
+  return apiRequest<GuestScheduleList>(`/admin/guest-schedules${toQuery(params)}`);
+}
+
+export function listGuestScheduleAttendees(params: { conferenceId: string; keyword?: string }) {
+  return apiRequest<{ items: GuestScheduleAttendeeOption[] }>(`/admin/guest-schedules/attendees${toQuery(params)}`);
+}
+
+export function createGuestSchedule(input: Record<string, unknown>) {
+  return apiRequest<GuestScheduleAssignment>("/admin/guest-schedules", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateGuestSchedule(id: string, input: Record<string, unknown>) {
+  return apiRequest<GuestScheduleAssignment>(`/admin/guest-schedules/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function archiveGuestSchedule(id: string) {
+  return apiRequest<{ id: string; archived: boolean }>(`/admin/guest-schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function publishGuestSchedules(ids: string[], notify: boolean) {
+  return apiRequest<{
+    publishedCount: number;
+    publishedAt: string;
+    notification: { status: string; message: string; successCount?: number; failedCount?: number; skippedCount?: number };
+  }>("/admin/guest-schedules/publish", { method: "POST", body: JSON.stringify({ ids, notify }) });
+}
+
+export function getGuestScheduleSmartSheetConfig(conferenceId: string) {
+  return apiRequest<GuestScheduleSmartSheetConfig>(`/admin/guest-schedules/smart-sheet/config${toQuery({ conferenceId })}`);
+}
+
+export function saveGuestScheduleSmartSheetConfig(conferenceId: string, input: Record<string, unknown>) {
+  return apiRequest<GuestScheduleSmartSheetConnection>(`/admin/guest-schedules/smart-sheet/config${toQuery({ conferenceId })}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function checkGuestScheduleSmartSheet(conferenceId: string) {
+  return apiRequest<{
+    ready: boolean;
+    message: string;
+    guestSheet: { fieldCount: number; missingFields: string[] };
+    assignmentSheet: { fieldCount: number; missingRequiredFields: string[]; missingRecommendedFields: string[] };
+  }>(`/admin/guest-schedules/smart-sheet/check${toQuery({ conferenceId })}`, { method: "POST" });
+}
+
+export function syncGuestScheduleSmartSheet(conferenceId: string) {
+  return apiRequest<Record<string, unknown>>(`/admin/guest-schedules/smart-sheet/sync${toQuery({ conferenceId })}`, { method: "POST" });
+}
+
+export function listGuestScheduleSyncRuns(conferenceId: string, limit = 10) {
+  return apiRequest<{ items: GuestScheduleSyncRun[] }>(`/admin/guest-schedules/smart-sheet/runs${toQuery({ conferenceId, limit })}`);
 }
 
 export function checkInRegistrationAttendee(id: string) {

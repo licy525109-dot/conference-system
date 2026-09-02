@@ -139,6 +139,9 @@ MALL_WECHAT_REFUND_ENABLED=false
 | --- | --- |
 | `NOTIFICATION_CENTER_ENABLED` | 通知中心发送开关。 |
 | `WECHAT_SUBSCRIBE_MESSAGE_ENABLED` | 微信订阅消息开关。 |
+| `WECHAT_APP_ID` / `WECHAT_APP_SECRET` | 小程序订阅消息的 AppID 和 AppSecret，只写入服务端环境变量。 |
+| `WECHAT_SUBSCRIBE_TEMPLATE_ID` | 微信公众平台中选用的订阅消息模板 ID，也可在后台通知模板中配置。 |
+| `WECHAT_MINIPROGRAM_STATE` | `developer`、`trial` 或 `formal`；生产必须为 `formal`。 |
 | `SMS_ENABLED` | 短信发送开关。 |
 | `SMS_PROVIDER` | 短信供应商标识。 |
 
@@ -147,6 +150,21 @@ MALL_WECHAT_REFUND_ENABLED=false
 - 微信订阅未配置时记录 `SKIPPED`，不是 `SENT`。
 - 短信未配置时记录 `SKIPPED`，不是 `SENT`。
 - 通知失败不阻塞支付、报名、退款事务。
+
+## 嘉宾会务安排与企微智能表
+
+| 配置 | 说明 |
+| --- | --- |
+| `GUEST_SCHEDULE_SYNC_ENABLED` | API 定时同步总开关；生产建议为 `true`。 |
+| 企业微信自建应用 | 需具备目标智能表格的读取和编辑权限，并在后台“企微接入配置”保存。 |
+| 微信模板代码 | 后台通知模板代码固定为 `GUEST_SCHEDULE_UPDATED`，启用后嘉宾可申请订阅。 |
+
+验收：
+
+- 已确认报名嘉宾自动写入“报名嘉宾”子表。
+- 智能表事项同步后只显示为“待发布”或“有待发布变更”，小程序仍显示上一版。
+- 后台点击“仅发布”后小程序更新；点击“发布并提醒”时仅通知已授权用户。
+- 详细建表字段和操作步骤见 `docs/integrations/WECOM_SMART_SHEET_GUEST_SCHEDULE.md`。
 
 ## CMS 和素材
 

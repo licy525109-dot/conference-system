@@ -158,7 +158,11 @@ function createWecomClientMock() {
     fetchAccessToken: async () => ({ accessToken: "token", expiresIn: 7200 }),
     checkCustomerContactPermission: async () => ({ ok: true, message: "ok" }),
     listCustomerGroups: async () => [],
-    createCustomerGroupMessageTask: async () => ({ ok: true, msgId: "msg-test", raw: { errcode: 0, msgid: "msg-test" } })
+    createCustomerGroupMessageTask: async () => ({ ok: true, msgId: "msg-test", raw: { errcode: 0, msgid: "msg-test" } }),
+    getSmartSheetFields: async () => [],
+    getSmartSheetRecords: async () => [],
+    addSmartSheetRecords: async () => [],
+    updateSmartSheetRecords: async () => undefined
   } as WecomClientAdapter;
 }
 

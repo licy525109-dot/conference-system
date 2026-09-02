@@ -26,6 +26,31 @@ interface WecomGroupMessageResponse {
   fail_list?: unknown[];
 }
 
+export interface WecomSmartSheetRecord {
+  record_id: string;
+  create_time?: string | number;
+  update_time?: string | number;
+  values?: Record<string, unknown>;
+  creator_name?: string;
+  updater_name?: string;
+}
+
+interface WecomSmartSheetRecordsResponse {
+  errcode?: number;
+  errmsg?: string;
+  total?: number;
+  has_more?: boolean;
+  next_cursor?: string;
+  records?: WecomSmartSheetRecord[];
+  record_ids?: string[];
+}
+
+interface WecomSmartSheetFieldsResponse {
+  errcode?: number;
+  errmsg?: string;
+  fields?: Array<Record<string, unknown>>;
+}
+
 @Injectable()
 export class WecomClientAdapter {
   async fetchAccessToken(corpId: string, secret: string): Promise<{ accessToken: string; expiresIn: number }> {
@@ -83,6 +108,93 @@ export class WecomClientAdapter {
       raw: data as Record<string, unknown>
     };
   }
+
+  async getSmartSheetFields(accessToken: string, docId: string, sheetId: string): Promise<Array<Record<string, unknown>>> {
+    const data = await requestJson<WecomSmartSheetFieldsResponse>(
+      smartSheetUrl("get_fields", accessToken),
+      { method: "POST", body: JSON.stringify({ docid: docId, sheet_id: sheetId }) }
+    );
+    assertWecomSuccess(data, "读取智能表字段失败");
+    return data.fields ?? [];
+  }
+
+  async getSmartSheetRecords(accessToken: string, docId: string, sheetId: string): Promise<WecomSmartSheetRecord[]> {
+    const records: WecomSmartSheetRecord[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 100; page += 1) {
+      const data = await requestJson<WecomSmartSheetRecordsResponse>(
+        smartSheetUrl("get_records", accessToken),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            docid: docId,
+            sheet_id: sheetId,
+            limit: 1000,
+            ...(cursor ? { cursor } : {})
+          })
+        }
+      );
+      assertWecomSuccess(data, "读取智能表记录失败");
+      records.push(...(data.records ?? []).filter((item) => Boolean(item.record_id)));
+      if (!data.has_more || !data.next_cursor) break;
+      cursor = data.next_cursor;
+    }
+    return records;
+  }
+
+  async addSmartSheetRecords(
+    accessToken: string,
+    docId: string,
+    sheetId: string,
+    records: Array<{ values: Record<string, unknown> }>
+  ): Promise<string[]> {
+    if (records.length === 0) return [];
+    const data = await requestJson<WecomSmartSheetRecordsResponse>(
+      smartSheetUrl("add_records", accessToken),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          docid: docId,
+          sheet_id: sheetId,
+          records
+        })
+      }
+    );
+    assertWecomSuccess(data, "写入智能表记录失败");
+    if (Array.isArray(data.record_ids)) return data.record_ids;
+    return (data.records ?? []).map((item) => item.record_id).filter(Boolean);
+  }
+
+  async updateSmartSheetRecords(
+    accessToken: string,
+    docId: string,
+    sheetId: string,
+    records: Array<{ record_id: string; values: Record<string, unknown> }>
+  ): Promise<void> {
+    if (records.length === 0) return;
+    const data = await requestJson<WecomSmartSheetRecordsResponse>(
+      smartSheetUrl("update_records", accessToken),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          docid: docId,
+          sheet_id: sheetId,
+          key_type: "CELL_VALUE_KEY_TYPE_FIELD_TITLE",
+          records
+        })
+      }
+    );
+    assertWecomSuccess(data, "更新智能表记录失败");
+  }
+}
+
+function smartSheetUrl(action: "get_fields" | "get_records" | "add_records" | "update_records", accessToken: string): string {
+  return `https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/${action}?access_token=${encodeURIComponent(accessToken)}`;
+}
+
+function assertWecomSuccess(data: { errcode?: number; errmsg?: string }, prefix: string): void {
+  if (data.errcode === 0) return;
+  throw new BadRequestException(`${prefix}：${data.errmsg || data.errcode || "unknown error"}`);
 }
 
 function buildGroupMessagePayload(groups: Array<{ chatId: string; ownerUserId?: string | null }>, contentJson: Record<string, unknown>) {

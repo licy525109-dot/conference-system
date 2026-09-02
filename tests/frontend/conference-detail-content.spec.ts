@@ -12,8 +12,8 @@ test("conference detail renders polished content, real ticket selection, and cle
 
   await expect(page.locator(".detail-overview")).toContainText("观潮会集 · 第五届行业闭门会");
   await expect(page.locator(".detail-overview")).toContainText("2 个可选票种");
-  await expect(page.locator(".detail-tabs")).toContainText("活动详情");
-  await expect(page.locator(".detail-tabs")).toContainText("可选票种");
+  await page.locator(".detail-section").scrollIntoViewIfNeeded();
+  await expect(page.locator(".detail-section")).toContainText("活动详情");
   await expect(page.locator(".conference-detail-rich-text")).toContainText("费用包含");
   await expect(page.locator(".conference-detail-rich-text")).toContainText("会期资料包");
   await expect(page.locator(".conference-detail-rich-text img")).toBeVisible();
@@ -31,7 +31,7 @@ test("conference detail renders polished content, real ticket selection, and cle
   await expect(page).toHaveScreenshot("conference-detail-content.png", { fullPage: false, maxDiffPixelRatio: 0.02 });
 
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
-  await page.locator(".detail-tabs__item", { hasText: "可选票种" }).click({ force: true });
+  await page.locator(".detail-overview__fact--button").click({ force: true });
   await expect(page.locator(".ticket-selector")).toBeVisible();
   await expect(page.locator(".ticket-selector")).toContainText("标准席位");
   await expect(page.locator(".ticket-selector")).toContainText("创始人闭门席");

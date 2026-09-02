@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   AuditAction,
   NotificationChannelType,
@@ -11,10 +11,14 @@ import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { decryptSecret, encryptSecret, maskSecret } from "../wecom/wecom.crypto";
 import { CurrentAdmin } from "./current-admin";
+import { WechatSubscribeClient } from "./wechat-subscribe-client";
 
 @Injectable()
 export class AdminNotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly wechatSubscribeClient?: WechatSubscribeClient
+  ) {}
 
   async subscribe(input: unknown, currentUser: CurrentUser) {
     const body = readObject(input);
@@ -455,7 +459,11 @@ export class AdminNotificationsService {
     const providerSource = config ? "DB" : envEnabled ? "ENV" : "disabled";
     const provider = config?.provider || envProvider;
     const templateKey = config?.templateKey || (channel === NotificationChannelType.WECHAT_SUBSCRIBE ? process.env.WECHAT_SUBSCRIBE_TEMPLATE_ID || "" : "");
-    const apiKeyConfigured = Boolean(decryptSecret(config?.apiKeyEnc) || process.env.SMS_API_KEY || process.env.WECHAT_SUBSCRIBE_API_KEY);
+    const apiKeyConfigured = Boolean(
+      decryptSecret(config?.apiKeyEnc)
+      || process.env.SMS_API_KEY
+      || (process.env.WECHAT_APP_ID && process.env.WECHAT_APP_SECRET)
+    );
     if (!enabled) {
       return { centerEnabled: true, enabled: false, providerSource, provider, canSend: false, unavailableReason: "通道未启用", statusText: "通道未启用，任务会记录 SKIPPED", templateKey };
     }
@@ -465,6 +473,31 @@ export class AdminNotificationsService {
     if (channel === NotificationChannelType.WECHAT_SUBSCRIBE && !templateKey) {
       return { centerEnabled: true, enabled, providerSource, provider, canSend: false, unavailableReason: "微信订阅模板 ID 未配置", statusText: "微信订阅模板 ID 未配置，任务会记录 SKIPPED" };
     }
+    if (channel === NotificationChannelType.WECHAT_SUBSCRIBE && !this.wechatSubscribeClient?.isConfigured()) {
+      return {
+        centerEnabled: true,
+        enabled,
+        providerSource,
+        provider,
+        templateKey,
+        apiKeyConfigured: false,
+        canSend: false,
+        unavailableReason: "微信小程序 AppID 或 AppSecret 未配置",
+        statusText: "缺少微信小程序凭证，任务会记录 SKIPPED"
+      };
+    }
+    if (channel === NotificationChannelType.WECHAT_SUBSCRIBE) {
+      return {
+        centerEnabled: true,
+        enabled,
+        providerSource,
+        provider,
+        templateKey,
+        apiKeyConfigured: true,
+        canSend: true,
+        statusText: "微信订阅消息发送适配器已就绪"
+      };
+    }
     return {
       centerEnabled: true,
       enabled,
@@ -473,8 +506,8 @@ export class AdminNotificationsService {
       templateKey,
       apiKeyConfigured,
       canSend: false,
-      unavailableReason: "真实发送适配器仍未接入，任务会记录 SKIPPED",
-      statusText: "配置已保存；真实发送适配器未接入时不会伪造成功"
+      unavailableReason: "短信真实发送适配器仍未接入，任务会记录 SKIPPED",
+      statusText: "配置已保存；短信真实发送适配器未接入时不会伪造成功"
     };
   }
 
@@ -508,7 +541,12 @@ export class AdminNotificationsService {
   }
 
   private async sendOne(
-    task: { id: string; channel: NotificationChannelType; template: { code: string; templateKey: string | null }; payloadJson: Prisma.JsonValue | null },
+    task: {
+      id: string;
+      channel: NotificationChannelType;
+      template: { code: string; templateKey: string | null; contentJson: Prisma.JsonValue };
+      payloadJson: Prisma.JsonValue | null;
+    },
     recipient: { userId: string | null; recipient: string | null },
     runtime: NotificationRuntime
   ): Promise<NotificationSendResult> {
@@ -549,7 +587,46 @@ export class AdminNotificationsService {
       if (!subscription?.enabled) {
         return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_SUBSCRIPTION_NOT_ENABLED", errorMessage: "用户未订阅该模板消息" };
       }
-      return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "ADAPTER_RESERVED", errorMessage: "微信订阅消息真实发送适配器待接入" };
+      if (!this.wechatSubscribeClient) {
+        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_ADAPTER_UNAVAILABLE", errorMessage: "微信订阅消息发送适配器未加载" };
+      }
+      const variables = isRecord(payload.variables) ? payload.variables : {};
+      const data = buildWechatTemplateData(payload, task.template.contentJson, variables);
+      if (Object.keys(data).length === 0) {
+        return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "WECHAT_TEMPLATE_DATA_MISSING", errorMessage: "通知模板未配置微信 data 字段映射" };
+      }
+      const page = readPagePath(payload, task.template.contentJson);
+      try {
+        const result = await this.wechatSubscribeClient.send({
+          openid: recipient.recipient,
+          templateId: templateKey,
+          page,
+          data
+        });
+        if (!result.ok) {
+          return {
+            ...recipient,
+            status: NotificationLogStatus.FAILED,
+            errorCode: `WECHAT_${result.errcode}`,
+            errorMessage: result.errmsg
+          };
+        }
+        if (process.env.WECHAT_SUBSCRIBE_KEEP_ENABLED !== "true") {
+          await this.prisma.notificationSubscription.update({ where: { id: subscription.id }, data: { enabled: false } });
+        }
+        return {
+          ...recipient,
+          status: NotificationLogStatus.SUCCESS,
+          providerMessageId: result.messageId
+        };
+      } catch (error) {
+        return {
+          ...recipient,
+          status: NotificationLogStatus.FAILED,
+          errorCode: "WECHAT_REQUEST_FAILED",
+          errorMessage: error instanceof Error ? error.message : "微信订阅消息请求失败"
+        };
+      }
     }
     if (!runtime.enabled) {
       return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "SMS_DISABLED", errorMessage: runtime.unavailableReason || "短信通道未启用" };
@@ -598,6 +675,36 @@ export interface NotificationRuntime {
   statusText: string;
 }
 
+function buildWechatTemplateData(
+  payload: Record<string, unknown>,
+  templateContent: Prisma.JsonValue,
+  variables: Record<string, unknown>
+): Record<string, { value: string }> {
+  const template = isRecord(templateContent) ? templateContent : {};
+  const source = isRecord(payload.wechatData)
+    ? payload.wechatData
+    : isRecord(template.wechatData)
+      ? template.wechatData
+      : isRecord(template.data)
+        ? template.data
+        : {};
+  const result: Record<string, { value: string }> = {};
+  for (const [key, raw] of Object.entries(source)) {
+    const value = isRecord(raw) ? raw.value : raw;
+    if (typeof value === "string") result[key] = { value: renderText(value, variables) };
+    else if (typeof value === "number" || typeof value === "boolean") result[key] = { value: String(value) };
+  }
+  return result;
+}
+
+function readPagePath(payload: Record<string, unknown>, templateContent: Prisma.JsonValue): string | null {
+  if (typeof payload.page === "string" && payload.page.trim()) return payload.page.trim();
+  if (isRecord(templateContent) && typeof templateContent.page === "string" && templateContent.page.trim()) {
+    return templateContent.page.trim();
+  }
+  return null;
+}
+
 function ok<TData>(data: TData) {
   return { code: "OK", message: "ok", data };
 }
@@ -615,7 +722,9 @@ function notificationEnvGuide(channel: "WECHAT_SUBSCRIBE" | "SMS", enabledEnvKey
           { name: enabledEnvKey, location: "services/api/.env.production 或后台开关", restartRequired: true }
         ]
       : [
+          { name: "WECHAT_APP_ID / WECHAT_APP_SECRET", location: "services/api/.env.production", restartRequired: true },
           { name: "WECHAT_SUBSCRIBE_TEMPLATE_ID", location: "后台模板配置或 services/api/.env.production", restartRequired: false },
+          { name: "WECHAT_MINIPROGRAM_STATE", location: "services/api/.env.production（正式环境填 formal）", restartRequired: true },
           { name: enabledEnvKey, location: "services/api/.env.production 或后台开关", restartRequired: true }
         ];
   return items;
