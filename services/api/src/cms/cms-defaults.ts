@@ -389,10 +389,7 @@ export function defaultPageComponents(pageKey: string): Prisma.InputJsonArray {
   }
 
   if (pageKey === "registration-form") {
-    return [
-      { id: "registration-form-title", type: "title", enabled: true, config: { text: "填写报名信息" } },
-      { id: "registration-form-steps", type: "process-steps", enabled: true, config: { title: "报名流程", items: ["选择报名规格", "填写参会人信息", "确认优惠和金额", "提交订单并完成支付"] } }
-    ];
+    return [];
   }
 
   if (pageKey === "registration-success") {

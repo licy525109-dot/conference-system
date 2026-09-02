@@ -3,8 +3,8 @@
     <header class="conference-rich-editor__header">
       <div>
         <span class="eyebrow">会议详情</span>
-        <h3>可视化内容编辑</h3>
-        <p>像编辑文档一样输入文字、设置样式并插入图片，保存后同步用于 H5 和小程序。</p>
+        <h3>栏目与图文内容</h3>
+        <p>按需新增栏目，每个栏目都可以独立编辑文字和图片，保存后同步用于 H5 和小程序。</p>
       </div>
       <div class="header-actions">
         <el-button :icon="FolderOpened" @click="emit('choose-material')">素材库</el-button>
@@ -13,8 +13,40 @@
       </div>
     </header>
 
+    <div class="section-manager">
+      <div class="section-manager__tabs" role="tablist" aria-label="详情栏目">
+        <button
+          v-for="section in sections"
+          :key="section.id"
+          type="button"
+          :class="['section-tab', { 'is-active': section.id === activeSectionId, 'is-disabled': !section.enabled }]"
+          @click="selectSection(section.id)"
+        >
+          {{ section.title }}
+        </button>
+        <el-button :icon="Plus" @click="addSection">新增栏目</el-button>
+      </div>
+      <div v-if="activeSection" class="section-manager__settings">
+        <el-input
+          class="section-title-input"
+          :model-value="activeSection.title"
+          maxlength="16"
+          show-word-limit
+          aria-label="栏目名称"
+          @update:model-value="renameActiveSection"
+        />
+        <div class="section-setting-actions">
+          <span class="section-status-label">前台显示</span>
+          <el-switch :model-value="activeSection.enabled" @update:model-value="setActiveSectionEnabled" />
+          <el-button :icon="ArrowLeft" circle title="栏目左移" :disabled="activeSectionIndex <= 0" @click="moveActiveSection(-1)" />
+          <el-button :icon="ArrowRight" circle title="栏目右移" :disabled="activeSectionIndex >= sections.length - 1" @click="moveActiveSection(1)" />
+          <el-button :icon="Delete" circle title="删除栏目" :disabled="sections.length <= 1" @click="removeActiveSection" />
+        </div>
+      </div>
+    </div>
+
     <div class="conference-rich-editor__workspace">
-      <div class="editor-label">详情</div>
+      <div class="editor-label">{{ activeSection?.title || "详情" }}</div>
       <div class="editor-shell">
         <div ref="toolbarElement" class="editor-toolbar" />
         <div ref="editorElement" class="editor-canvas" />
@@ -28,7 +60,7 @@
     <el-drawer v-model="previewVisible" title="会议详情手机预览" size="430px">
       <ConferenceDetailRichTextPreview
         :html="draftHtml"
-        :title="title"
+        :title="`${title || '会议详情'} · ${activeSection?.title || '活动详情'}`"
         :subtitle="subtitle"
         :cover-image="coverImage"
         :long-image-segments="longImageSegments"
@@ -40,8 +72,8 @@
 <script setup lang="ts">
 import "@wangeditor/editor/dist/css/style.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
-import { Check, FolderOpened, View } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import { ArrowLeft, ArrowRight, Check, Delete, FolderOpened, Plus, View } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createEditor,
   createToolbar,
@@ -54,7 +86,7 @@ import { isConferenceDetailImageAsset } from "../../utils/conferenceDetailImage"
 import ConferenceDetailRichTextPreview from "./ConferenceDetailRichTextPreview.vue";
 
 const props = withDefaults(defineProps<{
-  modelValue: string;
+  modelValue: DetailSectionDraft[];
   title?: string;
   subtitle?: string;
   coverImage?: string;
@@ -69,7 +101,7 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-  "update:modelValue": [value: string];
+  "update:modelValue": [value: DetailSectionDraft[]];
   save: [];
   "choose-material": [];
 }>();
@@ -78,8 +110,12 @@ const editorRef = shallowRef<IDomEditor | null>(null);
 const toolbarRef = shallowRef<ReturnType<typeof createToolbar> | null>(null);
 const editorElement = ref<HTMLElement | null>(null);
 const toolbarElement = ref<HTMLElement | null>(null);
+const sections = ref<DetailSectionDraft[]>([]);
+const activeSectionId = ref("");
 const draftHtml = ref("");
 const previewVisible = ref(false);
+const activeSectionIndex = computed(() => sections.value.findIndex((section) => section.id === activeSectionId.value));
+const activeSection = computed(() => sections.value[activeSectionIndex.value] ?? sections.value[0] ?? null);
 
 const toolbarConfig: Partial<IToolbarConfig> = {
   toolbarKeys: [
@@ -117,7 +153,10 @@ const editorConfig: Partial<IEditorConfig> = {
   scroll: true,
   onChange: (editor) => {
     const html = editor.getHtml();
-    if (html !== draftHtml.value) draftHtml.value = html;
+    if (html !== draftHtml.value) {
+      draftHtml.value = html;
+      updateActiveSectionHtml(html);
+    }
   },
   MENU_CONF: {
     uploadImage: {
@@ -137,16 +176,15 @@ const contentLength = computed(() => draftHtml.value
 watch(
   () => props.modelValue,
   (value) => {
-    if (value !== draftHtml.value) draftHtml.value = value;
-    const editor = editorRef.value;
-    if (editor && value !== editor.getHtml()) editor.setHtml(value || "<p><br></p>");
+    const next = normalizeDraftSections(value);
+    if (JSON.stringify(next) !== JSON.stringify(sections.value)) sections.value = next;
+    if (!sections.value.some((section) => section.id === activeSectionId.value)) {
+      activeSectionId.value = sections.value[0]?.id ?? "";
+    }
+    syncEditorToActiveSection();
   },
-  { immediate: true }
+  { immediate: true, deep: true }
 );
-
-watch(draftHtml, (value) => {
-  if (value !== props.modelValue) emit("update:modelValue", value);
-});
 
 onMounted(async () => {
   await nextTick();
@@ -208,6 +246,107 @@ function insertImage(url: string, alt = "会议详情图片") {
   return true;
 }
 
+function selectSection(sectionId: string) {
+  if (sectionId === activeSectionId.value) return;
+  activeSectionId.value = sectionId;
+  syncEditorToActiveSection();
+}
+
+function addSection() {
+  if (sections.value.length >= 12) {
+    ElMessage.warning("最多可配置 12 个详情栏目");
+    return;
+  }
+  const section: DetailSectionDraft = {
+    id: `detail-section-${Date.now()}`,
+    title: `栏目 ${sections.value.length + 1}`,
+    enabled: true,
+    html: "<p><br></p>"
+  };
+  sections.value = [...sections.value, section];
+  activeSectionId.value = section.id;
+  emitSections();
+  syncEditorToActiveSection();
+}
+
+function renameActiveSection(value: string) {
+  updateActiveSection({ title: value.slice(0, 16) });
+}
+
+function setActiveSectionEnabled(value: string | number | boolean) {
+  updateActiveSection({ enabled: Boolean(value) });
+}
+
+function moveActiveSection(offset: number) {
+  const from = activeSectionIndex.value;
+  const to = from + offset;
+  if (from < 0 || to < 0 || to >= sections.value.length) return;
+  const next = [...sections.value];
+  const [current] = next.splice(from, 1);
+  if (!current) return;
+  next.splice(to, 0, current);
+  sections.value = next;
+  emitSections();
+}
+
+async function removeActiveSection() {
+  if (!activeSection.value || sections.value.length <= 1) return;
+  try {
+    await ElMessageBox.confirm(`删除栏目“${activeSection.value.title}”及其中内容？`, "删除详情栏目", {
+      confirmButtonText: "确认删除",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
+  const currentIndex = activeSectionIndex.value;
+  sections.value = sections.value.filter((section) => section.id !== activeSectionId.value);
+  activeSectionId.value = sections.value[Math.min(currentIndex, sections.value.length - 1)]?.id ?? "";
+  emitSections();
+  syncEditorToActiveSection();
+}
+
+function updateActiveSectionHtml(html: string) {
+  const section = activeSection.value;
+  if (!section || section.html === html) return;
+  updateActiveSection({ html });
+}
+
+function updateActiveSection(patch: Partial<DetailSectionDraft>) {
+  const activeId = activeSectionId.value;
+  sections.value = sections.value.map((section) => section.id === activeId ? { ...section, ...patch } : section);
+  emitSections();
+}
+
+function emitSections() {
+  emit("update:modelValue", sections.value.map((section) => ({ ...section })));
+}
+
+function syncEditorToActiveSection() {
+  const html = activeSection.value?.html || "<p><br></p>";
+  draftHtml.value = html;
+  const editor = editorRef.value;
+  if (editor && editor.getHtml() !== html) editor.setHtml(html);
+}
+
+function normalizeDraftSections(value: DetailSectionDraft[]): DetailSectionDraft[] {
+  const source = Array.isArray(value) && value.length > 0 ? value : [{ id: "activity-detail", title: "活动详情", enabled: true, html: "<p><br></p>" }];
+  return source.slice(0, 12).map((section, index) => ({
+    id: section.id || `detail-section-${index + 1}`,
+    title: section.title?.trim() || `栏目 ${index + 1}`,
+    enabled: section.enabled !== false,
+    html: section.html || "<p><br></p>"
+  }));
+}
+
+interface DetailSectionDraft {
+  id: string;
+  title: string;
+  enabled: boolean;
+  html: string;
+}
+
 defineExpose({ insertImage });
 </script>
 
@@ -220,6 +359,9 @@ defineExpose({ insertImage });
 
 .conference-rich-editor__header,
 .header-actions,
+.section-manager__tabs,
+.section-manager__settings,
+.section-setting-actions,
 .conference-rich-editor__workspace,
 .editor-footer {
   display: flex;
@@ -262,6 +404,75 @@ defineExpose({ insertImage });
 
 .header-actions :deep(.el-button + .el-button) {
   margin-left: 0;
+}
+
+.section-manager {
+  overflow: hidden;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #f8fafb;
+}
+
+.section-manager__tabs {
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e7ec;
+}
+
+.section-tab {
+  min-width: 92px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #5f6c7d;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.section-tab:hover {
+  background: #edf3f6;
+  color: #2f6484;
+}
+
+.section-tab.is-active {
+  border-color: #2f6484;
+  background: #fff;
+  color: #214d68;
+}
+
+.section-tab.is-disabled {
+  color: #9aa4b2;
+  text-decoration: line-through;
+}
+
+.section-manager__settings {
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px;
+}
+
+.section-title-input {
+  max-width: 360px;
+}
+
+.section-setting-actions {
+  gap: 8px;
+}
+
+.section-setting-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.section-status-label {
+  margin-right: 2px;
+  color: #667085;
+  font-size: 12px;
 }
 
 .conference-rich-editor__workspace {
@@ -354,6 +565,7 @@ defineExpose({ insertImage });
 
 @media (max-width: 900px) {
   .conference-rich-editor__header,
+  .section-manager__settings,
   .conference-rich-editor__workspace {
     align-items: stretch;
     flex-direction: column;
@@ -361,6 +573,10 @@ defineExpose({ insertImage });
 
   .header-actions {
     flex-wrap: wrap;
+  }
+
+  .section-title-input {
+    max-width: none;
   }
 
   .editor-label {

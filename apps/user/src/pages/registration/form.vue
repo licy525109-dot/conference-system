@@ -14,21 +14,20 @@
     />
 
     <view v-else-if="conference && form" class="content">
-      <view class="headline ui-card">
-        <StatusTag label="报名信息" tone="info" />
+      <view class="registration-brief">
+        <text class="registration-kicker">会议报名</text>
         <text class="title">{{ conference.title }}</text>
-        <text class="summary">{{ form.title || "填写报名信息" }}</text>
-        <text class="safety-note">金额以提交订单时系统计算结果为准，前端 quote 仅用于展示。</text>
+        <view class="registration-brief__meta">
+          <view class="registration-brief__meta-item">
+            <wd-icon name="time" size="17px" />
+            <text>{{ formatDateTime(conference.startsAt) }}</text>
+          </view>
+          <view v-if="conference.location" class="registration-brief__meta-item">
+            <wd-icon name="location" size="17px" />
+            <text>{{ conference.location }}</text>
+          </view>
+        </view>
       </view>
-
-      <PageRenderer
-        v-if="cmsPage"
-        :dsl="cmsPage.version.dsl"
-        :theme="theme"
-        :conference="conference"
-        suppress-registration-cta
-        @register="scrollToForm"
-      />
 
       <FormSection v-if="isRegistrationModuleVisible('skuSelector')" :title="registrationModuleTitle('skuSelector', '选择报名规格')" description="可选择多个票种，系统会为每张票生成一份参会人信息。" step="1">
         <view class="sku-list">
@@ -54,25 +53,7 @@
         </view>
       </FormSection>
 
-      <FormSection v-if="isRegistrationModuleVisible('couponFee')" :title="registrationModuleTitle('couponFee', '优惠与费用')" description="可输入优惠码试算，最终应付金额以下单时后端重新计算为准。" step="2">
-        <view class="coupon-row">
-          <input class="coupon-input" placeholder="输入优惠码" :value="couponCode" @input="setCouponCode" />
-          <button class="ui-button-secondary ui-button-compact coupon-button" :disabled="quoteLoading" @click="loadQuote">使用</button>
-          <button class="ui-button-secondary ui-button-compact coupon-button" :disabled="couponSelectorLoading" @click="selectMyCoupon">我的券</button>
-        </view>
-        <PriceSummary
-          :origin-amount-cent="quote?.originAmountCent ?? selectedAmountCent"
-          :discount-amount-cent="quote?.discountAmountCent ?? 0"
-          :payable-amount-cent="payableAmountCent"
-          :discounts="quote?.discounts ?? []"
-          :messages="quote?.messages ?? []"
-          :loading="quoteLoading"
-          :error="quoteError"
-          note="提交订单后后端会重新读取票种、库存、优惠规则并计算最终金额。"
-        />
-      </FormSection>
-
-      <FormSection v-if="isRegistrationModuleVisible('attendeeForm')" :title="registrationModuleTitle('attendeeForm', '参会人信息')" :description="attendeeSectionDescription" step="3">
+      <FormSection v-if="isRegistrationModuleVisible('attendeeForm')" :title="registrationModuleTitle('attendeeForm', '填写参会人信息')" :description="attendeeSectionDescription" step="2">
         <EmptyState v-if="attendeeForms.length === 0" title="请先选择报名票数" description="选择票数后，这里会自动生成参会人表单。" mark="人" />
         <view v-for="attendee in attendeeForms" :key="attendee.key" class="attendee-card">
           <text class="attendee-title">{{ attendee.skuName }} 第 {{ attendee.index + 1 }} 位参会人</text>
@@ -146,13 +127,28 @@
           </view>
         </view>
       </FormSection>
+
+      <FormSection v-if="isRegistrationModuleVisible('couponFee')" :title="registrationModuleTitle('couponFee', '优惠码')" step="3">
+        <view class="coupon-row">
+          <input class="coupon-input" placeholder="填写优惠码（选填）" :value="couponCode" @input="setCouponCode" />
+          <button class="ui-button-secondary ui-button-compact coupon-button" :disabled="quoteLoading" @click="loadQuote">验证</button>
+          <button class="ui-button-secondary ui-button-compact coupon-button coupon-button--wide" :disabled="couponSelectorLoading" @click="selectMyCoupon">选择优惠券</button>
+        </view>
+        <view v-if="quoteError" class="coupon-feedback is-error">
+          <wd-icon name="warning" size="16px" />
+          <text>{{ quoteError }}</text>
+        </view>
+        <view v-else-if="couponCode.trim() && (quote?.discountAmountCent ?? 0) > 0" class="coupon-feedback is-success">
+          <wd-icon name="check" size="16px" />
+          <text>优惠码已生效，已减 ¥{{ formatCent(quote?.discountAmountCent ?? 0) }}</text>
+        </view>
+      </FormSection>
     </view>
     <WechatProfilePrompt />
     <FixedBottomActionBar
       v-if="conference && form && isRegistrationModuleVisible('submitOrder')"
       amount-label="合计"
       :amount-value="`¥${formatCent(payableAmountCent)}`"
-      note="金额以提交订单时系统计算结果为准"
       :primary-text="registrationModuleContent('submitOrder', '提交订单')"
       :secondary-text="isRegistrationModuleVisible('addCartButton') ? (addingToCart ? '加入中...' : registrationModuleContent('addCartButton', '加入购物车')) : ''"
       :loading="submitting"
@@ -173,9 +169,6 @@ import ErrorState from "@/components/ui/ErrorState.vue";
 import FixedBottomActionBar from "@/components/ui/FixedBottomActionBar.vue";
 import FormSection from "@/components/ui/FormSection.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
-import PageRenderer from "@/components/PageRenderer.vue";
-import PriceSummary from "@/components/ui/PriceSummary.vue";
-import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
@@ -196,6 +189,7 @@ import { createRegistrationOrder, quoteRegistration, type QuoteResponse, type Re
 import { getMyCoupons, type MyCouponItem } from "@/services/operations";
 import { ApiRequestError } from "@/services/request";
 import { formatCent } from "@/utils/money";
+import { formatDateTime } from "@/utils/date";
 import { goHome } from "@/utils/navigation";
 
 const conferenceId = ref("");
@@ -311,10 +305,6 @@ async function loadPage() {
   } finally {
     loading.value = false;
   }
-}
-
-function scrollToForm() {
-  uni.pageScrollTo({ scrollTop: 420, duration: 200 });
 }
 
 function createEmptyFormData(fields: FormField[]) {
@@ -742,8 +732,8 @@ function readCmsBusinessDisplay(page: PublishedPage | null): Record<string, unkn
 function normalizeRegistrationModules(source: Record<string, unknown>) {
   const defaults = [
     { key: "skuSelector", title: "选择报名规格", content: "", visible: true, sort: 20 },
-    { key: "couponFee", title: "优惠与费用", content: "", visible: true, sort: 30 },
-    { key: "attendeeForm", title: "参会人信息", content: "", visible: true, sort: 40 },
+    { key: "attendeeForm", title: "填写参会人信息", content: "", visible: true, sort: 30 },
+    { key: "couponFee", title: "优惠码", content: "", visible: true, sort: 40 },
     { key: "inventory", title: "库存展示", content: "", visible: true, sort: 50 },
     { key: "addCartButton", title: "加入购物车", content: "加入购物车", visible: true, sort: 60 },
     { key: "submitOrder", title: "提交订单", content: "提交订单", visible: true, sort: 70 }
@@ -770,7 +760,10 @@ function isRegistrationModuleVisible(key: string): boolean {
 }
 
 function registrationModuleTitle(key: string, fallback: string): string {
-  return registrationModule(key)?.title || fallback;
+  const title = registrationModule(key)?.title || fallback;
+  if (key === "couponFee" && title === "优惠与费用") return "优惠码";
+  if (key === "attendeeForm" && title === "参会人信息") return "填写参会人信息";
+  return title;
 }
 
 function registrationModuleContent(key: string, fallback: string): string {
@@ -811,24 +804,54 @@ interface AttendeeFormState {
 }
 
 .content {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 22rpx;
 }
 
-.headline {
+.registration-brief {
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
-  padding: 30rpx;
+  gap: 16rpx;
+  padding: 34rpx 30rpx 30rpx;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-color-surface);
+  box-shadow: var(--ui-shadow-card);
+}
+
+.registration-kicker {
+  color: var(--ui-color-primary);
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.registration-brief__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx 24rpx;
+  margin-top: 2rpx;
+}
+
+.registration-brief__meta-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8rpx;
+  color: var(--ui-color-muted);
+  font-size: 24rpx;
+  line-height: 1.4;
 }
 
 .title {
   display: block;
   color: var(--ui-color-text);
-  font-size: 40rpx;
+  font-size: 36rpx;
   font-weight: 900;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .summary,
@@ -841,36 +864,31 @@ interface AttendeeFormState {
   line-height: 1.5;
 }
 
-.safety-note {
-  display: block;
-  padding: 16rpx 18rpx;
-  border-radius: var(--ui-radius);
-  background: var(--ui-color-primary-soft);
-  color: var(--ui-color-primary);
-  font-size: 24rpx;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
 .sku-list {
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
 }
 
 .sku-card {
   display: flex;
   justify-content: space-between;
   gap: 20rpx;
-  padding: 24rpx;
-  border: 1px solid var(--ui-color-border);
-  border-radius: var(--ui-radius);
-  background: var(--ui-color-surface-muted);
+  padding: 24rpx 4rpx;
+  border-bottom: 1px solid var(--ui-color-border);
+  background: transparent;
 }
 
-.selected {
-  border-color: var(--ui-color-primary);
-  background: var(--ui-color-primary-soft);
+.sku-card:first-child {
+  padding-top: 4rpx;
+}
+
+.sku-card:last-child {
+  padding-bottom: 4rpx;
+  border-bottom: 0;
+}
+
+.sku-card.selected .sku-name {
+  color: var(--ui-color-primary);
 }
 
 .sku-main {
@@ -941,9 +959,9 @@ interface AttendeeFormState {
 
 .coupon-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16rpx;
-  margin-bottom: 18rpx;
 }
 
 .coupon-input {
@@ -959,7 +977,28 @@ interface AttendeeFormState {
 }
 
 .coupon-button {
-  min-width: 150rpx;
+  min-width: 120rpx;
+}
+
+.coupon-button--wide {
+  min-width: 190rpx;
+}
+
+.coupon-feedback {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 18rpx;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.coupon-feedback.is-error {
+  color: var(--ui-color-danger);
+}
+
+.coupon-feedback.is-success {
+  color: #14724a;
 }
 
 .field {

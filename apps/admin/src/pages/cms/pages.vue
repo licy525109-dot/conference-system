@@ -1453,10 +1453,9 @@ const DEFAULT_BUSINESS_MODULES: BusinessDisplayModule[] = [
 const BUSINESS_PAGE_MODULES: Record<string, BusinessDisplayModule[]> = {
   conferenceDetail: DEFAULT_BUSINESS_MODULES,
   registrationForm: [
-    { key: "registrationInfo", title: "报名信息", content: "", visible: true, sort: 10, style: "card" },
     { key: "skuSelector", title: "选择报名规格", content: "", visible: true, sort: 20, style: "card" },
-    { key: "couponFee", title: "优惠与费用", content: "", visible: true, sort: 30, style: "card" },
-    { key: "attendeeForm", title: "参会人信息", content: "", visible: true, sort: 40, style: "card" },
+    { key: "attendeeForm", title: "填写参会人信息", content: "", visible: true, sort: 30, style: "card" },
+    { key: "couponFee", title: "优惠码", content: "", visible: true, sort: 40, style: "compact" },
     { key: "inventory", title: "库存展示", content: "", visible: true, sort: 50, style: "compact" },
     { key: "addCartButton", title: "加入购物车", content: "加入购物车", visible: true, sort: 60, style: "compact" },
     { key: "submitOrder", title: "提交订单", content: "提交订单", visible: true, sort: 70, style: "accent" },
@@ -3555,7 +3554,7 @@ function requiredBusinessModuleKeysForPage(page: PageTemplate | null | undefined
   const key = businessDisplayKeyForPage(page);
   const map: Record<string, string[]> = {
     conferenceDetail: ["conferenceInfo", "location", "skus", "registrationButton"],
-    registrationForm: ["registrationInfo", "skuSelector", "attendeeForm", "submitOrder"],
+    registrationForm: ["skuSelector", "attendeeForm", "couponFee", "inventory", "addCartButton", "submitOrder"],
     registrationCredential: ["credentialHeader", "credentialQr", "conferenceInfo", "attendeeInfo"],
     myRegistrations: ["listHeader", "credentialEntry", "emptyState"],
     mallHome: ["mallHeader", "categories", "recommended", "cart"],

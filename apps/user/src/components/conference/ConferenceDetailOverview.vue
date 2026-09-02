@@ -1,7 +1,13 @@
 <template>
   <view class="detail-overview">
     <view class="detail-overview__hero">
-      <image v-if="conference.coverImageUrl" class="detail-overview__cover" :src="conference.coverImageUrl" mode="aspectFill" />
+      <view
+        v-if="conference.coverImageUrl"
+        class="detail-overview__cover"
+        :style="{ backgroundImage: `url('${conference.coverImageUrl}')` }"
+        role="img"
+        :aria-label="`${conference.title}会议封面`"
+      />
       <view v-else class="detail-overview__fallback">
         <image class="detail-overview__logo" src="/static/fixed-templates/brand/logo_gc_mark.png" mode="aspectFit" />
         <text class="detail-overview__fallback-title">观潮会集</text>
@@ -120,6 +126,9 @@ function remainingStock(sku: RegistrationSku): number {
   width: 100%;
   height: 100%;
   background: #ebeae5;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
 .detail-overview__fallback {

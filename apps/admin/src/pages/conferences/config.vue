@@ -148,7 +148,7 @@
           <section class="form-panel">
             <ConferenceDetailRichTextEditor
               ref="detailRichTextEditorRef"
-              v-model="detailRichTextHtml"
+              v-model="detailSections"
               :title="conferenceForm.title"
               :subtitle="conferenceForm.subtitle"
               :cover-image="conferenceForm.coverImage"
@@ -313,9 +313,12 @@ import {
 import type { Conference, FormField, MaterialAsset, Sku } from "../../services/types";
 import { isConferenceDetailImageAsset, prepareConferenceDetailImage } from "../../utils/conferenceDetailImage";
 import {
+  hasConferenceDetailSectionsContract,
   hasConferenceDetailRichTextContract,
   normalizeConferenceDetailContent,
-  normalizeConferenceDetailRichText
+  normalizeConferenceDetailRichText,
+  normalizeConferenceDetailSections,
+  serializeConferenceDetailSections
 } from "@conference/shared";
 import {
   conferenceDetailBlocksToEditorHtml,
@@ -366,7 +369,7 @@ const conferenceForm = reactive({
   maxTicketsPerOrder: 0
 });
 const detailImage = reactive(createEmptyDetailImage());
-const detailRichTextHtml = ref("");
+const detailSections = ref<DetailSectionDraft[]>([]);
 const skuForm = reactive({ id: "", name: "", description: "", priceYuan: 0, stock: 0, status: "ACTIVE" });
 const fieldForm = reactive({
   id: "",
@@ -454,10 +457,20 @@ function syncConferenceForm() {
     maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0
   });
   Object.assign(detailImage, normalizeDetailImage(contentJson));
-  if (hasConferenceDetailRichTextContract(contentJson)) {
-    detailRichTextHtml.value = conferenceDetailRichTextToEditorHtml(normalizeConferenceDetailRichText(contentJson));
+  if (hasConferenceDetailSectionsContract(contentJson)) {
+    const savedSections = normalizeConferenceDetailSections(contentJson).items;
+    detailSections.value = savedSections.map((section) => ({
+      id: section.id,
+      title: section.title,
+      enabled: section.enabled,
+      html: conferenceDetailRichTextToEditorHtml(section.content)
+    }));
+    if (detailSections.value.length === 0) detailSections.value = [createDefaultDetailSection()];
   } else {
-    detailRichTextHtml.value = conferenceDetailBlocksToEditorHtml(normalizeConferenceDetailContent(contentJson).blocks);
+    const legacyHtml = hasConferenceDetailRichTextContract(contentJson)
+      ? conferenceDetailRichTextToEditorHtml(normalizeConferenceDetailRichText(contentJson))
+      : conferenceDetailBlocksToEditorHtml(normalizeConferenceDetailContent(contentJson).blocks);
+    detailSections.value = [{ ...createDefaultDetailSection(), html: legacyHtml || "<p><br></p>" }];
   }
 }
 
@@ -743,14 +756,32 @@ async function saveDetailContent() {
   savingDetailContent.value = true;
   try {
     const contentJson = { ...readRecord(conference.value.contentJson) };
-    const detailRichText = createConferenceDetailRichText(detailRichTextHtml.value);
+    const updatedAt = new Date().toISOString();
+    const sectionItems = detailSections.value.map((section, index) => ({
+      id: section.id,
+      title: section.title.trim() || `栏目 ${index + 1}`,
+      enabled: section.enabled,
+      sort: (index + 1) * 10,
+      content: createConferenceDetailRichText(section.html)
+    }));
+    contentJson.detailSections = {
+      ...serializeConferenceDetailSections(sectionItems),
+      updatedAt
+    };
+    const legacyContent = sectionItems.find((section) => section.enabled)?.content ?? sectionItems[0]?.content;
     contentJson.detailRichText = {
-      ...detailRichText,
-      updatedAt: new Date().toISOString()
+      ...(legacyContent ?? createConferenceDetailRichText("")),
+      updatedAt
     };
     const updated = await updateConference(conferenceId.value, { contentJson });
     applyUpdatedConference(updated);
-    detailRichTextHtml.value = conferenceDetailRichTextToEditorHtml(normalizeConferenceDetailRichText(updated.contentJson));
+    const savedSections = normalizeConferenceDetailSections(updated.contentJson).items;
+    detailSections.value = savedSections.map((section) => ({
+      id: section.id,
+      title: section.title,
+      enabled: section.enabled,
+      html: conferenceDetailRichTextToEditorHtml(section.content)
+    }));
     ElMessage.success("会议详情内容已保存");
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "会议详情内容保存失败");
@@ -851,11 +882,27 @@ function readPositiveNumber(value: unknown): number | null {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+function createDefaultDetailSection(): DetailSectionDraft {
+  return {
+    id: "activity-detail",
+    title: "活动详情",
+    enabled: true,
+    html: "<p><br></p>"
+  };
+}
+
 interface DetailImageSegment {
   url: string;
   materialId: string | null;
   width: number | null;
   height: number | null;
+}
+
+interface DetailSectionDraft {
+  id: string;
+  title: string;
+  enabled: boolean;
+  html: string;
 }
 
 interface DetailImageState {

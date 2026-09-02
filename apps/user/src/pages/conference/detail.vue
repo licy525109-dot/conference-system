@@ -22,12 +22,34 @@
           @open-tickets="openTicketSelector"
         />
 
-        <view class="detail-tabs" aria-label="会议详情切换">
-          <button class="detail-tabs__item is-active">活动详情</button>
-          <button class="detail-tabs__item" @click="openTicketSelector">可选票种</button>
+        <view v-if="detailSections.length" class="detail-section" aria-label="会议详情栏目">
+          <scroll-view v-if="detailSections.length > 1" class="detail-section-nav" scroll-x :show-scrollbar="false">
+            <view class="detail-section-nav__inner">
+              <button
+                v-for="section in detailSections"
+                :key="section.id"
+                :class="['detail-section-nav__item', { 'is-active': section.id === activeDetailSectionId }]"
+                @click="activeDetailSectionId = section.id"
+              >
+                {{ section.title }}
+              </button>
+            </view>
+          </scroll-view>
+          <view v-if="detailSections.length === 1" class="detail-section__header">
+            <view>
+              <text class="detail-section__title">{{ activeDetailSection?.title }}</text>
+              <text class="detail-section__subtitle">主办方发布的图文内容</text>
+            </view>
+          </view>
+          <ConferenceDetailRichText v-if="activeDetailSectionRenderable" :content="activeDetailSectionContent" />
+          <ConferenceDetailLongImage v-if="showLongImageInActiveSection" :segments="detailLongImageSegments" />
+          <view v-if="!activeDetailSectionRenderable && !showLongImageInActiveSection" class="detail-section__empty">
+            <wd-icon name="info-circle" size="24px" />
+            <text>本栏目暂未发布内容</text>
+          </view>
         </view>
 
-        <view class="detail-section" aria-label="活动详情">
+        <view v-else class="detail-section" aria-label="活动详情">
           <view class="detail-section__header">
             <view>
               <text class="detail-section__title">活动详情</text>
@@ -90,10 +112,13 @@ import { ensureLogin } from "@/services/auth";
 import { createCmsThemeVars } from "@/theme/cmsTheme";
 import { normalizeConferenceDetailLongImage } from "@/utils/conferenceDetail";
 import {
+  hasConferenceDetailSectionsContract,
   hasConferenceDetailRichTextContract,
   isConferenceDetailRichTextRenderable,
   normalizeConferenceDetailContent,
   normalizeConferenceDetailRichText,
+  normalizeConferenceDetailSections,
+  type ConferenceDetailSection,
   type ConferenceDetailContentBlock
 } from "@conference/shared";
 import { formatDateTime } from "@/utils/date";
@@ -108,12 +133,30 @@ const loading = ref(false);
 const error = ref("");
 const ticketSheetVisible = ref(false);
 const selectedSkuId = ref("");
+const activeDetailSectionId = ref("");
 
 const pageStyle = computed(() => createCmsThemeVars(theme.value));
 const detailLongImage = computed(() => normalizeConferenceDetailLongImage(conference.value?.contentJson));
 const detailRichText = computed(() => normalizeConferenceDetailRichText(conference.value?.contentJson));
 const hasDetailRichText = computed(() => hasConferenceDetailRichTextContract(conference.value?.contentJson));
 const detailRichTextRenderable = computed(() => isConferenceDetailRichTextRenderable(detailRichText.value));
+const detailSections = computed(() => {
+  if (!hasConferenceDetailSectionsContract(conference.value?.contentJson)) return [];
+  return normalizeConferenceDetailSections(conference.value?.contentJson).items.filter((section) => section.enabled);
+});
+const activeDetailSection = computed<ConferenceDetailSection | null>(() =>
+  detailSections.value.find((section) => section.id === activeDetailSectionId.value) ?? detailSections.value[0] ?? null
+);
+const activeDetailSectionContent = computed(() => activeDetailSection.value?.content ?? normalizeConferenceDetailRichText(null));
+const activeDetailSectionRenderable = computed(() => activeDetailSection.value
+  ? isConferenceDetailRichTextRenderable(activeDetailSection.value.content)
+  : false
+);
+const detailLongImageSegments = computed(() => detailLongImage.value?.segments ?? []);
+const showLongImageInActiveSection = computed(() => Boolean(
+  detailLongImage.value?.segments.length
+  && activeDetailSection.value?.id === detailSections.value[0]?.id
+));
 const detailContentBlocks = computed(() => normalizeConferenceDetailContent(conference.value?.contentJson).blocks);
 const detailHasContent = computed(() => detailRichTextRenderable.value || (!hasDetailRichText.value && detailContentBlocks.value.length > 0) || Boolean(detailLongImage.value?.segments.length));
 const registrationSkus = computed(() => {
@@ -169,6 +212,7 @@ async function loadDetail() {
     ]);
     conference.value = detail;
     theme.value = themeConfig;
+    activeDetailSectionId.value = normalizeConferenceDetailSections(detail.contentJson).items.find((section) => section.enabled)?.id ?? "";
     selectedSkuId.value = firstAvailableSku(detail.skus)?.id ?? detail.skus[0]?.id ?? "";
     uni.setNavigationBarTitle({ title: detail.title || "会议详情" });
   } catch (err) {
@@ -321,51 +365,54 @@ function parseDateTime(value: string | null | undefined): number {
   margin: 0 auto;
 }
 
-.detail-tabs {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  margin: 0 30rpx 24rpx;
-  padding: 18rpx 22rpx;
-  border-radius: 999px;
-  background: rgba(251, 252, 250, 0.94);
-  box-shadow: 0 10rpx 28rpx rgba(24, 39, 57, 0.06);
-  box-sizing: border-box;
-  backdrop-filter: blur(12rpx);
-}
-
-.detail-tabs__item {
-  min-width: 0;
-  height: 64rpx;
-  flex: 1;
-  padding: 0 18rpx;
-  border-radius: 999px;
-  background: #edf1f4;
-  color: #667085;
-  font-size: 26rpx;
-  font-weight: 800;
-  line-height: 64rpx;
-}
-
-.detail-tabs__item::after {
-  border: 0;
-}
-
-.detail-tabs__item.is-active {
-  background: #10233d;
-  color: #f8faf8;
-  box-shadow: 0 10rpx 22rpx rgba(16, 35, 61, 0.2);
-}
-
 .detail-section {
   margin: 0 30rpx 32rpx;
   overflow: hidden;
   border-radius: 26rpx;
   background: #fbfcfa;
   box-shadow: 0 12rpx 34rpx rgba(24, 39, 57, 0.07);
+}
+
+.detail-section-nav {
+  width: 100%;
+  border-bottom: 1px solid #e3e8e5;
+  background: #f5f7f5;
+  white-space: nowrap;
+}
+
+.detail-section-nav__inner {
+  display: inline-flex;
+  min-width: 100%;
+  align-items: center;
+  gap: 12rpx;
+  padding: 18rpx 22rpx;
+  box-sizing: border-box;
+}
+
+.detail-section-nav__item {
+  width: auto;
+  min-width: 150rpx;
+  height: 62rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  border: 1px solid transparent;
+  border-radius: 8rpx;
+  background: transparent;
+  color: #667085;
+  font-size: 25rpx;
+  font-weight: 800;
+  line-height: 60rpx;
+  white-space: nowrap;
+}
+
+.detail-section-nav__item::after {
+  border: 0;
+}
+
+.detail-section-nav__item.is-active {
+  border-color: #cad6db;
+  background: #fbfcfa;
+  color: #17324a;
 }
 
 .detail-section__header {

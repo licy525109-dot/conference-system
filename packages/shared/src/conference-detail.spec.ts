@@ -2,11 +2,14 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   hasConferenceDetailRichTextContract,
+  hasConferenceDetailSectionsContract,
   isConferenceDetailBlockRenderable,
   isConferenceDetailRichTextRenderable,
   normalizeConferenceDetailContent,
   normalizeConferenceDetailRichText,
+  normalizeConferenceDetailSections,
   serializeConferenceDetailRichText,
+  serializeConferenceDetailSections,
   serializeConferenceDetailContent
 } from "./conference-detail";
 
@@ -114,5 +117,32 @@ describe("conference detail content contract", () => {
         nodes: [{ name: "p", attrs: {}, children: [{ name: "br", attrs: {}, children: [] }] }]
       }
     })), false);
+  });
+
+  it("normalizes editable detail sections and keeps their configured order", () => {
+    const sections = normalizeConferenceDetailSections({
+      detailSections: {
+        version: 1,
+        items: [
+          {
+            id: "notice",
+            title: "参会须知",
+            sort: 20,
+            content: { version: 1, html: "<p>请携带证件</p>", nodes: [{ name: "p", attrs: {}, children: [{ type: "text", text: "请携带证件" }] }] }
+          },
+          {
+            id: "intro",
+            title: "活动详情",
+            sort: 10,
+            content: { version: 1, html: "<p>会议介绍</p>", nodes: [{ name: "p", attrs: {}, children: [{ type: "text", text: "会议介绍" }] }] }
+          }
+        ]
+      }
+    });
+
+    assert.equal(hasConferenceDetailSectionsContract({ detailSections: { version: 1, items: [] } }), true);
+    assert.deepEqual(sections.items.map((item) => item.id), ["intro", "notice"]);
+    assert.deepEqual(sections.items.map((item) => item.sort), [10, 20]);
+    assert.equal(serializeConferenceDetailSections(sections.items).items[1]?.title, "参会须知");
   });
 });

@@ -65,6 +65,19 @@ export interface ConferenceDetailRichTextContent {
   nodes: ConferenceDetailRichTextNode[];
 }
 
+export interface ConferenceDetailSection {
+  id: string;
+  title: string;
+  enabled: boolean;
+  sort: number;
+  content: ConferenceDetailRichTextContent;
+}
+
+export interface ConferenceDetailSections {
+  version: 1;
+  items: ConferenceDetailSection[];
+}
+
 export interface ConferenceDetailContentBlock {
   id: string;
   enabled: boolean;
@@ -127,6 +140,45 @@ export function serializeConferenceDetailRichText(
 
 export function isConferenceDetailRichTextRenderable(content: ConferenceDetailRichTextContent): boolean {
   return content.nodes.some(isRenderableRichTextNode);
+}
+
+export function normalizeConferenceDetailSections(value: unknown): ConferenceDetailSections {
+  const root = readRecord(value);
+  const source = readRecord(root.detailSections ?? root.conferenceDetailSections);
+  const rawItems = Array.isArray(source.items) ? source.items : [];
+
+  return {
+    version: 1,
+    items: rawItems
+      .slice(0, 12)
+      .map((item, index) => {
+        const record = readRecord(item);
+        return {
+          id: readString(record.id) || `conference-detail-section-${index + 1}`,
+          title: readString(record.title) || `栏目 ${index + 1}`,
+          enabled: typeof record.enabled === "boolean" ? record.enabled : true,
+          sort: readFiniteNumber(record.sort, (index + 1) * 10),
+          content: normalizeConferenceDetailRichText(readRecord(record.content))
+        };
+      })
+      .sort((left, right) => left.sort - right.sort)
+      .map((item, index) => ({ ...item, sort: (index + 1) * 10 }))
+  };
+}
+
+export function hasConferenceDetailSectionsContract(value: unknown): boolean {
+  const root = readRecord(value);
+  const source = readRecord(root.detailSections ?? root.conferenceDetailSections);
+  return source.version === 1 && Array.isArray(source.items);
+}
+
+export function serializeConferenceDetailSections(items: ConferenceDetailSection[]): ConferenceDetailSections {
+  return normalizeConferenceDetailSections({
+    detailSections: {
+      version: 1,
+      items
+    }
+  });
 }
 
 export function normalizeConferenceDetailContent(value: unknown): ConferenceDetailContent {
