@@ -1420,8 +1420,11 @@ export interface GuestScheduleSmartSheetConnection {
   docUrl: string | null;
   guestSheetId: string;
   assignmentSheetId: string;
+  mode: GuestScheduleSmartSheetMode;
+  sheetId: string | null;
   guestFieldMapping: Record<string, string>;
   assignmentFieldMapping: Record<string, string>;
+  wideSheetConfig: GuestScheduleWideSheetConfig | null;
   enabled: boolean;
   syncIntervalSeconds: number;
   syncing: boolean;
@@ -1439,9 +1442,69 @@ export interface GuestScheduleSmartSheetConfig {
   defaults: {
     guestFieldMapping: Record<string, string>;
     assignmentFieldMapping: Record<string, string>;
+    wideSheetConfig: GuestScheduleWideSheetConfig;
     syncIntervalSeconds: number;
   };
   requiredAssignmentFields: string[];
+}
+
+export type GuestScheduleSmartSheetMode = "EXISTING_WIDE_SHEET" | "SEPARATE_SHEETS";
+
+export interface GuestScheduleWideSheetConfig {
+  mode: "EXISTING_WIDE_SHEET";
+  identity: {
+    attendeeIdField: string;
+    phoneField: string;
+    nameField: string;
+    companyField: string;
+  };
+  writeRegistrationFields: boolean;
+  registration: {
+    registrationNoField: string;
+    conferenceTitleField: string;
+    titleField: string;
+    skuNameField: string;
+    registrationStatusField: string;
+    syncedAtField: string;
+  };
+  schedules: Array<{
+    id: string;
+    type: GuestScheduleType;
+    label: string;
+    enabled: boolean;
+    triggerField: string;
+    activityNameField: string;
+    activityNameFallback: string;
+    startsAtField: string;
+    endsAtField: string;
+    locationField: string;
+    roleField: string;
+    tableNoField: string;
+    isTableLeaderField: string;
+    shareTopicField: string;
+    notesField: string;
+  }>;
+}
+
+export interface GuestScheduleSmartSheetDiscovery {
+  docId: string;
+  docUrl: string;
+  viewId: string | null;
+  selectedSheetId: string;
+  sheets: Array<{ id: string; title: string; type: string; fieldCount: number; recordCount: number }>;
+  fields: Array<{ id: string; title: string; type: string }>;
+  suggestedWideSheetConfig: GuestScheduleWideSheetConfig;
+}
+
+export interface GuestScheduleSmartSheetCheck {
+  ready: boolean;
+  mode?: GuestScheduleSmartSheetMode;
+  message: string;
+  issues?: string[];
+  warnings?: string[];
+  sheet?: { fieldCount: number; missingFields: string[] };
+  guestSheet: { fieldCount: number; missingFields: string[] };
+  assignmentSheet: { fieldCount: number; missingRequiredFields: string[]; missingRecommendedFields: string[] };
 }
 
 export interface GuestScheduleSyncRun {

@@ -236,7 +236,7 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="connectionVisible" title="企微智能表连接" size="620px" destroy-on-close>
+    <el-drawer v-model="connectionVisible" title="企微智能表连接" size="820px" destroy-on-close>
       <div class="connection-drawer">
         <el-alert
           v-if="!connectionForm.integrationId"
@@ -244,6 +244,8 @@
           :closable="false"
           title="请先在企微接入配置中完成自建应用 CorpID、AgentID 和 Secret 配置。"
         />
+        <el-segmented v-model="connectionForm.mode" :options="connectionModeOptions" block @change="checkResult = null" />
+
         <el-form label-position="top">
           <el-form-item label="企业微信自建应用" required>
             <el-select v-model="connectionForm.integrationId" placeholder="选择企微配置" style="width: 100%">
@@ -256,20 +258,218 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="智能表文档 ID" required>
-            <el-input v-model="connectionForm.docId" placeholder="docid" />
-          </el-form-item>
-          <el-form-item label="智能表访问地址">
-            <el-input v-model="connectionForm.docUrl" placeholder="https://doc.weixin.qq.com/smartsheet/..." />
-          </el-form-item>
-          <div class="form-grid">
-            <el-form-item label="报名嘉宾子表 ID" required>
-              <el-input v-model="connectionForm.guestSheetId" placeholder="系统写入报名数据" />
+          <template v-if="connectionForm.mode === 'EXISTING_WIDE_SHEET'">
+            <section class="connection-section">
+              <div class="connection-section__heading">
+                <div>
+                  <strong>1. 识别现有智能表</strong>
+                  <span>直接使用你正在维护的原表，不创建新表，也不改变现有视图。</span>
+                </div>
+              </div>
+              <el-form-item label="智能表链接" required>
+                <div class="link-recognizer">
+                  <el-input v-model="connectionForm.docUrl" placeholder="粘贴 doc.weixin.qq.com/smartsheet/... 链接" clearable />
+                  <el-button :icon="Search" :loading="discovering" @click="discoverExistingSheet(true)">识别现有表</el-button>
+                </div>
+              </el-form-item>
+              <el-form-item v-if="discovery" label="数据子表" required>
+                <el-select v-model="connectionForm.sheetId" style="width: 100%" @change="onExistingSheetChange">
+                  <el-option
+                    v-for="sheet in discovery.sheets"
+                    :key="sheet.id"
+                    :value="sheet.id"
+                    :label="`${sheet.title}${sheet.recordCount ? ` · ${sheet.recordCount} 行` : ''}`"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-alert
+                v-if="discovery"
+                type="success"
+                :closable="false"
+                show-icon
+                :title="`已识别“${selectedSheet?.title || '现有数据表'}”，共 ${discovery.fields.length} 个字段`"
+              />
+            </section>
+
+            <section v-if="discovery" class="connection-section">
+              <div class="connection-section__heading">
+                <div>
+                  <strong>2. 嘉宾匹配</strong>
+                  <span>系统只读取能唯一对应到已报名嘉宾的行；推荐优先使用手机号。</span>
+                </div>
+              </div>
+              <div class="form-grid">
+                <el-form-item label="姓名列">
+                  <el-select v-model="connectionForm.wideSheetConfig.identity.nameField" filterable clearable placeholder="选择现有列" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="手机号列（推荐）">
+                  <el-select v-model="connectionForm.wideSheetConfig.identity.phoneField" filterable clearable placeholder="选择现有列" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="公司 / 品牌列">
+                  <el-select v-model="connectionForm.wideSheetConfig.identity.companyField" filterable clearable placeholder="姓名重名时用于二次确认" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="系统参会人 ID 列">
+                  <el-select v-model="connectionForm.wideSheetConfig.identity.attendeeIdField" filterable clearable placeholder="现有表没有可留空" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+              </div>
+            </section>
+
+            <section v-if="discovery" class="connection-section">
+              <div class="connection-section__heading connection-section__heading--switch">
+                <div>
+                  <strong>3. 新报名写回现有表</strong>
+                  <span>关闭时完全只读；开启后也只写下方映射列，不会碰邀约、分组、房间等其他数据。</span>
+                </div>
+                <el-switch v-model="connectionForm.wideSheetConfig.writeRegistrationFields" active-text="允许写入" inactive-text="只读保护" />
+              </div>
+              <div v-if="connectionForm.wideSheetConfig.writeRegistrationFields" class="form-grid registration-mapping">
+                <el-form-item label="报名编号列">
+                  <el-select v-model="connectionForm.wideSheetConfig.registration.registrationNoField" filterable clearable placeholder="可不填" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="职位列">
+                  <el-select v-model="connectionForm.wideSheetConfig.registration.titleField" filterable clearable placeholder="可不填" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="票种列">
+                  <el-select v-model="connectionForm.wideSheetConfig.registration.skuNameField" filterable clearable placeholder="可不填" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="报名状态列">
+                  <el-select v-model="connectionForm.wideSheetConfig.registration.registrationStatusField" filterable clearable placeholder="可不填" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="会议名称列">
+                  <el-select v-model="connectionForm.wideSheetConfig.registration.conferenceTitleField" filterable clearable placeholder="可不填" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="同步时间列">
+                  <el-select v-model="connectionForm.wideSheetConfig.registration.syncedAtField" filterable clearable placeholder="可不填" style="width: 100%">
+                    <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+              </div>
+            </section>
+
+            <section v-if="discovery" class="connection-section schedule-mapping-section">
+              <div class="connection-section__heading">
+                <div>
+                  <strong>4. 现场事项规则</strong>
+                  <span>每条规则对应一类事项；同一位嘉宾可以同时命中多条规则。</span>
+                </div>
+                <el-button text type="primary" :icon="Plus" @click="addScheduleRule">添加规则</el-button>
+              </div>
+              <article
+                v-for="rule in connectionForm.wideSheetConfig.schedules"
+                :key="rule.id"
+                class="schedule-mapping-rule"
+                :class="{ 'is-disabled': !rule.enabled }"
+              >
+                <header>
+                  <el-switch v-model="rule.enabled" />
+                  <strong>{{ rule.label }}</strong>
+                  <span>{{ typeOptions.find((item) => item.value === rule.type)?.label }}</span>
+                  <el-button v-if="rule.id.startsWith('custom-')" text type="danger" :icon="Delete" @click="removeScheduleRule(rule.id)" />
+                </header>
+                <div v-if="rule.enabled" class="schedule-rule-fields">
+                  <div class="form-grid">
+                    <el-form-item label="事项类型">
+                      <el-select v-model="rule.type" style="width: 100%">
+                        <el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="后台显示名称">
+                      <el-input v-model="rule.label" maxlength="20" />
+                    </el-form-item>
+                    <el-form-item label="参与判断列">
+                      <el-select v-model="rule.triggerField" filterable clearable placeholder="例如：是否参加工作坊" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="开始时间列" required>
+                      <el-select v-model="rule.startsAtField" filterable clearable placeholder="必须选择" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="事项名称列">
+                      <el-select v-model="rule.activityNameField" filterable clearable placeholder="可由右侧固定名称代替" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="固定事项名称">
+                      <el-input v-model="rule.activityNameFallback" placeholder="例如：品牌增长工作坊" />
+                    </el-form-item>
+                    <el-form-item label="结束时间列">
+                      <el-select v-model="rule.endsAtField" filterable clearable placeholder="可不填" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="地点列">
+                      <el-select v-model="rule.locationField" filterable clearable placeholder="可不填" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="嘉宾角色列">
+                      <el-select v-model="rule.roleField" filterable clearable placeholder="主持人、分享嘉宾等" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="备注列">
+                      <el-select v-model="rule.notesField" filterable clearable placeholder="可不填" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item v-if="rule.type === 'DINNER'" label="晚宴桌号列">
+                      <el-select v-model="rule.tableNoField" filterable clearable placeholder="可不填" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item v-if="rule.type === 'DINNER'" label="是否桌长列">
+                      <el-select v-model="rule.isTableLeaderField" filterable clearable placeholder="可不填" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item v-if="rule.type === 'SPEECH'" label="分享主题列">
+                      <el-select v-model="rule.shareTopicField" filterable clearable placeholder="可不填" style="width: 100%">
+                        <el-option v-for="field in fieldOptions" :key="field.id" :label="field.title" :value="field.title" />
+                      </el-select>
+                    </el-form-item>
+                  </div>
+                </div>
+              </article>
+            </section>
+          </template>
+
+          <template v-else>
+            <el-form-item label="智能表文档 ID" required>
+              <el-input v-model="connectionForm.docId" placeholder="docid" />
             </el-form-item>
-            <el-form-item label="嘉宾事项子表 ID" required>
-              <el-input v-model="connectionForm.assignmentSheetId" placeholder="运营维护现场事项" />
+            <el-form-item label="智能表访问地址">
+              <el-input v-model="connectionForm.docUrl" placeholder="https://doc.weixin.qq.com/smartsheet/..." />
             </el-form-item>
-          </div>
+            <div class="form-grid">
+              <el-form-item label="报名嘉宾子表 ID" required>
+                <el-input v-model="connectionForm.guestSheetId" placeholder="系统写入报名数据" />
+              </el-form-item>
+              <el-form-item label="嘉宾事项子表 ID" required>
+                <el-input v-model="connectionForm.assignmentSheetId" placeholder="运营维护现场事项" />
+              </el-form-item>
+            </div>
+          </template>
+
           <div class="form-grid">
             <el-form-item label="自动同步">
               <el-switch v-model="connectionForm.enabled" active-text="已启用" inactive-text="已停用" />
@@ -285,7 +485,7 @@
           </div>
         </el-form>
 
-        <el-collapse class="field-template">
+        <el-collapse v-if="connectionForm.mode === 'SEPARATE_SHEETS'" class="field-template">
           <el-collapse-item title="报名嘉宾子表字段" name="guest">
             <div class="field-list">
               <span v-for="field in guestFieldNames" :key="field">{{ field }}</span>
@@ -300,8 +500,10 @@
 
         <section v-if="checkResult" class="check-result" :class="checkResult.ready ? 'is-ready' : 'has-errors'">
           <strong>{{ checkResult.message }}</strong>
-          <span v-if="checkResult.guestSheet.missingFields.length">嘉宾表缺少：{{ checkResult.guestSheet.missingFields.join("、") }}</span>
-          <span v-if="checkResult.assignmentSheet.missingRequiredFields.length">事项表缺少必填列：{{ checkResult.assignmentSheet.missingRequiredFields.join("、") }}</span>
+          <span v-for="issue in checkResult.issues || []" :key="issue">{{ issue }}</span>
+          <span v-for="warning in checkResult.warnings || []" :key="warning" class="check-warning">{{ warning }}</span>
+          <span v-if="!checkResult.issues?.length && checkResult.guestSheet.missingFields.length">嘉宾表缺少：{{ checkResult.guestSheet.missingFields.join("、") }}</span>
+          <span v-if="!checkResult.issues?.length && checkResult.assignmentSheet.missingRequiredFields.length">事项表缺少必填列：{{ checkResult.assignmentSheet.missingRequiredFields.join("、") }}</span>
         </section>
 
         <div class="drawer-actions">
@@ -349,6 +551,7 @@ import {
   archiveGuestSchedule,
   checkGuestScheduleSmartSheet,
   createGuestSchedule,
+  discoverGuestScheduleSmartSheet,
   getGuestScheduleSmartSheetConfig,
   listConferences,
   listGuestScheduleAttendees,
@@ -364,6 +567,9 @@ import type {
   GuestScheduleAssignment,
   GuestScheduleAttendeeOption,
   GuestScheduleSmartSheetConfig,
+  GuestScheduleSmartSheetDiscovery,
+  GuestScheduleSmartSheetMode,
+  GuestScheduleWideSheetConfig,
   GuestScheduleState,
   GuestScheduleSyncRun,
   GuestScheduleType
@@ -378,11 +584,17 @@ const typeOptions: Array<{ label: string; value: GuestScheduleType }> = [
   { label: "其他", value: "OTHER" }
 ];
 
+const connectionModeOptions: Array<{ label: string; value: GuestScheduleSmartSheetMode }> = [
+  { label: "接入现有智能表", value: "EXISTING_WIDE_SHEET" },
+  { label: "独立双表（兼容）", value: "SEPARATE_SHEETS" }
+];
+
 const items = ref<GuestScheduleAssignment[]>([]);
 const conferences = ref<Conference[]>([]);
 const attendeeOptions = ref<GuestScheduleAttendeeOption[]>([]);
 const syncConfig = ref<GuestScheduleSmartSheetConfig | null>(null);
 const syncRuns = ref<GuestScheduleSyncRun[]>([]);
+const discovery = ref<GuestScheduleSmartSheetDiscovery | null>(null);
 const checkResult = ref<Awaited<ReturnType<typeof checkGuestScheduleSmartSheet>> | null>(null);
 const tableRef = ref<TableInstance>();
 const conferenceId = ref("");
@@ -402,6 +614,7 @@ const editorVisible = ref(false);
 const connectionVisible = ref(false);
 const savingConnection = ref(false);
 const checking = ref(false);
+const discovering = ref(false);
 const editingId = ref("");
 const form = reactive(emptyForm());
 const connectionForm = reactive(emptyConnectionForm());
@@ -423,12 +636,17 @@ const syncTitle = computed(() => {
 });
 const syncDescription = computed(() => {
   const connection = syncConfig.value?.connection;
-  if (!connection) return "连接后，报名嘉宾会自动写入嘉宾表，事项表修改会进入待发布状态。";
+  if (!connection) return "连接后，可从现有企微智能表读取现场事项；确认发布后嘉宾端才会更新。";
   if (!connection.enabled) return "现有发布内容不受影响；启用后才会继续交换数据。";
+  if (connection.mode === "EXISTING_WIDE_SHEET") {
+    return `每 ${formatInterval(connection.syncIntervalSeconds)} 同步一次 · 使用现有数据子表 · ${connection.wideSheetConfig?.writeRegistrationFields ? "新报名按映射列写回" : "只读保护"}`;
+  }
   return `每 ${formatInterval(connection.syncIntervalSeconds)} 同步一次 · 嘉宾表 ${connection.guestSheetId} · 事项表 ${connection.assignmentSheetId}`;
 });
 const guestFieldNames = computed(() => Object.values(syncConfig.value?.defaults.guestFieldMapping || {}));
 const assignmentFieldNames = computed(() => Object.values(syncConfig.value?.defaults.assignmentFieldMapping || {}));
+const fieldOptions = computed(() => discovery.value?.fields || []);
+const selectedSheet = computed(() => discovery.value?.sheets.find((item) => item.id === connectionForm.sheetId));
 
 onMounted(async () => {
   conferences.value = (await listConferences({ page: 1, pageSize: 100 })).items;
@@ -438,6 +656,7 @@ onMounted(async () => {
 watch(conferenceId, async (value) => {
   if (!value) return;
   page.value = 1;
+  discovery.value = null;
   await Promise.all([loadSchedules(), loadSyncConfig(), searchAttendees("")]);
 });
 
@@ -605,6 +824,13 @@ async function openConnection() {
   syncRuns.value = syncConfig.value?.connection ? (await listGuestScheduleSyncRuns(conferenceId.value)).items : [];
   checkResult.value = null;
   connectionVisible.value = true;
+  if (connectionForm.mode === "EXISTING_WIDE_SHEET" && connectionForm.integrationId && connectionForm.docUrl) {
+    try {
+      await discoverExistingSheet(false, true, connectionForm.sheetId);
+    } catch {
+      // The saved mapping remains editable when the remote document is temporarily unavailable.
+    }
+  }
 }
 
 function hydrateConnectionForm() {
@@ -618,6 +844,9 @@ function hydrateConnectionForm() {
         docUrl: connection.docUrl || "",
         guestSheetId: connection.guestSheetId,
         assignmentSheetId: connection.assignmentSheetId,
+        mode: connection.mode,
+        sheetId: connection.sheetId || connection.guestSheetId,
+        wideSheetConfig: cloneWideSheetConfig(connection.wideSheetConfig || config.defaults.wideSheetConfig),
         enabled: connection.enabled,
         syncIntervalSeconds: connection.syncIntervalSeconds
       }
@@ -628,9 +857,76 @@ function hydrateConnectionForm() {
       });
 }
 
+async function discoverExistingSheet(useSuggestions: boolean, quiet = false, requestedSheetId = "") {
+  if (!connectionForm.integrationId || !connectionForm.docUrl.trim()) {
+    if (!quiet) ElMessage.warning("请先选择企微自建应用并粘贴智能表链接");
+    return;
+  }
+  discovering.value = true;
+  try {
+    const previousDocId = connectionForm.docId;
+    const result = await discoverGuestScheduleSmartSheet(conferenceId.value, {
+      integrationId: connectionForm.integrationId,
+      docUrl: connectionForm.docUrl.trim(),
+      ...(requestedSheetId ? { sheetId: requestedSheetId } : {})
+    });
+    discovery.value = result;
+    connectionForm.docId = result.docId;
+    connectionForm.docUrl = result.docUrl;
+    connectionForm.sheetId = result.selectedSheetId;
+    connectionForm.guestSheetId = result.selectedSheetId;
+    connectionForm.assignmentSheetId = result.selectedSheetId;
+    if (useSuggestions || !previousDocId) {
+      connectionForm.wideSheetConfig = cloneWideSheetConfig(result.suggestedWideSheetConfig);
+    }
+    checkResult.value = null;
+    if (!quiet) ElMessage.success("已读取现有表结构，请继续绑定字段");
+  } finally {
+    discovering.value = false;
+  }
+}
+
+async function onExistingSheetChange() {
+  await discoverExistingSheet(true, false, connectionForm.sheetId);
+}
+
+function addScheduleRule() {
+  const id = `custom-${Date.now()}`;
+  connectionForm.wideSheetConfig.schedules.push({
+    id,
+    type: "OTHER",
+    label: "自定义事项",
+    enabled: true,
+    triggerField: "",
+    activityNameField: "",
+    activityNameFallback: "自定义事项",
+    startsAtField: "",
+    endsAtField: "",
+    locationField: "",
+    roleField: "",
+    tableNoField: "",
+    isTableLeaderField: "",
+    shareTopicField: "",
+    notesField: ""
+  });
+}
+
+function removeScheduleRule(id: string) {
+  connectionForm.wideSheetConfig.schedules = connectionForm.wideSheetConfig.schedules.filter((rule) => rule.id !== id);
+}
+
 async function saveConnection() {
-  if (!connectionForm.integrationId || !connectionForm.docId.trim() || !connectionForm.guestSheetId.trim() || !connectionForm.assignmentSheetId.trim()) {
-    ElMessage.warning("请填写企微应用、文档 ID 和两个子表 ID");
+  const isWide = connectionForm.mode === "EXISTING_WIDE_SHEET";
+  if (!connectionForm.integrationId || !connectionForm.docId.trim()) {
+    ElMessage.warning(isWide ? "请先识别现有智能表" : "请填写企微应用和文档 ID");
+    return;
+  }
+  if (isWide && !connectionForm.sheetId) {
+    ElMessage.warning("请选择要接入的数据子表");
+    return;
+  }
+  if (!isWide && (!connectionForm.guestSheetId.trim() || !connectionForm.assignmentSheetId.trim())) {
+    ElMessage.warning("请填写报名嘉宾子表 ID 和嘉宾事项子表 ID");
     return;
   }
   savingConnection.value = true;
@@ -640,7 +936,10 @@ async function saveConnection() {
       docId: connectionForm.docId.trim(),
       docUrl: connectionForm.docUrl.trim() || null,
       guestSheetId: connectionForm.guestSheetId.trim(),
-      assignmentSheetId: connectionForm.assignmentSheetId.trim()
+      assignmentSheetId: connectionForm.assignmentSheetId.trim(),
+      sheetId: connectionForm.sheetId,
+      mode: connectionForm.mode,
+      wideSheetConfig: connectionForm.wideSheetConfig
     });
     await loadSyncConfig();
     ElMessage.success("智能表连接已保存");
@@ -734,9 +1033,33 @@ function emptyConnectionForm() {
     docUrl: "",
     guestSheetId: "",
     assignmentSheetId: "",
+    mode: "EXISTING_WIDE_SHEET" as GuestScheduleSmartSheetMode,
+    sheetId: "",
+    wideSheetConfig: emptyWideSheetConfig(),
     enabled: false,
     syncIntervalSeconds: 60
   };
+}
+
+function emptyWideSheetConfig(): GuestScheduleWideSheetConfig {
+  return {
+    mode: "EXISTING_WIDE_SHEET",
+    identity: { attendeeIdField: "", phoneField: "", nameField: "", companyField: "" },
+    writeRegistrationFields: false,
+    registration: {
+      registrationNoField: "",
+      conferenceTitleField: "",
+      titleField: "",
+      skuNameField: "",
+      registrationStatusField: "",
+      syncedAtField: ""
+    },
+    schedules: []
+  };
+}
+
+function cloneWideSheetConfig(value: GuestScheduleWideSheetConfig): GuestScheduleWideSheetConfig {
+  return JSON.parse(JSON.stringify(value)) as GuestScheduleWideSheetConfig;
 }
 </script>
 
@@ -823,11 +1146,29 @@ function emptyConnectionForm() {
 .attendee-option small { grid-column: 1 / -1; color: #8491a0; }
 
 .connection-drawer { display: grid; gap: 20px; padding: 0 2px 28px; }
+.connection-section { display: grid; gap: 14px; padding: 18px 0; border-top: 1px solid var(--schedule-line); }
+.connection-section:first-of-type { padding-top: 4px; border-top: 0; }
+.connection-section__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.connection-section__heading > div { display: grid; gap: 4px; min-width: 0; }
+.connection-section__heading strong { color: var(--schedule-ink); font-size: 15px; }
+.connection-section__heading span { color: var(--schedule-muted); font-size: 12px; line-height: 1.6; }
+.connection-section__heading--switch { align-items: center; }
+.link-recognizer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%; }
+.registration-mapping { padding: 14px 14px 0; border-left: 3px solid #b58e32; background: #fbfaf6; }
+.schedule-mapping-section { gap: 0; }
+.schedule-mapping-section > .connection-section__heading { padding-bottom: 10px; }
+.schedule-mapping-rule { border-top: 1px solid var(--schedule-line); }
+.schedule-mapping-rule > header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 54px; }
+.schedule-mapping-rule > header strong { color: var(--schedule-ink); font-size: 14px; }
+.schedule-mapping-rule > header span { color: var(--schedule-muted); font-size: 12px; }
+.schedule-mapping-rule.is-disabled > header strong { color: #7b8896; }
+.schedule-rule-fields { padding: 2px 0 8px 44px; }
 .field-template { border-top: 1px solid var(--schedule-line); }
 .field-list { display: flex; flex-wrap: wrap; gap: 7px; }
 .field-list span { padding: 5px 8px; border: 1px solid #d8e1e9; border-radius: 4px; background: #f8fafc; color: #415368; font-size: 12px; }
 .check-result { display: grid; gap: 6px; padding: 12px 14px; border-left: 3px solid #bd3d3d; background: #fff4f3; color: #7d3430; font-size: 12px; }
 .check-result.is-ready { border-left-color: #16856b; background: #eef9f5; color: #17624f; }
+.check-result .check-warning { color: #6b5a2a; }
 .drawer-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .sync-history { display: grid; gap: 8px; padding-top: 18px; border-top: 1px solid var(--schedule-line); }
 .sync-history h3 { margin: 0 0 4px; color: var(--schedule-ink); font-size: 14px; }

@@ -51,6 +51,21 @@ interface WecomSmartSheetFieldsResponse {
   fields?: Array<Record<string, unknown>>;
 }
 
+export interface WecomSmartSheetSheet {
+  sheet_id: string;
+  title: string;
+  type?: string;
+  field_count?: number;
+  record_count?: number;
+}
+
+interface WecomSmartSheetSheetsResponse {
+  errcode?: number;
+  errmsg?: string;
+  sheets?: Array<Record<string, unknown>>;
+  sheet_list?: Array<Record<string, unknown>>;
+}
+
 @Injectable()
 export class WecomClientAdapter {
   async fetchAccessToken(corpId: string, secret: string): Promise<{ accessToken: string; expiresIn: number }> {
@@ -116,6 +131,26 @@ export class WecomClientAdapter {
     );
     assertWecomSuccess(data, "读取智能表字段失败");
     return data.fields ?? [];
+  }
+
+  async getSmartSheetSheets(accessToken: string, docId: string): Promise<WecomSmartSheetSheet[]> {
+    const data = await requestJson<WecomSmartSheetSheetsResponse>(
+      smartSheetUrl("get_sheet", accessToken),
+      { method: "POST", body: JSON.stringify({ docid: docId }) }
+    );
+    assertWecomSuccess(data, "读取智能表子表失败");
+    return (data.sheets ?? data.sheet_list ?? []).map((item) => {
+      const type = firstString(item, ["type", "sheet_type"]);
+      const fieldCount = firstNumber(item, ["field_count"]);
+      const recordCount = firstNumber(item, ["record_count"]);
+      return {
+        sheet_id: firstString(item, ["sheet_id", "id"]),
+        title: firstString(item, ["title", "sheet_title", "sheet_name", "name"]),
+        ...(type ? { type } : {}),
+        ...(typeof fieldCount === "number" ? { field_count: fieldCount } : {}),
+        ...(typeof recordCount === "number" ? { record_count: recordCount } : {})
+      };
+    }).filter((item) => Boolean(item.sheet_id && item.title));
   }
 
   async getSmartSheetRecords(accessToken: string, docId: string, sheetId: string): Promise<WecomSmartSheetRecord[]> {
@@ -188,13 +223,30 @@ export class WecomClientAdapter {
   }
 }
 
-function smartSheetUrl(action: "get_fields" | "get_records" | "add_records" | "update_records", accessToken: string): string {
+function smartSheetUrl(action: "get_sheet" | "get_fields" | "get_records" | "add_records" | "update_records", accessToken: string): string {
   return `https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/${action}?access_token=${encodeURIComponent(accessToken)}`;
 }
 
 function assertWecomSuccess(data: { errcode?: number; errmsg?: string }, prefix: string): void {
   if (data.errcode === 0) return;
   throw new BadRequestException(`${prefix}：${data.errmsg || data.errcode || "unknown error"}`);
+}
+
+function firstString(value: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    if (typeof candidate === "number") return String(candidate);
+  }
+  return "";
+}
+
+function firstNumber(value: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const candidate = Number(value[key]);
+    if (Number.isFinite(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 function buildGroupMessagePayload(groups: Array<{ chatId: string; ownerUserId?: string | null }>, contentJson: Record<string, unknown>) {

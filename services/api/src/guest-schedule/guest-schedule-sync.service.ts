@@ -31,6 +31,17 @@ import {
   mergeFieldMapping
 } from "./guest-schedule.constants";
 import { GuestScheduleDraft, hashDraft } from "./guest-schedule.service";
+import {
+  configuredWideFields,
+  createDefaultWideSheetConfig,
+  ExistingWideSheetConfig,
+  normalizeWideSheetConfig,
+  parseSmartSheetLink,
+  readSmartSheetMode,
+  SMART_SHEET_MODE,
+  SmartSheetMode,
+  WideSheetScheduleRule
+} from "./smart-sheet-wide-config";
 
 @Injectable()
 export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
@@ -71,6 +82,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       defaults: {
         guestFieldMapping: DEFAULT_GUEST_FIELD_MAPPING,
         assignmentFieldMapping: DEFAULT_ASSIGNMENT_FIELD_MAPPING,
+        wideSheetConfig: createDefaultWideSheetConfig(),
         syncIntervalSeconds: 60
       },
       requiredAssignmentFields: [
@@ -82,6 +94,48 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async discover(conferenceId: string, input: unknown) {
+    await this.ensureConference(conferenceId);
+    const body = readObject(input);
+    const integrationId = readOptionalString(body.integrationId) ?? await this.getDefaultIntegrationId();
+    const integration = await this.prisma.wecomIntegration.findUnique({ where: { id: integrationId } });
+    if (!integration) throw new BadRequestException("请选择有效的企业微信自建应用配置");
+    const rawUrl = readOptionalString(body.docUrl);
+    if (!rawUrl) throw new BadRequestException("请粘贴企微智能表链接");
+    let link: ReturnType<typeof parseSmartSheetLink>;
+    try {
+      link = parseSmartSheetLink(rawUrl);
+    } catch (error) {
+      throw new BadRequestException(errorMessage(error, "无法识别企微智能表链接"));
+    }
+    const { accessToken } = await this.tokens.getAccessToken(integration, "self_built_app", true);
+    const sheets = await this.client.getSmartSheetSheets(accessToken, link.docId);
+    const dataSheets = sheets.filter((item) => String(item.type || "").toLowerCase() !== "dashboard");
+    if (!dataSheets.length) throw new BadRequestException("该文档中没有可读取的数据子表");
+    const requestedSheetId = readOptionalString(body.sheetId) ?? link.sheetId;
+    const selectedSheet = requestedSheetId
+      ? dataSheets.find((item) => item.sheet_id === requestedSheetId)
+      : dataSheets[0];
+    if (!selectedSheet) throw new BadRequestException("链接中的子表不存在，请从识别结果中重新选择");
+    const fields = await this.client.getSmartSheetFields(accessToken, link.docId, selectedSheet.sheet_id);
+    const fieldOptions = formatFieldOptions(fields);
+    return ok({
+      docId: link.docId,
+      docUrl: canonicalSmartSheetUrl(link.canonicalUrl, selectedSheet.sheet_id),
+      viewId: link.viewId,
+      selectedSheetId: selectedSheet.sheet_id,
+      sheets: dataSheets.map((item) => ({
+        id: item.sheet_id,
+        title: item.title,
+        type: item.type || "smartsheet",
+        fieldCount: Number(item.field_count || 0),
+        recordCount: Number(item.record_count || 0)
+      })),
+      fields: fieldOptions,
+      suggestedWideSheetConfig: createDefaultWideSheetConfig(fieldOptions.map((item) => item.title))
+    });
+  }
+
   async saveConfig(conferenceId: string, input: unknown, admin: CurrentAdmin) {
     await this.ensureConference(conferenceId);
     const body = readObject(input);
@@ -90,15 +144,45 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     const integration = await this.prisma.wecomIntegration.findUnique({ where: { id: integrationId } });
     if (!integration) throw new BadRequestException("请选择有效的企业微信自建应用配置");
 
-    const docId = readOptionalString(body.docId) ?? existing?.docId;
-    const guestSheetId = readOptionalString(body.guestSheetId) ?? existing?.guestSheetId;
-    const assignmentSheetId = readOptionalString(body.assignmentSheetId) ?? existing?.assignmentSheetId;
+    const mode = readRequestedMode(body.mode, existing?.assignmentFieldMappingJson);
+    const rawDocUrl = readOptionalString(body.docUrl);
+    let parsedLink: ReturnType<typeof parseSmartSheetLink> | null = null;
+    if (rawDocUrl && mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET) {
+      try {
+        parsedLink = parseSmartSheetLink(rawDocUrl);
+      } catch (error) {
+        throw new BadRequestException(errorMessage(error, "无法识别企微智能表链接"));
+      }
+    }
+    const docId = readOptionalString(body.docId) ?? parsedLink?.docId ?? existing?.docId;
+    const existingWideConfig = mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
+      ? normalizeWideSheetConfig(existing?.assignmentFieldMappingJson)
+      : null;
+    const wideSheetConfig = mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
+      ? normalizeWideSheetConfig(body.wideSheetConfig ?? existingWideConfig)
+      : null;
+    const wideSheetId = readOptionalString(body.sheetId)
+      ?? readOptionalString(body.guestSheetId)
+      ?? parsedLink?.sheetId
+      ?? existing?.guestSheetId;
+    const guestSheetId = mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
+      ? wideSheetId
+      : readOptionalString(body.guestSheetId) ?? existing?.guestSheetId;
+    const assignmentSheetId = mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
+      ? wideSheetId
+      : readOptionalString(body.assignmentSheetId) ?? existing?.assignmentSheetId;
     if (!docId || !guestSheetId || !assignmentSheetId) {
-      throw new BadRequestException("文档 ID、报名嘉宾子表 ID 和嘉宾事项子表 ID 均不能为空");
+      throw new BadRequestException(mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
+        ? "请先识别链接并选择现有数据子表"
+        : "文档 ID、报名嘉宾子表 ID 和嘉宾事项子表 ID 均不能为空");
     }
     const enabled = readOptionalBoolean(body.enabled) ?? existing?.enabled ?? false;
     if (enabled && (!integration.enabled || !integration.corpId || !integration.appSecretEnc)) {
       throw new BadRequestException("启用同步前，请先完成并启用企业微信自建应用配置");
+    }
+    if (enabled && wideSheetConfig) {
+      const issues = validateWideConfigStructure(wideSheetConfig);
+      if (issues.length) throw new BadRequestException(`启用同步前请完成字段映射：${issues.join("；")}`);
     }
     const syncIntervalSeconds = clampInt(
       body.syncIntervalSeconds,
@@ -110,10 +194,15 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       DEFAULT_GUEST_FIELD_MAPPING,
       body.guestFieldMapping ?? existing?.guestFieldMappingJson
     );
-    const assignmentFieldMapping = mergeFieldMapping(
+    const assignmentFieldMapping = wideSheetConfig ?? mergeFieldMapping(
       DEFAULT_ASSIGNMENT_FIELD_MAPPING,
       body.assignmentFieldMapping ?? existing?.assignmentFieldMappingJson
     );
+    const storedDocUrl = mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
+      ? parsedLink?.canonicalUrl ?? existing?.docUrl ?? null
+      : typeof body.docUrl !== "undefined"
+        ? readNullableString(body.docUrl, "docUrl")
+        : existing?.docUrl ?? null;
 
     const connection = await this.prisma.wecomSmartSheetConnection.upsert({
       where: { conferenceId },
@@ -121,22 +210,22 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
         conferenceId,
         integrationId,
         docId,
-        docUrl: readOptionalString(body.docUrl),
+        docUrl: storedDocUrl,
         guestSheetId,
         assignmentSheetId,
         guestFieldMappingJson: guestFieldMapping,
-        assignmentFieldMappingJson: assignmentFieldMapping,
+        assignmentFieldMappingJson: assignmentFieldMapping as unknown as Prisma.InputJsonValue,
         enabled,
         syncIntervalSeconds
       },
       update: {
         integrationId,
         docId,
-        docUrl: typeof body.docUrl !== "undefined" ? readNullableString(body.docUrl, "docUrl") : existing?.docUrl,
+        docUrl: storedDocUrl,
         guestSheetId,
         assignmentSheetId,
         guestFieldMappingJson: guestFieldMapping,
-        assignmentFieldMappingJson: assignmentFieldMapping,
+        assignmentFieldMappingJson: assignmentFieldMapping as unknown as Prisma.InputJsonValue,
         enabled,
         syncIntervalSeconds,
         ...(enabled ? {} : { syncLockedAt: null })
@@ -149,7 +238,8 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       syncIntervalSeconds,
       docId,
       guestSheetId,
-      assignmentSheetId
+      assignmentSheetId,
+      mode
     });
     return ok(formatConnection(connection));
   }
@@ -157,6 +247,28 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
   async check(conferenceId: string) {
     const connection = await this.getConnection(conferenceId);
     const { accessToken } = await this.tokens.getAccessToken(connection.integration, "self_built_app", true);
+    if (readSmartSheetMode(connection.assignmentFieldMappingJson) === SMART_SHEET_MODE.EXISTING_WIDE_SHEET) {
+      const fields = await this.client.getSmartSheetFields(accessToken, connection.docId, connection.guestSheetId);
+      const titles = fieldTitles(fields);
+      const wideConfig = normalizeWideSheetConfig(connection.assignmentFieldMappingJson);
+      const issues = validateWideConfigStructure(wideConfig);
+      const missingFields = configuredWideFields(wideConfig).filter((title) => !titles.has(title));
+      if (missingFields.length) issues.push(`找不到已映射字段：${missingFields.join("、")}`);
+      const warnings = wideConfig.writeRegistrationFields
+        ? ["新报名仅会写入已映射列，不会修改表内其他邀约、分组或房间字段"]
+        : ["当前为只读保护模式：读取现有嘉宾安排，但不会新增或修改智能表记录"];
+      const ready = issues.length === 0;
+      return ok({
+        ready,
+        mode: SMART_SHEET_MODE.EXISTING_WIDE_SHEET,
+        message: ready ? "现有智能表连接和字段映射检查通过" : "字段映射尚未完成，请按提示调整",
+        issues,
+        warnings,
+        sheet: { fieldCount: titles.size, missingFields },
+        guestSheet: { fieldCount: titles.size, missingFields: [] },
+        assignmentSheet: { fieldCount: titles.size, missingRequiredFields: issues, missingRecommendedFields: missingFields }
+      });
+    }
     const [guestFields, assignmentFields] = await Promise.all([
       this.client.getSmartSheetFields(accessToken, connection.docId, connection.guestSheetId),
       this.client.getSmartSheetFields(accessToken, connection.docId, connection.assignmentSheetId)
@@ -331,6 +443,9 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async pushGuestRows(connection: ConnectionRecord, accessToken: string): Promise<GuestSyncResult> {
+    if (readSmartSheetMode(connection.assignmentFieldMappingJson) === SMART_SHEET_MODE.EXISTING_WIDE_SHEET) {
+      return this.syncExistingWideSheetGuests(connection, accessToken);
+    }
     const attendees = await this.prisma.registrationAttendee.findMany({
       where: { registration: { conferenceId: connection.conferenceId, status: RegistrationStatus.CONFIRMED } },
       orderBy: { createdAt: "asc" },
@@ -423,6 +538,9 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async pullAssignmentRows(connection: ConnectionRecord, accessToken: string): Promise<AssignmentSyncResult> {
+    if (readSmartSheetMode(connection.assignmentFieldMappingJson) === SMART_SHEET_MODE.EXISTING_WIDE_SHEET) {
+      return this.pullExistingWideSheetAssignments(connection, accessToken);
+    }
     const [records, fields] = await Promise.all([
       this.client.getSmartSheetRecords(accessToken, connection.docId, connection.assignmentSheetId),
       this.client.getSmartSheetFields(accessToken, connection.docId, connection.assignmentSheetId)
@@ -530,6 +648,231 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     return result;
   }
 
+  private async syncExistingWideSheetGuests(connection: ConnectionRecord, accessToken: string): Promise<GuestSyncResult> {
+    const config = normalizeWideSheetConfig(connection.assignmentFieldMappingJson);
+    const [attendees, records, mappings] = await Promise.all([
+      this.prisma.registrationAttendee.findMany({
+        where: { registration: { conferenceId: connection.conferenceId, status: RegistrationStatus.CONFIRMED } },
+        orderBy: { createdAt: "asc" },
+        include: {
+          sku: { select: { name: true } },
+          registration: {
+            select: {
+              id: true,
+              registrationNo: true,
+              status: true,
+              conferenceId: true,
+              conference: { select: { title: true } }
+            }
+          }
+        }
+      }),
+      this.client.getSmartSheetRecords(accessToken, connection.docId, connection.guestSheetId),
+      this.prisma.wecomSmartSheetGuestRecord.findMany({ where: { connectionId: connection.id } })
+    ]);
+    const recordById = new Map(records.map((item) => [item.record_id, item]));
+    const remoteIndexes = buildWideRemoteIndexes(records, config);
+    const mappingByAttendee = new Map(mappings.map((item) => [item.attendeeId, item]));
+    const additions: Array<{ attendee: SyncAttendee; values: Record<string, unknown>; payloadHash: string }> = [];
+    const updates: Array<{ attendee: SyncAttendee; record: WecomSmartSheetRecord; values: Record<string, unknown>; payloadHash: string }> = [];
+    const links: Array<{ attendee: SyncAttendee; record: WecomSmartSheetRecord; payloadHash: string | null }> = [];
+    const result: GuestSyncResult = {
+      readCount: attendees.length,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      completed: false
+    };
+
+    for (const attendee of attendees) {
+      const currentMapping = mappingByAttendee.get(attendee.id);
+      const mappedRecord = currentMapping?.remoteRecordId ? recordById.get(currentMapping.remoteRecordId) : undefined;
+      const record = mappedRecord ?? findWideRecordForAttendee(attendee, remoteIndexes, config);
+      const values = wideGuestValues(config, attendee);
+      const payloadHash = hashJson(values);
+      if (!record) {
+        if (config.writeRegistrationFields) additions.push({ attendee, values, payloadHash });
+        else result.skippedCount += 1;
+        continue;
+      }
+      if (config.writeRegistrationFields && Object.keys(values).length > 0 && currentMapping?.payloadHash !== payloadHash) {
+        updates.push({ attendee, record, values, payloadHash });
+      } else {
+        links.push({ attendee, record, payloadHash: config.writeRegistrationFields ? payloadHash : currentMapping?.payloadHash ?? null });
+        result.skippedCount += 1;
+      }
+    }
+
+    for (const batch of chunks(additions, 200)) {
+      const recordIds = await this.client.addSmartSheetRecords(
+        accessToken,
+        connection.docId,
+        connection.guestSheetId,
+        batch.map((item) => ({ values: withWideSyncedAt(config, item.values) }))
+      );
+      if (recordIds.length !== batch.length) {
+        throw new BadRequestException(`智能表新增返回 ${recordIds.length} 个记录 ID，预期 ${batch.length} 个`);
+      }
+      await this.prisma.$transaction(batch.map((item, index) => this.prisma.wecomSmartSheetGuestRecord.upsert({
+        where: { connectionId_attendeeId: { connectionId: connection.id, attendeeId: item.attendee.id } },
+        create: {
+          connectionId: connection.id,
+          attendeeId: item.attendee.id,
+          remoteRecordId: recordIds[index],
+          payloadHash: item.payloadHash,
+          lastPushedAt: new Date(),
+          lastError: null
+        },
+        update: {
+          remoteRecordId: recordIds[index],
+          payloadHash: item.payloadHash,
+          lastPushedAt: new Date(),
+          lastError: null
+        }
+      })));
+      result.createdCount += batch.length;
+    }
+
+    for (const batch of chunks(updates, 200)) {
+      await this.client.updateSmartSheetRecords(
+        accessToken,
+        connection.docId,
+        connection.guestSheetId,
+        batch.map((item) => ({ record_id: item.record.record_id, values: withWideSyncedAt(config, item.values) }))
+      );
+      await this.prisma.$transaction(batch.map((item) => this.prisma.wecomSmartSheetGuestRecord.upsert({
+        where: { connectionId_attendeeId: { connectionId: connection.id, attendeeId: item.attendee.id } },
+        create: {
+          connectionId: connection.id,
+          attendeeId: item.attendee.id,
+          remoteRecordId: item.record.record_id,
+          payloadHash: item.payloadHash,
+          lastPushedAt: new Date(),
+          lastError: null
+        },
+        update: {
+          remoteRecordId: item.record.record_id,
+          payloadHash: item.payloadHash,
+          lastPushedAt: new Date(),
+          lastError: null
+        }
+      })));
+      result.updatedCount += batch.length;
+    }
+
+    for (const batch of chunks(links, 200)) {
+      await this.prisma.$transaction(batch.map((item) => this.prisma.wecomSmartSheetGuestRecord.upsert({
+        where: { connectionId_attendeeId: { connectionId: connection.id, attendeeId: item.attendee.id } },
+        create: {
+          connectionId: connection.id,
+          attendeeId: item.attendee.id,
+          remoteRecordId: item.record.record_id,
+          payloadHash: item.payloadHash,
+          lastPushedAt: null,
+          lastError: null
+        },
+        update: {
+          remoteRecordId: item.record.record_id,
+          payloadHash: item.payloadHash,
+          lastError: null
+        }
+      })));
+    }
+    result.completed = true;
+    return result;
+  }
+
+  private async pullExistingWideSheetAssignments(
+    connection: ConnectionRecord,
+    accessToken: string
+  ): Promise<AssignmentSyncResult> {
+    const config = normalizeWideSheetConfig(connection.assignmentFieldMappingJson);
+    const [records, attendees] = await Promise.all([
+      this.client.getSmartSheetRecords(accessToken, connection.docId, connection.assignmentSheetId),
+      this.prisma.registrationAttendee.findMany({
+        where: { registration: { conferenceId: connection.conferenceId, status: RegistrationStatus.CONFIRMED } },
+        select: { id: true, name: true, phone: true, company: true }
+      })
+    ]);
+    const attendeeIndexes = buildWideAttendeeIndexes(attendees);
+    const enabledRules = config.schedules.filter((rule) => rule.enabled);
+    const result: AssignmentSyncResult = {
+      readCount: records.length,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      errorCount: 0,
+      completed: false,
+      errors: []
+    };
+
+    for (const record of records) {
+      const values = record.values ?? {};
+      const attendee = findWideAttendeeForRecord(values, config, attendeeIndexes);
+      if (!attendee) {
+        result.skippedCount += 1;
+        continue;
+      }
+      const activeRules = enabledRules.filter((rule) => isWideRulePresent(values, rule));
+      if (!activeRules.length) {
+        result.skippedCount += 1;
+        continue;
+      }
+      for (const rule of activeRules) {
+        const remoteRecordId = `${record.record_id}:${rule.id}`;
+        try {
+          const draft = wideAssignmentDraft(values, rule);
+          const draftHash = hashDraft(draft);
+          const remoteUpdatedAt = parseRemoteTimestamp(record.update_time);
+          const existing = await this.prisma.guestScheduleAssignment.findUnique({
+            where: { connectionId_remoteRecordId: { connectionId: connection.id, remoteRecordId } }
+          });
+          if (!existing) {
+            await this.prisma.guestScheduleAssignment.create({
+              data: {
+                conferenceId: connection.conferenceId,
+                attendeeId: attendee.id,
+                connectionId: connection.id,
+                ...draft,
+                source: GuestScheduleSource.WECOM_SMART_SHEET,
+                remoteRecordId,
+                remoteUpdatedAt,
+                draftHash,
+                hasUnpublishedChanges: true
+              }
+            });
+            result.createdCount += 1;
+          } else if (existing.draftHash !== draftHash || existing.attendeeId !== attendee.id || existing.archivedAt) {
+            const changed = draftHash !== existing.publishedHash;
+            await this.prisma.guestScheduleAssignment.update({
+              where: { id: existing.id },
+              data: {
+                attendeeId: attendee.id,
+                ...draft,
+                source: GuestScheduleSource.WECOM_SMART_SHEET,
+                remoteUpdatedAt,
+                draftHash,
+                hasUnpublishedChanges: changed,
+                archivedAt: null
+              }
+            });
+            result.updatedCount += 1;
+          } else {
+            result.skippedCount += 1;
+            if (remoteUpdatedAt && existing.remoteUpdatedAt?.getTime() !== remoteUpdatedAt.getTime()) {
+              await this.prisma.guestScheduleAssignment.update({ where: { id: existing.id }, data: { remoteUpdatedAt } });
+            }
+          }
+        } catch (error) {
+          result.errorCount += 1;
+          result.errors.push(`${record.record_id}/${rule.label}: ${errorMessage(error, "事项无法导入")}`);
+        }
+      }
+    }
+    result.completed = true;
+    return result;
+  }
+
   private async resolveAttendee(conferenceId: string, values: Record<string, unknown>, mapping: AssignmentFieldMapping) {
     const attendeeId = readCellText(values[mapping.attendeeId]);
     if (attendeeId) {
@@ -578,6 +921,38 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
 type ConnectionRecord = Prisma.WecomSmartSheetConnectionGetPayload<{
   include: { integration: true; conference: { select: { id: true; title: true } } };
 }>;
+
+type SyncAttendee = {
+  id: string;
+  name: string;
+  phone: string;
+  company: string | null;
+  title: string | null;
+  sku: { name: string };
+  registration: {
+    id: string;
+    registrationNo: string;
+    status: RegistrationStatus;
+    conferenceId: string;
+    conference: { title: string };
+  };
+};
+
+type WideAttendeeReference = Pick<SyncAttendee, "id" | "name" | "phone" | "company">;
+
+type MultiIndex<T> = Map<string, T[]>;
+
+type WideRemoteIndexes = {
+  byAttendeeId: MultiIndex<WecomSmartSheetRecord>;
+  byPhone: MultiIndex<WecomSmartSheetRecord>;
+  byNameCompany: MultiIndex<WecomSmartSheetRecord>;
+};
+
+type WideAttendeeIndexes = {
+  byId: Map<string, WideAttendeeReference>;
+  byPhone: MultiIndex<WideAttendeeReference>;
+  byNameCompany: MultiIndex<WideAttendeeReference>;
+};
 
 type GuestSyncResult = {
   readCount: number;
@@ -635,6 +1010,181 @@ function guestValues(
     [mapping.registrationStatus]: smartText(attendee.registration.status === RegistrationStatus.CONFIRMED ? "已确认" : attendee.registration.status),
     [mapping.syncedAt]: smartText(new Date().toISOString())
   };
+}
+
+function wideGuestValues(config: ExistingWideSheetConfig, attendee: SyncAttendee): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  setSmartText(values, config.identity.attendeeIdField, attendee.id);
+  setSmartText(values, config.identity.nameField, attendee.name);
+  setSmartText(values, config.identity.phoneField, attendee.phone);
+  setSmartText(values, config.identity.companyField, attendee.company);
+  setSmartText(values, config.registration.registrationNoField, attendee.registration.registrationNo);
+  setSmartText(values, config.registration.conferenceTitleField, attendee.registration.conference.title);
+  setSmartText(values, config.registration.titleField, attendee.title);
+  setSmartText(values, config.registration.skuNameField, attendee.sku.name);
+  setSmartText(values, config.registration.registrationStatusField, "已确认");
+  return values;
+}
+
+function withWideSyncedAt(
+  config: ExistingWideSheetConfig,
+  values: Record<string, unknown>
+): Record<string, unknown> {
+  if (!config.registration.syncedAtField) return values;
+  return { ...values, [config.registration.syncedAtField]: smartText(new Date().toISOString()) };
+}
+
+function buildWideRemoteIndexes(
+  records: WecomSmartSheetRecord[],
+  config: ExistingWideSheetConfig
+): WideRemoteIndexes {
+  const indexes: WideRemoteIndexes = {
+    byAttendeeId: new Map(),
+    byPhone: new Map(),
+    byNameCompany: new Map()
+  };
+  for (const record of records) {
+    const values = record.values ?? {};
+    addToIndex(indexes.byAttendeeId, normalizeComparable(readCellText(values[config.identity.attendeeIdField])), record);
+    addToIndex(indexes.byPhone, normalizePhone(readCellText(values[config.identity.phoneField])), record);
+    addToIndex(indexes.byNameCompany, nameCompanyKey(
+      readCellText(values[config.identity.nameField]),
+      readCellText(values[config.identity.companyField])
+    ), record);
+  }
+  return indexes;
+}
+
+function findWideRecordForAttendee(
+  attendee: SyncAttendee,
+  indexes: WideRemoteIndexes,
+  config: ExistingWideSheetConfig
+): WecomSmartSheetRecord | undefined {
+  if (config.identity.attendeeIdField) {
+    const match = uniqueIndexValue(indexes.byAttendeeId, normalizeComparable(attendee.id));
+    if (match) return match;
+  }
+  if (config.identity.phoneField) {
+    const match = uniqueIndexValue(indexes.byPhone, normalizePhone(attendee.phone));
+    if (match) return match;
+  }
+  if (config.identity.nameField && config.identity.companyField) {
+    return uniqueIndexValue(indexes.byNameCompany, nameCompanyKey(attendee.name, attendee.company));
+  }
+  return undefined;
+}
+
+function buildWideAttendeeIndexes(attendees: WideAttendeeReference[]): WideAttendeeIndexes {
+  const indexes: WideAttendeeIndexes = { byId: new Map(), byPhone: new Map(), byNameCompany: new Map() };
+  for (const attendee of attendees) {
+    indexes.byId.set(attendee.id, attendee);
+    addToIndex(indexes.byPhone, normalizePhone(attendee.phone), attendee);
+    addToIndex(indexes.byNameCompany, nameCompanyKey(attendee.name, attendee.company), attendee);
+  }
+  return indexes;
+}
+
+function findWideAttendeeForRecord(
+  values: Record<string, unknown>,
+  config: ExistingWideSheetConfig,
+  indexes: WideAttendeeIndexes
+): WideAttendeeReference | null {
+  if (config.identity.attendeeIdField) {
+    const attendeeId = readCellText(values[config.identity.attendeeIdField]);
+    const match = attendeeId ? indexes.byId.get(attendeeId) : undefined;
+    if (match) return match;
+  }
+  if (config.identity.phoneField) {
+    const match = uniqueIndexValue(indexes.byPhone, normalizePhone(readCellText(values[config.identity.phoneField])));
+    if (match) return match;
+  }
+  if (config.identity.nameField && config.identity.companyField) {
+    const match = uniqueIndexValue(indexes.byNameCompany, nameCompanyKey(
+      readCellText(values[config.identity.nameField]),
+      readCellText(values[config.identity.companyField])
+    ));
+    if (match) return match;
+  }
+  return null;
+}
+
+function isWideRulePresent(values: Record<string, unknown>, rule: WideSheetScheduleRule): boolean {
+  if (rule.triggerField) {
+    const triggerValue = values[rule.triggerField];
+    if (triggerValue === false || triggerValue === 0) return false;
+    const triggerText = readCellText(triggerValue)?.trim().toLowerCase();
+    if (triggerText && ["否", "不参加", "未参加", "无", "取消", "false", "no", "0", "未安排"].includes(triggerText)) return false;
+    if (triggerText || triggerValue === true) return true;
+  }
+  return [
+    rule.activityNameField,
+    rule.startsAtField,
+    rule.endsAtField,
+    rule.locationField,
+    rule.roleField,
+    rule.tableNoField,
+    rule.shareTopicField,
+    rule.notesField
+  ].some((field) => Boolean(field && readCellText(values[field])));
+}
+
+export function wideAssignmentDraft(
+  values: Record<string, unknown>,
+  rule: WideSheetScheduleRule
+): GuestScheduleDraft {
+  const name = (rule.activityNameField ? readCellText(values[rule.activityNameField]) : null)
+    || rule.activityNameFallback
+    || rule.label;
+  const startsAt = rule.startsAtField ? readCellDate(values[rule.startsAtField]) : null;
+  if (!name) throw new BadRequestException(`${rule.label}缺少事项名称`);
+  if (!startsAt) throw new BadRequestException(`${rule.label}的“${rule.startsAtField || "开始时间"}”不是有效时间`);
+  const endsAt = rule.endsAtField ? readCellDate(values[rule.endsAtField]) : null;
+  if (endsAt && endsAt.getTime() < startsAt.getTime()) throw new BadRequestException(`${rule.label}结束时间不能早于开始时间`);
+  return {
+    type: rule.type,
+    name,
+    startsAt,
+    endsAt,
+    location: rule.locationField ? readCellText(values[rule.locationField]) : null,
+    role: rule.roleField ? readCellText(values[rule.roleField]) : null,
+    tableNo: rule.tableNoField ? readCellText(values[rule.tableNoField]) : null,
+    isTableLeader: rule.isTableLeaderField ? readCellBoolean(values[rule.isTableLeaderField]) : false,
+    shareTopic: rule.shareTopicField ? readCellText(values[rule.shareTopicField]) : null,
+    notes: rule.notesField ? readCellText(values[rule.notesField]) : null
+  };
+}
+
+function setSmartText(values: Record<string, unknown>, field: string, value: unknown): void {
+  if (!field) return;
+  values[field] = smartText(value);
+}
+
+function addToIndex<T>(index: MultiIndex<T>, key: string, value: T): void {
+  if (!key) return;
+  const items = index.get(key);
+  if (items) items.push(value);
+  else index.set(key, [value]);
+}
+
+function uniqueIndexValue<T>(index: MultiIndex<T>, key: string): T | undefined {
+  if (!key) return undefined;
+  const items = index.get(key);
+  return items?.length === 1 ? items[0] : undefined;
+}
+
+function normalizePhone(value: string | null): string {
+  const digits = (value || "").replace(/\D/g, "");
+  return digits.length === 13 && digits.startsWith("86") ? digits.slice(2) : digits;
+}
+
+function nameCompanyKey(name: string | null, company: string | null): string {
+  const normalizedName = normalizeComparable(name);
+  const normalizedCompany = normalizeComparable(company);
+  return normalizedName && normalizedCompany ? `${normalizedName}|${normalizedCompany}` : "";
+}
+
+function normalizeComparable(value: string | null): string {
+  return (value || "").replace(/[\s&＆/\\·._-]+/g, "").toLowerCase();
 }
 
 function assignmentDraft(values: Record<string, unknown>, mapping: AssignmentFieldMapping): GuestScheduleDraft {
@@ -698,13 +1248,17 @@ function readCellDate(value: unknown): Date | null {
   const primitive = findDatePrimitive(value);
   if (primitive === null) return null;
   if (typeof primitive === "number") {
-    const millis = primitive < 10_000_000_000 ? primitive * 1000 : primitive;
+    const millis = primitive >= 20_000 && primitive <= 100_000
+      ? Math.round((primitive - 25_569) * 86_400_000)
+      : primitive < 10_000_000_000 ? primitive * 1000 : primitive;
     const date = new Date(millis);
     return Number.isNaN(date.getTime()) ? null : date;
   }
-  const numeric = /^\d{10,13}$/.test(primitive) ? Number(primitive) : Number.NaN;
+  const numeric = /^\d+(\.\d+)?$/.test(primitive) ? Number(primitive) : Number.NaN;
   const date = Number.isFinite(numeric)
-    ? new Date(numeric < 10_000_000_000 ? numeric * 1000 : numeric)
+    ? new Date(numeric >= 20_000 && numeric <= 100_000
+      ? Math.round((numeric - 25_569) * 86_400_000)
+      : numeric < 10_000_000_000 ? numeric * 1000 : numeric)
     : new Date(primitive.replace(/\//g, "-"));
   return Number.isNaN(date.getTime()) ? null : date;
 }
@@ -719,7 +1273,7 @@ function findDatePrimitive(value: unknown): string | number | null {
     return null;
   }
   if (isRecord(value)) {
-    for (const key of ["timestamp", "value", "date", "text"]) {
+    for (const key of ["timestamp", "value", "date", "date_time", "number", "text"]) {
       const candidate = value[key];
       if (typeof candidate === "string" || typeof candidate === "number") return candidate;
     }
@@ -765,9 +1319,62 @@ function fieldTitles(fields: Array<Record<string, unknown>>): Set<string> {
   );
 }
 
+function formatFieldOptions(fields: Array<Record<string, unknown>>) {
+  return fields.map((field, index) => {
+    let title = "";
+    for (const key of ["field_title", "field_name", "title", "name"]) {
+      const value = field[key];
+      if (typeof value === "string" && value.trim()) {
+        title = value.trim();
+        break;
+      }
+    }
+    const id = ["field_id", "id"].map((key) => field[key]).find((value) => typeof value === "string");
+    const type = ["field_type", "type"].map((key) => field[key]).find((value) => typeof value === "string");
+    return { id: typeof id === "string" ? id : `field-${index + 1}`, title, type: typeof type === "string" ? type : "unknown" };
+  }).filter((item) => item.title);
+}
+
+function canonicalSmartSheetUrl(value: string, sheetId: string): string {
+  const url = new URL(value);
+  url.searchParams.set("tab", sheetId);
+  return url.toString();
+}
+
+function validateWideConfigStructure(config: ExistingWideSheetConfig): string[] {
+  const issues: string[] = [];
+  const hasIdentity = Boolean(
+    config.identity.attendeeIdField
+    || config.identity.phoneField
+    || (config.identity.nameField && config.identity.companyField)
+  );
+  if (!hasIdentity) issues.push("嘉宾匹配至少选择系统参会人 ID、手机号，或姓名加公司");
+  if (config.writeRegistrationFields && !config.identity.nameField) issues.push("写入新报名时必须映射姓名列");
+  if (config.writeRegistrationFields && !config.identity.attendeeIdField && !config.identity.phoneField) {
+    issues.push("写入新报名时必须映射系统参会人 ID 或手机号，避免重复新增");
+  }
+  const rules = config.schedules.filter((rule) => rule.enabled);
+  if (!rules.length) issues.push("至少启用一条现场事项规则");
+  const ids = new Set<string>();
+  for (const rule of rules) {
+    if (ids.has(rule.id)) issues.push(`事项规则“${rule.label}”标识重复`);
+    ids.add(rule.id);
+    if (!rule.startsAtField) issues.push(`${rule.label}未映射开始时间列`);
+    if (!rule.activityNameField && !rule.activityNameFallback) issues.push(`${rule.label}未设置事项名称`);
+  }
+  return issues;
+}
+
+function readRequestedMode(value: unknown, storedMapping: unknown): SmartSheetMode {
+  if (typeof value === "undefined" || value === null || value === "") return readSmartSheetMode(storedMapping);
+  if (value === SMART_SHEET_MODE.EXISTING_WIDE_SHEET || value === SMART_SHEET_MODE.SEPARATE_SHEETS) return value;
+  throw new BadRequestException("不支持的智能表连接模式");
+}
+
 function formatConnection(connection: Prisma.WecomSmartSheetConnectionGetPayload<{
   include: { integration: { select: { id: true; name: true; enabled: true; verified: true; corpId: true; agentId: true; appSecretEnc: true } } };
 }>) {
+  const mode = readSmartSheetMode(connection.assignmentFieldMappingJson);
   return {
     id: connection.id,
     conferenceId: connection.conferenceId,
@@ -776,8 +1383,15 @@ function formatConnection(connection: Prisma.WecomSmartSheetConnectionGetPayload
     docUrl: connection.docUrl,
     guestSheetId: connection.guestSheetId,
     assignmentSheetId: connection.assignmentSheetId,
+    mode,
+    sheetId: mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET ? connection.guestSheetId : null,
     guestFieldMapping: mergeFieldMapping(DEFAULT_GUEST_FIELD_MAPPING, connection.guestFieldMappingJson),
-    assignmentFieldMapping: mergeFieldMapping(DEFAULT_ASSIGNMENT_FIELD_MAPPING, connection.assignmentFieldMappingJson),
+    assignmentFieldMapping: mode === SMART_SHEET_MODE.SEPARATE_SHEETS
+      ? mergeFieldMapping(DEFAULT_ASSIGNMENT_FIELD_MAPPING, connection.assignmentFieldMappingJson)
+      : DEFAULT_ASSIGNMENT_FIELD_MAPPING,
+    wideSheetConfig: mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
+      ? normalizeWideSheetConfig(connection.assignmentFieldMappingJson)
+      : null,
     enabled: connection.enabled,
     syncIntervalSeconds: connection.syncIntervalSeconds,
     syncing: Boolean(connection.syncLockedAt),

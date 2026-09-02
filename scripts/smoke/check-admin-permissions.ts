@@ -24,6 +24,7 @@ const requiredPrefixes = [
   "dashboard",
   "conference",
   "registration",
+  "guest-schedule",
   "checkin",
   "inventory",
   "order",
@@ -123,6 +124,7 @@ function permissionMenuGroup(code: string): string {
   if (
     code.startsWith("conference:") ||
     code.startsWith("registration:") ||
+    code.startsWith("guest-schedule:") ||
     code.startsWith("checkin:") ||
     code.startsWith("inventory:") ||
     code.startsWith("inventory-alert:")

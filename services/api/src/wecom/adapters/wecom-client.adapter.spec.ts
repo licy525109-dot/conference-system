@@ -57,6 +57,26 @@ describe("WecomClientAdapter SmartSheet", () => {
     assert.equal(calls[1]?.body.key_type, "CELL_VALUE_KEY_TYPE_FIELD_TITLE");
     assert.deepEqual(calls[0]?.body.records, [{ values }]);
   });
+
+  it("lists existing SmartSheet children without creating any sheet", async () => {
+    let requestUrl = "";
+    let requestBody: Record<string, unknown> = {};
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      requestUrl = String(input);
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({
+        errcode: 0,
+        sheets: [{ sheet_id: "sheet-data", title: "数据汇总", type: "smartsheet", record_count: 266 }]
+      });
+    }) as typeof fetch;
+    const client = new WecomClientAdapter();
+
+    const sheets = await client.getSmartSheetSheets("token", "s3_existing");
+
+    assert.equal(requestUrl.includes("/get_sheet?"), true);
+    assert.deepEqual(requestBody, { docid: "s3_existing" });
+    assert.deepEqual(sheets, [{ sheet_id: "sheet-data", title: "数据汇总", type: "smartsheet", record_count: 266 }]);
+  });
 });
 
 function jsonResponse(data: unknown): Response {

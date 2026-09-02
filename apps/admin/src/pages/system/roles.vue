@@ -143,6 +143,7 @@ function permissionMenuGroup(permission: Permission): string {
   if (
     permission.code.startsWith("conference:") ||
     permission.code.startsWith("registration:") ||
+    permission.code.startsWith("guest-schedule:") ||
     permission.code.startsWith("checkin:") ||
     permission.code.startsWith("inventory:") ||
     permission.code.startsWith("inventory-alert:")

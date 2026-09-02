@@ -66,6 +66,12 @@ export class AdminGuestScheduleController {
     return this.sync.saveConfig(conferenceId, body, request.currentAdmin!);
   }
 
+  @Post("smart-sheet/discover")
+  @RequireAdminPermissions("guest-schedule:write")
+  discover(@Query("conferenceId") conferenceId: string, @Body() body: unknown) {
+    return this.sync.discover(conferenceId, body);
+  }
+
   @Post("smart-sheet/check")
   @RequireAdminPermissions("guest-schedule:write")
   check(@Query("conferenceId") conferenceId: string) {

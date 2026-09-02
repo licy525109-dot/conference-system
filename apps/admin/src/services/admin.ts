@@ -37,7 +37,9 @@ import type {
   GuestScheduleAttendeeOption,
   GuestScheduleList,
   GuestScheduleSmartSheetConfig,
+  GuestScheduleSmartSheetCheck,
   GuestScheduleSmartSheetConnection,
+  GuestScheduleSmartSheetDiscovery,
   GuestScheduleSyncRun,
   MaterialAsset,
   MaterialCategory,
@@ -306,13 +308,18 @@ export function saveGuestScheduleSmartSheetConfig(conferenceId: string, input: R
   });
 }
 
+export function discoverGuestScheduleSmartSheet(
+  conferenceId: string,
+  input: { integrationId: string; docUrl: string; sheetId?: string }
+) {
+  return apiRequest<GuestScheduleSmartSheetDiscovery>(`/admin/guest-schedules/smart-sheet/discover${toQuery({ conferenceId })}`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
 export function checkGuestScheduleSmartSheet(conferenceId: string) {
-  return apiRequest<{
-    ready: boolean;
-    message: string;
-    guestSheet: { fieldCount: number; missingFields: string[] };
-    assignmentSheet: { fieldCount: number; missingRequiredFields: string[]; missingRecommendedFields: string[] };
-  }>(`/admin/guest-schedules/smart-sheet/check${toQuery({ conferenceId })}`, { method: "POST" });
+  return apiRequest<GuestScheduleSmartSheetCheck>(`/admin/guest-schedules/smart-sheet/check${toQuery({ conferenceId })}`, { method: "POST" });
 }
 
 export function syncGuestScheduleSmartSheet(conferenceId: string) {

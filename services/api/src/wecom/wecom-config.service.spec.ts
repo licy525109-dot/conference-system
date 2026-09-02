@@ -160,6 +160,7 @@ function createWecomClientMock() {
     listCustomerGroups: async () => [],
     createCustomerGroupMessageTask: async () => ({ ok: true, msgId: "msg-test", raw: { errcode: 0, msgid: "msg-test" } }),
     getSmartSheetFields: async () => [],
+    getSmartSheetSheets: async () => [],
     getSmartSheetRecords: async () => [],
     addSmartSheetRecords: async () => [],
     updateSmartSheetRecords: async () => undefined
