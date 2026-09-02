@@ -21,23 +21,12 @@ export function readSmartSheetTransport(value: unknown): SmartSheetTransport {
 
 export function parseSmartSheetWebhookSample(input: unknown): SmartSheetWebhookSchema {
   const parsed = parseJsonInput(input, "示例 JSON");
-  const schema = readRecord(parsed.schema, "示例 JSON 缺少 schema 字段");
-  const normalizedSchema: Record<string, string> = {};
-  const seenTitles = new Set<string>();
-  for (const [fieldId, rawTitle] of Object.entries(schema)) {
-    const id = fieldId.trim();
-    const title = typeof rawTitle === "string" ? rawTitle.trim() : "";
-    if (!id || !title) throw new BadRequestException("schema 必须使用字段 ID 对应字段名称");
-    if (id.length > 128 || title.length > 128) throw new BadRequestException("schema 字段 ID 或名称过长");
-    if (seenTitles.has(title)) throw new BadRequestException(`示例 JSON 中存在重名字段“${title}”，无法安全映射`);
-    normalizedSchema[id] = title;
-    seenTitles.add(title);
-  }
+  const sampleValues = readSampleValues(parsed);
+  const normalizedSchema = normalizeWebhookSchema(parsed.schema, sampleValues);
   const entries = Object.entries(normalizedSchema);
   if (!entries.length) throw new BadRequestException("示例 JSON 的 schema 不能为空");
   if (entries.length > 500) throw new BadRequestException("示例 JSON 字段数量不能超过 500 个");
 
-  const sampleValues = readSampleValues(parsed);
   return { version: 1, schema: normalizedSchema, sampleValues };
 }
 
@@ -126,6 +115,112 @@ function readSampleValues(root: Record<string, unknown>): Record<string, unknown
     if (isRecord(values)) return values;
   }
   return {};
+}
+
+function normalizeWebhookSchema(value: unknown, sampleValues: Record<string, unknown>): Record<string, string> {
+  const entries = readWebhookSchemaEntries(value);
+  const normalized: Record<string, string> = {};
+  const seenTitles = new Set<string>();
+  const unsupported: string[] = [];
+
+  for (const [outerKey, rawDescriptor] of entries) {
+    let fieldId = outerKey.trim();
+    let title = "";
+    if (typeof rawDescriptor === "string") {
+      const rawText = rawDescriptor.trim();
+      if (Object.prototype.hasOwnProperty.call(sampleValues, rawText)
+        && !Object.prototype.hasOwnProperty.call(sampleValues, fieldId)) {
+        fieldId = rawText;
+        title = outerKey.trim();
+      } else {
+        title = rawText;
+      }
+    } else if (isRecord(rawDescriptor) || Array.isArray(rawDescriptor)) {
+      fieldId = readSchemaDescriptorText(rawDescriptor, ["field_id", "fieldId", "id"]) || fieldId;
+      title = readSchemaDescriptorText(rawDescriptor, [
+        "field_title",
+        "fieldTitle",
+        "field_name",
+        "fieldName",
+        "title",
+        "name",
+        "label",
+        "display_name",
+        "displayName"
+      ]);
+      if (!title && fieldId !== outerKey && Object.prototype.hasOwnProperty.call(sampleValues, fieldId)) {
+        title = outerKey.trim();
+      }
+      if (!title && Object.prototype.hasOwnProperty.call(sampleValues, fieldId)) {
+        title = readNestedSchemaText(rawDescriptor, 0);
+      }
+    }
+
+    if (!fieldId || !title) {
+      unsupported.push(outerKey || `#${unsupported.length + 1}`);
+      continue;
+    }
+    if (fieldId.length > 128 || title.length > 128) throw new BadRequestException("schema 字段 ID 或名称过长");
+    if (seenTitles.has(title)) throw new BadRequestException(`示例 JSON 中存在重名字段“${title}”，无法安全映射`);
+    normalized[fieldId] = title;
+    seenTitles.add(title);
+  }
+
+  if (!Object.keys(normalized).length) {
+    const hint = unsupported.length ? `（未识别：${unsupported.slice(0, 3).join("、")}）` : "";
+    throw new BadRequestException(`无法从 schema 识别字段 ID 和字段名称${hint}，请粘贴企微生成的完整示例 JSON`);
+  }
+  return normalized;
+}
+
+function readWebhookSchemaEntries(value: unknown): Array<[string, unknown]> {
+  if (Array.isArray(value)) return value.map((item, index) => [String(index + 1), item]);
+  const schema = readRecord(value, "示例 JSON 缺少 schema 字段");
+  for (const key of ["fields", "columns"]) {
+    if (Array.isArray(schema[key])) return schema[key].map((item, index) => [String(index + 1), item]);
+    if (isRecord(schema[key])) return Object.entries(schema[key]);
+  }
+  return Object.entries(schema);
+}
+
+function readSchemaDescriptorText(value: unknown, keys: string[], depth = 0): string {
+  if (depth >= 4 || value === null || typeof value === "undefined") return "";
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = readSchemaDescriptorText(item, keys, depth + 1);
+      if (text) return text;
+    }
+    return "";
+  }
+  if (!isRecord(value)) return "";
+  for (const key of keys) {
+    const text = readNestedSchemaText(value[key], depth + 1);
+    if (text) return text;
+  }
+  for (const nested of Object.values(value)) {
+    const text = readSchemaDescriptorText(nested, keys, depth + 1);
+    if (text) return text;
+  }
+  return "";
+}
+
+function readNestedSchemaText(value: unknown, depth: number): string {
+  if (typeof value === "string") return value.trim();
+  if (depth >= 3 || value === null || typeof value === "undefined") return "";
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = readNestedSchemaText(item, depth + 1);
+      if (text) return text;
+    }
+    return "";
+  }
+  if (isRecord(value)) {
+    for (const key of ["text", "value", "title", "name", "label"]) {
+      const text = readNestedSchemaText(value[key], depth + 1);
+      if (text) return text;
+    }
+  }
+  return "";
 }
 
 function readAutomationCandidates(root: Record<string, unknown>): unknown[] {
