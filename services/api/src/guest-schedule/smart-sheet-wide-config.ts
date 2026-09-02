@@ -130,6 +130,9 @@ export function parseSmartSheetLink(value: string): SmartSheetLinkParts {
   } catch {
     throw new Error("请输入完整的企微智能表链接");
   }
+  if (url.protocol !== "https:" || url.hostname !== "doc.weixin.qq.com") {
+    throw new Error("请输入企业微信官方 doc.weixin.qq.com 智能表链接");
+  }
   const parts = url.pathname.split("/").filter(Boolean);
   const marker = parts.indexOf("smartsheet");
   const docId = marker >= 0 ? decodeURIComponent(parts[marker + 1] || "") : "";
@@ -138,9 +141,9 @@ export function parseSmartSheetLink(value: string): SmartSheetLinkParts {
   }
   const sheetId = cleanQueryValue(url.searchParams.get("tab"));
   const viewId = cleanQueryValue(url.searchParams.get("viewId"));
-  const canonicalUrl = new URL(`${url.origin}/smartsheet/${encodeURIComponent(docId)}`);
-  if (sheetId) canonicalUrl.searchParams.set("tab", sheetId);
-  if (viewId) canonicalUrl.searchParams.set("viewId", viewId);
+  const canonicalUrl = new URL(url.toString());
+  canonicalUrl.hash = "";
+  canonicalUrl.pathname = `/smartsheet/${encodeURIComponent(docId)}`;
   return { docId, sheetId, viewId, canonicalUrl: canonicalUrl.toString() };
 }
 

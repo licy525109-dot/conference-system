@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { GuestScheduleSource, GuestScheduleSyncStatus, GuestScheduleType } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { WecomClientAdapter } from "../wecom/adapters/wecom-client.adapter";
+import { WecomSmartBotAdapter } from "../wecom/adapters/wecom-smart-bot.adapter";
 import { WecomTokenService } from "../wecom/services/wecom-token.service";
 import { GuestScheduleSyncService } from "./guest-schedule-sync.service";
 import { SMART_SHEET_TRANSPORT } from "./smart-sheet-webhook";
@@ -28,6 +29,8 @@ describe("GuestScheduleSyncService webhook callback", () => {
       },
       automationTokenEnc: null,
       automationTokenHash: "hash",
+      smartBotId: null,
+      smartBotSecretEnc: null,
       guestFieldMappingJson: null,
       assignmentFieldMappingJson: {
         mode: SMART_SHEET_MODE.EXISTING_WIDE_SHEET,
@@ -92,6 +95,7 @@ describe("GuestScheduleSyncService webhook callback", () => {
     const service = new GuestScheduleSyncService(
       prisma as unknown as PrismaService,
       {} as WecomClientAdapter,
+      {} as WecomSmartBotAdapter,
       {} as WecomTokenService
     );
     const payload = {

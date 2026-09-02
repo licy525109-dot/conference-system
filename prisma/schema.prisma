@@ -737,6 +737,8 @@ model WecomSmartSheetConnection {
   webhookSchemaJson          Json?
   automationTokenEnc         String?
   automationTokenHash        String?                      @unique
+  smartBotId                 String?
+  smartBotSecretEnc          String?
   guestFieldMappingJson      Json?
   assignmentFieldMappingJson Json?
   enabled                    Boolean                      @default(false)

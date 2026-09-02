@@ -2,6 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import type { WecomSmartSheetRecord } from "../wecom/adapters/wecom-client.adapter";
 
 export const SMART_SHEET_TRANSPORT = {
+  SMART_BOT_API: "SMART_BOT_API",
   API: "API",
   WEBHOOK_AUTOMATION: "WEBHOOK_AUTOMATION"
 } as const;
@@ -15,6 +16,7 @@ export interface SmartSheetWebhookSchema {
 }
 
 export function readSmartSheetTransport(value: unknown): SmartSheetTransport {
+  if (value === SMART_SHEET_TRANSPORT.SMART_BOT_API) return SMART_SHEET_TRANSPORT.SMART_BOT_API;
   if (value === SMART_SHEET_TRANSPORT.WEBHOOK_AUTOMATION) return SMART_SHEET_TRANSPORT.WEBHOOK_AUTOMATION;
   return SMART_SHEET_TRANSPORT.API;
 }

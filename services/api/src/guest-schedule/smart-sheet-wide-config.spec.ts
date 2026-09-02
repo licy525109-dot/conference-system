@@ -10,7 +10,7 @@ import {
 import { wideAssignmentDraft } from "./guest-schedule-sync.service";
 
 describe("existing SmartSheet wide-table config", () => {
-  it("extracts document, sheet and view identifiers without persisting the share code", () => {
+  it("extracts identifiers and preserves the full share URL needed by a smart bot", () => {
     const result = parseSmartSheetLink(
       "https://doc.weixin.qq.com/smartsheet/s3_example?scode=private-share-code&tab=data-sheet&viewId=guest-view"
     );
@@ -18,8 +18,15 @@ describe("existing SmartSheet wide-table config", () => {
     assert.equal(result.docId, "s3_example");
     assert.equal(result.sheetId, "data-sheet");
     assert.equal(result.viewId, "guest-view");
-    assert.equal(result.canonicalUrl.includes("scode"), false);
+    assert.equal(result.canonicalUrl.includes("scode=private-share-code"), true);
     assert.equal(result.canonicalUrl.includes("tab=data-sheet"), true);
+  });
+
+  it("rejects non-WeCom SmartSheet hosts", () => {
+    assert.throws(
+      () => parseSmartSheetLink("https://example.com/smartsheet/s3_example?scode=code"),
+      /企业微信官方/
+    );
   });
 
   it("suggests identity mappings from an existing guest data table", () => {
