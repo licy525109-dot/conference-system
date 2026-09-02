@@ -21,6 +21,10 @@ import {
   WecomClientAdapter,
   WecomSmartSheetRecord
 } from "../wecom/adapters/wecom-client.adapter";
+import {
+  WecomSmartBotAdapter,
+  WecomSmartBotCredentials
+} from "../wecom/adapters/wecom-smart-bot.adapter";
 import { WecomTokenService } from "../wecom/services/wecom-token.service";
 import { decryptSecret, encryptSecret, maskSecret } from "../wecom/wecom.crypto";
 import {
@@ -65,6 +69,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly client: WecomClientAdapter,
+    private readonly smartBot: WecomSmartBotAdapter,
     private readonly tokens: WecomTokenService
   ) {}
 
@@ -94,7 +99,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       connection: connection ? formatConnection(connection) : null,
       integrations: integrations.map(formatIntegrationOption),
       defaults: {
-        transport: SMART_SHEET_TRANSPORT.WEBHOOK_AUTOMATION,
+        transport: SMART_SHEET_TRANSPORT.SMART_BOT_API,
         guestFieldMapping: DEFAULT_GUEST_FIELD_MAPPING,
         assignmentFieldMapping: DEFAULT_ASSIGNMENT_FIELD_MAPPING,
         wideSheetConfig: createDefaultWideSheetConfig(),
@@ -112,9 +117,14 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
   async discover(conferenceId: string, input: unknown) {
     await this.ensureConference(conferenceId);
     const body = readObject(input);
-    const integrationId = readOptionalString(body.integrationId) ?? await this.getDefaultIntegrationId();
-    const integration = await this.prisma.wecomIntegration.findUnique({ where: { id: integrationId } });
-    if (!integration) throw new BadRequestException("请选择有效的企业微信自建应用配置");
+    const existing = await this.prisma.wecomSmartSheetConnection.findUnique({ where: { conferenceId } });
+    const transport = readRequestedTransport(
+      body.transport,
+      existing?.transport ?? (readOptionalString(body.integrationId) ? SMART_SHEET_TRANSPORT.API : SMART_SHEET_TRANSPORT.SMART_BOT_API)
+    );
+    if (transport === SMART_SHEET_TRANSPORT.WEBHOOK_AUTOMATION) {
+      throw new BadRequestException("Webhook 模式请通过示例 JSON 识别字段");
+    }
     const rawUrl = readOptionalString(body.docUrl);
     if (!rawUrl) throw new BadRequestException("请粘贴企微智能表链接");
     let link: ReturnType<typeof parseSmartSheetLink>;
@@ -123,8 +133,20 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       throw new BadRequestException(errorMessage(error, "无法识别企微智能表链接"));
     }
-    const { accessToken } = await this.tokens.getAccessToken(integration, "self_built_app", true);
-    const sheets = await this.client.getSmartSheetSheets(accessToken, link.docId);
+    let sheets: Awaited<ReturnType<WecomClientAdapter["getSmartSheetSheets"]>>;
+    let readFields: (sheetId: string) => Promise<Array<Record<string, unknown>>>;
+    if (transport === SMART_SHEET_TRANSPORT.SMART_BOT_API) {
+      const credentials = resolveSubmittedSmartBotCredentials(body, existing);
+      sheets = await this.smartBot.getSmartSheetSheets(credentials, link.canonicalUrl);
+      readFields = (sheetId) => this.smartBot.getSmartSheetFields(credentials, link.canonicalUrl, sheetId);
+    } else {
+      const integrationId = readOptionalString(body.integrationId) ?? existing?.integrationId ?? await this.getDefaultIntegrationId();
+      const integration = await this.prisma.wecomIntegration.findUnique({ where: { id: integrationId } });
+      if (!integration) throw new BadRequestException("请选择有效的企业微信自建应用配置");
+      const { accessToken } = await this.tokens.getAccessToken(integration, "self_built_app", true);
+      sheets = await this.client.getSmartSheetSheets(accessToken, link.docId);
+      readFields = (sheetId) => this.client.getSmartSheetFields(accessToken, link.docId, sheetId);
+    }
     const dataSheets = sheets.filter((item) => String(item.type || "").toLowerCase() !== "dashboard");
     if (!dataSheets.length) throw new BadRequestException("该文档中没有可读取的数据子表");
     const requestedSheetId = readOptionalString(body.sheetId) ?? link.sheetId;
@@ -132,13 +154,14 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       ? dataSheets.find((item) => item.sheet_id === requestedSheetId)
       : dataSheets[0];
     if (!selectedSheet) throw new BadRequestException("链接中的子表不存在，请从识别结果中重新选择");
-    const fields = await this.client.getSmartSheetFields(accessToken, link.docId, selectedSheet.sheet_id);
+    const fields = await readFields(selectedSheet.sheet_id);
     const fieldOptions = formatFieldOptions(fields);
     return ok({
       docId: link.docId,
       docUrl: canonicalSmartSheetUrl(link.canonicalUrl, selectedSheet.sheet_id),
       viewId: link.viewId,
       selectedSheetId: selectedSheet.sheet_id,
+      transport,
       sheets: dataSheets.map((item) => ({
         id: item.sheet_id,
         title: item.title,
@@ -169,15 +192,29 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     const existing = await this.prisma.wecomSmartSheetConnection.findUnique({ where: { conferenceId } });
     const transport = readRequestedTransport(body.transport, existing?.transport);
     const requestedMode = readRequestedMode(body.mode, existing?.assignmentFieldMappingJson);
-    const mode = transport === SMART_SHEET_TRANSPORT.WEBHOOK_AUTOMATION
-      ? SMART_SHEET_MODE.EXISTING_WIDE_SHEET
-      : requestedMode;
+    const mode = transport === SMART_SHEET_TRANSPORT.API
+      ? requestedMode
+      : SMART_SHEET_MODE.EXISTING_WIDE_SHEET;
     let integrationId: string | null = null;
     let integration: Awaited<ReturnType<typeof this.prisma.wecomIntegration.findUnique>> = null;
     if (transport === SMART_SHEET_TRANSPORT.API) {
       integrationId = readOptionalString(body.integrationId) ?? existing?.integrationId ?? (await this.getDefaultIntegrationId());
       integration = await this.prisma.wecomIntegration.findUnique({ where: { id: integrationId } });
       if (!integration) throw new BadRequestException("请选择有效的企业微信自建应用配置");
+    }
+    let smartBotId = existing?.smartBotId ?? null;
+    let smartBotSecretEnc = existing?.smartBotSecretEnc ?? null;
+    if (transport === SMART_SHEET_TRANSPORT.SMART_BOT_API) {
+      const submittedBotId = readOptionalString(body.smartBotId);
+      const submittedSecret = readOptionalString(body.smartBotSecret);
+      if (submittedBotId && submittedBotId !== existing?.smartBotId && !submittedSecret) {
+        throw new BadRequestException("更换 Bot ID 时请同时填写新的 Secret");
+      }
+      smartBotId = submittedBotId ?? existing?.smartBotId ?? null;
+      if (submittedSecret) smartBotSecretEnc = encryptSecret(submittedSecret);
+      if (!smartBotId || !decryptSecret(smartBotSecretEnc)) {
+        throw new BadRequestException("请填写智能机器人 Bot ID 和 Secret");
+      }
     }
 
     const rawDocUrl = readOptionalString(body.docUrl);
@@ -211,9 +248,18 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
         ? "请先识别链接并选择现有数据子表"
         : "文档 ID、报名嘉宾子表 ID 和嘉宾事项子表 ID 均不能为空");
     }
+    if (
+      transport === SMART_SHEET_TRANSPORT.SMART_BOT_API
+      && (!(parsedLink?.canonicalUrl ?? existing?.docUrl) || !guestSheetId || !assignmentSheetId)
+    ) {
+      throw new BadRequestException("请先使用智能机器人识别完整链接并选择现有数据子表");
+    }
     const enabled = readOptionalBoolean(body.enabled) ?? existing?.enabled ?? false;
     if (enabled && transport === SMART_SHEET_TRANSPORT.API && (!integration?.enabled || !integration.corpId || !integration.appSecretEnc)) {
       throw new BadRequestException("启用同步前，请先完成并启用企业微信自建应用配置");
+    }
+    if (enabled && transport === SMART_SHEET_TRANSPORT.SMART_BOT_API && (!smartBotId || !decryptSecret(smartBotSecretEnc))) {
+      throw new BadRequestException("启用同步前，请先完成智能机器人 Bot ID 和 Secret 配置");
     }
     if (enabled && wideSheetConfig) {
       const issues = validateWideConfigStructure(wideSheetConfig);
@@ -271,6 +317,8 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
         webhookUrlEnc,
         automationTokenEnc,
         automationTokenHash,
+        smartBotId,
+        smartBotSecretEnc,
         ...(webhookSchema ? { webhookSchemaJson: webhookSchema as unknown as Prisma.InputJsonValue } : {}),
         guestFieldMappingJson: guestFieldMapping,
         assignmentFieldMappingJson: assignmentFieldMapping as unknown as Prisma.InputJsonValue,
@@ -290,6 +338,10 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
           automationTokenEnc,
           automationTokenHash
         } : {}),
+        ...(transport === SMART_SHEET_TRANSPORT.SMART_BOT_API ? {
+          smartBotId,
+          smartBotSecretEnc
+        } : {}),
         guestFieldMappingJson: guestFieldMapping,
         assignmentFieldMappingJson: assignmentFieldMapping as unknown as Prisma.InputJsonValue,
         enabled,
@@ -307,7 +359,8 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       assignmentSheetId,
       mode,
       transport,
-      webhookConfigured: Boolean(decryptSecret(webhookUrlEnc))
+      webhookConfigured: Boolean(decryptSecret(webhookUrlEnc)),
+      smartBotConfigured: Boolean(smartBotId && decryptSecret(smartBotSecretEnc))
     });
     return ok(formatConnection(connection));
   }
@@ -356,10 +409,10 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
         assignmentSheet: { fieldCount: titles.size, missingRequiredFields: issues, missingRecommendedFields: missingFields }
       });
     }
-    assertApiConnection(connection);
-    const { accessToken } = await this.tokens.getAccessToken(connection.integration, "self_built_app", true);
+    assertSheetConnection(connection);
+    const session = await this.createSmartSheetSession(connection, true);
     if (readSmartSheetMode(connection.assignmentFieldMappingJson) === SMART_SHEET_MODE.EXISTING_WIDE_SHEET) {
-      const fields = await this.client.getSmartSheetFields(accessToken, connection.docId, connection.guestSheetId);
+      const fields = await session.getFields(connection.guestSheetId);
       const titles = fieldTitles(fields);
       const wideConfig = normalizeWideSheetConfig(connection.assignmentFieldMappingJson);
       const issues = validateWideConfigStructure(wideConfig);
@@ -381,8 +434,8 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       });
     }
     const [guestFields, assignmentFields] = await Promise.all([
-      this.client.getSmartSheetFields(accessToken, connection.docId, connection.guestSheetId),
-      this.client.getSmartSheetFields(accessToken, connection.docId, connection.assignmentSheetId)
+      session.getFields(connection.guestSheetId),
+      session.getFields(connection.assignmentSheetId)
     ]);
     const guestTitles = fieldTitles(guestFields);
     const assignmentTitles = fieldTitles(assignmentFields);
@@ -575,15 +628,15 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
         }
         assignmentResult = { ...emptyAssignmentResult(), completed: true };
       } else {
-        assertApiConnection(connection);
-        const { accessToken } = await this.tokens.getAccessToken(connection.integration, "self_built_app");
+        assertSheetConnection(connection);
+        const session = await this.createSmartSheetSession(connection);
         try {
-          guestResult = await this.pushGuestRows(connection, accessToken);
+          guestResult = await this.pushGuestRows(connection, session);
         } catch (error) {
           errors.push(errorMessage(error, "报名嘉宾写入失败"));
         }
         try {
-          assignmentResult = await this.pullAssignmentRows(connection, accessToken);
+          assignmentResult = await this.pullAssignmentRows(connection, session);
         } catch (error) {
           errors.push(errorMessage(error, "嘉宾事项读取失败"));
         }
@@ -658,9 +711,9 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async pushGuestRows(connection: ApiConnectionRecord, accessToken: string): Promise<GuestSyncResult> {
+  private async pushGuestRows(connection: SheetConnectionRecord, session: SmartSheetSession): Promise<GuestSyncResult> {
     if (readSmartSheetMode(connection.assignmentFieldMappingJson) === SMART_SHEET_MODE.EXISTING_WIDE_SHEET) {
-      return this.syncExistingWideSheetGuests(connection, accessToken);
+      return this.syncExistingWideSheetGuests(connection, session);
     }
     const attendees = await this.prisma.registrationAttendee.findMany({
       where: { registration: { conferenceId: connection.conferenceId, status: RegistrationStatus.CONFIRMED } },
@@ -703,9 +756,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     };
 
     for (const batch of chunks(additions, 200)) {
-      const recordIds = await this.client.addSmartSheetRecords(
-        accessToken,
-        connection.docId,
+      const recordIds = await session.addRecords(
         connection.guestSheetId,
         batch.map((item) => ({ values: item.values }))
       );
@@ -735,9 +786,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     }
 
     for (const batch of chunks(updates, 200)) {
-      await this.client.updateSmartSheetRecords(
-        accessToken,
-        connection.docId,
+      await session.updateRecords(
         connection.guestSheetId,
         batch.map((item) => ({ record_id: item.mapping!.remoteRecordId!, values: item.values }))
       );
@@ -849,13 +898,13 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     return result;
   }
 
-  private async pullAssignmentRows(connection: ApiConnectionRecord, accessToken: string): Promise<AssignmentSyncResult> {
+  private async pullAssignmentRows(connection: SheetConnectionRecord, session: SmartSheetSession): Promise<AssignmentSyncResult> {
     if (readSmartSheetMode(connection.assignmentFieldMappingJson) === SMART_SHEET_MODE.EXISTING_WIDE_SHEET) {
-      return this.pullExistingWideSheetAssignments(connection, accessToken);
+      return this.pullExistingWideSheetAssignments(connection, session);
     }
     const [records, fields] = await Promise.all([
-      this.client.getSmartSheetRecords(accessToken, connection.docId, connection.assignmentSheetId),
-      this.client.getSmartSheetFields(accessToken, connection.docId, connection.assignmentSheetId)
+      session.getRecords(connection.assignmentSheetId),
+      session.getFields(connection.assignmentSheetId)
     ]);
     const mapping = mergeFieldMapping(DEFAULT_ASSIGNMENT_FIELD_MAPPING, connection.assignmentFieldMappingJson);
     const titles = fieldTitles(fields);
@@ -953,14 +1002,14 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
 
     if (canWriteSystemFields) {
       for (const batch of chunks(statusUpdates, 200)) {
-        await this.client.updateSmartSheetRecords(accessToken, connection.docId, connection.assignmentSheetId, batch);
+        await session.updateRecords(connection.assignmentSheetId, batch);
       }
     }
     result.completed = true;
     return result;
   }
 
-  private async syncExistingWideSheetGuests(connection: ApiConnectionRecord, accessToken: string): Promise<GuestSyncResult> {
+  private async syncExistingWideSheetGuests(connection: SheetConnectionRecord, session: SmartSheetSession): Promise<GuestSyncResult> {
     const config = normalizeWideSheetConfig(connection.assignmentFieldMappingJson);
     const [attendees, records, mappings] = await Promise.all([
       this.prisma.registrationAttendee.findMany({
@@ -979,7 +1028,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
           }
         }
       }),
-      this.client.getSmartSheetRecords(accessToken, connection.docId, connection.guestSheetId),
+      session.getRecords(connection.guestSheetId),
       this.prisma.wecomSmartSheetGuestRecord.findMany({ where: { connectionId: connection.id } })
     ]);
     const recordById = new Map(records.map((item) => [item.record_id, item]));
@@ -1016,9 +1065,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     }
 
     for (const batch of chunks(additions, 200)) {
-      const recordIds = await this.client.addSmartSheetRecords(
-        accessToken,
-        connection.docId,
+      const recordIds = await session.addRecords(
         connection.guestSheetId,
         batch.map((item) => ({ values: withWideSyncedAt(config, item.values) }))
       );
@@ -1046,9 +1093,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     }
 
     for (const batch of chunks(updates, 200)) {
-      await this.client.updateSmartSheetRecords(
-        accessToken,
-        connection.docId,
+      await session.updateRecords(
         connection.guestSheetId,
         batch.map((item) => ({ record_id: item.record.record_id, values: withWideSyncedAt(config, item.values) }))
       );
@@ -1095,10 +1140,10 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async pullExistingWideSheetAssignments(
-    connection: ApiConnectionRecord,
-    accessToken: string
+    connection: SheetConnectionRecord,
+    session: SmartSheetSession
   ): Promise<AssignmentSyncResult> {
-    const records = await this.client.getSmartSheetRecords(accessToken, connection.docId, connection.assignmentSheetId);
+    const records = await session.getRecords(connection.assignmentSheetId);
     return this.applyExistingWideSheetAssignments(connection, records);
   }
 
@@ -1208,6 +1253,36 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     return matches[0];
   }
 
+  private async createSmartSheetSession(
+    connection: SheetConnectionRecord,
+    forceRefresh = false
+  ): Promise<SmartSheetSession> {
+    const transport = readSmartSheetTransport(connection.transport);
+    if (transport === SMART_SHEET_TRANSPORT.SMART_BOT_API) {
+      const botId = connection.smartBotId?.trim() || "";
+      const secret = decryptSecret(connection.smartBotSecretEnc);
+      const docUrl = connection.docUrl?.trim() || "";
+      if (!botId || !secret) throw new BadRequestException("当前连接缺少智能机器人 Bot ID 或 Secret");
+      if (!docUrl) throw new BadRequestException("当前智能机器人连接缺少完整智能表链接");
+      const credentials: WecomSmartBotCredentials = { botId, secret };
+      if (forceRefresh) await this.smartBot.verifyCredentials(credentials);
+      return {
+        getFields: (sheetId) => this.smartBot.getSmartSheetFields(credentials, docUrl, sheetId),
+        getRecords: (sheetId) => this.smartBot.getSmartSheetRecords(credentials, docUrl, sheetId),
+        addRecords: (sheetId, records) => this.smartBot.addSmartSheetRecords(credentials, docUrl, sheetId, records),
+        updateRecords: (sheetId, records) => this.smartBot.updateSmartSheetRecords(credentials, docUrl, sheetId, records)
+      };
+    }
+    assertLegacyApiConnection(connection);
+    const { accessToken } = await this.tokens.getAccessToken(connection.integration, "self_built_app", forceRefresh);
+    return {
+      getFields: (sheetId) => this.client.getSmartSheetFields(accessToken, connection.docId, sheetId),
+      getRecords: (sheetId) => this.client.getSmartSheetRecords(accessToken, connection.docId, sheetId),
+      addRecords: (sheetId, records) => this.client.addSmartSheetRecords(accessToken, connection.docId, sheetId, records),
+      updateRecords: (sheetId, records) => this.client.updateSmartSheetRecords(accessToken, connection.docId, sheetId, records)
+    };
+  }
+
   private async getConnection(conferenceId: string) {
     const connection = await this.prisma.wecomSmartSheetConnection.findUnique({
       where: { conferenceId },
@@ -1239,11 +1314,24 @@ type ConnectionRecord = Prisma.WecomSmartSheetConnectionGetPayload<{
   include: { integration: true; conference: { select: { id: true; title: true } } };
 }>;
 
-type ApiConnectionRecord = ConnectionRecord & {
-  integration: NonNullable<ConnectionRecord["integration"]>;
-  docId: string;
+type SheetConnectionRecord = ConnectionRecord & {
   guestSheetId: string;
   assignmentSheetId: string;
+};
+
+type LegacyApiConnectionRecord = SheetConnectionRecord & {
+  integration: NonNullable<ConnectionRecord["integration"]>;
+  docId: string;
+};
+
+type SmartSheetSession = {
+  getFields: (sheetId: string) => Promise<Array<Record<string, unknown>>>;
+  getRecords: (sheetId: string) => Promise<WecomSmartSheetRecord[]>;
+  addRecords: (sheetId: string, records: Array<{ values: Record<string, unknown> }>) => Promise<string[]>;
+  updateRecords: (
+    sheetId: string,
+    records: Array<{ record_id: string; values: Record<string, unknown> }>
+  ) => Promise<void>;
 };
 
 type SyncAttendee = {
@@ -1697,7 +1785,11 @@ function readRequestedMode(value: unknown, storedMapping: unknown): SmartSheetMo
 
 function readRequestedTransport(value: unknown, storedValue: unknown): SmartSheetTransport {
   if (typeof value === "undefined" || value === null || value === "") return readSmartSheetTransport(storedValue);
-  if (value === SMART_SHEET_TRANSPORT.API || value === SMART_SHEET_TRANSPORT.WEBHOOK_AUTOMATION) return value;
+  if (
+    value === SMART_SHEET_TRANSPORT.SMART_BOT_API
+    || value === SMART_SHEET_TRANSPORT.API
+    || value === SMART_SHEET_TRANSPORT.WEBHOOK_AUTOMATION
+  ) return value;
   throw new BadRequestException("不支持的智能表传输方式");
 }
 
@@ -1711,6 +1803,7 @@ function formatConnection(connection: Prisma.WecomSmartSheetConnectionGetPayload
     : null;
   const webhookUrl = decryptSecret(connection.webhookUrlEnc);
   const automationToken = decryptSecret(connection.automationTokenEnc);
+  const smartBotSecretConfigured = Boolean(decryptSecret(connection.smartBotSecretEnc));
   return {
     id: connection.id,
     conferenceId: connection.conferenceId,
@@ -1744,6 +1837,9 @@ function formatConnection(connection: Prisma.WecomSmartSheetConnectionGetPayload
     webhookUrlMasked: maskWebhookUrl(webhookUrl),
     webhookSample: webhookSchema ? formatSmartSheetWebhookSample(webhookSchema) : "",
     automationCallbackUrl: automationToken ? buildAutomationCallbackUrl(automationToken) : null,
+    smartBotId: connection.smartBotId,
+    smartBotSecretConfigured,
+    smartBotSecretMasked: smartBotSecretConfigured ? "已安全保存" : "",
     integration: connection.integration ? formatIntegrationOption(connection.integration) : null
   };
 }
@@ -1808,11 +1904,31 @@ function maskWebhookUrl(value: string): string {
   }
 }
 
-function assertApiConnection(connection: ConnectionRecord): asserts connection is ApiConnectionRecord {
-  if (!connection.integration) throw new BadRequestException("当前 API 连接缺少企业微信自建应用配置");
-  if (!connection.docId || !connection.guestSheetId || !connection.assignmentSheetId) {
-    throw new BadRequestException("当前 API 连接缺少智能表文档或子表 ID");
+function resolveSubmittedSmartBotCredentials(
+  body: Record<string, unknown>,
+  existing: { smartBotId: string | null; smartBotSecretEnc: string | null } | null
+): WecomSmartBotCredentials {
+  const submittedBotId = readOptionalString(body.smartBotId);
+  const submittedSecret = readOptionalString(body.smartBotSecret);
+  if (submittedBotId && submittedBotId !== existing?.smartBotId && !submittedSecret) {
+    throw new BadRequestException("更换 Bot ID 时请同时填写新的 Secret");
   }
+  const botId = submittedBotId ?? existing?.smartBotId ?? "";
+  const secret = submittedSecret
+    ?? (botId === existing?.smartBotId ? decryptSecret(existing?.smartBotSecretEnc) : "");
+  if (!botId || !secret) throw new BadRequestException("请填写智能机器人 Bot ID 和 Secret");
+  return { botId, secret };
+}
+
+function assertSheetConnection(connection: ConnectionRecord): asserts connection is SheetConnectionRecord {
+  if (!connection.guestSheetId || !connection.assignmentSheetId) {
+    throw new BadRequestException("当前连接缺少智能表数据子表 ID");
+  }
+}
+
+function assertLegacyApiConnection(connection: SheetConnectionRecord): asserts connection is LegacyApiConnectionRecord {
+  if (!connection.integration) throw new BadRequestException("当前 API 连接缺少企业微信自建应用配置");
+  if (!connection.docId) throw new BadRequestException("当前 API 连接缺少智能表文档 ID");
 }
 
 function chunks<T>(items: T[], size: number): T[][] {

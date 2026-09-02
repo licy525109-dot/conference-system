@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AdminModule } from "../admin/admin.module";
 import { PrismaService } from "../prisma.service";
 import { WecomClientAdapter } from "./adapters/wecom-client.adapter";
+import { WecomSmartBotAdapter } from "./adapters/wecom-smart-bot.adapter";
 import { AdminWecomCallbackEventsController } from "./admin-wecom-callback-events.controller";
 import { AdminWecomConfigController } from "./admin-wecom-config.controller";
 import { AdminWecomCustomerGroupsController } from "./admin-wecom-customer-groups.controller";
@@ -27,6 +28,7 @@ import { WecomWelcomeTemplateService } from "./services/wecom-welcome-template.s
   ],
   providers: [
     WecomClientAdapter,
+    WecomSmartBotAdapter,
     WecomCallbackService,
     WecomConfigService,
     WecomCustomerGroupService,
@@ -35,6 +37,6 @@ import { WecomWelcomeTemplateService } from "./services/wecom-welcome-template.s
     WecomWelcomeTemplateService,
     PrismaService
   ],
-  exports: [WecomClientAdapter, WecomConfigService, WecomTokenService]
+  exports: [WecomClientAdapter, WecomSmartBotAdapter, WecomConfigService, WecomTokenService]
 })
 export class WecomModule {}

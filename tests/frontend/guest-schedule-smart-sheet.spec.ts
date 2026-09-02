@@ -12,13 +12,25 @@ test("existing SmartSheet link opens visual field mapping without asking for int
 
   await expect(page.getByRole("heading", { name: "嘉宾会务安排" })).toBeVisible();
   await page.getByRole("button", { name: "智能表连接" }).click();
-  await expect(page.getByText("接入现有智能表", { exact: true })).toBeVisible();
+  await expect(page.getByText("智能机器人 API（推荐）", { exact: true })).toBeVisible();
   await expect(page.getByLabel("智能表文档 ID")).toHaveCount(0);
+  await expect(page.getByText("无需 CorpID、可信 IP 或迁表")).toBeVisible();
+
+  await page.getByLabel("智能机器人 Bot ID").fill("test-bot-id");
+  await page.getByLabel("智能机器人 Secret").fill("test-bot-secret");
 
   await page.locator(".link-recognizer input").fill(
     "https://doc.weixin.qq.com/smartsheet/s3_existing?scode=share-code&tab=data-sheet&viewId=guest-view"
   );
+  const requestPromise = page.waitForRequest("**/api/admin/guest-schedules/smart-sheet/discover**");
   await page.getByRole("button", { name: "识别现有表" }).click();
+  const request = await requestPromise;
+  expect(request.postDataJSON()).toMatchObject({
+    transport: "SMART_BOT_API",
+    smartBotId: "test-bot-id",
+    smartBotSecret: "test-bot-secret",
+    docUrl: "https://doc.weixin.qq.com/smartsheet/s3_existing?scode=share-code&tab=data-sheet&viewId=guest-view"
+  });
 
   await expect(page.getByText("已识别“数据汇总”，共 11 个字段")).toBeVisible();
   await expect(page.getByText("系统只读取能唯一对应到已报名嘉宾的行")).toBeVisible();
@@ -44,13 +56,15 @@ test("existing SmartSheet discovery shows document permission errors instead of 
   await page.goto("http://localhost:5174/#/guest-schedules?conferenceId=conference-jiangmen");
 
   await page.getByRole("button", { name: "智能表连接" }).click();
+  await page.getByLabel("智能机器人 Bot ID").fill("test-bot-id");
+  await page.getByLabel("智能机器人 Secret").fill("test-bot-secret");
   await page.locator(".link-recognizer input").fill(
     "https://doc.weixin.qq.com/smartsheet/s3_existing?scode=share-code&tab=data-sheet"
   );
   await page.getByRole("button", { name: "识别现有表" }).click();
 
   await expect(page.getByText("现有表识别失败")).toBeVisible();
-  await expect(page.locator(".discovery-error").getByText(/企微返回 851003：当前应用没有这张智能表的文档对象权限/)).toBeVisible();
+  await expect(page.locator(".discovery-error").getByText(/企微返回 851003：机器人创建者没有目标智能表权限/)).toBeVisible();
   await expect(page.getByRole("button", { name: "识别现有表" })).toBeEnabled();
 });
 
@@ -94,6 +108,7 @@ async function installFixtures(page: Page): Promise<void> {
         connection: null,
         integrations: [{ id: "wecom-main", name: "观潮企微自建应用", enabled: true, verified: true, configured: true }],
         defaults: {
+          transport: "SMART_BOT_API",
           guestFieldMapping: {},
           assignmentFieldMapping: {},
           wideSheetConfig: wideConfig(false),
@@ -105,9 +120,10 @@ async function installFixtures(page: Page): Promise<void> {
     if (path === "/api/admin/guest-schedules/smart-sheet/discover") {
       return ok(route, {
         docId: "s3_existing",
-        docUrl: "https://doc.weixin.qq.com/smartsheet/s3_existing?tab=data-sheet&viewId=guest-view",
+        docUrl: "https://doc.weixin.qq.com/smartsheet/s3_existing?scode=share-code&tab=data-sheet&viewId=guest-view",
         viewId: "guest-view",
         selectedSheetId: "data-sheet",
+        transport: "SMART_BOT_API",
         sheets: [{ id: "data-sheet", title: "数据汇总", type: "smartsheet", fieldCount: 11, recordCount: 266 }],
         fields: fieldTitles.map((title, index) => ({ id: `field-${index + 1}`, title, type: "text" })),
         suggestedWideSheetConfig: wideConfig(true)

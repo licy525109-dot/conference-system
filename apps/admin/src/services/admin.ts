@@ -39,6 +39,7 @@ import type {
   GuestScheduleSmartSheetConfig,
   GuestScheduleSmartSheetCheck,
   GuestScheduleSmartSheetConnection,
+  GuestScheduleSmartSheetTransport,
   GuestScheduleSmartSheetWebhookInspection,
   GuestScheduleSmartSheetDiscovery,
   GuestScheduleSyncRun,
@@ -311,7 +312,14 @@ export function saveGuestScheduleSmartSheetConfig(conferenceId: string, input: R
 
 export function discoverGuestScheduleSmartSheet(
   conferenceId: string,
-  input: { integrationId: string; docUrl: string; sheetId?: string }
+  input: {
+    transport: GuestScheduleSmartSheetTransport;
+    docUrl: string;
+    sheetId?: string;
+    integrationId?: string;
+    smartBotId?: string;
+    smartBotSecret?: string;
+  }
 ) {
   return apiRequest<GuestScheduleSmartSheetDiscovery>(`/admin/guest-schedules/smart-sheet/discover${toQuery({ conferenceId })}`, {
     method: "POST",

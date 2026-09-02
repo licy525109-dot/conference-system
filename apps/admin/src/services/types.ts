@@ -1439,6 +1439,9 @@ export interface GuestScheduleSmartSheetConnection {
   webhookUrlMasked: string;
   webhookSample: string;
   automationCallbackUrl: string | null;
+  smartBotId: string | null;
+  smartBotSecretConfigured: boolean;
+  smartBotSecretMasked: string;
   integration: { id: string; name: string; enabled: boolean; verified: boolean; configured: boolean } | null;
 }
 
@@ -1456,7 +1459,7 @@ export interface GuestScheduleSmartSheetConfig {
 }
 
 export type GuestScheduleSmartSheetMode = "EXISTING_WIDE_SHEET" | "SEPARATE_SHEETS";
-export type GuestScheduleSmartSheetTransport = "API" | "WEBHOOK_AUTOMATION";
+export type GuestScheduleSmartSheetTransport = "SMART_BOT_API" | "API" | "WEBHOOK_AUTOMATION";
 
 export interface GuestScheduleWideSheetConfig {
   mode: "EXISTING_WIDE_SHEET";
@@ -1499,6 +1502,7 @@ export interface GuestScheduleSmartSheetDiscovery {
   docUrl: string;
   viewId: string | null;
   selectedSheetId: string;
+  transport: GuestScheduleSmartSheetTransport;
   sheets: Array<{ id: string; title: string; type: string; fieldCount: number; recordCount: number }>;
   fields: Array<{ id: string; title: string; type: string }>;
   suggestedWideSheetConfig: GuestScheduleWideSheetConfig;

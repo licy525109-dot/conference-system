@@ -255,12 +255,43 @@
           show-icon
           title="直接连接原企业微信中的现有表，无需迁表或配置自建应用。报名由系统写入，现场事项由原表自动化回推。"
         />
+        <el-alert
+          v-if="connectionForm.transport === 'SMART_BOT_API'"
+          type="success"
+          :closable="false"
+          show-icon
+          title="使用企微智能机器人的文档授权直接读写现有智能表，无需 CorpID、可信 IP 或迁表。"
+          description="机器人创建者必须已经授权“文档”能力，并且本人可编辑目标智能表。"
+        />
         <div v-if="connectionForm.transport === 'API'" class="connection-mode-control">
           <span>表结构</span>
           <el-segmented v-model="connectionForm.mode" :options="connectionModeOptions" block @change="checkResult = null" />
         </div>
 
         <el-form label-position="top">
+          <template v-if="connectionForm.transport === 'SMART_BOT_API'">
+            <div class="form-grid">
+              <el-form-item label="智能机器人 Bot ID" required>
+                <el-input
+                  v-model="connectionForm.smartBotId"
+                  autocomplete="off"
+                  placeholder="粘贴机器人 API 配置中的 Bot ID"
+                  @input="onSmartBotIdInput"
+                />
+              </el-form-item>
+              <el-form-item label="智能机器人 Secret" required>
+                <el-input
+                  v-model="connectionForm.smartBotSecret"
+                  type="password"
+                  show-password
+                  autocomplete="new-password"
+                  :placeholder="connectionForm.smartBotSecretConfigured ? connectionForm.smartBotSecretMasked : '粘贴机器人 API 配置中的 Secret'"
+                  @input="clearDiscoveryFeedback"
+                />
+                <span class="form-help">Secret 只会加密保存在服务端；已经保存时留空即可沿用。</span>
+              </el-form-item>
+            </div>
+          </template>
           <el-form-item v-if="connectionForm.transport === 'API'" label="企业微信自建应用" required>
             <el-select v-model="connectionForm.integrationId" placeholder="选择企微配置" style="width: 100%">
               <el-option
@@ -276,8 +307,8 @@
             <section class="connection-section">
               <div class="connection-section__heading">
                 <div>
-                  <strong>1. {{ connectionForm.transport === 'API' ? '识别现有智能表' : '连接原智能表' }}</strong>
-                  <span>{{ connectionForm.transport === 'API' ? '读取原表结构，不创建新表，也不改变现有视图。' : '从原表“自动化 > 接收外部数据”复制 Webhook URL 和示例 JSON。' }}</span>
+                  <strong>1. {{ connectionForm.transport === 'WEBHOOK_AUTOMATION' ? '连接原智能表' : '识别现有智能表' }}</strong>
+                  <span>{{ connectionForm.transport === 'WEBHOOK_AUTOMATION' ? '从原表“自动化 > 接收外部数据”复制 Webhook URL 和示例 JSON。' : '读取原表结构，不创建新表，也不改变现有视图。请保留链接中的 scode 参数。' }}</span>
                 </div>
               </div>
               <el-form-item label="原智能表链接">
@@ -289,7 +320,7 @@
                     @input="clearDiscoveryFeedback"
                   />
                   <el-button
-                    v-if="connectionForm.transport === 'API'"
+                    v-if="connectionForm.transport !== 'WEBHOOK_AUTOMATION'"
                     :icon="Search"
                     :loading="discovering"
                     @click="discoverExistingSheet(true)"
@@ -328,7 +359,7 @@
                 title="现有表识别失败"
                 :description="discoveryError"
               />
-              <el-form-item v-if="discovery && connectionForm.transport === 'API'" label="数据子表" required>
+              <el-form-item v-if="discovery && connectionForm.transport !== 'WEBHOOK_AUTOMATION'" label="数据子表" required>
                 <el-select v-model="connectionForm.sheetId" style="width: 100%" @change="onExistingSheetChange">
                   <el-option
                     v-for="sheet in discovery.sheets"
@@ -343,7 +374,7 @@
                 type="success"
                 :closable="false"
                 show-icon
-                :title="connectionForm.transport === 'API' ? `已识别“${selectedSheet?.title || '现有数据表'}”，共 ${discovery.fields.length} 个字段` : `已识别 Webhook 示例中的 ${discovery.fields.length} 个字段`"
+                :title="connectionForm.transport !== 'WEBHOOK_AUTOMATION' ? `已识别“${selectedSheet?.title || '现有数据表'}”，共 ${discovery.fields.length} 个字段` : `已识别 Webhook 示例中的 ${discovery.fields.length} 个字段`"
               />
             </section>
 
@@ -674,7 +705,8 @@ const connectionModeOptions: Array<{ label: string; value: GuestScheduleSmartShe
 ];
 
 const transportOptions: Array<{ label: string; value: GuestScheduleSmartSheetTransport }> = [
-  { label: "Webhook / 自动化（推荐）", value: "WEBHOOK_AUTOMATION" },
+  { label: "智能机器人 API（推荐）", value: "SMART_BOT_API" },
+  { label: "Webhook / 自动化", value: "WEBHOOK_AUTOMATION" },
   { label: "自建应用 API（兼容）", value: "API" }
 ];
 
@@ -952,7 +984,16 @@ async function openConnection() {
     } catch {
       // Keep the saved mapping editable if a legacy sample can no longer be parsed.
     }
-  } else if (connectionForm.mode === "EXISTING_WIDE_SHEET" && connectionForm.integrationId && connectionForm.docUrl) {
+  } else if (
+    connectionForm.mode === "EXISTING_WIDE_SHEET"
+    && connectionForm.docUrl
+    && (
+      (connectionForm.transport === "SMART_BOT_API"
+        && connectionForm.smartBotId
+        && (connectionForm.smartBotSecretConfigured || connectionForm.smartBotSecret))
+      || (connectionForm.transport === "API" && connectionForm.integrationId)
+    )
+  ) {
     try {
       await discoverExistingSheet(false, true, connectionForm.sheetId);
     } catch {
@@ -981,6 +1022,10 @@ function hydrateConnectionForm() {
         webhookUrlMasked: connection.webhookUrlMasked,
         webhookSample: connection.webhookSample,
         automationCallbackUrl: connection.automationCallbackUrl || "",
+        smartBotId: connection.smartBotId || "",
+        smartBotSecret: "",
+        smartBotSecretConfigured: connection.smartBotSecretConfigured,
+        smartBotSecretMasked: connection.smartBotSecretMasked,
         enabled: connection.enabled,
         syncIntervalSeconds: connection.syncIntervalSeconds
       }
@@ -996,7 +1041,7 @@ function onTransportChange() {
   checkResult.value = null;
   discovery.value = null;
   discoveryError.value = "";
-  if (connectionForm.transport === "WEBHOOK_AUTOMATION") {
+  if (connectionForm.transport !== "API") {
     connectionForm.mode = "EXISTING_WIDE_SHEET";
   }
 }
@@ -1016,6 +1061,7 @@ async function inspectWebhookFields(useSuggestions: boolean, quiet = false) {
       docUrl: connectionForm.docUrl,
       viewId: null,
       selectedSheetId: "webhook",
+      transport: "WEBHOOK_AUTOMATION",
       sheets: [{ id: "webhook", title: "Webhook 示例字段", type: "webhook", fieldCount: result.fields.length, recordCount: 0 }],
       fields: result.fields,
       suggestedWideSheetConfig: result.suggestedWideSheetConfig
@@ -1038,8 +1084,19 @@ async function inspectWebhookFields(useSuggestions: boolean, quiet = false) {
 }
 
 async function discoverExistingSheet(useSuggestions: boolean, quiet = false, requestedSheetId = "") {
-  if (!connectionForm.integrationId || !connectionForm.docUrl.trim()) {
-    discoveryError.value = "请先选择已完成配置的企微自建应用，并粘贴完整的智能表链接。";
+  const isSmartBot = connectionForm.transport === "SMART_BOT_API";
+  if (!connectionForm.docUrl.trim()) {
+    discoveryError.value = "请先粘贴包含 scode 参数的完整企微智能表链接。";
+    if (!quiet) ElMessage.warning(discoveryError.value);
+    return;
+  }
+  if (isSmartBot && (!connectionForm.smartBotId.trim() || (!connectionForm.smartBotSecretConfigured && !connectionForm.smartBotSecret.trim()))) {
+    discoveryError.value = "请先填写智能机器人 Bot ID 和 Secret。";
+    if (!quiet) ElMessage.warning(discoveryError.value);
+    return;
+  }
+  if (!isSmartBot && !connectionForm.integrationId) {
+    discoveryError.value = "请先选择已完成配置的企微自建应用。";
     if (!quiet) ElMessage.warning(discoveryError.value);
     return;
   }
@@ -1048,8 +1105,13 @@ async function discoverExistingSheet(useSuggestions: boolean, quiet = false, req
   try {
     const previousDocId = connectionForm.docId;
     const result = await discoverGuestScheduleSmartSheet(conferenceId.value, {
-      integrationId: connectionForm.integrationId,
+      transport: connectionForm.transport,
       docUrl: connectionForm.docUrl.trim(),
+      ...(connectionForm.transport === "API" ? { integrationId: connectionForm.integrationId } : {}),
+      ...(isSmartBot ? {
+        smartBotId: connectionForm.smartBotId.trim(),
+        ...(connectionForm.smartBotSecret.trim() ? { smartBotSecret: connectionForm.smartBotSecret.trim() } : {})
+      } : {}),
       ...(requestedSheetId ? { sheetId: requestedSheetId } : {})
     });
     discovery.value = result;
@@ -1111,11 +1173,28 @@ function clearDiscoveryFeedback() {
   checkResult.value = null;
 }
 
+function onSmartBotIdInput() {
+  const saved = syncConfig.value?.connection;
+  connectionForm.smartBotSecretConfigured = Boolean(
+    saved?.smartBotSecretConfigured
+    && connectionForm.smartBotId.trim() === (saved.smartBotId || "")
+  );
+  connectionForm.smartBotSecretMasked = connectionForm.smartBotSecretConfigured
+    ? saved?.smartBotSecretMasked || "已安全保存"
+    : "";
+  clearDiscoveryFeedback();
+}
+
 function smartSheetDiscoveryErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "现有智能表识别失败";
   const normalized = message.toLowerCase();
   if (message.includes("851003") || normalized.includes("no authority")) {
-    return "企微返回 851003：当前应用没有这张智能表的文档对象权限。普通分享链接或 scode 不会授予 API 权限；请在企微文档权限中显式授权当前应用。若企业微信不提供应用协作者入口，需要改用拥有该表权限的机器人授权方式。";
+    return connectionForm.transport === "SMART_BOT_API"
+      ? "企微返回 851003：机器人创建者没有目标智能表权限，或机器人尚未获得文档能力授权。请确认创建机器人的账号可以编辑该表，并在机器人“去授权”中授权文档能力。"
+      : "企微返回 851003：当前应用没有这张智能表的文档对象权限。普通分享链接或 scode 不会授予 API 权限；请在企微文档权限中显式授权当前应用。";
+  }
+  if (/85300[0-5]/.test(message) || normalized.includes("bot id")) {
+    return "智能机器人授权失败：请重新复制 Bot ID 和 Secret，并确认机器人已保存、未停用，且使用模式仍为“仅个人使用”。";
   }
   if (message.includes("48002") || normalized.includes("api forbidden")) {
     return "企微返回 48002：当前自建应用无权调用智能表 API，或应用与文档不在同一可授权主体。建议切换为“Webhook / 自动化”，可直接使用原表。";
@@ -1135,6 +1214,7 @@ function smartSheetDiscoveryErrorMessage(error: unknown): string {
 async function saveConnection() {
   const isWide = connectionForm.mode === "EXISTING_WIDE_SHEET";
   const isWebhook = connectionForm.transport === "WEBHOOK_AUTOMATION";
+  const isSmartBot = connectionForm.transport === "SMART_BOT_API";
   if (isWebhook) {
     if (!connectionForm.webhookConfigured && !connectionForm.webhookUrl.trim()) {
       ElMessage.warning("请填写智能表接收外部数据 Webhook URL");
@@ -1146,6 +1226,15 @@ async function saveConnection() {
     }
     if (!discovery.value) await inspectWebhookFields(false);
     if (!discovery.value) return;
+  } else if (isSmartBot) {
+    if (!connectionForm.smartBotId.trim() || (!connectionForm.smartBotSecretConfigured && !connectionForm.smartBotSecret.trim())) {
+      ElMessage.warning("请填写智能机器人 Bot ID 和 Secret");
+      return;
+    }
+    if (!connectionForm.docId.trim() || !connectionForm.sheetId) {
+      ElMessage.warning("请先识别现有智能表并选择数据子表");
+      return;
+    }
   } else {
     if (!connectionForm.integrationId || !connectionForm.docId.trim()) {
       ElMessage.warning(isWide ? "请先识别现有智能表" : "请填写企微应用和文档 ID");
@@ -1173,7 +1262,9 @@ async function saveConnection() {
       mode: connectionForm.mode,
       wideSheetConfig: connectionForm.wideSheetConfig,
       webhookUrl: connectionForm.webhookUrl.trim() || undefined,
-      webhookSample: connectionForm.webhookSample
+      webhookSample: connectionForm.webhookSample,
+      smartBotId: connectionForm.smartBotId.trim() || undefined,
+      smartBotSecret: connectionForm.smartBotSecret.trim() || undefined
     });
     await loadSyncConfig();
     if (connectionForm.transport === "WEBHOOK_AUTOMATION" && connectionForm.webhookSample) {
@@ -1276,7 +1367,7 @@ function emptyForm() {
 function emptyConnectionForm() {
   return {
     integrationId: "",
-    transport: "WEBHOOK_AUTOMATION" as GuestScheduleSmartSheetTransport,
+    transport: "SMART_BOT_API" as GuestScheduleSmartSheetTransport,
     docId: "",
     docUrl: "",
     guestSheetId: "",
@@ -1289,6 +1380,10 @@ function emptyConnectionForm() {
     webhookUrlMasked: "",
     webhookSample: "",
     automationCallbackUrl: "",
+    smartBotId: "",
+    smartBotSecret: "",
+    smartBotSecretConfigured: false,
+    smartBotSecretMasked: "",
     enabled: false,
     syncIntervalSeconds: 60
   };
