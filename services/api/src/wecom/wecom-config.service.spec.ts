@@ -163,7 +163,8 @@ function createWecomClientMock() {
     getSmartSheetSheets: async () => [],
     getSmartSheetRecords: async () => [],
     addSmartSheetRecords: async () => [],
-    updateSmartSheetRecords: async () => undefined
+    updateSmartSheetRecords: async () => undefined,
+    sendSmartSheetWebhook: async () => ({ recordIds: [] })
   } as WecomClientAdapter;
 }
 

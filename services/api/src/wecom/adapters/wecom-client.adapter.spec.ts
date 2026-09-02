@@ -87,6 +87,57 @@ describe("WecomClientAdapter SmartSheet", () => {
       /没有该文档的对象权限.*851003 no authority/
     );
   });
+
+  it("writes records through the official SmartSheet webhook and returns created ids", async () => {
+    let requestUrl = "";
+    let requestBody: Record<string, unknown> = {};
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      requestUrl = String(input);
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({ errcode: 0, errmsg: "ok", add_records: [{ record_id: "row-webhook-1" }] });
+    }) as typeof fetch;
+    const client = new WecomClientAdapter();
+
+    const result = await client.sendSmartSheetWebhook(
+      "https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=secret",
+      { add_records: [{ values: { fName: "张三" } }] }
+    );
+
+    assert.equal(requestUrl.includes("qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=secret"), true);
+    assert.deepEqual(requestBody, { add_records: [{ values: { fName: "张三" } }] });
+    assert.deepEqual(result.recordIds, ["row-webhook-1"]);
+  });
+
+  it("reads created record ids from a nested webhook response", async () => {
+    globalThis.fetch = (async () => jsonResponse({
+      errcode: 0,
+      errmsg: "ok",
+      data: { record_ids: ["row-webhook-nested"] }
+    })) as typeof fetch;
+    const client = new WecomClientAdapter();
+
+    const result = await client.sendSmartSheetWebhook(
+      "https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=secret",
+      { add_records: [{ values: { fName: "张三" } }] }
+    );
+
+    assert.deepEqual(result.recordIds, ["row-webhook-nested"]);
+  });
+
+  it("blocks arbitrary webhook hosts before fetch", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return jsonResponse({ errcode: 0 });
+    }) as typeof fetch;
+    const client = new WecomClientAdapter();
+
+    await assert.rejects(
+      () => client.sendSmartSheetWebhook("https://example.com/webhook?key=secret", { add_records: [] }),
+      /不是企业微信官方地址/
+    );
+    assert.equal(called, false);
+  });
 });
 
 function jsonResponse(data: unknown): Response {

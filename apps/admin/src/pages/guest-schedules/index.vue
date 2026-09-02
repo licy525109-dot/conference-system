@@ -239,15 +239,29 @@
     <el-drawer v-model="connectionVisible" title="企微智能表连接" size="820px" destroy-on-close>
       <div class="connection-drawer">
         <el-alert
-          v-if="!connectionForm.integrationId"
+          v-if="connectionForm.transport === 'API' && !connectionForm.integrationId"
           type="warning"
           :closable="false"
           title="请先在企微接入配置中完成自建应用 CorpID、AgentID 和 Secret 配置。"
         />
-        <el-segmented v-model="connectionForm.mode" :options="connectionModeOptions" block @change="checkResult = null" />
+        <div class="connection-mode-control">
+          <span>连接方式</span>
+          <el-segmented v-model="connectionForm.transport" :options="transportOptions" block @change="onTransportChange" />
+        </div>
+        <el-alert
+          v-if="connectionForm.transport === 'WEBHOOK_AUTOMATION'"
+          type="info"
+          :closable="false"
+          show-icon
+          title="直接连接原企业微信中的现有表，无需迁表或配置自建应用。报名由系统写入，现场事项由原表自动化回推。"
+        />
+        <div v-if="connectionForm.transport === 'API'" class="connection-mode-control">
+          <span>表结构</span>
+          <el-segmented v-model="connectionForm.mode" :options="connectionModeOptions" block @change="checkResult = null" />
+        </div>
 
         <el-form label-position="top">
-          <el-form-item label="企业微信自建应用" required>
+          <el-form-item v-if="connectionForm.transport === 'API'" label="企业微信自建应用" required>
             <el-select v-model="connectionForm.integrationId" placeholder="选择企微配置" style="width: 100%">
               <el-option
                 v-for="item in syncConfig?.integrations || []"
@@ -262,11 +276,11 @@
             <section class="connection-section">
               <div class="connection-section__heading">
                 <div>
-                  <strong>1. 识别现有智能表</strong>
-                  <span>直接使用你正在维护的原表，不创建新表，也不改变现有视图。</span>
+                  <strong>1. {{ connectionForm.transport === 'API' ? '识别现有智能表' : '连接原智能表' }}</strong>
+                  <span>{{ connectionForm.transport === 'API' ? '读取原表结构，不创建新表，也不改变现有视图。' : '从原表“自动化 > 接收外部数据”复制 Webhook URL 和示例 JSON。' }}</span>
                 </div>
               </div>
-              <el-form-item label="智能表链接" required>
+              <el-form-item label="原智能表链接">
                 <div class="link-recognizer">
                   <el-input
                     v-model="connectionForm.docUrl"
@@ -274,9 +288,37 @@
                     clearable
                     @input="clearDiscoveryFeedback"
                   />
-                  <el-button :icon="Search" :loading="discovering" @click="discoverExistingSheet(true)">识别现有表</el-button>
+                  <el-button
+                    v-if="connectionForm.transport === 'API'"
+                    :icon="Search"
+                    :loading="discovering"
+                    @click="discoverExistingSheet(true)"
+                  >识别现有表</el-button>
                 </div>
               </el-form-item>
+              <template v-if="connectionForm.transport === 'WEBHOOK_AUTOMATION'">
+                <el-form-item label="接收外部数据 Webhook URL" required>
+                  <el-input
+                    v-model="connectionForm.webhookUrl"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    :placeholder="connectionForm.webhookConfigured ? `已安全保存：${connectionForm.webhookUrlMasked}` : 'https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=...'"
+                  />
+                  <span class="form-help">该地址等同密钥，只会加密保存在服务端；留空表示沿用已保存地址。</span>
+                </el-form-item>
+                <el-form-item label="Webhook 示例 JSON" required>
+                  <el-input
+                    v-model="connectionForm.webhookSample"
+                    type="textarea"
+                    :rows="9"
+                    resize="vertical"
+                    placeholder="粘贴企业微信在“接收外部数据”页面生成的完整示例 JSON"
+                    @input="clearDiscoveryFeedback"
+                  />
+                </el-form-item>
+                <el-button :icon="Search" :loading="discovering" @click="inspectWebhookFields(true)">识别示例字段</el-button>
+              </template>
               <el-alert
                 v-if="discoveryError"
                 class="discovery-error"
@@ -286,7 +328,7 @@
                 title="现有表识别失败"
                 :description="discoveryError"
               />
-              <el-form-item v-if="discovery" label="数据子表" required>
+              <el-form-item v-if="discovery && connectionForm.transport === 'API'" label="数据子表" required>
                 <el-select v-model="connectionForm.sheetId" style="width: 100%" @change="onExistingSheetChange">
                   <el-option
                     v-for="sheet in discovery.sheets"
@@ -301,7 +343,7 @@
                 type="success"
                 :closable="false"
                 show-icon
-                :title="`已识别“${selectedSheet?.title || '现有数据表'}”，共 ${discovery.fields.length} 个字段`"
+                :title="connectionForm.transport === 'API' ? `已识别“${selectedSheet?.title || '现有数据表'}”，共 ${discovery.fields.length} 个字段` : `已识别 Webhook 示例中的 ${discovery.fields.length} 个字段`"
               />
             </section>
 
@@ -465,6 +507,31 @@
                 </div>
               </article>
             </section>
+
+            <section v-if="connectionForm.transport === 'WEBHOOK_AUTOMATION'" class="connection-section automation-section">
+              <div class="connection-section__heading">
+                <div>
+                  <strong>5. 原表变更回推后台</strong>
+                  <span>保存连接后，把下方地址配置到原智能表的“发送 HTTP 请求”自动化中。</span>
+                </div>
+              </div>
+              <template v-if="connectionForm.automationCallbackUrl">
+                <el-form-item label="POST 回调地址">
+                  <div class="copy-row">
+                    <el-input :model-value="connectionForm.automationCallbackUrl" readonly />
+                    <el-button :icon="DocumentCopy" @click="copyText(connectionForm.automationCallbackUrl)">复制</el-button>
+                  </div>
+                </el-form-item>
+                <el-form-item label="请求 JSON 结构">
+                  <div class="code-sample">
+                    <pre>{{ automationPayloadExample }}</pre>
+                    <el-button text type="primary" :icon="DocumentCopy" @click="copyText(automationPayloadExample)">复制结构</el-button>
+                  </div>
+                  <span class="form-help">在企微自动化编辑器中，将示例文字替换为当前记录对应的动态字段；必须包含记录 ID 和全部已映射事项字段。</span>
+                </el-form-item>
+              </template>
+              <el-alert v-else type="warning" :closable="false" title="先保存连接，系统才会生成专属回调地址。" />
+            </section>
           </template>
 
           <template v-else>
@@ -499,7 +566,7 @@
           </div>
         </el-form>
 
-        <el-collapse v-if="connectionForm.mode === 'SEPARATE_SHEETS'" class="field-template">
+        <el-collapse v-if="connectionForm.transport === 'API' && connectionForm.mode === 'SEPARATE_SHEETS'" class="field-template">
           <el-collapse-item title="报名嘉宾子表字段" name="guest">
             <div class="field-list">
               <span v-for="field in guestFieldNames" :key="field">{{ field }}</span>
@@ -548,6 +615,7 @@ import {
   Clock,
   Connection,
   Delete,
+  DocumentCopy,
   EditPen,
   Location,
   Plus,
@@ -567,6 +635,7 @@ import {
   createGuestSchedule,
   discoverGuestScheduleSmartSheet,
   getGuestScheduleSmartSheetConfig,
+  inspectGuestScheduleSmartSheetWebhook,
   listConferences,
   listGuestScheduleAttendees,
   listGuestSchedules,
@@ -583,6 +652,7 @@ import type {
   GuestScheduleSmartSheetConfig,
   GuestScheduleSmartSheetDiscovery,
   GuestScheduleSmartSheetMode,
+  GuestScheduleSmartSheetTransport,
   GuestScheduleWideSheetConfig,
   GuestScheduleState,
   GuestScheduleSyncRun,
@@ -601,6 +671,11 @@ const typeOptions: Array<{ label: string; value: GuestScheduleType }> = [
 const connectionModeOptions: Array<{ label: string; value: GuestScheduleSmartSheetMode }> = [
   { label: "接入现有智能表", value: "EXISTING_WIDE_SHEET" },
   { label: "独立双表（兼容）", value: "SEPARATE_SHEETS" }
+];
+
+const transportOptions: Array<{ label: string; value: GuestScheduleSmartSheetTransport }> = [
+  { label: "Webhook / 自动化（推荐）", value: "WEBHOOK_AUTOMATION" },
+  { label: "自建应用 API（兼容）", value: "API" }
 ];
 
 const items = ref<GuestScheduleAssignment[]>([]);
@@ -653,6 +728,9 @@ const syncDescription = computed(() => {
   const connection = syncConfig.value?.connection;
   if (!connection) return "连接后，可从现有企微智能表读取现场事项；确认发布后嘉宾端才会更新。";
   if (!connection.enabled) return "现有发布内容不受影响；启用后才会继续交换数据。";
+  if (connection.transport === "WEBHOOK_AUTOMATION") {
+    return `每 ${formatInterval(connection.syncIntervalSeconds)} 检查新报名写回 · 原表变更由自动化实时回推 · 回推后仍需人工发布`;
+  }
   if (connection.mode === "EXISTING_WIDE_SHEET") {
     return `每 ${formatInterval(connection.syncIntervalSeconds)} 同步一次 · 使用现有数据子表 · ${connection.wideSheetConfig?.writeRegistrationFields ? "新报名按映射列写回" : "只读保护"}`;
   }
@@ -662,6 +740,33 @@ const guestFieldNames = computed(() => Object.values(syncConfig.value?.defaults.
 const assignmentFieldNames = computed(() => Object.values(syncConfig.value?.defaults.assignmentFieldMapping || {}));
 const fieldOptions = computed(() => discovery.value?.fields || []);
 const selectedSheet = computed(() => discovery.value?.sheets.find((item) => item.id === connectionForm.sheetId));
+const automationPayloadExample = computed(() => {
+  const fields = new Set<string>();
+  const config = connectionForm.wideSheetConfig;
+  [
+    config.identity.attendeeIdField,
+    config.identity.phoneField,
+    config.identity.nameField,
+    config.identity.companyField,
+    ...config.schedules.flatMap((rule) => [
+      rule.triggerField,
+      rule.activityNameField,
+      rule.startsAtField,
+      rule.endsAtField,
+      rule.locationField,
+      rule.roleField,
+      rule.tableNoField,
+      rule.isTableLeaderField,
+      rule.shareTopicField,
+      rule.notesField
+    ])
+  ].filter(Boolean).forEach((field) => fields.add(field));
+  return JSON.stringify({
+    record_id: "在此插入当前记录 ID",
+    update_time: "在此插入当前记录更新时间",
+    values: Object.fromEntries([...fields].map((field) => [field, `在此插入“${field}”字段`]))
+  }, null, 2);
+});
 
 onMounted(async () => {
   conferences.value = (await listConferences({ page: 1, pageSize: 100 })).items;
@@ -841,7 +946,13 @@ async function openConnection() {
   checkResult.value = null;
   discoveryError.value = "";
   connectionVisible.value = true;
-  if (connectionForm.mode === "EXISTING_WIDE_SHEET" && connectionForm.integrationId && connectionForm.docUrl) {
+  if (connectionForm.transport === "WEBHOOK_AUTOMATION" && connectionForm.webhookSample) {
+    try {
+      await inspectWebhookFields(false, true);
+    } catch {
+      // Keep the saved mapping editable if a legacy sample can no longer be parsed.
+    }
+  } else if (connectionForm.mode === "EXISTING_WIDE_SHEET" && connectionForm.integrationId && connectionForm.docUrl) {
     try {
       await discoverExistingSheet(false, true, connectionForm.sheetId);
     } catch {
@@ -856,22 +967,74 @@ function hydrateConnectionForm() {
   const connection = config.connection;
   Object.assign(connectionForm, connection
     ? {
-        integrationId: connection.integrationId,
-        docId: connection.docId,
+        integrationId: connection.integrationId || "",
+        transport: connection.transport,
+        docId: connection.docId || "",
         docUrl: connection.docUrl || "",
-        guestSheetId: connection.guestSheetId,
-        assignmentSheetId: connection.assignmentSheetId,
+        guestSheetId: connection.guestSheetId || "",
+        assignmentSheetId: connection.assignmentSheetId || "",
         mode: connection.mode,
-        sheetId: connection.sheetId || connection.guestSheetId,
+        sheetId: connection.sheetId || connection.guestSheetId || "",
         wideSheetConfig: cloneWideSheetConfig(connection.wideSheetConfig || config.defaults.wideSheetConfig),
+        webhookUrl: "",
+        webhookConfigured: connection.webhookConfigured,
+        webhookUrlMasked: connection.webhookUrlMasked,
+        webhookSample: connection.webhookSample,
+        automationCallbackUrl: connection.automationCallbackUrl || "",
         enabled: connection.enabled,
         syncIntervalSeconds: connection.syncIntervalSeconds
       }
     : {
         ...emptyConnectionForm(),
+        transport: config.defaults.transport,
         integrationId: config.integrations.find((item) => item.configured)?.id || "",
         syncIntervalSeconds: config.defaults.syncIntervalSeconds
       });
+}
+
+function onTransportChange() {
+  checkResult.value = null;
+  discovery.value = null;
+  discoveryError.value = "";
+  if (connectionForm.transport === "WEBHOOK_AUTOMATION") {
+    connectionForm.mode = "EXISTING_WIDE_SHEET";
+  }
+}
+
+async function inspectWebhookFields(useSuggestions: boolean, quiet = false) {
+  if (!connectionForm.webhookSample.trim()) {
+    discoveryError.value = "请先粘贴“接收外部数据”页面提供的完整示例 JSON。";
+    if (!quiet) ElMessage.warning(discoveryError.value);
+    return;
+  }
+  discovering.value = true;
+  discoveryError.value = "";
+  try {
+    const result = await inspectGuestScheduleSmartSheetWebhook(conferenceId.value, connectionForm.webhookSample);
+    discovery.value = {
+      docId: connectionForm.docId,
+      docUrl: connectionForm.docUrl,
+      viewId: null,
+      selectedSheetId: "webhook",
+      sheets: [{ id: "webhook", title: "Webhook 示例字段", type: "webhook", fieldCount: result.fields.length, recordCount: 0 }],
+      fields: result.fields,
+      suggestedWideSheetConfig: result.suggestedWideSheetConfig
+    };
+    connectionForm.webhookSample = result.webhookSample;
+    connectionForm.sheetId = "webhook";
+    connectionForm.guestSheetId = "";
+    connectionForm.assignmentSheetId = "";
+    if (useSuggestions) connectionForm.wideSheetConfig = cloneWideSheetConfig(result.suggestedWideSheetConfig);
+    checkResult.value = null;
+    if (!quiet) ElMessage.success("已识别示例字段，请继续绑定嘉宾与现场事项列");
+  } catch (error) {
+    discovery.value = null;
+    discoveryError.value = error instanceof Error ? error.message : "Webhook 示例 JSON 识别失败";
+    if (!quiet) ElMessage.error({ message: discoveryError.value, duration: 8000, showClose: true });
+    else throw error;
+  } finally {
+    discovering.value = false;
+  }
 }
 
 async function discoverExistingSheet(useSuggestions: boolean, quiet = false, requestedSheetId = "") {
@@ -954,6 +1117,9 @@ function smartSheetDiscoveryErrorMessage(error: unknown): string {
   if (message.includes("851003") || normalized.includes("no authority")) {
     return "企微返回 851003：当前应用没有这张智能表的文档对象权限。普通分享链接或 scode 不会授予 API 权限；请在企微文档权限中显式授权当前应用。若企业微信不提供应用协作者入口，需要改用拥有该表权限的机器人授权方式。";
   }
+  if (message.includes("48002") || normalized.includes("api forbidden")) {
+    return "企微返回 48002：当前自建应用无权调用智能表 API，或应用与文档不在同一可授权主体。建议切换为“Webhook / 自动化”，可直接使用原表。";
+  }
   if (message.includes("60020") || normalized.includes("not allow to access from your ip")) {
     return "企微拒绝了服务器 IP。请把生产服务器出口 IP 加入企业微信自建应用的可信 IP 后重试。";
   }
@@ -968,34 +1134,64 @@ function smartSheetDiscoveryErrorMessage(error: unknown): string {
 
 async function saveConnection() {
   const isWide = connectionForm.mode === "EXISTING_WIDE_SHEET";
-  if (!connectionForm.integrationId || !connectionForm.docId.trim()) {
-    ElMessage.warning(isWide ? "请先识别现有智能表" : "请填写企微应用和文档 ID");
-    return;
-  }
-  if (isWide && !connectionForm.sheetId) {
-    ElMessage.warning("请选择要接入的数据子表");
-    return;
-  }
-  if (!isWide && (!connectionForm.guestSheetId.trim() || !connectionForm.assignmentSheetId.trim())) {
-    ElMessage.warning("请填写报名嘉宾子表 ID 和嘉宾事项子表 ID");
-    return;
+  const isWebhook = connectionForm.transport === "WEBHOOK_AUTOMATION";
+  if (isWebhook) {
+    if (!connectionForm.webhookConfigured && !connectionForm.webhookUrl.trim()) {
+      ElMessage.warning("请填写智能表接收外部数据 Webhook URL");
+      return;
+    }
+    if (!connectionForm.webhookSample.trim()) {
+      ElMessage.warning("请粘贴 Webhook 示例 JSON");
+      return;
+    }
+    if (!discovery.value) await inspectWebhookFields(false);
+    if (!discovery.value) return;
+  } else {
+    if (!connectionForm.integrationId || !connectionForm.docId.trim()) {
+      ElMessage.warning(isWide ? "请先识别现有智能表" : "请填写企微应用和文档 ID");
+      return;
+    }
+    if (isWide && !connectionForm.sheetId) {
+      ElMessage.warning("请选择要接入的数据子表");
+      return;
+    }
+    if (!isWide && (!connectionForm.guestSheetId.trim() || !connectionForm.assignmentSheetId.trim())) {
+      ElMessage.warning("请填写报名嘉宾子表 ID 和嘉宾事项子表 ID");
+      return;
+    }
   }
   savingConnection.value = true;
   try {
     await saveGuestScheduleSmartSheetConfig(conferenceId.value, {
       ...connectionForm,
+      transport: connectionForm.transport,
       docId: connectionForm.docId.trim(),
       docUrl: connectionForm.docUrl.trim() || null,
       guestSheetId: connectionForm.guestSheetId.trim(),
       assignmentSheetId: connectionForm.assignmentSheetId.trim(),
       sheetId: connectionForm.sheetId,
       mode: connectionForm.mode,
-      wideSheetConfig: connectionForm.wideSheetConfig
+      wideSheetConfig: connectionForm.wideSheetConfig,
+      webhookUrl: connectionForm.webhookUrl.trim() || undefined,
+      webhookSample: connectionForm.webhookSample
     });
     await loadSyncConfig();
+    if (connectionForm.transport === "WEBHOOK_AUTOMATION" && connectionForm.webhookSample) {
+      await inspectWebhookFields(false, true);
+    }
     ElMessage.success("智能表连接已保存");
   } finally {
     savingConnection.value = false;
+  }
+}
+
+async function copyText(value: string) {
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    ElMessage.success("已复制");
+  } catch {
+    ElMessage.error("复制失败，请手动选择文本复制");
   }
 }
 
@@ -1080,6 +1276,7 @@ function emptyForm() {
 function emptyConnectionForm() {
   return {
     integrationId: "",
+    transport: "WEBHOOK_AUTOMATION" as GuestScheduleSmartSheetTransport,
     docId: "",
     docUrl: "",
     guestSheetId: "",
@@ -1087,6 +1284,11 @@ function emptyConnectionForm() {
     mode: "EXISTING_WIDE_SHEET" as GuestScheduleSmartSheetMode,
     sheetId: "",
     wideSheetConfig: emptyWideSheetConfig(),
+    webhookUrl: "",
+    webhookConfigured: false,
+    webhookUrlMasked: "",
+    webhookSample: "",
+    automationCallbackUrl: "",
     enabled: false,
     syncIntervalSeconds: 60
   };
@@ -1197,6 +1399,8 @@ function cloneWideSheetConfig(value: GuestScheduleWideSheetConfig): GuestSchedul
 .attendee-option small { grid-column: 1 / -1; color: #8491a0; }
 
 .connection-drawer { display: grid; gap: 20px; padding: 0 2px 28px; }
+.connection-mode-control { display: grid; gap: 8px; }
+.connection-mode-control > span { color: var(--schedule-ink); font-size: 13px; font-weight: 700; }
 .connection-section { display: grid; gap: 14px; padding: 18px 0; border-top: 1px solid var(--schedule-line); }
 .connection-section:first-of-type { padding-top: 4px; border-top: 0; }
 .connection-section__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
@@ -1205,6 +1409,12 @@ function cloneWideSheetConfig(value: GuestScheduleWideSheetConfig): GuestSchedul
 .connection-section__heading span { color: var(--schedule-muted); font-size: 12px; line-height: 1.6; }
 .connection-section__heading--switch { align-items: center; }
 .link-recognizer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%; }
+.form-help { display: block; margin-top: 7px; color: var(--schedule-muted); font-size: 12px; line-height: 1.6; }
+.copy-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%; }
+.code-sample { position: relative; width: 100%; overflow: hidden; border: 1px solid #d8e1e9; border-radius: 6px; background: #f7f9fb; }
+.code-sample pre { max-height: 240px; margin: 0; padding: 14px 14px 46px; overflow: auto; color: #26394d; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.code-sample .el-button { position: absolute; right: 8px; bottom: 7px; background: #f7f9fb; }
+.automation-section { padding-bottom: 4px; }
 .discovery-error { margin-top: -8px; }
 .discovery-error :deep(.el-alert__description) { line-height: 1.65; }
 .registration-mapping { padding: 14px 14px 0; border-left: 3px solid #b58e32; background: #fbfaf6; }

@@ -45,6 +45,15 @@ interface WecomSmartSheetRecordsResponse {
   record_ids?: string[];
 }
 
+interface WecomSmartSheetWebhookResponse {
+  errcode?: number;
+  errmsg?: string;
+  record_ids?: string[];
+  add_records?: Array<{ record_id?: string }>;
+  update_records?: Array<{ record_id?: string }>;
+  data?: WecomSmartSheetWebhookResponse;
+}
+
 interface WecomSmartSheetFieldsResponse {
   errcode?: number;
   errmsg?: string;
@@ -221,6 +230,26 @@ export class WecomClientAdapter {
     );
     assertWecomSuccess(data, "更新智能表记录失败");
   }
+
+  async sendSmartSheetWebhook(
+    webhookUrl: string,
+    payload: Record<string, unknown>
+  ): Promise<{ recordIds: string[] }> {
+    const data = await requestJson<WecomSmartSheetWebhookResponse>(
+      validatedSmartSheetWebhookUrl(webhookUrl),
+      { method: "POST", body: JSON.stringify(payload) }
+    );
+    assertWecomSuccess(data, "智能表 Webhook 写入失败");
+    const recordIds = readSmartSheetWebhookRecordIds(data);
+    return { recordIds };
+  }
+}
+
+function readSmartSheetWebhookRecordIds(data: WecomSmartSheetWebhookResponse): string[] {
+  if (Array.isArray(data.record_ids)) return data.record_ids.filter(Boolean);
+  const added = (data.add_records ?? []).map((item) => item.record_id || "").filter(Boolean);
+  if (added.length) return added;
+  return data.data ? readSmartSheetWebhookRecordIds(data.data) : [];
 }
 
 function smartSheetUrl(action: "get_sheet" | "get_fields" | "get_records" | "add_records" | "update_records", accessToken: string): string {
@@ -235,6 +264,25 @@ function assertWecomSuccess(data: { errcode?: number; errmsg?: string }, prefix:
     );
   }
   throw new BadRequestException(`${prefix}：${data.errmsg || data.errcode || "unknown error"}`);
+}
+
+function validatedSmartSheetWebhookUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new BadRequestException("智能表 Webhook URL 格式不正确");
+  }
+  if (
+    url.protocol !== "https:"
+    || url.hostname !== "qyapi.weixin.qq.com"
+    || url.pathname !== "/cgi-bin/wedoc/smartsheet/webhook"
+    || !url.searchParams.get("key")
+  ) {
+    throw new BadRequestException("智能表 Webhook URL 不是企业微信官方地址");
+  }
+  url.hash = "";
+  return url.toString();
 }
 
 function firstString(value: Record<string, unknown>, keys: string[]): string {

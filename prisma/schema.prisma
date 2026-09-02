@@ -727,11 +727,16 @@ model WecomAccessTokenCache {
 model WecomSmartSheetConnection {
   id                         String                       @id @default(cuid())
   conferenceId               String                       @unique
-  integrationId              String
-  docId                      String
+  integrationId              String?
+  transport                  String                       @default("API")
+  docId                      String?
   docUrl                     String?
-  guestSheetId               String
-  assignmentSheetId          String
+  guestSheetId               String?
+  assignmentSheetId          String?
+  webhookUrlEnc              String?
+  webhookSchemaJson          Json?
+  automationTokenEnc         String?
+  automationTokenHash        String?                      @unique
   guestFieldMappingJson      Json?
   assignmentFieldMappingJson Json?
   enabled                    Boolean                      @default(false)
@@ -739,13 +744,14 @@ model WecomSmartSheetConnection {
   syncLockedAt               DateTime?
   lastGuestPushedAt          DateTime?
   lastAssignmentPulledAt     DateTime?
+  lastAutomationReceivedAt   DateTime?
   lastSyncAt                 DateTime?
   lastSyncStatus             String                       @default("NEVER")
   lastError                  String?
   createdAt                  DateTime                     @default(now())
   updatedAt                  DateTime                     @updatedAt
   conference                 Conference                   @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
-  integration                WecomIntegration             @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  integration                WecomIntegration?            @relation(fields: [integrationId], references: [id], onDelete: SetNull)
   guestRecords               WecomSmartSheetGuestRecord[]
   assignments                GuestScheduleAssignment[]
   syncRuns                   GuestScheduleSyncRun[]

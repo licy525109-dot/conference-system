@@ -39,6 +39,7 @@ import type {
   GuestScheduleSmartSheetConfig,
   GuestScheduleSmartSheetCheck,
   GuestScheduleSmartSheetConnection,
+  GuestScheduleSmartSheetWebhookInspection,
   GuestScheduleSmartSheetDiscovery,
   GuestScheduleSyncRun,
   MaterialAsset,
@@ -316,6 +317,13 @@ export function discoverGuestScheduleSmartSheet(
     method: "POST",
     body: JSON.stringify(input)
   });
+}
+
+export function inspectGuestScheduleSmartSheetWebhook(conferenceId: string, webhookSample: string) {
+  return apiRequest<GuestScheduleSmartSheetWebhookInspection>(
+    `/admin/guest-schedules/smart-sheet/webhook-schema${toQuery({ conferenceId })}`,
+    { method: "POST", body: JSON.stringify({ webhookSample }) }
+  );
 }
 
 export function checkGuestScheduleSmartSheet(conferenceId: string) {

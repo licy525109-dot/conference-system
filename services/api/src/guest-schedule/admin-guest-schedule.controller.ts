@@ -72,6 +72,12 @@ export class AdminGuestScheduleController {
     return this.sync.discover(conferenceId, body);
   }
 
+  @Post("smart-sheet/webhook-schema")
+  @RequireAdminPermissions("guest-schedule:write")
+  inspectWebhookSchema(@Query("conferenceId") conferenceId: string, @Body() body: unknown) {
+    return this.sync.inspectWebhookSample(conferenceId, body);
+  }
+
   @Post("smart-sheet/check")
   @RequireAdminPermissions("guest-schedule:write")
   check(@Query("conferenceId") conferenceId: string) {

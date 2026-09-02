@@ -1400,7 +1400,7 @@ export interface GuestScheduleAssignment {
   attendee: GuestScheduleAttendeeOption & {
     registration: { id: string; registrationNo: string; userId: string | null; status: string };
   };
-  connection: { id: string; docUrl: string | null; assignmentSheetId: string; lastSyncAt: string | null } | null;
+  connection: { id: string; docUrl: string | null; assignmentSheetId: string | null; lastSyncAt: string | null } | null;
   publishedBy: { id: string; displayName: string | null; username: string } | null;
 }
 
@@ -1415,11 +1415,12 @@ export interface GuestScheduleList {
 export interface GuestScheduleSmartSheetConnection {
   id: string;
   conferenceId: string;
-  integrationId: string;
-  docId: string;
+  integrationId: string | null;
+  transport: GuestScheduleSmartSheetTransport;
+  docId: string | null;
   docUrl: string | null;
-  guestSheetId: string;
-  assignmentSheetId: string;
+  guestSheetId: string | null;
+  assignmentSheetId: string | null;
   mode: GuestScheduleSmartSheetMode;
   sheetId: string | null;
   guestFieldMapping: Record<string, string>;
@@ -1430,16 +1431,22 @@ export interface GuestScheduleSmartSheetConnection {
   syncing: boolean;
   lastGuestPushedAt: string | null;
   lastAssignmentPulledAt: string | null;
+  lastAutomationReceivedAt: string | null;
   lastSyncAt: string | null;
   lastSyncStatus: string;
   lastError: string | null;
-  integration: { id: string; name: string; enabled: boolean; verified: boolean; configured: boolean };
+  webhookConfigured: boolean;
+  webhookUrlMasked: string;
+  webhookSample: string;
+  automationCallbackUrl: string | null;
+  integration: { id: string; name: string; enabled: boolean; verified: boolean; configured: boolean } | null;
 }
 
 export interface GuestScheduleSmartSheetConfig {
   connection: GuestScheduleSmartSheetConnection | null;
   integrations: Array<{ id: string; name: string; enabled: boolean; verified: boolean; configured: boolean }>;
   defaults: {
+    transport: GuestScheduleSmartSheetTransport;
     guestFieldMapping: Record<string, string>;
     assignmentFieldMapping: Record<string, string>;
     wideSheetConfig: GuestScheduleWideSheetConfig;
@@ -1449,6 +1456,7 @@ export interface GuestScheduleSmartSheetConfig {
 }
 
 export type GuestScheduleSmartSheetMode = "EXISTING_WIDE_SHEET" | "SEPARATE_SHEETS";
+export type GuestScheduleSmartSheetTransport = "API" | "WEBHOOK_AUTOMATION";
 
 export interface GuestScheduleWideSheetConfig {
   mode: "EXISTING_WIDE_SHEET";
@@ -1498,6 +1506,7 @@ export interface GuestScheduleSmartSheetDiscovery {
 
 export interface GuestScheduleSmartSheetCheck {
   ready: boolean;
+  transport?: GuestScheduleSmartSheetTransport;
   mode?: GuestScheduleSmartSheetMode;
   message: string;
   issues?: string[];
@@ -1505,6 +1514,12 @@ export interface GuestScheduleSmartSheetCheck {
   sheet?: { fieldCount: number; missingFields: string[] };
   guestSheet: { fieldCount: number; missingFields: string[] };
   assignmentSheet: { fieldCount: number; missingRequiredFields: string[]; missingRecommendedFields: string[] };
+}
+
+export interface GuestScheduleSmartSheetWebhookInspection {
+  fields: Array<{ id: string; title: string; type: string }>;
+  webhookSample: string;
+  suggestedWideSheetConfig: GuestScheduleWideSheetConfig;
 }
 
 export interface GuestScheduleSyncRun {
