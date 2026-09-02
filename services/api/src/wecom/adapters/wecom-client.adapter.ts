@@ -229,6 +229,11 @@ function smartSheetUrl(action: "get_sheet" | "get_fields" | "get_records" | "add
 
 function assertWecomSuccess(data: { errcode?: number; errmsg?: string }, prefix: string): void {
   if (data.errcode === 0) return;
+  if (data.errcode === 851003 || data.errmsg?.toLowerCase().includes("no authority")) {
+    throw new BadRequestException(
+      `${prefix}：当前企业微信应用没有该文档的对象权限（851003 no authority）。普通分享链接不会自动授予 API 权限`
+    );
+  }
   throw new BadRequestException(`${prefix}：${data.errmsg || data.errcode || "unknown error"}`);
 }
 
@@ -273,9 +278,26 @@ function readMessageText(contentJson: Record<string, unknown>): string {
 }
 
 async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: { "content-type": "application/json", ...(init.headers ?? {}) }
-  });
-  return (await response.json()) as T;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      signal: init.signal ?? AbortSignal.timeout(15_000),
+      headers: { "content-type": "application/json", ...(init.headers ?? {}) }
+    });
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    if (name === "AbortError" || name === "TimeoutError") {
+      throw new BadRequestException("企业微信接口请求超时，请稍后重试");
+    }
+    throw new BadRequestException(`企业微信接口连接失败：${error instanceof Error ? error.message : "网络异常"}`);
+  }
+  if (!response.ok) {
+    throw new BadRequestException(`企业微信接口请求失败（HTTP ${response.status}）`);
+  }
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new BadRequestException("企业微信接口返回了无法识别的数据");
+  }
 }

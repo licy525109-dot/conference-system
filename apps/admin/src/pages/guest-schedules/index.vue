@@ -268,10 +268,24 @@
               </div>
               <el-form-item label="智能表链接" required>
                 <div class="link-recognizer">
-                  <el-input v-model="connectionForm.docUrl" placeholder="粘贴 doc.weixin.qq.com/smartsheet/... 链接" clearable />
+                  <el-input
+                    v-model="connectionForm.docUrl"
+                    placeholder="粘贴 doc.weixin.qq.com/smartsheet/... 链接"
+                    clearable
+                    @input="clearDiscoveryFeedback"
+                  />
                   <el-button :icon="Search" :loading="discovering" @click="discoverExistingSheet(true)">识别现有表</el-button>
                 </div>
               </el-form-item>
+              <el-alert
+                v-if="discoveryError"
+                class="discovery-error"
+                type="error"
+                :closable="false"
+                show-icon
+                title="现有表识别失败"
+                :description="discoveryError"
+              />
               <el-form-item v-if="discovery" label="数据子表" required>
                 <el-select v-model="connectionForm.sheetId" style="width: 100%" @change="onExistingSheetChange">
                   <el-option
@@ -595,6 +609,7 @@ const attendeeOptions = ref<GuestScheduleAttendeeOption[]>([]);
 const syncConfig = ref<GuestScheduleSmartSheetConfig | null>(null);
 const syncRuns = ref<GuestScheduleSyncRun[]>([]);
 const discovery = ref<GuestScheduleSmartSheetDiscovery | null>(null);
+const discoveryError = ref("");
 const checkResult = ref<Awaited<ReturnType<typeof checkGuestScheduleSmartSheet>> | null>(null);
 const tableRef = ref<TableInstance>();
 const conferenceId = ref("");
@@ -657,6 +672,7 @@ watch(conferenceId, async (value) => {
   if (!value) return;
   page.value = 1;
   discovery.value = null;
+  discoveryError.value = "";
   await Promise.all([loadSchedules(), loadSyncConfig(), searchAttendees("")]);
 });
 
@@ -823,6 +839,7 @@ async function openConnection() {
   await loadSyncConfig();
   syncRuns.value = syncConfig.value?.connection ? (await listGuestScheduleSyncRuns(conferenceId.value)).items : [];
   checkResult.value = null;
+  discoveryError.value = "";
   connectionVisible.value = true;
   if (connectionForm.mode === "EXISTING_WIDE_SHEET" && connectionForm.integrationId && connectionForm.docUrl) {
     try {
@@ -859,10 +876,12 @@ function hydrateConnectionForm() {
 
 async function discoverExistingSheet(useSuggestions: boolean, quiet = false, requestedSheetId = "") {
   if (!connectionForm.integrationId || !connectionForm.docUrl.trim()) {
-    if (!quiet) ElMessage.warning("请先选择企微自建应用并粘贴智能表链接");
+    discoveryError.value = "请先选择已完成配置的企微自建应用，并粘贴完整的智能表链接。";
+    if (!quiet) ElMessage.warning(discoveryError.value);
     return;
   }
   discovering.value = true;
+  discoveryError.value = "";
   try {
     const previousDocId = connectionForm.docId;
     const result = await discoverGuestScheduleSmartSheet(conferenceId.value, {
@@ -881,6 +900,14 @@ async function discoverExistingSheet(useSuggestions: boolean, quiet = false, req
     }
     checkResult.value = null;
     if (!quiet) ElMessage.success("已读取现有表结构，请继续绑定字段");
+  } catch (error) {
+    discovery.value = null;
+    discoveryError.value = smartSheetDiscoveryErrorMessage(error);
+    if (!quiet) {
+      ElMessage.error({ message: discoveryError.value, duration: 8000, showClose: true });
+    } else {
+      throw error;
+    }
   } finally {
     discovering.value = false;
   }
@@ -913,6 +940,30 @@ function addScheduleRule() {
 
 function removeScheduleRule(id: string) {
   connectionForm.wideSheetConfig.schedules = connectionForm.wideSheetConfig.schedules.filter((rule) => rule.id !== id);
+}
+
+function clearDiscoveryFeedback() {
+  discovery.value = null;
+  discoveryError.value = "";
+  checkResult.value = null;
+}
+
+function smartSheetDiscoveryErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "现有智能表识别失败";
+  const normalized = message.toLowerCase();
+  if (message.includes("851003") || normalized.includes("no authority")) {
+    return "企微返回 851003：当前应用没有这张智能表的文档对象权限。普通分享链接或 scode 不会授予 API 权限；请在企微文档权限中显式授权当前应用。若企业微信不提供应用协作者入口，需要改用拥有该表权限的机器人授权方式。";
+  }
+  if (message.includes("60020") || normalized.includes("not allow to access from your ip")) {
+    return "企微拒绝了服务器 IP。请把生产服务器出口 IP 加入企业微信自建应用的可信 IP 后重试。";
+  }
+  if (message.includes("40014") || message.includes("42001") || normalized.includes("access token")) {
+    return "企业微信凭证无效或已过期，请在企微接入配置中重新核对 CorpID、Secret 和应用启用状态。";
+  }
+  if (normalized.includes("超时") || normalized.includes("timeout")) {
+    return "企业微信接口响应超时，请稍后重试；若持续出现，请检查生产服务器访问 qyapi.weixin.qq.com 的网络。";
+  }
+  return message;
 }
 
 async function saveConnection() {
@@ -1154,6 +1205,8 @@ function cloneWideSheetConfig(value: GuestScheduleWideSheetConfig): GuestSchedul
 .connection-section__heading span { color: var(--schedule-muted); font-size: 12px; line-height: 1.6; }
 .connection-section__heading--switch { align-items: center; }
 .link-recognizer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%; }
+.discovery-error { margin-top: -8px; }
+.discovery-error :deep(.el-alert__description) { line-height: 1.65; }
 .registration-mapping { padding: 14px 14px 0; border-left: 3px solid #b58e32; background: #fbfaf6; }
 .schedule-mapping-section { gap: 0; }
 .schedule-mapping-section > .connection-section__heading { padding-bottom: 10px; }

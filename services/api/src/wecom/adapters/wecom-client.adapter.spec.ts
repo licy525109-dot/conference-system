@@ -77,6 +77,16 @@ describe("WecomClientAdapter SmartSheet", () => {
     assert.deepEqual(requestBody, { docid: "s3_existing" });
     assert.deepEqual(sheets, [{ sheet_id: "sheet-data", title: "数据汇总", type: "smartsheet", record_count: 266 }]);
   });
+
+  it("turns SmartSheet object permission failures into an actionable error", async () => {
+    globalThis.fetch = (async () => jsonResponse({ errcode: 851003, errmsg: "no authority" })) as typeof fetch;
+    const client = new WecomClientAdapter();
+
+    await assert.rejects(
+      () => client.getSmartSheetSheets("token", "s3_existing"),
+      /没有该文档的对象权限.*851003 no authority/
+    );
+  });
 });
 
 function jsonResponse(data: unknown): Response {

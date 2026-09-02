@@ -30,6 +30,30 @@ test("existing SmartSheet link opens visual field mapping without asking for int
   });
 });
 
+test("existing SmartSheet discovery shows document permission errors instead of failing silently", async ({ page }) => {
+  await page.route("**/api/admin/guest-schedules/smart-sheet/discover**", async (route) => {
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: "BAD_REQUEST",
+        message: "读取智能表子表失败：当前企业微信应用没有该文档的对象权限（851003 no authority）"
+      })
+    });
+  });
+  await page.goto("http://localhost:5174/#/guest-schedules?conferenceId=conference-jiangmen");
+
+  await page.getByRole("button", { name: "智能表连接" }).click();
+  await page.locator(".link-recognizer input").fill(
+    "https://doc.weixin.qq.com/smartsheet/s3_existing?scode=share-code&tab=data-sheet"
+  );
+  await page.getByRole("button", { name: "识别现有表" }).click();
+
+  await expect(page.getByText("现有表识别失败")).toBeVisible();
+  await expect(page.locator(".discovery-error").getByText(/企微返回 851003：当前应用没有这张智能表的文档对象权限/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "识别现有表" })).toBeEnabled();
+});
+
 async function installFixtures(page: Page): Promise<void> {
   await page.route("http://localhost:3001/api/admin/**", async (route) => {
     const url = new URL(route.request().url());
