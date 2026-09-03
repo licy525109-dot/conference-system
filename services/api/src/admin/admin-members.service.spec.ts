@@ -82,6 +82,28 @@ describe("AdminMembersService production workflows", () => {
     assert.equal(listed.data.items.some((item: any) => item.id === rule.data.id), false);
     assert.equal(prisma.auditLogs.some((item: any) => item.entityType === "MembershipPriceRule" && item.action === AuditAction.DELETE), true);
   });
+
+  it("updates a mini program user's editable profile fields", async () => {
+    const prisma = createMemberPrismaMock();
+    const service = new AdminMembersService(prisma);
+
+    const response = await service.updateUser("user-1", { nickname: "现场嘉宾", phone: "13900000000" }, admin);
+
+    assert.equal(response.data.nickname, "现场嘉宾");
+    assert.equal(response.data.phone, "139****0000");
+    assert.equal(prisma.auditLogs.some((item: any) => item.entityType === "User" && item.action === AuditAction.UPDATE), true);
+  });
+
+  it("deletes a mini program identity while recording retained historical rows", async () => {
+    const prisma = createMemberPrismaMock();
+    const service = new AdminMembersService(prisma);
+
+    const response = await service.deleteUser("user-1", admin);
+
+    assert.equal(response.data.historicalRecordsRetained, true);
+    assert.equal(prisma.users.some((item: any) => item.id === "user-1"), false);
+    assert.equal(prisma.auditLogs.some((item: any) => item.entityType === "User" && item.action === AuditAction.DELETE), true);
+  });
 });
 
 describe("MemberService user member center", () => {
@@ -154,9 +176,24 @@ function createMemberPrismaMock(options: { disabledGold?: boolean } = {}) {
       update: async ({ where, data }: any) => hydrateLevel(Object.assign(levels.find((item) => item.id === where.id), data, { updatedAt: now }))
     },
     user: {
-      findUnique: async ({ where }: any) => users.find((item) => item.id === where.id) ?? null,
+      findUnique: async ({ where, select }: any) => {
+        const user = users.find((item) => item.id === where.id);
+        if (!user) return null;
+        return select?._count ? { id: user.id, _count: { orders: 2, registrations: 1 } } : user;
+      },
       findMany: async () => users.map((user) => ({ ...user, memberships: memberships.filter((item) => item.userId === user.id).map((item) => ({ ...item, level: levels.find((level) => level.id === item.levelId) })) })),
-      count: async () => users.length
+      count: async () => users.length,
+      update: async ({ where, data }: any) => {
+        const user = users.find((item) => item.id === where.id);
+        if (!user) throw new Error("user not found");
+        Object.assign(user, data, { updatedAt: now });
+        return { ...user, memberships: memberships.filter((item) => item.userId === user.id).map((item) => ({ ...item, level: levels.find((level) => level.id === item.levelId) })) };
+      },
+      delete: async ({ where }: any) => {
+        const index = users.findIndex((item) => item.id === where.id);
+        if (index < 0) throw new Error("user not found");
+        return users.splice(index, 1)[0];
+      }
     },
     userMembership: {
       create: async ({ data }: any) => {

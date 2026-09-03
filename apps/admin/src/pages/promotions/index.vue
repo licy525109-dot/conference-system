@@ -14,6 +14,9 @@
 
     <AdminFilterBar>
       <el-input v-model="keyword" clearable placeholder="规则名称" style="width: 220px" @keyup.enter="load" />
+      <el-select v-if="!embedded" v-model="conferenceFilter" clearable filterable placeholder="会议" style="width: 240px" @change="load">
+        <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
+      </el-select>
       <template #actions>
         <el-button :loading="loading" type="primary" @click="load">查询</el-button>
         <el-button v-if="embedded" type="primary" @click="openCreate">新增满减</el-button>
@@ -23,6 +26,7 @@
     <section class="table-panel">
       <el-table v-loading="loading" :data="items">
         <el-table-column prop="name" label="名称" min-width="180" />
+        <el-table-column prop="conferenceTitle" label="适用会议" min-width="220" show-overflow-tooltip />
         <el-table-column label="门槛" width="170"><template #default="{ row }">{{ thresholdText(row.minAmountCent, row.minQuantity) }}</template></el-table-column>
         <el-table-column label="优惠" width="120"><template #default="{ row }">¥{{ formatCent(row.discountAmountCent) }}</template></el-table-column>
         <el-table-column label="可叠券" width="100"><template #default="{ row }">{{ row.stackableWithCoupon ? "是" : "否" }}</template></el-table-column>
@@ -36,6 +40,11 @@
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑满减' : '新增满减'" width="620px">
       <el-form :model="form" label-width="120px">
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item label="适用会议" required>
+          <el-select v-model="form.conferenceId" filterable placeholder="请选择具体会议" style="width: 100%" :disabled="embedded">
+            <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="最低金额(元)"><el-input-number v-model="form.minAmountYuan" :min="0" :precision="2" /></el-form-item>
         <el-form-item label="最低张数"><el-input-number v-model="form.minQuantity" :min="0" /></el-form-item>
         <el-form-item label="优惠金额(元)"><el-input-number v-model="form.discountAmountYuan" :min="0" :precision="2" /></el-form-item>
@@ -58,17 +67,20 @@ import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
-import { createPromotionRule, listPromotionRules, updatePromotionRule } from "../../services/admin";
-import type { PromotionRule } from "../../services/types";
+import { createPromotionRule, listConferences, listPromotionRules, updatePromotionRule } from "../../services/admin";
+import type { Conference, PromotionRule } from "../../services/types";
 
 const props = defineProps<{ conferenceId?: string; embedded?: boolean }>();
 const items = ref<PromotionRule[]>([]);
+const conferences = ref<Conference[]>([]);
 const keyword = ref("");
+const conferenceFilter = ref("");
 const loading = ref(false);
 const dialogVisible = ref(false);
 const form = reactive({
   id: "",
   name: "",
+  conferenceId: "",
   minAmountYuan: 0,
   minQuantity: 0,
   discountAmountYuan: 0,
@@ -79,20 +91,43 @@ const form = reactive({
   stackableWithCoupon: false
 });
 
-onMounted(() => void load());
-watch(() => props.conferenceId, () => void load());
+onMounted(async () => {
+  conferences.value = (await listConferences({ page: 1, pageSize: 100 })).items;
+  await load();
+});
+watch(() => props.conferenceId, () => {
+  conferenceFilter.value = props.conferenceId ?? "";
+  void load();
+});
 
 async function load() {
   loading.value = true;
   try {
-    items.value = (await listPromotionRules({ page: 1, pageSize: 100, keyword: keyword.value, conferenceId: props.conferenceId })).items;
+    items.value = (await listPromotionRules({
+      page: 1,
+      pageSize: 100,
+      keyword: keyword.value,
+      conferenceId: props.conferenceId ?? conferenceFilter.value
+    })).items;
   } finally {
     loading.value = false;
   }
 }
 
 function openCreate() {
-  Object.assign(form, { id: "", name: "", minAmountYuan: 0, minQuantity: 0, discountAmountYuan: 0, allowedSkuIdsText: "", startAt: "", endAt: "", enabled: true, stackableWithCoupon: false });
+  Object.assign(form, {
+    id: "",
+    name: "",
+    conferenceId: props.conferenceId ?? conferenceFilter.value ?? "",
+    minAmountYuan: 0,
+    minQuantity: 0,
+    discountAmountYuan: 0,
+    allowedSkuIdsText: "",
+    startAt: "",
+    endAt: "",
+    enabled: true,
+    stackableWithCoupon: false
+  });
   dialogVisible.value = true;
 }
 
@@ -100,6 +135,7 @@ function openEdit(row: PromotionRule) {
   Object.assign(form, {
     id: row.id,
     name: row.name,
+    conferenceId: row.conferenceId ?? "",
     minAmountYuan: (row.minAmountCent ?? 0) / 100,
     minQuantity: row.minQuantity ?? 0,
     discountAmountYuan: row.discountAmountCent / 100,
@@ -113,9 +149,17 @@ function openEdit(row: PromotionRule) {
 }
 
 async function save() {
+  if (!form.name.trim()) {
+    ElMessage.warning("请填写规则名称");
+    return;
+  }
+  if (!form.conferenceId) {
+    ElMessage.warning("满减规则必须选择具体会议");
+    return;
+  }
   const payload = {
     name: form.name,
-    conferenceId: props.conferenceId ?? null,
+    conferenceId: form.conferenceId,
     minAmountCent: form.minAmountYuan > 0 ? yuanToCent(form.minAmountYuan) : null,
     minQuantity: form.minQuantity > 0 ? form.minQuantity : null,
     discountAmountCent: yuanToCent(form.discountAmountYuan),

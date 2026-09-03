@@ -10,22 +10,69 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { getAppTabbar, type AppTabbar, type TabbarItem } from "@/services/cms";
 import { ensureLogin } from "@/services/auth";
 import { getToken } from "@/services/session";
 import { stringifyQuery } from "@/utils/query";
+import { getUnreadNotificationCount } from "@/services/user-notifications";
 
 const props = defineProps<{
   activePageKey: string;
 }>();
 
 const tabbar = ref<AppTabbar>({ enabled: false, updatedAt: null, items: [] });
-const visibleItems = computed(() => tabbar.value.items.filter((item) => item.visible).sort((a, b) => a.sortOrder - b.sortOrder));
+const unreadCount = ref(0);
+const visibleItems = computed(() => tabbar.value.items
+  .filter((item) => item.visible)
+  .map((item) => item.pageKey === "notifications"
+    ? { ...item, badgeText: unreadCount.value > 99 ? "99+" : unreadCount.value > 0 ? String(unreadCount.value) : null }
+    : item)
+  .sort((a, b) => a.sortOrder - b.sortOrder));
 
 onMounted(async () => {
-  tabbar.value = await getAppTabbar();
+  const loaded = await getAppTabbar();
+  const hasNotificationItem = loaded.items.some((item) => item.pageKey === "notifications" || item.path.includes("/pages/notifications/"));
+  tabbar.value = {
+    ...loaded,
+    enabled: true,
+    items: hasNotificationItem
+      ? loaded.items
+      : [
+          ...loaded.items,
+          {
+            id: "system-notifications",
+            title: "消息",
+            iconUrl: null,
+            selectedIconUrl: null,
+            pageKey: "notifications",
+            path: "/pages/notifications/index",
+            visible: true,
+            sortOrder: 900,
+            requireLogin: true,
+            badgeText: null
+          }
+        ]
+  };
+  await refreshUnreadCount();
+  uni.$on("notifications:changed", refreshUnreadCount);
 });
+
+onUnmounted(() => {
+  uni.$off("notifications:changed", refreshUnreadCount);
+});
+
+async function refreshUnreadCount() {
+  if (!getToken()) {
+    unreadCount.value = 0;
+    return;
+  }
+  try {
+    unreadCount.value = (await getUnreadNotificationCount()).count;
+  } catch {
+    unreadCount.value = 0;
+  }
+}
 
 function isActive(item: TabbarItem): boolean {
   return item.pageKey === props.activePageKey;
@@ -41,6 +88,7 @@ function fallbackGlyph(item: TabbarItem): string {
   if (title.includes("报名")) return "票";
   if (title.includes("购物") || title.includes("车")) return "购";
   if (title.includes("会员")) return "会";
+  if (title.includes("消息") || title.includes("通知")) return "讯";
   if (title.includes("商城")) return "商";
   return title.slice(0, 1);
 }
@@ -91,6 +139,7 @@ function isTabbarLikePage(url: string): boolean {
   const path = url.split("?")[0];
   return [
     "/pages/registrations/my",
+    "/pages/notifications/index",
     "/pages/cart/index",
     "/pages/member/center",
     "/pages/mall/index"

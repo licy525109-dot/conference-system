@@ -35,6 +35,7 @@ import { AdminPermissionGuard } from "./admin-permission.guard";
 import { PublicOperationsController } from "./public-operations.controller";
 import { PublicOperationsService } from "./public-operations.service";
 import { WechatSubscribeClient } from "./wechat-subscribe-client";
+import { UserNotificationsService } from "./user-notifications.service";
 
 @Module({
   imports: [AuthModule],
@@ -77,6 +78,7 @@ import { WechatSubscribeClient } from "./wechat-subscribe-client";
     PublicOperationsService,
     AdminPaymentExceptionsService,
     WechatSubscribeClient,
+    UserNotificationsService,
     PrismaService
   ],
   exports: [AdminAuthService, AdminJwtAuthGuard, AdminPermissionGuard, AdminNotificationsService]

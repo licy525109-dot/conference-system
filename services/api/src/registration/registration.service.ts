@@ -491,7 +491,7 @@ export class RegistrationService {
       where: {
         enabled: true,
         type: DiscountType.FULL_REDUCTION,
-        OR: [{ conferenceId }, { conferenceId: null }]
+        conferenceId
       }
     });
 
@@ -797,6 +797,9 @@ function validateCoupon(
 ): void {
   if (!coupon.enabled) {
     throw new BadRequestException("优惠券不可用");
+  }
+  if (coupon.deletedAt) {
+    throw new BadRequestException("优惠券不存在或已删除");
   }
   const scope = coupon.scope ?? CouponScope.CONFERENCE;
   if (scope !== CouponScope.CONFERENCE && scope !== CouponScope.BOTH) {
@@ -1296,6 +1299,7 @@ interface CouponRecord {
   stackableWithPromotion: boolean;
   conferenceId: string | null;
   allowedSkuIds: Prisma.JsonValue | null;
+  deletedAt: Date | null;
 }
 
 interface AppliedCoupon extends CouponRecord {

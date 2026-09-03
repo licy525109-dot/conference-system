@@ -255,7 +255,7 @@ export class AdminNotificationsService {
 
     await this.prisma.notificationTask.update({ where: { id }, data: { status: NotificationTaskStatus.SENDING } });
     const recipients = await this.resolveRecipients(task.payloadJson, task.channel);
-    const runtime = await this.resolveChannelRuntime(task.channel);
+    const runtime = await this.resolveChannelRuntime(task.channel, task.template.templateKey, task.template.contentJson);
     const results = recipients.length
       ? await Promise.all(recipients.map((recipient) => this.sendOne(task, recipient, runtime)))
       : [await this.sendOne(task, { userId: null, recipient: null }, runtime)];
@@ -364,6 +364,14 @@ export class AdminNotificationsService {
     });
   }
 
+  getChannelRuntime(
+    channel: NotificationChannelType,
+    templateKey?: string | null,
+    templateContent?: Prisma.JsonValue
+  ) {
+    return this.resolveChannelRuntime(channel, templateKey, templateContent);
+  }
+
   async updateChannelConfig(channel: "WECHAT_SUBSCRIBE" | "SMS", input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
     if (typeof body.centerEnabled !== "undefined") {
@@ -437,7 +445,11 @@ export class AdminNotificationsService {
     });
   }
 
-  private async resolveChannelRuntime(channel: NotificationChannelType): Promise<NotificationRuntime> {
+  private async resolveChannelRuntime(
+    channel: NotificationChannelType,
+    templateKeyOverride?: string | null,
+    templateContent?: Prisma.JsonValue
+  ): Promise<NotificationRuntime> {
     const center = await this.getCenterRuntime();
     if (!center.enabled) {
       return {
@@ -458,7 +470,9 @@ export class AdminNotificationsService {
     const enabled = config ? config.enabled : envEnabled;
     const providerSource = config ? "DB" : envEnabled ? "ENV" : "disabled";
     const provider = config?.provider || envProvider;
-    const templateKey = config?.templateKey || (channel === NotificationChannelType.WECHAT_SUBSCRIBE ? process.env.WECHAT_SUBSCRIBE_TEMPLATE_ID || "" : "");
+    const templateKey = templateKeyOverride
+      || config?.templateKey
+      || (channel === NotificationChannelType.WECHAT_SUBSCRIBE ? process.env.WECHAT_SUBSCRIBE_TEMPLATE_ID || "" : "");
     const apiKeyConfigured = Boolean(
       decryptSecret(config?.apiKeyEnc)
       || process.env.SMS_API_KEY
@@ -472,6 +486,22 @@ export class AdminNotificationsService {
     }
     if (channel === NotificationChannelType.WECHAT_SUBSCRIBE && !templateKey) {
       return { centerEnabled: true, enabled, providerSource, provider, canSend: false, unavailableReason: "微信订阅模板 ID 未配置", statusText: "微信订阅模板 ID 未配置，任务会记录 SKIPPED" };
+    }
+    if (
+      channel === NotificationChannelType.WECHAT_SUBSCRIBE
+      && typeof templateContent !== "undefined"
+      && Object.keys(buildWechatTemplateData({}, templateContent, {})).length === 0
+    ) {
+      return {
+        centerEnabled: true,
+        enabled,
+        providerSource,
+        provider,
+        templateKey,
+        canSend: false,
+        unavailableReason: "微信订阅模板字段映射未配置",
+        statusText: "请在通知模板中配置 thing/time 等微信字段映射"
+      };
     }
     if (channel === NotificationChannelType.WECHAT_SUBSCRIBE && !this.wechatSubscribeClient?.isConfigured()) {
       return {
@@ -512,7 +542,14 @@ export class AdminNotificationsService {
   }
 
   private async formatTaskWithRuntime(item: Parameters<typeof formatTask>[0]) {
-    return { ...formatTask(item), providerStatus: await this.resolveChannelRuntime(item.channel) };
+    return {
+      ...formatTask(item),
+      providerStatus: await this.resolveChannelRuntime(
+        item.channel,
+        item.template?.templateKey,
+        item.template?.contentJson
+      )
+    };
   }
 
   private async resolveRecipients(payloadJson: Prisma.JsonValue | null, channel: NotificationChannelType): Promise<Array<{ userId: string | null; recipient: string | null }>> {
@@ -782,7 +819,14 @@ function formatTask(item: {
   createdById: string | null;
   createdAt: Date;
   updatedAt: Date;
-  template?: { id: string; code: string; name: string; title: string | null };
+  template?: {
+    id: string;
+    code: string;
+    name: string;
+    title: string | null;
+    templateKey?: string | null;
+    contentJson?: Prisma.JsonValue;
+  };
   _count?: { logs: number };
 }) {
   return {
@@ -1015,5 +1059,5 @@ function renderJson(value: Prisma.JsonValue, variables: Record<string, unknown>)
 }
 
 function renderText(value: string, variables: Record<string, unknown>): string {
-  return value.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_, key: string) => String(variables[key] ?? ""));
+  return value.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_, rawKey: string) => String(variables[rawKey.trim()] ?? ""));
 }

@@ -106,6 +106,21 @@ describe("AdminNotificationsService", () => {
     assert.equal(prisma.logs[0]?.errorCode, "WECHAT_TEMPLATE_KEY_MISSING");
   });
 
+  it("does not advertise a WeChat template without field mappings as sendable", async () => {
+    process.env.NOTIFICATION_CENTER_ENABLED = "true";
+    process.env.WECHAT_SUBSCRIBE_MESSAGE_ENABLED = "true";
+    const service = new AdminNotificationsService(createNotificationPrismaMock());
+
+    const runtime = await service.getChannelRuntime(
+      NotificationChannelType.WECHAT_SUBSCRIBE,
+      "wechat-template-1",
+      { body: "{{会议名称}}的安排已更新" }
+    );
+
+    assert.equal(runtime.canSend, false);
+    assert.equal(runtime.unavailableReason, "微信订阅模板字段映射未配置");
+  });
+
   it("marks sms tasks skipped when provider is disabled", async () => {
     process.env.NOTIFICATION_CENTER_ENABLED = "true";
     process.env.SMS_ENABLED = "false";
@@ -204,6 +219,29 @@ describe("AdminNotificationsService", () => {
     assert.equal(prisma.tasks[0]?.targetType, "PAID_USERS");
     assert.deepEqual((prisma.tasks[0]?.payloadJson as Record<string, unknown>).recipients, ["13800000000", "13900000000"]);
     assert.equal((task.data.payloadJson as Record<string, unknown>).conferenceId, "conference-1");
+  });
+
+  it("renders Chinese template variable names", async () => {
+    const prisma = createNotificationPrismaMock();
+    const service = new AdminNotificationsService(prisma);
+    const template = await service.createTemplate(
+      {
+        code: "guest_schedule_updated",
+        name: "会务安排更新",
+        channel: "MOCK",
+        status: "ACTIVE",
+        title: "{{会议名称}}安排更新",
+        contentJson: { body: "{{参会人姓名}}，请查看{{安排名称}}。" }
+      },
+      admin
+    );
+
+    const preview = await service.previewTemplate(template.data.id, {
+      variables: { 会议名称: "观潮会集", 参会人姓名: "李嘉宾", 安排名称: "工作坊" }
+    });
+
+    assert.equal(preview.data.title, "观潮会集安排更新");
+    assert.equal((preview.data.content as Record<string, unknown>).body, "李嘉宾，请查看工作坊。");
   });
 });
 

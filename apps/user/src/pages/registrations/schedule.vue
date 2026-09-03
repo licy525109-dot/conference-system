@@ -1,26 +1,36 @@
 <template>
   <view class="page ui-page" :style="pageStyle">
-    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <video
+      v-if="showBodyVideo"
+      class="page-bg-video"
+      :src="String(theme.backgroundVideoUrl)"
+      :poster="String(theme.backgroundVideoPosterUrl || '')"
+      autoplay
+      loop
+      muted
+      playsinline
+      webkit-playsinline
+      object-fit="cover"
+      :controls="false"
+    />
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
 
     <view class="page-heading">
-      <view>
-        <text class="eyebrow">PERSONAL SCHEDULE</text>
+      <view class="page-heading__copy">
         <text class="page-title">我的会务安排</text>
+        <text class="page-subtitle">主办方发布的工作坊、晚宴及分享安排</text>
       </view>
-      <button class="refresh-button" aria-label="刷新会务安排" @click="load">刷新</button>
+      <button class="refresh-button" :disabled="loading" @click="load">{{ loading ? "同步中" : "刷新" }}</button>
     </view>
 
-    <LoadingState v-if="loading" title="正在同步安排" description="请稍候" />
-    <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="load" />
+    <LoadingState v-if="loading && items.length === 0" title="正在同步安排" description="请稍候" />
+    <ErrorState v-else-if="error && items.length === 0" :message="error" primary-text="重新加载" @retry="load" />
     <EmptyState
       v-else-if="items.length === 0"
       title="暂无已发布安排"
-      description="主办方确认并发布后，工作坊、晚宴和分享安排会显示在这里。"
+      description="主办方确认并发布后，你会在消息列表和这里看到具体事项。"
       mark="排"
-      action-text="查看我的报名"
-      @action="goRegistrations"
     />
 
     <template v-else>
@@ -38,42 +48,43 @@
         </view>
       </scroll-view>
 
-      <view class="conference-summary">
-        <image v-if="selectedConference?.coverImageUrl" class="conference-cover" :src="selectedConference.coverImageUrl" mode="aspectFill" />
-        <view class="conference-summary__body">
+      <view class="conference-overview">
+        <view class="conference-overview__accent" />
+        <view class="conference-overview__body">
           <text class="conference-name">{{ selectedConference?.title }}</text>
-          <view class="conference-meta">
-            <text>{{ formatConferenceDate(selectedConference?.startsAt, selectedConference?.endsAt) }}</text>
-            <text>{{ selectedConference?.location || "会议地点待定" }}</text>
+          <view class="conference-facts">
+            <view class="fact">
+              <text class="fact-label">日期</text>
+              <text>{{ formatConferenceDate(selectedConference?.startsAt, selectedConference?.endsAt) }}</text>
+            </view>
+            <view v-if="selectedConference?.location" class="fact">
+              <text class="fact-label">地点</text>
+              <text>{{ selectedConference.location }}</text>
+            </view>
           </view>
-          <view class="update-meta">
-            <text>{{ selectedConferenceItems.length }} 项已发布安排</text>
+          <view class="publish-meta">
+            <text>{{ selectedConferenceItems.length }} 项已发布</text>
             <text v-if="latestPublishedAt">更新于 {{ formatShortTime(latestPublishedAt) }}</text>
           </view>
         </view>
       </view>
 
-      <view v-if="subscriptionConfig?.enabled" class="subscribe-strip">
-        <view class="subscribe-strip__content">
-          <text class="subscribe-title">会务安排更新提醒</text>
-          <text class="subscribe-copy">主办方再次发布时，通过微信通知你。</text>
-        </view>
-        <button class="subscribe-button" :disabled="subscribing" @click="subscribe">
-          {{ subscribed ? "已订阅" : subscribing ? "处理中" : "开启提醒" }}
-        </button>
-      </view>
-
-      <view v-if="attendees.length > 1" class="attendee-switch">
-        <button
-          v-for="attendee in attendees"
-          :key="attendee.id"
-          class="attendee-option"
-          :class="{ active: attendee.id === selectedAttendeeId }"
-          @click="selectedAttendeeId = attendee.id"
-        >
-          <text>{{ attendee.name }}</text>
-          <text>{{ attendee.registrationNo }}</text>
-        </button>
+      <view v-if="attendees.length > 1" class="attendee-block">
+        <text class="switch-label">查看参会人</text>
+        <scroll-view class="attendee-switch" scroll-x :show-scrollbar="false">
+          <view class="attendee-switch__inner">
+            <button
+              v-for="attendee in attendees"
+              :key="attendee.id"
+              class="attendee-option"
+              :class="{ active: attendee.id === selectedAttendeeId }"
+              @click="selectedAttendeeId = attendee.id"
+            >
+              <text>{{ attendee.name }}</text>
+              <text>{{ attendee.registrationNo }}</text>
+            </button>
+          </view>
+        </scroll-view>
       </view>
 
       <scroll-view v-if="days.length > 1" class="day-switch" scroll-x :show-scrollbar="false">
@@ -116,18 +127,18 @@
                 <text v-if="item.role" class="role-label">{{ item.role }}</text>
               </view>
               <text class="schedule-name">{{ item.name }}</text>
-              <view class="schedule-details">
-                <view class="detail-row">
-                  <text class="detail-icon">地</text>
-                  <text>{{ item.location || "地点待定" }}</text>
+              <view v-if="hasItemDetails(item)" class="schedule-details">
+                <view v-if="item.location" class="detail-row">
+                  <text class="detail-label">地点</text>
+                  <text class="detail-value">{{ item.location }}</text>
                 </view>
-                <view v-if="item.type === 'DINNER' && item.tableNo" class="detail-row detail-row--strong">
-                  <text class="detail-icon">席</text>
-                  <text>{{ item.tableNo }}{{ item.isTableLeader ? " · 本桌桌长" : "" }}</text>
+                <view v-if="item.tableNo" class="detail-row detail-row--highlight">
+                  <text class="detail-label">席位</text>
+                  <text class="detail-value">{{ item.tableNo }}{{ item.isTableLeader ? " · 本桌桌长" : "" }}</text>
                 </view>
                 <view v-if="item.shareTopic" class="detail-row">
-                  <text class="detail-icon">讲</text>
-                  <text>{{ item.shareTopic }}</text>
+                  <text class="detail-label">内容</text>
+                  <text class="detail-value">{{ item.shareTopic }}</text>
                 </view>
                 <view v-if="item.notes" class="schedule-note">
                   <text>{{ item.notes }}</text>
@@ -140,9 +151,19 @@
           <text>当天暂无安排</text>
         </view>
       </view>
+
+      <view v-if="subscriptionConfig?.enabled" class="subscribe-strip">
+        <view class="subscribe-strip__content">
+          <text class="subscribe-title">微信更新提醒</text>
+          <text>主办方再次发布安排时，通过微信服务通知提醒你。</text>
+        </view>
+        <button class="subscribe-button" :disabled="subscribing || subscribed" @click="subscribe">
+          {{ subscribed ? "已开启" : subscribing ? "处理中" : "开启" }}
+        </button>
+      </view>
     </template>
 
-    <CustomTabbar active-page-key="my-registrations" />
+    <CustomTabbar active-page-key="notifications" />
   </view>
 </template>
 
@@ -182,7 +203,7 @@ const conferences = computed(() => {
   return Array.from(seen.values());
 });
 const selectedConference = computed(() => conferences.value.find((item) => item.id === selectedConferenceId.value) ?? conferences.value[0]);
-const selectedConferenceItems = computed(() => items.value.filter((item) => item.conference.id === selectedConferenceId.value));
+const selectedConferenceItems = computed(() => items.value.filter((item) => item.conference.id === selectedConference.value?.id));
 const attendees = computed(() => {
   const seen = new Map<string, { id: string; name: string; registrationNo: string }>();
   for (const item of selectedConferenceItems.value) {
@@ -195,12 +216,14 @@ const attendees = computed(() => {
   return Array.from(seen.values());
 });
 const currentAttendee = computed(() => attendees.value.find((item) => item.id === selectedAttendeeId.value) ?? attendees.value[0]);
-const selectedAttendeeItems = computed(() => selectedConferenceItems.value.filter((item) => item.attendee.id === selectedAttendeeId.value));
+const selectedAttendeeItems = computed(() => selectedConferenceItems.value.filter((item) => item.attendee.id === currentAttendee.value?.id));
 const days = computed(() => {
   const keys = Array.from(new Set(selectedAttendeeItems.value.map((item) => dayKey(item.startsAt))));
   return keys.sort().map((key) => ({ key, label: dayLabel(key), weekday: weekdayLabel(key) }));
 });
-const visibleItems = computed(() => selectedAttendeeItems.value.filter((item) => dayKey(item.startsAt) === selectedDay.value));
+const visibleItems = computed(() => selectedAttendeeItems.value
+  .filter((item) => dayKey(item.startsAt) === selectedDay.value)
+  .sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
 const selectedDayLabel = computed(() => days.value.find((item) => item.key === selectedDay.value)?.label || "");
 const latestPublishedAt = computed(() => selectedConferenceItems.value
   .map((item) => item.publishedAt)
@@ -222,6 +245,7 @@ onLoad((query) => {
 });
 
 async function load() {
+  if (loading.value) return;
   loading.value = true;
   error.value = "";
   try {
@@ -251,7 +275,7 @@ async function load() {
 }
 
 async function subscribe() {
-  if (!subscriptionConfig.value || subscribing.value) return;
+  if (!subscriptionConfig.value || subscribing.value || subscribed.value) return;
   subscribing.value = true;
   try {
     const result = await subscribeGuestScheduleUpdates(subscriptionConfig.value);
@@ -265,8 +289,8 @@ async function subscribe() {
   }
 }
 
-function goRegistrations() {
-  uni.redirectTo({ url: "/pages/registrations/my" });
+function hasItemDetails(item: MyGuestScheduleItem) {
+  return Boolean(item.location || item.tableNo || item.shareTopic || item.notes);
 }
 
 function dayKey(value: string) {
@@ -292,10 +316,10 @@ function timeOnly(value: string) {
 }
 
 function formatConferenceDate(startsAt?: string, endsAt?: string) {
-  if (!startsAt) return "会议时间待定";
+  if (!startsAt) return "";
   const start = new Date(startsAt);
   const end = endsAt ? new Date(endsAt) : null;
-  const startText = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(start);
+  const startText = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "numeric", day: "numeric" }).format(start);
   if (!end || start.toDateString() === end.toDateString()) return startText;
   return `${startText} - ${new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(end)}`;
 }
@@ -308,49 +332,57 @@ function formatShortTime(value: string) {
 <style scoped>
 .page {
   min-height: 100vh;
-  padding-bottom: calc(176rpx + env(safe-area-inset-bottom));
-  background-color: #f4f6f8;
+  padding: 30rpx 28rpx calc(170rpx + env(safe-area-inset-bottom));
+  background-color: #f3f6f5;
 }
 
-.page-heading {
+.page-heading,
+.section-heading,
+.schedule-card__head,
+.subscribe-strip {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24rpx;
-  padding: 30rpx 0 24rpx;
+  gap: 20rpx;
 }
 
-.eyebrow {
-  display: block;
-  color: #5a6b7e;
-  font-size: 19rpx;
-  font-weight: 800;
+.page-heading {
+  padding-bottom: 24rpx;
+}
+
+.page-heading__copy {
+  min-width: 0;
 }
 
 .page-title {
   display: block;
-  margin-top: 6rpx;
-  color: #122238;
-  font-size: 42rpx;
+  color: #17202f;
+  font-size: 40rpx;
   font-weight: 900;
   line-height: 1.25;
 }
 
+.page-subtitle {
+  display: block;
+  margin-top: 7rpx;
+  color: #758190;
+  font-size: 21rpx;
+  line-height: 1.45;
+}
+
 .refresh-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 104rpx;
-  min-height: 66rpx;
+  flex: 0 0 auto;
+  min-width: 100rpx;
+  height: 62rpx;
   margin: 0;
-  padding: 0 20rpx;
-  border: 1px solid #d7e0e8;
+  padding: 0 18rpx;
+  border: 1px solid #d9e2e6;
   border-radius: 8rpx;
   background: #ffffff;
-  color: #32475c;
-  font-size: 24rpx;
+  color: #315d7d;
+  font-size: 22rpx;
   font-weight: 800;
-  line-height: 1;
+  line-height: 60rpx;
 }
 
 .refresh-button::after,
@@ -362,135 +394,119 @@ function formatShortTime(value: string) {
 }
 
 .conference-switch,
+.attendee-switch,
 .day-switch {
-  width: calc(100% + 32rpx);
-  margin: 0 -16rpx 20rpx;
+  width: calc(100% + 56rpx);
+  margin-right: -28rpx;
+  margin-left: -28rpx;
   white-space: nowrap;
 }
 
+.conference-switch {
+  margin-bottom: 18rpx;
+}
+
 .conference-switch__inner,
+.attendee-switch__inner,
 .day-switch__inner {
   display: inline-flex;
   gap: 12rpx;
-  padding: 0 16rpx;
+  padding: 0 28rpx;
 }
 
 .conference-option {
-  max-width: 430rpx;
-  min-height: 62rpx;
+  max-width: 480rpx;
+  height: 62rpx;
   margin: 0;
   padding: 0 22rpx;
   overflow: hidden;
-  border: 1px solid #d8e1e9;
+  border: 1px solid #d9e2e6;
   border-radius: 7rpx;
-  background: rgba(255, 255, 255, 0.88);
-  color: #536579;
-  font-size: 23rpx;
+  background: rgba(255, 255, 255, 0.92);
+  color: #596878;
+  font-size: 22rpx;
   font-weight: 700;
-  line-height: 62rpx;
+  line-height: 60rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .conference-option.active {
-  border-color: #173c5c;
-  background: #173c5c;
+  border-color: #315d7d;
+  background: #315d7d;
   color: #ffffff;
 }
 
-.conference-summary {
+.conference-overview {
   position: relative;
   display: flex;
-  min-height: 228rpx;
   overflow: hidden;
-  border: 1px solid #dfe5eb;
-  border-radius: 12rpx;
+  border: 1px solid #dce5e8;
+  border-radius: 8rpx;
   background: #ffffff;
+  box-shadow: 0 8rpx 24rpx rgba(23, 32, 47, 0.05);
 }
 
-.conference-cover {
-  width: 210rpx;
-  min-height: 228rpx;
-  background: #dfe8ef;
+.conference-overview__accent {
+  width: 8rpx;
+  background: #315d7d;
 }
 
-.conference-summary__body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  justify-content: center;
+.conference-overview__body {
   min-width: 0;
-  padding: 28rpx;
+  flex: 1;
+  padding: 25rpx 26rpx 23rpx;
 }
 
 .conference-name {
-  display: -webkit-box;
-  overflow: hidden;
-  color: #122238;
+  display: block;
+  color: #17202f;
   font-size: 30rpx;
   font-weight: 900;
-  line-height: 1.42;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.conference-meta,
-.update-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8rpx 20rpx;
-  margin-top: 18rpx;
-  color: #5e6e7f;
-  font-size: 22rpx;
   line-height: 1.4;
 }
 
-.update-meta {
-  margin-top: 14rpx;
-  color: #8793a0;
+.conference-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  margin-top: 19rpx;
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: 58rpx minmax(0, 1fr);
+  gap: 12rpx;
+  color: #4f5e6d;
+  font-size: 22rpx;
+  line-height: 1.48;
+}
+
+.fact-label {
+  color: #8b96a1;
+}
+
+.publish-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx 22rpx;
+  margin-top: 17rpx;
+  padding-top: 16rpx;
+  border-top: 1px solid #edf0f2;
+  color: #86919d;
   font-size: 20rpx;
 }
 
-.subscribe-strip {
-  display: flex;
-  align-items: center;
-  gap: 18rpx;
-  margin-top: 18rpx;
-  padding: 22rpx 24rpx;
-  border-left: 6rpx solid #18856a;
-  background: #edf8f4;
+.attendee-block {
+  margin-top: 24rpx;
 }
 
-.subscribe-strip__content {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 4rpx;
-  min-width: 0;
-}
-
-.subscribe-title { color: #173e34; font-size: 24rpx; font-weight: 900; }
-.subscribe-copy { color: #5a746d; font-size: 20rpx; line-height: 1.4; }
-.subscribe-button {
-  min-width: 150rpx;
-  min-height: 62rpx;
-  margin: 0;
-  padding: 0 20rpx;
-  border: 0;
-  border-radius: 7rpx;
-  background: #18765f;
-  color: #ffffff;
-  font-size: 22rpx;
-  font-weight: 800;
-  line-height: 62rpx;
-}
-.subscribe-button[disabled] { opacity: 0.62; }
-
-.attendee-switch {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12rpx;
-  margin-top: 20rpx;
+.switch-label {
+  display: block;
+  margin-bottom: 12rpx;
+  color: #6d7986;
+  font-size: 21rpx;
+  font-weight: 700;
 }
 
 .attendee-option {
@@ -498,98 +514,307 @@ function formatShortTime(value: string) {
   flex-direction: column;
   align-items: flex-start;
   gap: 4rpx;
-  min-height: 82rpx;
+  min-width: 210rpx;
+  min-height: 78rpx;
   margin: 0;
-  padding: 14rpx 18rpx;
-  border: 1px solid #dbe3ea;
-  border-radius: 8rpx;
+  padding: 13rpx 18rpx;
+  border: 1px solid #dbe3e7;
+  border-radius: 7rpx;
   background: #ffffff;
-  color: #23364a;
+  color: #253346;
   line-height: 1.3;
   text-align: left;
 }
-.attendee-option text:first-child { font-size: 24rpx; font-weight: 900; }
-.attendee-option text:last-child { color: #8090a0; font-size: 19rpx; }
-.attendee-option.active { border-color: #1b587f; box-shadow: inset 5rpx 0 #1b587f; }
 
-.day-switch { margin-top: 24rpx; }
+.attendee-option text:first-child {
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.attendee-option text:last-child {
+  color: #87929e;
+  font-size: 18rpx;
+}
+
+.attendee-option.active {
+  border-color: #315d7d;
+  box-shadow: inset 5rpx 0 #315d7d;
+}
+
+.day-switch {
+  margin-top: 24rpx;
+}
+
 .day-option {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 3rpx;
-  width: 150rpx;
-  height: 88rpx;
+  width: 146rpx;
+  height: 82rpx;
   margin: 0;
   padding: 0;
-  border: 1px solid #dce4eb;
-  border-radius: 8rpx;
+  border: 1px solid #dce4e7;
+  border-radius: 7rpx;
   background: #ffffff;
-  color: #657587;
-  line-height: 1.2;
+  color: #687684;
+  line-height: 1.25;
 }
-.day-option text:first-child { font-size: 19rpx; }
-.day-option text:last-child { font-size: 24rpx; font-weight: 900; }
-.day-option.active { border-color: #173c5c; background: #173c5c; color: #ffffff; }
+
+.day-option text:first-child {
+  font-size: 18rpx;
+}
+
+.day-option text:last-child {
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.day-option.active {
+  border-color: #244861;
+  background: #244861;
+  color: #ffffff;
+}
 
 .schedule-section {
-  margin-top: 24rpx;
-  padding: 28rpx 26rpx 10rpx;
-  border: 1px solid #dfe5eb;
-  border-radius: 12rpx;
+  margin-top: 22rpx;
+  padding: 27rpx 24rpx 8rpx;
+  border: 1px solid #dce5e8;
+  border-radius: 8rpx;
   background: #ffffff;
 }
 
 .section-heading {
-  display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 20rpx;
-  padding-bottom: 26rpx;
-  border-bottom: 1px solid #e4e9ee;
+  padding-bottom: 23rpx;
+  border-bottom: 1px solid #e7ecee;
 }
-.section-heading > view { display: flex; flex-direction: column; gap: 5rpx; }
-.section-title { color: #13243a; font-size: 30rpx; font-weight: 900; }
-.section-subtitle { color: #788697; font-size: 21rpx; }
-.section-count { padding: 5rpx 12rpx; border-radius: 5rpx; background: #edf2f6; color: #52667a; font-size: 20rpx; font-weight: 800; }
 
-.timeline { padding-top: 26rpx; }
-.timeline-item { display: grid; grid-template-columns: 90rpx 26rpx minmax(0, 1fr); gap: 10rpx; min-height: 190rpx; }
-.time-column { display: flex; flex-direction: column; align-items: flex-end; gap: 5rpx; padding-top: 1rpx; }
-.time-main { color: #16283d; font-size: 25rpx; font-weight: 900; }
-.time-end { color: #8793a0; font-size: 19rpx; }
-.timeline-rail { position: relative; display: flex; justify-content: center; }
-.timeline-dot { position: relative; z-index: 1; width: 18rpx; height: 18rpx; margin-top: 7rpx; border: 5rpx solid #e5eef5; border-radius: 50%; background: #28658d; box-sizing: border-box; }
-.timeline-dot[data-type="DINNER"] { border-color: #f4e6c7; background: #a27822; }
-.timeline-dot[data-type="SPEECH"] { border-color: #d8efe7; background: #178064; }
-.timeline-dot[data-type="REHEARSAL"] { border-color: #ece3f3; background: #765287; }
-.timeline-line { position: absolute; top: 25rpx; bottom: 0; width: 2rpx; background: #dce5ec; }
-.timeline-item:last-child .timeline-line { display: none; }
+.section-heading > view {
+  display: flex;
+  flex-direction: column;
+  gap: 5rpx;
+}
+
+.section-title {
+  color: #172235;
+  font-size: 29rpx;
+  font-weight: 900;
+}
+
+.section-subtitle {
+  color: #84909d;
+  font-size: 20rpx;
+}
+
+.section-count {
+  padding: 5rpx 12rpx;
+  border-radius: 5rpx;
+  background: #edf2f4;
+  color: #526272;
+  font-size: 19rpx;
+  font-weight: 800;
+}
+
+.timeline {
+  padding-top: 25rpx;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 82rpx 24rpx minmax(0, 1fr);
+  gap: 9rpx;
+}
+
+.time-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4rpx;
+  padding-top: 2rpx;
+}
+
+.time-main {
+  color: #17263a;
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.time-end {
+  color: #909aa5;
+  font-size: 18rpx;
+}
+
+.timeline-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.timeline-dot {
+  position: relative;
+  z-index: 1;
+  width: 18rpx;
+  height: 18rpx;
+  margin-top: 7rpx;
+  border: 5rpx solid #e3edf2;
+  border-radius: 50%;
+  background: #315d7d;
+  box-sizing: border-box;
+}
+
+.timeline-dot[data-type="DINNER"] { border-color: #f3e9d4; background: #a3782c; }
+.timeline-dot[data-type="SPEECH"] { border-color: #dcefe9; background: #2f806d; }
+.timeline-dot[data-type="REHEARSAL"] { border-color: #e9e4ed; background: #725e7d; }
+
+.timeline-line {
+  position: absolute;
+  top: 25rpx;
+  bottom: 0;
+  width: 2rpx;
+  background: #dce5e8;
+}
+
+.timeline-item:last-child .timeline-line {
+  display: none;
+}
 
 .schedule-card {
-  align-self: start;
+  min-width: 0;
   margin-bottom: 24rpx;
-  padding: 23rpx 24rpx;
-  border: 1px solid #dfe6ec;
-  border-radius: 9rpx;
-  background: #fbfcfd;
+  padding: 21rpx 22rpx;
+  border: 1px solid #e0e6e9;
+  border-radius: 7rpx;
+  background: #fafcfc;
 }
-.schedule-card__head { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; }
+
+.schedule-card__head {
+  align-items: flex-start;
+}
+
 .type-label,
-.role-label { padding: 4rpx 10rpx; border-radius: 4rpx; background: #e6f0f7; color: #285d7f; font-size: 19rpx; font-weight: 800; }
-.type-label[data-type="DINNER"] { background: #f5ead3; color: #805f20; }
-.type-label[data-type="SPEECH"] { background: #e0f2eb; color: #176b55; }
-.role-label { overflow: hidden; background: #eff2f5; color: #5d6c7b; text-overflow: ellipsis; white-space: nowrap; }
-.schedule-name { display: block; margin-top: 14rpx; color: #122238; font-size: 29rpx; font-weight: 900; line-height: 1.38; }
-.schedule-details { display: flex; flex-direction: column; gap: 12rpx; margin-top: 17rpx; }
-.detail-row { display: grid; grid-template-columns: 32rpx minmax(0, 1fr); gap: 9rpx; align-items: start; color: #526274; font-size: 22rpx; line-height: 1.5; }
-.detail-row--strong { color: #765619; font-weight: 800; }
-.detail-icon { display: grid; place-items: center; width: 30rpx; height: 30rpx; border-radius: 5rpx; background: #eaf0f5; color: #4c6378; font-size: 17rpx; font-weight: 900; line-height: 1; }
-.schedule-note { margin-top: 3rpx; padding: 14rpx 16rpx; border-left: 4rpx solid #c8d5df; background: #f1f4f6; color: #59697a; font-size: 21rpx; line-height: 1.55; }
-.day-empty { display: grid; place-items: center; min-height: 220rpx; color: #8a96a2; font-size: 23rpx; }
+.role-label {
+  padding: 4rpx 10rpx;
+  border-radius: 4rpx;
+  background: #e7f0f5;
+  color: #315d7d;
+  font-size: 18rpx;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.type-label[data-type="DINNER"] { background: #f7eedc; color: #805e20; }
+.type-label[data-type="SPEECH"] { background: #e4f2ee; color: #216d5b; }
+
+.role-label {
+  max-width: 180rpx;
+  overflow: hidden;
+  background: #eef1f3;
+  color: #65717e;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-name {
+  display: block;
+  margin-top: 13rpx;
+  color: #152034;
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1.42;
+}
+
+.schedule-details {
+  display: flex;
+  flex-direction: column;
+  gap: 11rpx;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1px solid #e8ecee;
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: 56rpx minmax(0, 1fr);
+  gap: 10rpx;
+  color: #4e5b69;
+  font-size: 21rpx;
+  line-height: 1.5;
+}
+
+.detail-label {
+  color: #8a95a0;
+}
+
+.detail-row--highlight .detail-value {
+  color: #805e20;
+  font-weight: 900;
+}
+
+.schedule-note {
+  padding: 13rpx 15rpx;
+  border-left: 4rpx solid #b8ccd6;
+  background: #f1f5f6;
+  color: #53606d;
+  font-size: 20rpx;
+  line-height: 1.55;
+}
+
+.day-empty {
+  padding: 52rpx 0 60rpx;
+  color: #8a95a1;
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.subscribe-strip {
+  margin-top: 20rpx;
+  padding: 21rpx 23rpx;
+  border: 1px solid #cee1db;
+  border-radius: 8rpx;
+  background: #edf6f3;
+}
+
+.subscribe-strip__content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4rpx;
+  color: #60776f;
+  font-size: 19rpx;
+  line-height: 1.45;
+}
+
+.subscribe-title {
+  color: #214b40;
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.subscribe-button {
+  min-width: 112rpx;
+  height: 58rpx;
+  margin: 0;
+  padding: 0 17rpx;
+  border: 0;
+  border-radius: 7rpx;
+  background: #2f7865;
+  color: #ffffff;
+  font-size: 21rpx;
+  font-weight: 800;
+  line-height: 58rpx;
+}
+
+.subscribe-button[disabled] {
+  opacity: 0.62;
+}
 
 @media (min-width: 760px) {
-  .page { max-width: 760px; margin: 0 auto; }
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+  }
 }
 </style>

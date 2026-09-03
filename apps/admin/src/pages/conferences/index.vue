@@ -39,7 +39,7 @@
         <el-table-column label="会议时间" min-width="220">
           <template #default="{ row }">{{ formatDate(row.startAt) }} - {{ formatDate(row.endAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="310" fixed="right">
+        <el-table-column label="操作" width="390" fixed="right">
           <template #default="{ row }">
             <div class="inline-actions">
               <el-button size="small" @click="openEdit(row)">编辑</el-button>
@@ -55,6 +55,7 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
+              <el-button size="small" type="danger" plain @click="removeConference(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -120,7 +121,7 @@ import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import ConferenceCoverPicker from "../../components/conference/ConferenceCoverPicker.vue";
-import { createConference, listConferences, updateConference, updateConferenceStatus } from "../../services/admin";
+import { createConference, deleteConference, listConferences, updateConference, updateConferenceStatus } from "../../services/admin";
 import type { Conference } from "../../services/types";
 import { navigateTo } from "../../router";
 
@@ -255,6 +256,21 @@ async function changeStatus(id: string, nextStatus: string) {
   await updateConferenceStatus(id, nextStatus);
   await load();
   ElMessage.success("状态已更新");
+}
+
+async function removeConference(row: Conference) {
+  const registrationCount = row.counts?.registrations ?? 0;
+  const orderCount = row.counts?.orders ?? 0;
+  await ElMessageBox.confirm(
+    registrationCount || orderCount
+      ? `「${row.title}」有 ${registrationCount} 条报名和 ${orderCount} 笔订单，服务端会拒绝删除。是否仍要检查？`
+      : `确认永久删除「${row.title}」及其未使用配置？该操作不可撤销。`,
+    "删除会议",
+    { confirmButtonText: "确认删除", cancelButtonText: "取消", type: "warning" }
+  );
+  await deleteConference(row.id);
+  await load();
+  ElMessage.success("会议已删除");
 }
 
 function goConfig(id: string) {

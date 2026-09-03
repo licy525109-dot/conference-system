@@ -188,8 +188,9 @@ export class GuestScheduleService {
     if (assignments.length !== new Set(ids).size) throw new BadRequestException("部分嘉宾事项不存在或已归档，请刷新后重试");
 
     const now = new Date();
-    await this.prisma.$transaction(
-      assignments.map((item) => {
+    const userGroups = groupAssignmentsByUser(assignments);
+    await this.prisma.$transaction([
+      ...assignments.map((item) => {
         const snapshot = draftSnapshot(item);
         return this.prisma.guestScheduleAssignment.update({
           where: { id: item.id },
@@ -201,8 +202,37 @@ export class GuestScheduleService {
             publishedById: admin.id
           }
         });
-      })
-    );
+      }),
+      ...userGroups.map((group) => this.prisma.userNotification.create({
+        data: {
+          userId: group.userId,
+          type: "GUEST_SCHEDULE_PUBLISHED",
+          title: `${group.conferenceTitle}会务安排已更新`,
+          summary: buildScheduleNotificationSummary(group.assignments),
+          route: `/pages/registrations/schedule?conferenceId=${group.conferenceId}`,
+          sourceKey: `guest-schedule:${group.userId}:${group.conferenceId}:${now.getTime()}:${hashAssignmentIds(group.assignments)}`,
+          payloadJson: {
+            conferenceId: group.conferenceId,
+            conferenceTitle: group.conferenceTitle,
+            publishedAt: now.toISOString(),
+            assignmentIds: group.assignments.map((item) => item.id),
+            items: group.assignments.map((item) => ({
+              id: item.id,
+              type: item.type,
+              typeLabel: GUEST_SCHEDULE_TYPE_LABELS[item.type],
+              name: item.name,
+              startsAt: item.startsAt.toISOString(),
+              endsAt: item.endsAt?.toISOString() ?? null,
+              location: item.location,
+              role: item.role,
+              tableNo: item.tableNo,
+              isTableLeader: item.isTableLeader,
+              shareTopic: item.shareTopic
+            }))
+          }
+        }
+      }))
+    ]);
     await this.writeAudit(admin, AuditAction.UPDATE, "GuestScheduleAssignment", ids.join(","), "Publish guest schedule assignments", {
       count: assignments.length,
       notify
@@ -273,19 +303,24 @@ export class GuestScheduleService {
   }
 
   async getSubscriptionConfig() {
-    const [template, channel] = await Promise.all([
-      this.prisma.notificationTemplate.findUnique({ where: { code: GUEST_SCHEDULE_TEMPLATE_CODE } }),
-      this.prisma.notificationChannelConfig.findUnique({ where: { channel: NotificationChannelType.WECHAT_SUBSCRIBE } })
-    ]);
-    const templateId = template?.templateKey || channel?.templateKey || process.env.WECHAT_SUBSCRIBE_TEMPLATE_ID || null;
+    const template = await this.prisma.notificationTemplate.findUnique({ where: { code: GUEST_SCHEDULE_TEMPLATE_CODE } });
+    const runtime = await this.notifications.getChannelRuntime(
+      NotificationChannelType.WECHAT_SUBSCRIBE,
+      template?.templateKey,
+      template?.contentJson
+    );
+    const templateId = template?.templateKey || runtime.templateKey || null;
+    const enabled = Boolean(templateId && template?.status === NotificationTemplateStatus.ACTIVE && runtime.canSend);
     return ok({
       templateCode: GUEST_SCHEDULE_TEMPLATE_CODE,
       templateId,
       page: GUEST_SCHEDULE_PAGE,
-      enabled: Boolean(templateId && template?.status === NotificationTemplateStatus.ACTIVE),
-      message: templateId && template?.status === NotificationTemplateStatus.ACTIVE
+      enabled,
+      message: enabled
         ? "可申请接收会务安排更新提醒"
-        : "管理员尚未启用会务安排订阅消息模板"
+        : template?.status !== NotificationTemplateStatus.ACTIVE
+          ? "管理员尚未启用会务安排订阅消息模板"
+          : runtime.unavailableReason || "微信订阅消息通道尚未就绪"
     });
   }
 
@@ -315,8 +350,8 @@ export class GuestScheduleService {
   }
 
   private async sendPublishedNotification(assignments: Array<AssignmentAdminRecord>, admin: CurrentAdmin) {
-    const userIds = Array.from(new Set(assignments.map((item) => item.attendee.registration.userId).filter((value): value is string => Boolean(value))));
-    if (userIds.length === 0) {
+    const userGroups = groupAssignmentsByUser(assignments);
+    if (userGroups.length === 0) {
       return { status: "SKIPPED", message: "这些嘉宾没有绑定小程序账号，安排已发布但无法推送" };
     }
     const template = await this.prisma.notificationTemplate.findUnique({ where: { code: GUEST_SCHEDULE_TEMPLATE_CODE } });
@@ -324,50 +359,92 @@ export class GuestScheduleService {
       return { status: "SKIPPED", message: "会务安排通知模板未启用，安排已发布但未推送" };
     }
 
-    try {
-      const conferenceTitle = assignments[0]?.conference.title ?? "会议";
-      const taskResult = await this.notifications.createTask(
-        {
-          name: `${conferenceTitle} - 嘉宾会务安排更新`,
-          templateId: template.id,
-          status: NotificationTaskStatus.PENDING,
-          targetType: "GUEST_SCHEDULE",
-          userIds,
-          payloadJson: {
+    const taskIds: string[] = [];
+    const errors: string[] = [];
+    const updateTime = new Date().toISOString();
+    let total = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+
+    for (const group of userGroups) {
+      try {
+        const userIds = [group.userId];
+        const assignmentName = buildScheduleNotificationSummary(group.assignments);
+        const taskResult = await this.notifications.createTask(
+          {
+            name: `${group.conferenceTitle} - 嘉宾会务安排更新`,
+            templateId: template.id,
+            status: NotificationTaskStatus.PENDING,
+            targetType: "GUEST_SCHEDULE",
             userIds,
-            page: GUEST_SCHEDULE_PAGE,
-            variables: {
-              conferenceTitle,
-              updateTime: new Date().toISOString()
+            payloadJson: {
+              userIds,
+              page: GUEST_SCHEDULE_PAGE,
+              variables: {
+                conferenceTitle: group.conferenceTitle,
+                assignmentName,
+                updateTime,
+                "会议名称": group.conferenceTitle,
+                "安排名称": assignmentName,
+                "更新时间": updateTime
+              }
             }
+          },
+          admin
+        ) as { data?: { id?: string } };
+        const taskId = taskResult.data?.id;
+        if (!taskId) throw new Error("通知任务创建后未返回任务 ID");
+        taskIds.push(taskId);
+
+        const sendResult = await this.notifications.sendNow(taskId, admin) as {
+          data?: { result?: { successCount?: number; failedCount?: number; skippedCount?: number; total?: number } }
+        };
+        const result = sendResult.data?.result ?? {};
+        const groupSuccessCount = result.successCount ?? 0;
+        total += result.total ?? 1;
+        successCount += groupSuccessCount;
+        failedCount += result.failedCount ?? 0;
+        skippedCount += result.skippedCount ?? 0;
+
+        if (groupSuccessCount > 0) {
+          try {
+            await this.prisma.guestScheduleAssignment.updateMany({
+              where: { id: { in: group.assignments.map((item) => item.id) } },
+              data: { lastNotifiedAt: new Date() }
+            });
+          } catch (error) {
+            errors.push(error instanceof Error ? `提醒已发送，但发送状态记录失败：${error.message}` : "提醒已发送，但发送状态记录失败");
           }
-        },
-        admin
-      ) as { data?: { id?: string } };
-      const taskId = taskResult.data?.id;
-      if (!taskId) throw new Error("通知任务创建后未返回任务 ID");
-      const sendResult = await this.notifications.sendNow(taskId, admin) as {
-        data?: { result?: { successCount?: number; failedCount?: number; skippedCount?: number; total?: number } }
-      };
-      const result = sendResult.data?.result ?? {};
-      if ((result.successCount ?? 0) > 0) {
-        await this.prisma.guestScheduleAssignment.updateMany({
-          where: { id: { in: assignments.map((item) => item.id) } },
-          data: { lastNotifiedAt: new Date() }
-        });
+        }
+      } catch (error) {
+        total += 1;
+        failedCount += 1;
+        errors.push(error instanceof Error ? error.message : "未知错误");
       }
-      return {
-        status: (result.successCount ?? 0) > 0 ? "SENT" : "SKIPPED",
-        taskId,
-        ...result,
-        message: (result.successCount ?? 0) > 0 ? "安排已发布并发送提醒" : "安排已发布；提醒未发送，请查看通知任务原因"
-      };
-    } catch (error) {
-      return {
-        status: "FAILED",
-        message: error instanceof Error ? `安排已发布，但提醒发送失败：${error.message}` : "安排已发布，但提醒发送失败"
-      };
     }
+
+    const status = successCount > 0
+      ? failedCount > 0 || skippedCount > 0 || errors.length > 0 ? "PARTIAL_FAILED" : "SENT"
+      : failedCount > 0 ? "FAILED" : "SKIPPED";
+    const message = status === "SENT"
+      ? "安排已发布并发送提醒"
+      : status === "PARTIAL_FAILED"
+        ? "安排已发布；部分提醒未成功，请查看通知任务原因"
+        : status === "FAILED"
+          ? `安排已发布，但提醒发送失败${errors[0] ? `：${errors[0]}` : ""}`
+          : "安排已发布；提醒未发送，请查看通知任务原因";
+
+    return {
+      status,
+      taskId: taskIds[0] ?? null,
+      taskIds,
+      total,
+      successCount,
+      failedCount,
+      skippedCount,
+      message
+    };
   }
 
   private writeAudit(
@@ -382,6 +459,41 @@ export class GuestScheduleService {
       data: { adminUserId: admin.id, action, entityType, entityId, summary, metadataJson }
     });
   }
+}
+
+function groupAssignmentsByUser(assignments: AssignmentAdminRecord[]) {
+  const groups = new Map<string, {
+    userId: string;
+    conferenceId: string;
+    conferenceTitle: string;
+    assignments: AssignmentAdminRecord[];
+  }>();
+  for (const assignment of assignments) {
+    const userId = assignment.attendee.registration.userId;
+    if (!userId) continue;
+    const key = `${userId}:${assignment.conferenceId}`;
+    const group = groups.get(key) ?? {
+      userId,
+      conferenceId: assignment.conferenceId,
+      conferenceTitle: assignment.conference.title,
+      assignments: []
+    };
+    group.assignments.push(assignment);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values());
+}
+
+function buildScheduleNotificationSummary(assignments: AssignmentAdminRecord[]) {
+  const names = assignments.slice(0, 3).map((item) => item.name).join("、");
+  return assignments.length > 3 ? `${names}等 ${assignments.length} 项安排` : names;
+}
+
+function hashAssignmentIds(assignments: AssignmentAdminRecord[]) {
+  return createHash("sha256")
+    .update(assignments.map((item) => item.id).sort().join(","))
+    .digest("hex")
+    .slice(0, 12);
 }
 
 const assignmentAdminInclude = {

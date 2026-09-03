@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { OrderStatus, PaymentStatus, Prisma, RegistrationStatus } from "@prisma/client";
+import { OrderStatus, PaymentStatus, Prisma, RegistrationSource, RegistrationStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { createCheckinCredentialPayload } from "../checkin/checkin-credential";
 import { PrismaService } from "../prisma.service";
@@ -14,6 +14,7 @@ export interface MyRegistrationItem {
   id: string;
   registrationNo: string;
   status: RegistrationStatus;
+  source: RegistrationSource;
   attendeeName: string;
   phone: string;
   paidAmountCent: number;
@@ -57,6 +58,7 @@ export class RegistrationsService {
         id: true,
         registrationNo: true,
         status: true,
+        source: true,
         attendeeName: true,
         phone: true,
         paidAmountCent: true,
@@ -90,6 +92,7 @@ export class RegistrationsService {
         id: registration.id,
         registrationNo: registration.registrationNo,
         status: registration.status,
+        source: registration.source,
         attendeeName: registration.attendeeName,
         phone: registration.phone,
         paidAmountCent: registration.paidAmountCent,
@@ -161,6 +164,7 @@ const credentialRegistrationSelect = {
   formDataJson: true,
   paidAmountCent: true,
   status: true,
+  source: true,
   confirmedAt: true,
   createdAt: true,
   conference: {
@@ -235,7 +239,7 @@ function formatCredential(registration: Prisma.RegistrationGetPayload<{ select: 
   const mergedFormData = { ...formData, ...attendeeFormData };
   const links = readCredentialLinks(registration.conference.page?.contentJson);
   const payment = registration.order.payments[0] ?? null;
-  const paidAt = registration.order.paidAt ?? payment?.paidAt ?? registration.confirmedAt;
+  const paidAt = payment?.paidAt ?? registration.order.paidAt;
   const attendeePhone = attendee?.phone ?? registration.phone;
   const attendeeName = attendee?.name ?? registration.attendeeName;
 
@@ -245,30 +249,32 @@ function formatCredential(registration: Prisma.RegistrationGetPayload<{ select: 
     credentialCode: registration.registrationNo,
     qrPayload: createCheckinCredentialPayload(registration.id, registration.registrationNo),
     status: registration.status,
+    source: registration.source,
+    complimentary: registration.source === RegistrationSource.ADMIN_COMPLIMENTARY,
     checkIn: {
       status: attendee?.checkInStatus ?? "NOT_REQUIRED",
       checkedInAt: attendee?.checkedInAt?.toISOString() ?? null
     },
     user: {
       id: registration.user?.id ?? null,
-      nickname: valueOrPlaceholder(registration.user?.wechatNickname ?? registration.user?.nickname),
+      nickname: cleanValue(registration.user?.wechatNickname ?? registration.user?.nickname),
       avatarUrl: registration.user?.wechatAvatarUrl ?? null,
       phoneMasked: maskMobile(registration.user?.phone)
     },
     conference: {
       id: registration.conference.id,
-      name: valueOrPlaceholder(registration.conference.title),
+      name: registration.conference.title,
       startTime: registration.conference.startsAt.toISOString(),
       endTime: registration.conference.endsAt.toISOString(),
-      venue: valueOrPlaceholder(registration.conference.location),
-      address: valueOrPlaceholder(readString(mergedFormData, ["address", "venueAddress"]))
+      venue: cleanValue(registration.conference.location),
+      address: cleanValue(readString(mergedFormData, ["address", "venueAddress"]))
     },
     attendee: {
-      name: valueOrPlaceholder(attendeeName),
-      mobile: valueOrPlaceholder(attendeePhone),
-      mobileMasked: valueOrPlaceholder(maskMobile(attendeePhone)),
-      company: valueOrPlaceholder(attendee?.company ?? readString(mergedFormData, ["company", "单位", "公司"])),
-      title: valueOrPlaceholder(attendee?.title ?? readString(mergedFormData, ["title", "position", "职位"]))
+      name: cleanValue(attendeeName),
+      mobile: cleanValue(attendeePhone),
+      mobileMasked: cleanValue(maskMobile(attendeePhone)),
+      company: cleanValue(attendee?.company ?? readString(mergedFormData, ["company", "单位", "公司"])),
+      title: cleanValue(attendee?.title ?? readString(mergedFormData, ["title", "position", "职位"]))
     },
     ticket: {
       id: registration.sku.id,
@@ -297,17 +303,18 @@ function maskMobile(phone: string | null | undefined): string {
 }
 
 function summarizeFormData(input: Record<string, unknown>) {
+  const hiddenKeys = new Set(["attendeeName", "name", "姓名", "phone", "mobile", "手机号", "company", "公司", "单位", "title", "position", "职位"]);
   return Object.entries(input)
-    .filter(([, value]) => typeof value === "string" || Array.isArray(value))
+    .filter(([key, value]) => !hiddenKeys.has(key) && (Array.isArray(value) ? value.length > 0 : typeof value === "string" && Boolean(value.trim())))
     .slice(0, 12)
     .map(([key, value]) => ({
       label: key,
-      value: valueOrPlaceholder(Array.isArray(value) ? value.join("、") : String(value))
+      value: Array.isArray(value) ? value.join("、") : typeof value === "string" ? value : ""
     }));
 }
 
-function valueOrPlaceholder(value: string | null | undefined): string {
-  return typeof value === "string" && value.trim() ? value.trim() : "未填写";
+function cleanValue(value: string | null | undefined): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function readCredentialLinks(value: Prisma.JsonValue | null | undefined) {

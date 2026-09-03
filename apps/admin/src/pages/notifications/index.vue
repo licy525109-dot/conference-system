@@ -157,8 +157,23 @@
         </el-form-item>
         <el-form-item label="用途"><el-select v-model="templateForm.purpose" style="width: 100%"><el-option v-for="item in purposeOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         <el-form-item label="启用状态"><el-select v-model="templateForm.status" style="width: 100%"><el-option label="草稿" value="DRAFT" /><el-option label="启用" value="ACTIVE" /><el-option label="停用" value="DISABLED" /></el-select></el-form-item>
-        <el-form-item label="微信订阅模板 ID" v-if="templateForm.channel === 'WECHAT_SUBSCRIBE'"><el-input v-model="templateForm.templateKey" placeholder="微信公众平台或小程序后台提供的模板编号" /></el-form-item>
-        <el-form-item label="短信模板 ID" v-else-if="templateForm.channel === 'SMS'"><el-input v-model="templateForm.templateKey" placeholder="短信供应商提供的模板编号" /></el-form-item>
+        <template v-if="templateForm.channel === 'WECHAT_SUBSCRIBE'">
+          <el-form-item label="微信订阅模板 ID"><el-input v-model="templateForm.templateKey" placeholder="微信公众平台或小程序后台提供的模板编号" /></el-form-item>
+          <el-form-item label="微信字段映射">
+            <div class="mapping-editor">
+              <div v-for="(mapping, index) in templateForm.wechatMappings" :key="index" class="mapping-row">
+                <el-input v-model="mapping.key" placeholder="模板字段，如 thing1" />
+                <el-select v-model="mapping.value" filterable allow-create default-first-option placeholder="选择或输入字段内容">
+                  <el-option v-for="item in variableButtons" :key="item.value" :label="item.label" :value="item.value" />
+                </el-select>
+                <el-button :icon="Delete" circle aria-label="删除字段映射" @click="removeWechatMapping(index)" />
+              </div>
+              <el-button :icon="Plus" @click="addWechatMapping">添加字段</el-button>
+              <span class="mapping-help">字段名必须与微信模板详情一致，例如 thing1、time2。</span>
+            </div>
+          </el-form-item>
+        </template>
+        <el-form-item v-else-if="templateForm.channel === 'SMS'" label="短信模板 ID"><el-input v-model="templateForm.templateKey" placeholder="短信供应商提供的模板编号" /></el-form-item>
         <el-form-item label="标题"><el-input v-model="templateForm.title" /></el-form-item>
         <el-form-item label="正文内容"><el-input v-model="templateForm.bodyText" type="textarea" :rows="5" placeholder="请输入通知正文，可点击下方变量插入。" /></el-form-item>
         <el-form-item label="变量插入器"><div class="variable-row"><el-button v-for="item in variableButtons" :key="item.value" size="small" @click="insertTemplateVariable(item.value)">{{ item.label }}</el-button></div></el-form-item>
@@ -204,6 +219,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { Delete, Plus } from "@element-plus/icons-vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import ConferenceSelect from "../../components/selectors/ConferenceSelect.vue";
 import { currentRoute, navigateTo } from "../../router";
@@ -243,11 +259,14 @@ const variableButtons = [
   { label: "支付金额", value: "{{支付金额}}" },
   { label: "会议时间", value: "{{会议时间}}" },
   { label: "会议地点", value: "{{会议地点}}" },
+  { label: "安排名称", value: "{{安排名称}}" },
+  { label: "更新时间", value: "{{更新时间}}" },
   { label: "签到链接", value: "{{签到链接}}" }
 ];
 const purposeOptions = [
   { label: "报名成功", value: "REGISTRATION_SUCCESS" },
   { label: "支付成功", value: "PAYMENT_SUCCESS" },
+  { label: "会务安排更新", value: "GUEST_SCHEDULE_UPDATED" },
   { label: "会前提醒", value: "BEFORE_EVENT" },
   { label: "签到提醒", value: "CHECKIN_REMINDER" },
   { label: "发票通知", value: "INVOICE_NOTICE" },
@@ -273,7 +292,26 @@ const templateDialogVisible = ref(false);
 const taskDialogVisible = ref(false);
 const previewDialogVisible = ref(false);
 const previewText = ref("");
-const templateForm = reactive({ id: "", code: "", name: "", channel: "MOCK", status: "DRAFT", purpose: "REGISTRATION_SUCCESS", title: "", templateKey: "", bodyText: "", contentText: "", advanced: false, remark: "" });
+interface WechatMappingRow {
+  key: string;
+  value: string;
+}
+const templateOriginalContent = ref<Record<string, unknown>>({});
+const templateForm = reactive({
+  id: "",
+  code: "",
+  name: "",
+  channel: "MOCK",
+  status: "DRAFT",
+  purpose: "REGISTRATION_SUCCESS",
+  title: "",
+  templateKey: "",
+  bodyText: "",
+  contentText: "",
+  advanced: false,
+  remark: "",
+  wechatMappings: [] as WechatMappingRow[]
+});
 const taskForm = reactive({ name: "", templateId: "", recipientType: "PAID_USERS", conferenceId: "", recipientText: "", userIdsText: "", scheduledAt: "", sendImmediately: false, advanced: false, payloadText: "{}" });
 const configForm = reactive({ centerEnabled: false, enabled: false, provider: "", signature: "", templateKey: "", smsTemplate: "", apiKey: "", apiSecret: "", rateLimitPerMinute: 60, retryMaxAttempts: 0, retryIntervalSeconds: 60, note: "" });
 const activeTemplates = computed(() => templates.value.filter((item) => item.status === "ACTIVE"));
@@ -312,12 +350,14 @@ function goSection(path: string) {
 }
 
 function openTemplateCreate() {
-  Object.assign(templateForm, { id: "", code: "", name: "", channel: "MOCK", status: "DRAFT", purpose: "REGISTRATION_SUCCESS", title: "", templateKey: "", bodyText: "", contentText: "", advanced: false, remark: "" });
+  templateOriginalContent.value = {};
+  Object.assign(templateForm, { id: "", code: "", name: "", channel: "MOCK", status: "DRAFT", purpose: "REGISTRATION_SUCCESS", title: "", templateKey: "", bodyText: "", contentText: "", advanced: false, remark: "", wechatMappings: [] });
   templateDialogVisible.value = true;
 }
 
 function openTemplateEdit(row: NotificationTemplate) {
   const content = row.contentJson ?? {};
+  templateOriginalContent.value = { ...content };
   Object.assign(templateForm, {
     id: row.id,
     code: row.code,
@@ -330,13 +370,31 @@ function openTemplateEdit(row: NotificationTemplate) {
     bodyText: String(content.body || content.content || ""),
     contentText: JSON.stringify(content, null, 2),
     advanced: false,
-    remark: row.remark ?? ""
+    remark: row.remark ?? "",
+    wechatMappings: readWechatMappings(content)
   });
   templateDialogVisible.value = true;
 }
 
 async function saveTemplate() {
-  const contentJson = templateForm.advanced ? parseJson(templateForm.contentText) : { purpose: templateForm.purpose, body: templateForm.bodyText, content: templateForm.bodyText, variables: variableButtons.map((item) => item.value) };
+  let contentJson = templateForm.advanced
+    ? parseJson(templateForm.contentText)
+    : {
+        ...templateOriginalContent.value,
+        purpose: templateForm.purpose,
+        body: templateForm.bodyText,
+        content: templateForm.bodyText,
+        variables: variableButtons.map((item) => item.value)
+      };
+  if (templateForm.channel === "WECHAT_SUBSCRIBE" && templateForm.wechatMappings.length > 0) {
+    const wechatData = buildWechatMappingData();
+    if (!wechatData) return;
+    contentJson = { ...contentJson, wechatData };
+  }
+  if (templateForm.channel === "WECHAT_SUBSCRIBE" && templateForm.status === "ACTIVE") {
+    if (!templateForm.templateKey.trim()) return ElMessage.warning("启用微信订阅模板前，请填写模板 ID");
+    if (!hasWechatMappings(contentJson)) return ElMessage.warning("启用微信订阅模板前，请配置微信字段映射");
+  }
   const payload = { code: templateForm.code, name: templateForm.name, channel: templateForm.channel, status: templateForm.status, purpose: templateForm.purpose, title: templateForm.title || null, templateKey: templateForm.templateKey || null, bodyText: templateForm.bodyText, contentJson, remark: templateForm.remark || null };
   if (templateForm.id) await updateNotificationTemplate(templateForm.id, payload);
   else await createNotificationTemplate(payload);
@@ -425,6 +483,51 @@ async function testChannelConfig() {
 
 function insertTemplateVariable(value: string) {
   templateForm.bodyText = `${templateForm.bodyText}${value}`;
+}
+
+function addWechatMapping() {
+  templateForm.wechatMappings.push({ key: "", value: "" });
+}
+
+function removeWechatMapping(index: number) {
+  templateForm.wechatMappings.splice(index, 1);
+}
+
+function readWechatMappings(content: Record<string, unknown>): WechatMappingRow[] {
+  const source = isRecord(content.wechatData)
+    ? content.wechatData
+    : isRecord(content.data)
+      ? content.data
+      : {};
+  return Object.entries(source).flatMap(([key, raw]) => {
+    const value = isRecord(raw) ? raw.value : raw;
+    return typeof value === "string" ? [{ key, value }] : [];
+  });
+}
+
+function buildWechatMappingData(): Record<string, { value: string }> | null {
+  const rows = templateForm.wechatMappings
+    .map((item) => ({ key: item.key.trim(), value: item.value.trim() }))
+    .filter((item) => item.key && item.value);
+  const keys = rows.map((item) => item.key);
+  if (new Set(keys).size !== keys.length) {
+    ElMessage.error("微信模板字段名不能重复");
+    return null;
+  }
+  return Object.fromEntries(rows.map((item) => [item.key, { value: item.value }]));
+}
+
+function hasWechatMappings(content: Record<string, unknown>): boolean {
+  const source = isRecord(content.wechatData)
+    ? content.wechatData
+    : isRecord(content.data)
+      ? content.data
+      : null;
+  return Boolean(source && Object.keys(source).length > 0);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function secretPlaceholder(secret?: { configured: boolean; masked: string }) {
@@ -596,6 +699,25 @@ function formatTime(value: string) {
 
 .env-guide {
   margin-top: 14px;
+}
+
+.mapping-editor {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mapping-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.2fr) 34px;
+  gap: 8px;
+  align-items: center;
+}
+
+.mapping-help {
+  color: #64748b;
+  font-size: 12px;
 }
 
 .inline-preview,

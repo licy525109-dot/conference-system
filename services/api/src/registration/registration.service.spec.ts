@@ -211,6 +211,21 @@ describe("RegistrationService quote", () => {
     assert.equal(response.data.discounts?.[0]?.title, "满 2 张减 300");
   });
 
+  it("queries full-reduction rules for the current conference only", async () => {
+    const prisma = createPrismaMock({
+      promotionRules: [promotionRule({ id: "promo-current", discountAmountCent: 10000 })]
+    });
+    const service = createService(prisma);
+
+    await service.quote({
+      conferenceId: "published-conf",
+      items: [{ skuId: "active-sku", quantity: 1 }]
+    });
+
+    assert.equal(prisma.lastPromotionFindManyArgs?.where.conferenceId, "published-conf");
+    assert.equal(prisma.lastPromotionFindManyArgs?.where.type, DiscountType.FULL_REDUCTION);
+  });
+
   it("counts only allowed SKU items for SKU-scoped promotions", async () => {
     const service = createService(
       createPrismaMock({
@@ -783,6 +798,7 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
     payments,
     lastConferenceFindFirstArgs: undefined as ConferenceFindFirstArgs | undefined,
     lastSkuFindFirstArgs: undefined as SkuFindFirstArgs | undefined,
+    lastPromotionFindManyArgs: undefined as PromotionRuleFindManyArgs | undefined,
     conference: {
       findFirst: async (args: ConferenceFindFirstArgs) => {
         mock.lastConferenceFindFirstArgs = args;
@@ -871,7 +887,10 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
       }
     },
     promotionRule: {
-      findMany: async () => options.promotionRules ?? []
+      findMany: async (args: PromotionRuleFindManyArgs) => {
+        mock.lastPromotionFindManyArgs = args;
+        return options.promotionRules ?? [];
+      }
     },
     coupon: {
       findUnique: async (args: CouponFindUniqueArgs) => {
@@ -1216,6 +1235,7 @@ interface PrismaMockShape {
   payments: unknown[];
   lastConferenceFindFirstArgs: ConferenceFindFirstArgs | undefined;
   lastSkuFindFirstArgs: SkuFindFirstArgs | undefined;
+  lastPromotionFindManyArgs: PromotionRuleFindManyArgs | undefined;
   conference: {
     findFirst(args: ConferenceFindFirstArgs): Promise<{ id: string } | null>;
   };
@@ -1235,7 +1255,7 @@ interface PrismaMockShape {
     create(args: OrderDiscountCreateArgs): Promise<void>;
   };
   promotionRule: {
-    findMany(): Promise<PromotionRuleRecord[]>;
+    findMany(args: PromotionRuleFindManyArgs): Promise<PromotionRuleRecord[]>;
   };
   coupon: {
     findUnique(args: CouponFindUniqueArgs): Promise<CouponRecord | null>;
@@ -1269,6 +1289,14 @@ interface ConferenceFindFirstArgs {
 interface SkuFindFirstArgs {
   where: {
     id: string;
+    conferenceId: string;
+  };
+}
+
+interface PromotionRuleFindManyArgs {
+  where: {
+    enabled: boolean;
+    type: DiscountType;
     conferenceId: string;
   };
 }

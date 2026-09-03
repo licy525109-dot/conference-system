@@ -34,6 +34,12 @@ export class AdminManagementController {
     return this.adminManagementService.updateConference(id, body, request.currentAdmin!);
   }
 
+  @Delete("conferences/:id")
+  @RequireAdminPermissions("conference:write")
+  deleteConference(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.deleteConference(id, request.currentAdmin!);
+  }
+
   @Patch("conferences/:id/status")
   @RequireAdminPermissions("conference:write")
   updateConferenceStatus(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
@@ -136,6 +142,12 @@ export class AdminManagementController {
     return this.adminManagementService.listRegistrations(query);
   }
 
+  @Post("registrations/complimentary")
+  @RequireAdminPermissions("registration:write")
+  createComplimentaryRegistration(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.createComplimentaryRegistration(body, request.currentAdmin!);
+  }
+
   @Get("registrations/:id/detail")
   @RequireAdminPermissions("registration:view")
   getRegistrationDetail(@Param("id") id: string) {
@@ -166,6 +178,12 @@ export class AdminManagementController {
     return this.adminManagementService.updateRegistrationFormValues(id, body, request.currentAdmin!);
   }
 
+  @Delete("registrations/:id")
+  @RequireAdminPermissions("registration:write")
+  deleteRegistration(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.deleteRegistration(id, request.currentAdmin!);
+  }
+
   @Post("registration-attendees/:id/check-in")
   @RequireAdminPermissions("registration:write")
   checkInRegistrationAttendee(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
@@ -188,6 +206,12 @@ export class AdminManagementController {
   @RequireAdminPermissions("coupon:write")
   updateCoupon(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
     return this.adminManagementService.updateCoupon(id, body, request.currentAdmin!);
+  }
+
+  @Delete("coupons/:id")
+  @RequireAdminPermissions("coupon:write")
+  deleteCoupon(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.deleteCoupon(id, request.currentAdmin!);
   }
 
   @Get("promotion-rules")

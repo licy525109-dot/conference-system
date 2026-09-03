@@ -1,151 +1,210 @@
 <template>
   <view class="page ui-page" :style="pageStyle">
-    <video v-if="showBodyVideo" class="page-bg-video" :src="String(theme.backgroundVideoUrl)" :poster="String(theme.backgroundVideoPosterUrl || '')" autoplay loop muted playsinline webkit-playsinline object-fit="cover" :controls="false" />
+    <video
+      v-if="showBodyVideo"
+      class="page-bg-video"
+      :src="String(theme.backgroundVideoUrl)"
+      :poster="String(theme.backgroundVideoPosterUrl || '')"
+      autoplay
+      loop
+      muted
+      playsinline
+      webkit-playsinline
+      object-fit="cover"
+      :controls="false"
+    />
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
-    <LoadingState v-if="loading" title="加载报名凭证中" description="正在同步报名、订单和支付信息。" />
-    <ErrorState v-else-if="error" title="凭证加载失败" :message="error" primary-text="重新加载" secondary-text="我的报名" @retry="loadCredential" @secondary="goMyRegistrations" />
+
+    <LoadingState v-if="loading" title="加载报名凭证中" description="正在同步报名信息" />
+    <ErrorState
+      v-else-if="error"
+      title="凭证加载失败"
+      :message="error"
+      primary-text="重新加载"
+      secondary-text="我的报名"
+      @retry="loadCredential"
+      @secondary="goMyRegistrations"
+    />
+
     <view v-else-if="credential" class="credential">
-      <view
-        v-for="component in credentialComponents"
-        :key="component.id"
-        :class="credentialBlockClass(component)"
-      >
-        <template v-if="component.type === 'credential-header'">
-        <text class="success-kicker">报名成功</text>
-        <text class="success-title">{{ displayText(credential.conference.name) }}</text>
-        <text class="success-no">报名号：{{ credential.registrationNo }}</text>
-        <view class="credential-status-row">
-          <text>支付状态：{{ paymentStatusText(credential.payment.status) }}</text>
-          <text>报名状态：{{ registrationStatusText(credential.status) }}</text>
-          <text>签到状态：{{ checkinStatusText(credential.checkIn.status) }}</text>
-        </view>
-        </template>
-
-        <template v-else-if="component.type === 'credential-qr'">
-        <QrCodeMatrix :value="credential.qrPayload" label="电子报名凭证二维码" />
-        <view class="qr-copy">
-          <text class="qr-title">{{ componentTitle(component, "电子报名凭证") }}</text>
-          <text class="qr-desc">{{ stringConfig(component, "description") || "请妥善保存报名凭证，工作人员可扫码完成签到核销。二维码不包含手机号、姓名等个人信息。" }}</text>
-          <text class="qr-code">报名号：{{ credential.credentialCode }}</text>
-        </view>
-        </template>
-
-        <AiAssistantEntry v-else-if="component.type === 'credential-ai-entry'" :conference-id="credential.conference.id" />
-
-        <template v-else-if="component.type === 'credential-conference-info'">
-        <text class="section-title">{{ componentTitle(component, "会议信息") }}</text>
-        <InfoLine label="时间" :value="`${formatDateTime(credential.conference.startTime)} - ${formatDateTime(credential.conference.endTime)}`" />
-        <InfoLine label="地点" :value="displayText(credential.conference.venue)" />
-        <InfoLine label="地址" :value="displayText(credential.conference.address)" />
-        <InfoLine label="票种" :value="displayText(credential.ticket.name)" />
-        </template>
-
-        <template v-else-if="component.type === 'credential-attendee-info'">
-        <text class="section-title">{{ componentTitle(component, "参会人信息") }}</text>
-        <InfoLine label="姓名" :value="displayText(credential.attendee.name)" />
-        <InfoLine label="手机号" :value="displayText(credential.attendee.mobileMasked)" />
-        <InfoLine label="公司" :value="displayText(credential.attendee.company)" />
-        <InfoLine label="职位" :value="displayText(credential.attendee.title)" />
-          <view v-if="booleanConfig(component, 'showWechatUser', true)" class="wechat-user">
-            <image v-if="credential.user.avatarUrl" class="wechat-avatar" :src="credential.user.avatarUrl" mode="aspectFill" />
-            <view v-else class="wechat-avatar wechat-avatar--empty">{{ displayText(credential.user.nickname).slice(0, 1) }}</view>
-            <view class="wechat-user__copy">
-              <text>{{ displayText(credential.user.nickname) }}</text>
-              <text>{{ displayText(credential.user.phoneMasked) }}</text>
-            </view>
+      <view class="success-head">
+        <view class="success-mark">✓</view>
+        <view class="success-head__copy">
+          <text class="success-kicker">{{ credential.complimentary ? "主办方邀请" : "报名已确认" }}</text>
+          <text class="success-title">{{ credential.conference.name }}</text>
+          <view class="status-row">
+            <text>{{ credential.ticket.name }}</text>
+            <text>{{ registrationStatusText(credential.status) }}</text>
           </view>
-        </template>
-
-        <template v-else-if="component.type === 'credential-payment-info'">
-        <text class="section-title">{{ componentTitle(component, "支付信息") }}</text>
-        <InfoLine label="支付金额" :value="`¥${formatCent(credential.payment.paidAmountCent)}`" highlight />
-        <InfoLine label="支付状态" :value="paymentStatusText(credential.payment.status)" />
-        <InfoLine label="支付渠道" :value="providerText(credential.payment.provider)" />
-        <InfoLine label="报名状态" :value="registrationStatusText(credential.status)" />
-        <InfoLine label="订单号" :value="credential.order.orderNo" />
-        <InfoLine label="支付时间" :value="formatDateTime(credential.payment.paidAt) || '-'" />
-        </template>
-
-        <template v-else-if="component.type === 'credential-form-summary'">
-        <text class="section-title">{{ componentTitle(component, "报名表单摘要") }}</text>
-        <InfoLine v-for="item in credential.formSummary" :key="item.label" :label="item.label" :value="item.value" />
-          <text v-if="credential.formSummary.length === 0" class="empty-copy">{{ stringConfig(component, "emptyText") || "暂无补充报名字段" }}</text>
-        </template>
-
-        <template v-else-if="component.type === 'credential-checkin-info'">
-        <text class="section-title">{{ componentTitle(component, "签到信息") }}</text>
-        <InfoLine label="签到状态" :value="checkinStatusText(credential.checkIn.status)" highlight />
-        <InfoLine label="签到时间" :value="credential.checkIn.checkedInAt ? formatDateTime(credential.checkIn.checkedInAt) : '暂无'" />
-        </template>
-
-        <template v-else-if="component.type === 'credential-actions'">
-        <button class="ui-button-primary action" @click="goCheckin">{{ stringConfig(component, "checkinText") || "去签到" }}</button>
-        <button v-if="credential.links.groupJoinUrl" class="ui-button-secondary action" @click="openLink(credential.links.groupJoinUrl, '会议客户群暂未配置')">{{ stringConfig(component, "groupText") || "加入会议客户群" }}</button>
-        <button class="ui-button-secondary action" @click="openLink(credential.links.agendaUrl, '会议议程暂未配置')">{{ stringConfig(component, "agendaText") || "查看议程" }}</button>
-        <button class="ui-button-secondary action" @click="openLink(credential.links.guideUrl, '参会指南暂未配置')">{{ stringConfig(component, "guideText") || "参会指南" }}</button>
-        <button class="ui-button-secondary action" @click="openLink(credential.links.contactUrl, '客服入口暂未配置')">{{ stringConfig(component, "contactText") || "联系客服" }}</button>
-        <button class="ui-button-secondary action" @click="calendarTodo">{{ stringConfig(component, "calendarText") || "添加到日历" }}</button>
-        </template>
+        </view>
       </view>
+
+      <view class="credential-card">
+        <view class="qr-wrap">
+          <QrCodeMatrix :value="credential.qrPayload" label="电子报名凭证二维码" />
+        </view>
+        <view class="qr-copy">
+          <text class="qr-title">电子报名凭证</text>
+          <text class="qr-description">{{ qrDescription }}</text>
+          <text class="registration-no">报名号 {{ credential.registrationNo }}</text>
+        </view>
+      </view>
+
+      <view v-if="conferenceRows.length" class="section-card">
+        <view class="section-head">
+          <text class="section-title">会议信息</text>
+        </view>
+        <view class="info-list">
+          <view v-for="item in conferenceRows" :key="item.label" class="info-row">
+            <text class="info-label">{{ item.label }}</text>
+            <text class="info-value" :class="{ 'info-value--strong': item.strong }">{{ item.value }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="attendeeRows.length" class="section-card">
+        <view class="section-head">
+          <text class="section-title">参会人</text>
+        </view>
+        <view class="info-list">
+          <view v-for="item in attendeeRows" :key="item.label" class="info-row">
+            <text class="info-label">{{ item.label }}</text>
+            <text class="info-value">{{ item.value }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="paymentRows.length" class="section-card">
+        <view class="section-head">
+          <text class="section-title">支付信息</text>
+          <text class="section-state">{{ paymentStatusText(credential.payment.status) }}</text>
+        </view>
+        <view class="info-list">
+          <view v-for="item in paymentRows" :key="item.label" class="info-row">
+            <text class="info-label">{{ item.label }}</text>
+            <text class="info-value" :class="{ 'info-value--strong': item.strong }">{{ item.value }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="formRows.length" class="section-card">
+        <view class="section-head">
+          <text class="section-title">报名信息</text>
+        </view>
+        <view class="info-list">
+          <view v-for="item in formRows" :key="item.label" class="info-row">
+            <text class="info-label">{{ item.label }}</text>
+            <text class="info-value">{{ item.value }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="showCheckinSection" class="section-card checkin-card">
+        <view class="checkin-copy">
+          <text class="section-title">签到状态</text>
+          <text class="checkin-status">{{ checkinStatusText(credential.checkIn.status) }}</text>
+          <text v-if="credential.checkIn.checkedInAt" class="checkin-time">{{ formatDateTime(credential.checkIn.checkedInAt) }}</text>
+        </view>
+        <button v-if="canCheckin" class="checkin-button" @click="goCheckin">去签到</button>
+      </view>
+
+      <view v-if="actionLinks.length" class="actions-section">
+        <text class="actions-title">参会服务</text>
+        <view class="actions-grid">
+          <button v-for="action in actionLinks" :key="action.key" class="action-button" @click="openLink(action.url)">
+            <text>{{ action.title }}</text>
+            <text class="action-arrow">›</text>
+          </button>
+        </view>
+      </view>
+
+      <button class="my-registrations-button" @click="goMyRegistrations">返回我的报名</button>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, ref } from "vue";
+import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
-import AiAssistantEntry from "@/components/AiAssistantEntry.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import QrCodeMatrix from "@/components/QrCodeMatrix.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
-import { applyPageTitle, getPublishedPage, type PublishedPage } from "@/services/cms";
+import { applyPageTitle, getPublishedPage } from "@/services/cms";
 import { getOrderRegistrationCredential, getRegistrationCredential } from "@/services/registration";
 import type { RegistrationCredential } from "@/services/registration-types";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
 
-const InfoLine = defineComponent({
-  props: {
-    label: { type: String, required: true },
-    value: { type: String, required: true },
-    highlight: { type: Boolean, default: false }
-  },
-  setup(props) {
-    return () => h("view", { class: "info-line" }, [
-      h("text", { class: "info-label" }, props.label),
-      h("text", { class: props.highlight ? "info-value info-value--highlight" : "info-value" }, props.value)
-    ]);
-  }
-});
+interface InfoRow {
+  label: string;
+  value: string;
+  strong?: boolean;
+}
 
 const registrationId = ref("");
 const orderNo = ref("");
 const credential = ref<RegistrationCredential | null>(null);
-const cmsPage = ref<PublishedPage | null>(null);
 const loading = ref(false);
 const error = ref("");
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("registration-success");
 
-interface CredentialSection {
-  id: string;
-  type: string;
-  config: Record<string, unknown>;
-}
+const conferenceRows = computed<InfoRow[]>(() => {
+  if (!credential.value) return [];
+  const data = credential.value;
+  return compactRows([
+    { label: "时间", value: formatDateRange(data.conference.startTime, data.conference.endTime) },
+    { label: "地点", value: data.conference.venue },
+    { label: "地址", value: data.conference.address },
+    { label: "票种", value: data.ticket.name, strong: true }
+  ]);
+});
 
-const credentialComponents = computed<CredentialSection[]>(() => [
-  { id: "credential-header-default", type: "credential-header", config: { title: "报名成功", statusText: "报名成功" } },
-  { id: "credential-qr-default", type: "credential-qr", config: { title: "电子报名凭证", description: "请妥善保存报名凭证，工作人员可扫码完成签到核销。二维码不包含手机号、姓名等个人信息。" } },
-  { id: "credential-conference-default", type: "credential-conference-info", config: { title: "会议信息" } },
-  { id: "credential-attendee-default", type: "credential-attendee-info", config: { title: "参会人信息", showWechatUser: true } },
-  { id: "credential-payment-default", type: "credential-payment-info", config: { title: "支付信息" } },
-  { id: "credential-form-default", type: "credential-form-summary", config: { title: "报名表单摘要", emptyText: "暂无补充报名字段" } },
-  { id: "credential-checkin-default", type: "credential-checkin-info", config: { title: "签到信息" } },
-  { id: "credential-actions-default", type: "credential-actions", config: { checkinText: "去签到", groupText: "加入会议客户群", agendaText: "查看议程", guideText: "参会指南", contactText: "联系客服", calendarText: "添加到日历" } }
-]);
+const attendeeRows = computed<InfoRow[]>(() => {
+  if (!credential.value) return [];
+  const data = credential.value.attendee;
+  return compactRows([
+    { label: "姓名", value: data.name },
+    { label: "手机号", value: data.mobileMasked },
+    { label: "公司", value: data.company },
+    { label: "职位", value: data.title }
+  ]);
+});
+
+const paymentRows = computed<InfoRow[]>(() => {
+  if (!credential.value || credential.value.complimentary) return [];
+  const data = credential.value;
+  return compactRows([
+    { label: "实付金额", value: `¥${formatCent(data.payment.paidAmountCent)}`, strong: true },
+    { label: "支付渠道", value: providerText(data.payment.provider) },
+    { label: "支付时间", value: data.payment.paidAt ? formatDateTime(data.payment.paidAt) : null },
+    { label: "订单号", value: data.order.orderNo }
+  ]);
+});
+
+const formRows = computed<InfoRow[]>(() => compactRows((credential.value?.formSummary ?? []).map((item) => ({
+  label: item.label,
+  value: item.value
+}))));
+
+const showCheckinSection = computed(() => Boolean(credential.value && credential.value.checkIn.status !== "NOT_REQUIRED"));
+const canCheckin = computed(() => credential.value?.checkIn.status === "PENDING");
+const qrDescription = computed(() => credential.value?.checkIn.status === "NOT_REQUIRED"
+  ? "请妥善保存，现场需要时向工作人员出示。"
+  : "到场后向工作人员出示二维码，用于签到核销。");
+const actionLinks = computed(() => {
+  const links = credential.value?.links;
+  if (!links) return [];
+  return [
+    { key: "agenda", title: "查看议程", url: links.agendaUrl },
+    { key: "guide", title: "参会指南", url: links.guideUrl },
+    { key: "group", title: "加入会议群", url: links.groupJoinUrl },
+    { key: "contact", title: "联系客服", url: links.contactUrl }
+  ].filter((item): item is { key: string; title: string; url: string } => Boolean(cleanText(item.url)));
+});
 
 onLoad((query) => {
   registrationId.value = String(query?.registrationId || "");
@@ -162,9 +221,8 @@ async function loadCredential() {
     const credentialData = registrationId.value
       ? await getRegistrationCredential(registrationId.value)
       : await getOrderRegistrationCredential(orderNo.value);
-    const page = await getPublishedPage("registration-success", { conferenceId: credentialData.conference.id });
     credential.value = credentialData;
-    cmsPage.value = page;
+    const page = await getPublishedPage("registration-success", { conferenceId: credentialData.conference.id });
     applyPageTitle(page, "报名凭证");
   } catch (err) {
     console.error("[REGISTRATION_CREDENTIAL_LOAD_ERROR]", err);
@@ -179,25 +237,49 @@ async function loadCredential() {
   }
 }
 
-function openLink(url: string | undefined, emptyText: string) {
-  if (!url) {
-    uni.showToast({ title: emptyText, icon: "none" });
-    return;
-  }
-  uni.navigateTo({ url: `/pages/custom/index?url=${encodeURIComponent(url)}` });
+function compactRows(rows: Array<{ label: string; value: string | null | undefined; strong?: boolean }>): InfoRow[] {
+  return rows.flatMap((row) => {
+    const value = cleanText(row.value);
+    return value ? [{ ...row, value }] : [];
+  });
 }
 
-function calendarTodo() {
-  uni.showToast({ title: "日历提醒能力后续开放", icon: "none" });
+function cleanText(value: string | null | undefined) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function formatDateRange(startValue: string, endValue: string) {
+  const start = cleanText(startValue);
+  const end = cleanText(endValue);
+  if (!start) return "";
+  if (!end) return formatDateTime(start);
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const sameDay = startDate.toDateString() === endDate.toDateString();
+  if (sameDay) {
+    const date = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "numeric", day: "numeric" }).format(startDate);
+    return `${date} ${timeOnly(startDate)} - ${timeOnly(endDate)}`;
+  }
+  return `${formatDateTime(start)} - ${formatDateTime(end)}`;
+}
+
+function timeOnly(value: Date) {
+  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(value);
+}
+
+function openLink(url: string) {
+  uni.navigateTo({ url: `/pages/custom/index?url=${encodeURIComponent(url)}` });
 }
 
 function goCheckin() {
   if (!credential.value) return;
-  uni.navigateTo({ url: `/pages/checkin/self?conferenceId=${encodeURIComponent(credential.value.conference.id)}&registrationId=${encodeURIComponent(credential.value.registrationId)}` });
+  uni.navigateTo({
+    url: `/pages/checkin/self?conferenceId=${encodeURIComponent(credential.value.conference.id)}&registrationId=${encodeURIComponent(credential.value.registrationId)}`
+  });
 }
 
 function goMyRegistrations() {
-  uni.navigateTo({ url: "/pages/registrations/my" });
+  uni.redirectTo({ url: "/pages/registrations/my" });
 }
 
 function paymentStatusText(value: string) {
@@ -209,47 +291,20 @@ function registrationStatusText(value: string) {
 }
 
 function checkinStatusText(value: string) {
-  return ({ NOT_REQUIRED: "无需签到核销", PENDING: "待签到", CHECKED_IN: "已签到", CANCELLED: "已取消" } as Record<string, string>)[value] ?? value;
+  return ({ PENDING: "待签到", CHECKED_IN: "已签到", CANCELLED: "已取消" } as Record<string, string>)[value] ?? value;
 }
 
 function providerText(value: string | null | undefined) {
-  if (!value) return "未填写";
-  return ({ WECHAT: "微信支付", MOCK: "Mock 测试" } as Record<string, string>)[value] ?? value;
-}
-
-function displayText(value: string | null | undefined) {
-  return typeof value === "string" && value.trim() ? value.trim() : "未填写";
-}
-
-function stringConfig(component: CredentialSection, key: string): string {
-  const value = component.config?.[key];
-  return typeof value === "string" ? value : "";
-}
-
-function booleanConfig(component: CredentialSection, key: string, fallback = false): boolean {
-  const value = component.config?.[key];
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function componentTitle(component: CredentialSection, fallback: string): string {
-  return stringConfig(component, "title") || fallback;
-}
-
-function credentialBlockClass(component: CredentialSection) {
-  const style = stringConfig(component, "cardStyle") || "standard";
-  const base = [`is-${style}`];
-  if (component.type === "credential-header") return ["success-band", ...base];
-  if (component.type === "credential-qr") return ["qr-panel", ...base];
-  if (component.type === "credential-actions") return ["actions", ...base];
-  return ["section", ...base];
+  if (!value) return "";
+  return ({ WECHAT: "微信支付", MOCK: "测试支付" } as Record<string, string>)[value] ?? value;
 }
 </script>
 
 <style scoped>
 .page {
-  position: relative;
   min-height: 100vh;
-  padding-bottom: 72rpx;
+  padding: 26rpx 28rpx calc(64rpx + env(safe-area-inset-bottom));
+  background-color: #f3f6f5;
 }
 
 .credential {
@@ -257,205 +312,289 @@ function credentialBlockClass(component: CredentialSection) {
   z-index: 1;
   display: flex;
   flex-direction: column;
+  gap: 16rpx;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.success-head {
+  display: grid;
+  grid-template-columns: 72rpx minmax(0, 1fr);
   gap: 20rpx;
-  padding: 24rpx;
+  padding: 18rpx 4rpx 16rpx;
 }
 
-.success-band,
-.qr-panel,
-.section {
-  border: 1px solid var(--ui-color-border);
-  border-radius: var(--ui-radius);
-  background: var(--ui-color-surface);
-  box-shadow: var(--ui-shadow-card);
+.success-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: #e3f2ec;
+  color: #25755e;
+  font-size: 38rpx;
+  font-weight: 900;
 }
 
-.success-band.is-highlight,
-.qr-panel.is-highlight,
-.section.is-highlight {
-  border-color: var(--ui-color-primary);
-  background: linear-gradient(135deg, var(--ui-color-primary-soft), var(--ui-color-surface));
+.success-head__copy {
+  min-width: 0;
 }
 
-.success-band.is-plain,
-.qr-panel.is-plain,
-.section.is-plain {
-  box-shadow: none;
-}
-
-.success-band {
-  padding: 34rpx 30rpx;
-}
-
-.success-kicker,
-.success-no {
+.success-kicker {
   display: block;
-  color: var(--ui-color-primary);
-  font-size: 24rpx;
-  font-weight: 800;
+  color: #25755e;
+  font-size: 22rpx;
+  font-weight: 900;
 }
 
 .success-title {
   display: block;
-  margin: 12rpx 0;
-  color: var(--ui-color-text);
-  font-size: 42rpx;
+  margin-top: 8rpx;
+  color: #17202f;
+  font-size: 34rpx;
   font-weight: 900;
-  line-height: 1.25;
+  line-height: 1.38;
 }
 
-.credential-status-row {
+.status-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12rpx;
-  margin-top: 18rpx;
+  gap: 10rpx;
+  margin-top: 14rpx;
 }
 
-.credential-status-row text {
-  padding: 8rpx 14rpx;
-  border-radius: 999rpx;
-  background: var(--ui-color-primary-soft);
-  color: var(--ui-color-primary);
-  font-size: 22rpx;
+.status-row text {
+  padding: 5rpx 11rpx;
+  border-radius: 4rpx;
+  background: #e9f0f4;
+  color: #426078;
+  font-size: 19rpx;
   font-weight: 800;
 }
 
-.qr-panel {
-  display: flex;
-  flex-direction: column;
+.credential-card,
+.section-card,
+.checkin-card {
+  border: 1px solid #dce5e8;
+  border-radius: 8rpx;
+  background: #ffffff;
+  box-shadow: 0 8rpx 24rpx rgba(23, 32, 47, 0.05);
+}
+
+.credential-card {
+  display: grid;
+  grid-template-columns: 220rpx minmax(0, 1fr);
   align-items: center;
   gap: 24rpx;
-  padding: 28rpx;
+  padding: 26rpx;
 }
 
-.qr-panel :deep(.qr-shell) {
-  width: 320rpx;
-  height: 320rpx;
-  border-radius: 18rpx;
+.qr-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.qr-code {
-  margin-top: 10rpx;
-  color: var(--ui-color-muted);
-  font-size: 20rpx;
+.credential-card :deep(.qr-shell) {
+  width: 210rpx;
+  height: 210rpx;
 }
 
 .qr-copy {
-  width: 100%;
   min-width: 0;
-  text-align: center;
 }
 
 .qr-title,
-.section-title {
+.section-title,
+.actions-title {
   display: block;
-  color: var(--ui-color-text);
-  font-size: 30rpx;
+  color: #182336;
+  font-size: 28rpx;
   font-weight: 900;
+  line-height: 1.35;
 }
 
-.qr-desc {
+.qr-description {
   display: block;
-  margin-top: 12rpx;
-  color: var(--ui-color-muted);
-  font-size: 24rpx;
-  line-height: 1.6;
+  margin-top: 11rpx;
+  color: #6b7785;
+  font-size: 20rpx;
+  line-height: 1.55;
 }
 
-.section {
-  padding: 28rpx;
+.registration-no {
+  display: block;
+  margin-top: 16rpx;
+  color: #315d7d;
+  font-size: 19rpx;
+  font-weight: 800;
+  line-height: 1.45;
+  word-break: break-all;
 }
 
-.section-title {
-  margin-bottom: 18rpx;
+.section-card {
+  padding: 0 24rpx;
 }
 
-.info-line {
+.section-head {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 24rpx;
-  padding: 14rpx 0;
-  border-top: 1px solid var(--ui-color-border);
+  gap: 20rpx;
+  min-height: 84rpx;
+  border-bottom: 1px solid #edf0f2;
+}
+
+.section-state {
+  color: #26745d;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.info-list {
+  padding: 2rpx 0;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 122rpx minmax(0, 1fr);
+  gap: 20rpx;
+  padding: 20rpx 0;
+  border-bottom: 1px solid #f0f2f3;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.info-row:last-child {
+  border-bottom: 0;
 }
 
 .info-label {
-  color: var(--ui-color-subtle);
-  font-size: 24rpx;
+  color: #8a95a0;
 }
 
 .info-value {
-  flex: 1;
-  color: var(--ui-color-text);
-  font-size: 25rpx;
-  font-weight: 700;
-  line-height: 1.45;
+  min-width: 0;
+  color: #374454;
   text-align: right;
   word-break: break-word;
 }
 
-.info-value--highlight {
-  color: var(--ui-color-primary);
-  font-size: 28rpx;
+.info-value--strong {
+  color: #244861;
   font-weight: 900;
 }
 
-.actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
-}
-
-.actions.is-highlight {
-  padding: 20rpx;
-  border: 1px solid var(--ui-color-primary);
-  border-radius: var(--ui-radius);
-  background: var(--ui-color-primary-soft);
-}
-
-.action {
-  width: 100%;
-}
-
-.empty-copy {
-  color: var(--ui-color-muted);
-  font-size: 25rpx;
-  line-height: 1.6;
-}
-
-.wechat-user {
+.checkin-card {
   display: flex;
   align-items: center;
-  gap: 18rpx;
-  padding-top: 14rpx;
-  border-top: 1px solid var(--ui-color-border);
+  justify-content: space-between;
+  gap: 22rpx;
+  padding: 23rpx 24rpx;
 }
 
-.wechat-avatar {
-  display: grid;
-  place-items: center;
-  width: 76rpx;
-  height: 76rpx;
-  border-radius: 50%;
-  background: var(--ui-color-primary-soft);
-  color: var(--ui-color-primary);
-  font-size: 30rpx;
-  font-weight: 900;
-}
-
-.wechat-user__copy {
+.checkin-copy {
   display: flex;
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 6rpx;
-  color: var(--ui-color-text);
-  font-size: 25rpx;
-  font-weight: 800;
+  gap: 5rpx;
 }
 
-.wechat-user__copy text + text {
-  color: var(--ui-color-muted);
+.checkin-status {
+  color: #536171;
+  font-size: 21rpx;
+}
+
+.checkin-time {
+  color: #8a95a0;
+  font-size: 19rpx;
+}
+
+.checkin-button {
+  min-width: 126rpx;
+  height: 62rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  border: 0;
+  border-radius: 7rpx;
+  background: #315d7d;
+  color: #ffffff;
+  font-size: 22rpx;
+  font-weight: 800;
+  line-height: 62rpx;
+}
+
+.checkin-button::after,
+.action-button::after,
+.my-registrations-button::after {
+  border: 0;
+}
+
+.actions-section {
+  margin-top: 6rpx;
+}
+
+.actions-title {
+  margin-bottom: 13rpx;
+  padding: 0 4rpx;
+  font-size: 25rpx;
+}
+
+.actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.action-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  height: 74rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  border: 1px solid #dce5e8;
+  border-radius: 7rpx;
+  background: #ffffff;
+  color: #30465a;
+  font-size: 22rpx;
+  font-weight: 800;
+  line-height: 74rpx;
+  text-align: left;
+}
+
+.action-arrow {
+  color: #99a3ad;
+  font-size: 31rpx;
+  font-weight: 500;
+}
+
+.my-registrations-button {
+  height: 72rpx;
+  margin: 8rpx 0 0;
+  border: 1px solid #d5e0e5;
+  border-radius: 7rpx;
+  background: rgba(255, 255, 255, 0.9);
+  color: #315d7d;
   font-size: 23rpx;
-  font-weight: 600;
+  font-weight: 800;
+  line-height: 70rpx;
+}
+
+@media (max-width: 370px) {
+  .credential-card {
+    grid-template-columns: 184rpx minmax(0, 1fr);
+    gap: 18rpx;
+    padding: 22rpx;
+  }
+
+  .credential-card :deep(.qr-shell) {
+    width: 176rpx;
+    height: 176rpx;
+  }
 }
 </style>

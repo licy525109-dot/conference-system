@@ -1,5 +1,5 @@
 export const GUEST_SCHEDULE_TEMPLATE_CODE = "GUEST_SCHEDULE_UPDATED";
-export const GUEST_SCHEDULE_PAGE = "pages/registrations/schedule";
+export const GUEST_SCHEDULE_PAGE = "pages/notifications/index";
 
 export const DEFAULT_GUEST_FIELD_MAPPING = {
   attendeeId: "系统参会人ID",

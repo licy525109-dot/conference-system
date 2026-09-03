@@ -126,6 +126,12 @@ export function updateConference(id: string, input: Record<string, unknown>) {
   });
 }
 
+export function deleteConference(id: string) {
+  return apiRequest<{ id: string; deleted: boolean }>(`/admin/conferences/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
 export function updateConferenceStatus(id: string, status: string) {
   return apiRequest<Conference>(`/admin/conferences/${encodeURIComponent(id)}/status`, {
     method: "PATCH",
@@ -226,6 +232,19 @@ export function reviewPaymentException(orderNo: string, note: string) {
 
 export function listRegistrations(params: { page?: number; pageSize?: number; keyword?: string; conferenceId?: string; status?: string }) {
   return apiRequest<ApiList<AdminRegistration>>(`/admin/registrations${toQuery(params)}`);
+}
+
+export function createComplimentaryRegistration(input: Record<string, unknown>) {
+  return apiRequest<AdminRegistrationDetail>("/admin/registrations/complimentary", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function deleteRegistration(id: string) {
+  return apiRequest<{ id: string; registrationNo: string; deleted: boolean }>(`/admin/registrations/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
 }
 
 export function exportRegistrationsExcel(params: {
@@ -367,6 +386,12 @@ export function updateCoupon(id: string, input: Record<string, unknown>) {
   return apiRequest<Coupon>(`/admin/coupons/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(input)
+  });
+}
+
+export function deleteCoupon(id: string) {
+  return apiRequest<{ id: string; deleted: boolean }>(`/admin/coupons/${encodeURIComponent(id)}`, {
+    method: "DELETE"
   });
 }
 
@@ -805,6 +830,19 @@ export function updateTabbar(input: Record<string, unknown>) {
 
 export function listUsers(params: { page?: number; pageSize?: number; keyword?: string }) {
   return apiRequest<ApiList<AdminAppUser>>(`/admin/users${toQuery(params)}`);
+}
+
+export function updateUser(id: string, input: { nickname?: string | null; phone?: string | null }) {
+  return apiRequest<AdminAppUser>(`/admin/users/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function deleteUser(id: string) {
+  return apiRequest<{ id: string; deleted: boolean; historicalRecordsRetained: boolean }>(`/admin/users/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
 }
 
 export function listMemberLevels() {
