@@ -113,6 +113,7 @@ export class AuthService {
         id: true,
         openid: true,
         nickname: true,
+        phone: true,
         wechatNickname: true,
         wechatAvatarUrl: true,
         createdAt: true,
@@ -168,6 +169,35 @@ export class AuthService {
     });
 
     return ok({ user: formatUserProfile(user) });
+  }
+
+  async bindWechatPhone(
+    currentUser: CurrentUser,
+    input: unknown
+  ): Promise<ApiResponse<{ user: CurrentUser; linkedOrders: number; linkedRegistrations: number }>> {
+    const body = readObject(input);
+    const code = readRequiredString(body, "code");
+    const phoneInfo = await this.wechatAuthService.getPhoneNumber(code);
+    const phone = normalizeWechatPhone(phoneInfo.purePhoneNumber || phoneInfo.phoneNumber);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: currentUser.id },
+        data: { phone, lastActiveAt: new Date() },
+        select: userProfileSelect
+      });
+      const [orders, registrations] = await Promise.all([
+        tx.order.updateMany({ where: { phone, userId: null }, data: { userId: currentUser.id } }),
+        tx.registration.updateMany({ where: { phone, userId: null }, data: { userId: currentUser.id } })
+      ]);
+      return { user, linkedOrders: orders.count, linkedRegistrations: registrations.count };
+    });
+
+    return ok({
+      user: formatUserProfile(result.user),
+      linkedOrders: result.linkedOrders,
+      linkedRegistrations: result.linkedRegistrations
+    });
   }
 
   async saveWechatAvatar(
@@ -229,6 +259,7 @@ const userProfileSelect = {
   id: true,
   openid: true,
   nickname: true,
+  phone: true,
   wechatNickname: true,
   wechatAvatarUrl: true,
   createdAt: true,
@@ -239,6 +270,7 @@ function formatUserProfile(user: {
   id: string;
   openid: string | null;
   nickname: string | null;
+  phone: string | null;
   wechatNickname: string | null;
   wechatAvatarUrl: string | null;
   createdAt: Date;
@@ -248,11 +280,20 @@ function formatUserProfile(user: {
     id: user.id,
     openid: user.openid,
     nickname: user.nickname,
+    phone: user.phone,
     wechatNickname: user.wechatNickname,
     wechatAvatarUrl: user.wechatAvatarUrl,
     registeredAt: user.createdAt.toISOString(),
     lastActiveAt: user.lastActiveAt?.toISOString() ?? null
   };
+}
+
+function normalizeWechatPhone(value: string): string {
+  const normalized = value.trim().replace(/^\+86/, "");
+  if (!/^1\d{10}$/.test(normalized)) {
+    throw new BadRequestException("微信返回的手机号格式不正确");
+  }
+  return normalized;
 }
 
 function ok<TData>(data: TData): ApiResponse<TData> {

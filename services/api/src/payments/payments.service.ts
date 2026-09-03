@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { OrderStatus, PaymentProvider, PaymentStatus } from "@prisma/client";
+import { OrderStatus, PaymentProvider, PaymentStatus, RefundStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { PaymentSuccessService } from "./payment-success.service";
@@ -147,13 +147,17 @@ export class PaymentsService {
   }
 
   private async applyRefundNotify(input: ParsedRefundNotify) {
-    const resultStatus = input.status === "SUCCESS" ? "SUCCESS" : "FAILED";
+    const resultStatus = mapWechatRefundStatus(input.status);
     const registrationRefund = await this.prisma.refund.findFirst({
       where: { OR: [{ outRefundNo: input.outRefundNo }, { refundNo: input.outRefundNo }] },
       include: { order: true }
     });
     if (registrationRefund) {
       if (registrationRefund.amountCent !== input.amountCent) throw new ConflictException("WeChat refund amount does not match registration refund amount");
+      if (registrationRefund.order && input.totalAmountCent !== (registrationRefund.order.paidAmountCent ?? registrationRefund.order.payableAmountCent)) {
+        throw new ConflictException("WeChat refund total does not match registration order paid amount");
+      }
+      if (registrationRefund.status === "SUCCESS") return;
       if (registrationRefund.status === resultStatus) return;
       await this.prisma.$transaction(async (tx) => {
         await tx.refund.update({
@@ -162,7 +166,7 @@ export class PaymentsService {
             provider: PaymentProvider.WECHAT,
             providerRefundId: input.providerRefundId,
             status: resultStatus,
-            processedAt: input.successTime ?? new Date(),
+            processedAt: resultStatus === RefundStatus.PROCESSING ? null : input.successTime ?? new Date(),
             failedReason: resultStatus === "FAILED" ? input.status : null
           }
         });
@@ -180,6 +184,10 @@ export class PaymentsService {
     });
     if (!mallRefund) throw new NotFoundException("Refund out_refund_no not found");
     if (mallRefund.amountCent !== input.amountCent) throw new ConflictException("WeChat refund amount does not match mall refund amount");
+    if (input.totalAmountCent !== (mallRefund.order.paidAmountCent ?? mallRefund.order.payableAmountCent)) {
+      throw new ConflictException("WeChat refund total does not match mall order paid amount");
+    }
+    if (mallRefund.status === "SUCCESS") return;
     if (mallRefund.status === resultStatus) return;
     await this.prisma.$transaction(async (tx) => {
       await tx.mallRefund.update({
@@ -188,7 +196,7 @@ export class PaymentsService {
           provider: PaymentProvider.WECHAT,
           providerRefundId: input.providerRefundId,
           status: resultStatus,
-          processedAt: input.successTime ?? new Date(),
+          processedAt: resultStatus === RefundStatus.PROCESSING ? null : input.successTime ?? new Date(),
           failedReason: resultStatus === "FAILED" ? input.status : null
         }
       });
@@ -237,6 +245,7 @@ interface ParsedRefundNotify {
   providerRefundId: string;
   status: string;
   amountCent: number;
+  totalAmountCent: number;
   successTime: Date | null;
 }
 
@@ -259,16 +268,28 @@ function readRefundNotifyBody(input: unknown): RefundNotifyBody {
 
 function parseRefundNotifyResource(input: Record<string, unknown>): ParsedRefundNotify {
   const amount = input.amount;
-  if (!isRecord(amount) || !Number.isInteger(amount.refund)) throw new BadRequestException("WeChat refund notify amount.refund is required");
+  if (!isRecord(amount) || !Number.isInteger(amount.refund) || !Number.isInteger(amount.total)) {
+    throw new BadRequestException("WeChat refund notify amount.refund and amount.total are required");
+  }
   const refundAmountCent = amount.refund as number;
+  const totalAmountCent = amount.total as number;
+  if (refundAmountCent < 0 || totalAmountCent < 0) throw new BadRequestException("WeChat refund notify amounts must be non-negative integers");
   const successTime = typeof input.success_time === "string" ? new Date(input.success_time) : null;
   return {
     outRefundNo: readRequiredString(input, "out_refund_no"),
     providerRefundId: readRequiredString(input, "refund_id"),
     status: readRequiredString(input, "refund_status"),
     amountCent: refundAmountCent,
+    totalAmountCent,
     successTime: successTime && !Number.isNaN(successTime.getTime()) ? successTime : null
   };
+}
+
+function mapWechatRefundStatus(status: string): RefundStatus {
+  if (status === "SUCCESS") return RefundStatus.SUCCESS;
+  if (status === "PROCESSING") return RefundStatus.PROCESSING;
+  if (status === "CLOSED" || status === "ABNORMAL") return RefundStatus.FAILED;
+  throw new BadRequestException("WeChat refund notify contains an unsupported status");
 }
 
 function readRequiredString(input: Record<string, unknown>, field: string): string {

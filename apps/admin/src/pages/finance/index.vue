@@ -139,11 +139,12 @@
         <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
         <el-table-column prop="refundNotice" label="处理说明" min-width="260" show-overflow-tooltip />
         <el-table-column prop="createdAt" label="申请时间" width="190" />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="350" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === 'REQUESTED'" size="small" type="primary" @click="approveRefundRow(row)">审核通过</el-button>
+            <el-button v-if="row.sourceType === 'REGISTRATION' && row.status === 'APPROVED'" size="small" type="primary" @click="approveRefundRow(row)">{{ row.failedReason ? "重新提交退款" : "提交微信退款" }}</el-button>
             <el-button v-if="row.status === 'APPROVED' || row.status === 'PROCESSING'" size="small" @click="queryRefundRow(row.id)">查询结果</el-button>
-            <el-button v-if="row.status === 'REQUESTED' || row.status === 'APPROVED'" size="small" @click="rejectRefundRow(row.id)">驳回</el-button>
+            <el-button v-if="row.status === 'REQUESTED' || (row.status === 'APPROVED' && row.provider !== 'WECHAT')" size="small" @click="rejectRefundRow(row.id)">驳回</el-button>
             <el-button size="small" @click="openRefundDetail(row)">详情</el-button>
           </template>
         </el-table-column>

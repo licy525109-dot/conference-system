@@ -43,10 +43,14 @@
           <text v-if="item.summary" class="message-summary">{{ item.summary }}</text>
           <view v-if="schedulePreview(item).length" class="schedule-preview">
             <view v-for="schedule in schedulePreview(item)" :key="schedule.id" class="preview-row">
-              <text class="preview-time">{{ timeOnly(schedule.startsAt) }}</text>
+              <view class="preview-time">
+                <text>{{ dayOnly(schedule.startsAt) }}</text>
+                <text>{{ timeOnly(schedule.startsAt) }}</text>
+              </view>
               <view class="preview-copy">
                 <text>{{ schedule.name }}</text>
                 <text v-if="schedule.location || schedule.tableNo">{{ [schedule.location, schedule.tableNo].filter(Boolean).join(' · ') }}</text>
+                <text v-if="schedule.role || schedule.shareTopic">{{ [schedule.role, schedule.shareTopic].filter(Boolean).join(' · ') }}</text>
               </view>
             </view>
           </view>
@@ -58,6 +62,44 @@
       </view>
     </view>
 
+    <view v-if="selectedNotification" class="detail-mask" @click="closeDetail">
+      <view class="detail-sheet" @click.stop>
+        <view class="detail-head">
+          <view class="detail-head__copy">
+            <text class="detail-kicker">会务安排</text>
+            <text class="detail-title">{{ selectedNotification.title }}</text>
+          </view>
+          <button class="detail-close" aria-label="关闭" @click="closeDetail">×</button>
+        </view>
+
+        <scroll-view class="detail-scroll" scroll-y>
+          <text v-if="selectedNotification.summary" class="detail-summary">{{ selectedNotification.summary }}</text>
+          <view v-if="detailLoading" class="detail-loading">正在同步完整安排...</view>
+          <view v-if="detailSchedules.length" class="detail-schedules">
+            <view v-for="schedule in detailSchedules" :key="schedule.id" class="detail-schedule">
+              <view class="detail-schedule__time">
+                <text>{{ fullDay(schedule.startsAt) }}</text>
+                <text>{{ timeRange(schedule.startsAt, schedule.endsAt) }}</text>
+              </view>
+              <text class="detail-schedule__type">{{ schedule.typeLabel || typeLabel(schedule.type) }}</text>
+              <text class="detail-schedule__name">{{ schedule.name }}</text>
+              <view class="detail-fields">
+                <view v-if="schedule.location" class="detail-field"><text>地点</text><text>{{ schedule.location }}</text></view>
+                <view v-if="schedule.role" class="detail-field"><text>身份</text><text>{{ schedule.role }}</text></view>
+                <view v-if="schedule.tableNo" class="detail-field detail-field--strong"><text>席位</text><text>{{ schedule.tableNo }}{{ schedule.isTableLeader ? "，本桌桌长" : "" }}</text></view>
+                <view v-if="schedule.shareTopic" class="detail-field"><text>内容</text><text>{{ schedule.shareTopic }}</text></view>
+                <view v-if="schedule.notes" class="detail-note"><text>{{ schedule.notes }}</text></view>
+              </view>
+            </view>
+          </view>
+          <view v-else-if="!detailLoading" class="detail-empty">这条通知没有可展示的事项，请联系会务组核对发布内容。</view>
+        </scroll-view>
+
+        <button v-if="selectedConferenceId" class="detail-action" @click="openFullSchedule">打开完整日程</button>
+      </view>
+    </view>
+
+    <WechatProfilePrompt />
     <CustomTabbar active-page-key="notifications" />
   </view>
 </template>
@@ -66,12 +108,14 @@
 import { onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import CustomTabbar from "@/components/CustomTabbar.vue";
+import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
 import { clearExpiredAuthSession, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getGuestScheduleSubscriptionConfig, subscribeGuestScheduleUpdates, type GuestScheduleSubscriptionConfig } from "@/services/guest-schedule";
-import { getMyNotifications, markAllNotificationsRead, markNotificationRead, type UserNotification } from "@/services/user-notifications";
+import { getMyGuestSchedules, type MyGuestScheduleItem } from "@/services/guest-schedule";
+import { getMyNotifications, markAllNotificationsRead, markNotificationRead, type UserNotification, type UserNotificationScheduleItem } from "@/services/user-notifications";
 
 const items = ref<UserNotification[]>([]);
 const unreadCount = ref(0);
@@ -81,6 +125,10 @@ const filter = ref<"all" | "unread">("all");
 const subscriptionConfig = ref<GuestScheduleSubscriptionConfig | null>(null);
 const subscribing = ref(false);
 const subscribed = ref(false);
+const selectedNotification = ref<UserNotification | null>(null);
+const detailSchedules = ref<Array<UserNotificationScheduleItem | MyGuestScheduleItem>>([]);
+const detailLoading = ref(false);
+const selectedConferenceId = ref("");
 
 onShow(() => {
   void load();
@@ -138,8 +186,34 @@ async function openNotification(item: UserNotification) {
       console.error("[USER_NOTIFICATION_READ_ERROR]", err);
     }
   }
-  const route = item.route?.startsWith("/pages/") ? item.route : "/pages/registrations/schedule";
-  uni.navigateTo({ url: route });
+  selectedNotification.value = item;
+  selectedConferenceId.value = item.payloadJson?.conferenceId || "";
+  detailSchedules.value = item.payloadJson?.items || [];
+  if (!selectedConferenceId.value) return;
+
+  detailLoading.value = true;
+  try {
+    const currentItems = await getMyGuestSchedules(selectedConferenceId.value);
+    const ids = new Set(item.payloadJson?.assignmentIds || []);
+    const matching = ids.size > 0 ? currentItems.filter((schedule) => ids.has(schedule.id)) : currentItems;
+    if (matching.length > 0) detailSchedules.value = matching;
+  } catch (err) {
+    console.error("[USER_NOTIFICATION_DETAIL_LOAD_ERROR]", err);
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
+function closeDetail() {
+  selectedNotification.value = null;
+  detailSchedules.value = [];
+  selectedConferenceId.value = "";
+}
+
+function openFullSchedule() {
+  const conferenceId = selectedConferenceId.value;
+  closeDetail();
+  uni.navigateTo({ url: `/pages/registrations/schedule?conferenceId=${encodeURIComponent(conferenceId)}` });
 }
 
 async function subscribe() {
@@ -169,6 +243,22 @@ function timeOnly(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 
+function dayOnly(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(new Date(value));
+}
+
+function fullDay(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "short" }).format(new Date(value));
+}
+
+function timeRange(startsAt: string, endsAt: string | null) {
+  return endsAt ? `${timeOnly(startsAt)} - ${timeOnly(endsAt)}` : timeOnly(startsAt);
+}
+
+function typeLabel(type: string) {
+  return ({ WORKSHOP: "工作坊", DINNER: "晚宴", SPEECH: "分享", REHEARSAL: "彩排", RECEPTION: "接待", OTHER: "其他" } as Record<string, string>)[type] || "会务安排";
+}
+
 function formatMessageTime(value: string) {
   const date = new Date(value);
   const now = new Date();
@@ -195,9 +285,9 @@ function formatMessageTime(value: string) {
   gap: 20rpx;
 }
 
-.page-title { display: block; color: #142033; font-size: 40rpx; font-weight: 900; line-height: 1.25; }
-.page-subtitle { display: block; margin-top: 8rpx; color: #778292; font-size: 22rpx; line-height: 1.45; }
-.text-button { margin: 0; padding: 12rpx 0; border: 0; background: transparent; color: #315f7d; font-size: 23rpx; font-weight: 800; line-height: 1; }
+.page-title { display: block; color: #142033; font-size: 44rpx; font-weight: 900; line-height: 1.25; }
+.page-subtitle { display: block; margin-top: 10rpx; color: #687585; font-size: 28rpx; line-height: 1.5; }
+.text-button { margin: 0; padding: 12rpx 0; border: 0; background: transparent; color: #315f7d; font-size: 28rpx; font-weight: 800; line-height: 1; }
 .text-button::after,
 .filter-bar button::after,
 .reminder-button::after { border: 0; }
@@ -209,12 +299,12 @@ function formatMessageTime(value: string) {
   border-radius: 12rpx;
   background: #edf7f3;
 }
-.reminder-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5rpx; color: #5b746d; font-size: 20rpx; line-height: 1.4; }
-.reminder-title { color: #173f35; font-size: 25rpx; font-weight: 900; }
-.reminder-button { min-width: 116rpx; height: 58rpx; margin: 0; padding: 0 18rpx; border: 0; border-radius: 8rpx; background: #226c58; color: #fff; font-size: 22rpx; font-weight: 800; line-height: 58rpx; }
+.reminder-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5rpx; color: #4f6861; font-size: 27rpx; line-height: 1.5; }
+.reminder-title { color: #173f35; font-size: 31rpx; font-weight: 900; }
+.reminder-button { min-width: 126rpx; height: 66rpx; margin: 0; padding: 0 20rpx; border: 0; border-radius: 8rpx; background: #226c58; color: #fff; font-size: 27rpx; font-weight: 800; line-height: 66rpx; }
 
 .filter-bar { display: inline-grid; grid-template-columns: repeat(2, 1fr); gap: 4rpx; margin: 28rpx 0 20rpx; padding: 4rpx; border-radius: 10rpx; background: #e7ebee; }
-.filter-bar button { min-width: 138rpx; height: 56rpx; margin: 0; padding: 0 20rpx; border: 0; border-radius: 7rpx; background: transparent; color: #697585; font-size: 22rpx; font-weight: 800; line-height: 56rpx; }
+.filter-bar button { min-width: 150rpx; height: 64rpx; margin: 0; padding: 0 22rpx; border: 0; border-radius: 7rpx; background: transparent; color: #697585; font-size: 28rpx; font-weight: 800; line-height: 64rpx; }
 .filter-bar button.active { background: #fff; color: #16283b; box-shadow: 0 2rpx 8rpx rgba(20, 32, 51, 0.08); }
 
 .message-list { display: flex; flex-direction: column; gap: 16rpx; }
@@ -224,16 +314,43 @@ function formatMessageTime(value: string) {
 .message-dot { width: 10rpx; height: 10rpx; border-radius: 50%; background: #c5cbd1; }
 .unread .message-dot { background: #2e6689; }
 .message-body { min-width: 0; }
-.message-meta { color: #87919d; font-size: 20rpx; }
-.message-title { display: block; margin-top: 13rpx; color: #142033; font-size: 29rpx; font-weight: 900; line-height: 1.42; }
-.message-summary { display: block; margin-top: 9rpx; color: #5f6b79; font-size: 22rpx; line-height: 1.55; }
-.schedule-preview { display: flex; flex-direction: column; gap: 12rpx; margin-top: 20rpx; padding: 17rpx 18rpx; border-left: 4rpx solid #b7cbd7; background: #f5f7f8; }
-.preview-row { display: grid; grid-template-columns: 76rpx minmax(0, 1fr); gap: 14rpx; }
-.preview-time { color: #28536d; font-size: 22rpx; font-weight: 900; }
-.preview-copy { display: flex; min-width: 0; flex-direction: column; gap: 3rpx; color: #243447; font-size: 22rpx; font-weight: 800; line-height: 1.4; }
-.preview-copy text + text { color: #7a8591; font-size: 19rpx; font-weight: 600; }
-.message-footer { margin-top: 20rpx; padding-top: 16rpx; border-top: 1px solid #e8ecef; color: #8a949e; font-size: 20rpx; }
+.message-meta { color: #74808d; font-size: 26rpx; }
+.message-title { display: block; margin-top: 15rpx; color: #142033; font-size: 36rpx; font-weight: 900; line-height: 1.42; }
+.message-summary { display: block; margin-top: 10rpx; color: #4f5d6c; font-size: 30rpx; line-height: 1.6; }
+.schedule-preview { display: flex; flex-direction: column; gap: 12rpx; margin-top: 20rpx; padding: 17rpx 18rpx; border: 1px solid #d7e1e6; border-radius: 8rpx; background: #f5f7f8; }
+.preview-row { display: grid; grid-template-columns: 104rpx minmax(0, 1fr); gap: 18rpx; }
+.preview-time { display: flex; flex-direction: column; gap: 3rpx; color: #28536d; font-size: 27rpx; font-weight: 900; }
+.preview-copy { display: flex; min-width: 0; flex-direction: column; gap: 5rpx; color: #243447; font-size: 30rpx; font-weight: 800; line-height: 1.45; }
+.preview-copy text + text { color: #65717e; font-size: 26rpx; font-weight: 600; }
+.message-footer { margin-top: 22rpx; padding-top: 18rpx; border-top: 1px solid #e8ecef; color: #737f8b; font-size: 27rpx; }
 .message-footer text:last-child { color: #315f7d; font-weight: 800; }
+
+.detail-mask { position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end; background: rgba(13, 23, 35, 0.5); }
+.detail-sheet { display: flex; width: 100%; max-height: 88vh; flex-direction: column; padding: 30rpx 30rpx calc(30rpx + env(safe-area-inset-bottom)); border-radius: 20rpx 20rpx 0 0; background: #f7f9f9; box-sizing: border-box; }
+.detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 22rpx; padding-bottom: 24rpx; border-bottom: 1px solid #dce3e6; }
+.detail-head__copy { min-width: 0; flex: 1; }
+.detail-kicker { display: block; color: #2e6689; font-size: 27rpx; font-weight: 900; }
+.detail-title { display: block; margin-top: 8rpx; color: #142033; font-size: 38rpx; font-weight: 900; line-height: 1.42; }
+.detail-close { width: 68rpx; height: 68rpx; margin: 0; padding: 0; border: 0; border-radius: 50%; background: #e7ecee; color: #213247; font-size: 44rpx; line-height: 64rpx; }
+.detail-close::after,
+.detail-action::after { border: 0; }
+.detail-scroll { min-height: 240rpx; flex: 1; overflow-x: hidden; overflow-y: auto; padding: 24rpx 0; box-sizing: border-box; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.detail-scroll :deep(.uni-scroll-view) { height: 100%; min-height: 0; }
+.detail-scroll :deep(.uni-scroll-view-content) { padding-bottom: 10rpx; box-sizing: border-box; }
+.detail-summary { display: block; margin-bottom: 22rpx; color: #536171; font-size: 30rpx; line-height: 1.6; }
+.detail-loading,
+.detail-empty { padding: 42rpx 20rpx; color: #6c7885; font-size: 30rpx; line-height: 1.55; text-align: center; }
+.detail-schedules { display: flex; flex-direction: column; gap: 20rpx; }
+.detail-schedule { padding: 26rpx; border: 1px solid #dce4e7; border-radius: 10rpx; background: #ffffff; }
+.detail-schedule__time { display: flex; align-items: baseline; justify-content: space-between; gap: 16rpx; color: #28536d; font-size: 30rpx; font-weight: 900; }
+.detail-schedule__type { display: inline-block; margin-top: 20rpx; padding: 6rpx 12rpx; border-radius: 6rpx; background: #e8f1f5; color: #28536d; font-size: 25rpx; font-weight: 900; }
+.detail-schedule__name { display: block; margin-top: 13rpx; color: #152237; font-size: 36rpx; font-weight: 900; line-height: 1.45; }
+.detail-fields { display: flex; flex-direction: column; gap: 13rpx; margin-top: 20rpx; }
+.detail-field { display: grid; grid-template-columns: 80rpx minmax(0, 1fr); gap: 14rpx; color: #273649; font-size: 30rpx; line-height: 1.5; }
+.detail-field text:first-child { color: #778390; }
+.detail-field--strong text:last-child { color: #9a711d; font-weight: 900; }
+.detail-note { padding: 18rpx 20rpx; border-radius: 8rpx; background: #f1f4f5; color: #3c4a59; font-size: 29rpx; line-height: 1.6; }
+.detail-action { min-height: 86rpx; margin: 10rpx 0 0; border: 0; border-radius: 10rpx; background: #285d7e; color: #ffffff; font-size: 31rpx; font-weight: 900; line-height: 86rpx; }
 
 @media (min-width: 760px) { .page { max-width: 760px; margin: 0 auto; } }
 </style>

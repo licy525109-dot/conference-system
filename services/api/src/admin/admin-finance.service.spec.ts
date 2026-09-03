@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import { InvoiceStatus, OrderStatus, PaymentProvider, PaymentStatus, RefundStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
@@ -8,15 +9,24 @@ import { PrismaService } from "../prisma.service";
 import { PublicOperationsService } from "./public-operations.service";
 import { AdminFinanceService, buildBillReconciliationResults, LocalPaymentRow, parseWechatBillRows } from "./admin-finance.service";
 import { CurrentAdmin } from "./current-admin";
+import { WechatPayRefundClient, WechatPayRefundQueryResult, WechatPayRefundResult } from "../payments/wechat-pay.refund-client";
 
 const admin: CurrentAdmin = { id: "admin-1", username: "admin", displayName: "管理员", permissions: ["*"] };
 const user: CurrentUser = { id: "user-1", openid: "openid-1", nickname: "用户" };
+const readableTestKeyPath = resolve(__dirname, "../../../../package.json");
 
 beforeEach(() => {
   delete process.env.REFUND_ENABLED;
   delete process.env.REFUND_MODE;
   delete process.env.MOCK_REFUND_ENABLED;
   delete process.env.WECHAT_REFUND_ENABLED;
+  delete process.env.WECHAT_PAY_REFUND_NOTIFY_URL;
+  delete process.env.WECHAT_PAY_APP_ID;
+  delete process.env.WECHAT_PAY_MCH_ID;
+  delete process.env.WECHAT_PAY_MCH_SERIAL_NO;
+  delete process.env.WECHAT_PAY_API_V3_KEY;
+  delete process.env.WECHAT_PAY_PRIVATE_KEY_PATH;
+  delete process.env.WECHAT_PAY_NOTIFY_URL;
   delete process.env.INVOICE_ENABLED;
 });
 
@@ -80,6 +90,20 @@ describe("AdminFinanceService production workflows", () => {
     assert.ok(result.data.steps.some((step) => step.includes("不会显示退款成功")));
   });
 
+  it("reports WeChat refund ready only when the complete merchant runtime config is present", async () => {
+    process.env.REFUND_ENABLED = "true";
+    process.env.REFUND_MODE = "wechat";
+    process.env.WECHAT_PAY_REFUND_NOTIFY_URL = "https://example.com/api/payments/wechat/refund-notify";
+    const service = new AdminFinanceService(createFinancePrismaMock());
+
+    const incomplete = await service.refundConfig();
+    assert.equal(incomplete.data.registration.wechatRefundEnabled, false);
+
+    withRegistrationWechatRefundConfig();
+    const complete = await service.refundConfig();
+    assert.equal(complete.data.registration.wechatRefundEnabled, true);
+  });
+
   it("mock registration refund can complete and update fully refunded order", async () => {
     process.env.REFUND_ENABLED = "true";
     process.env.REFUND_MODE = "mock";
@@ -94,6 +118,149 @@ describe("AdminFinanceService production workflows", () => {
     assert.equal(approvedData.status, RefundStatus.SUCCESS);
     assert.equal(approvedData.provider, PaymentProvider.MOCK);
     assert.equal(prisma.orders[0]?.status, OrderStatus.REFUNDED);
+  });
+
+  it("creates an idempotent user refund request from the server-side paid balance", async () => {
+    process.env.REFUND_ENABLED = "true";
+    const prisma = createFinancePrismaMock({ seededRefunds: false });
+    const service = new AdminFinanceService(prisma);
+
+    const first = await service.requestRegistrationRefund({ orderNo: "ORDER001", amountCent: 1, reason: "临时无法参会" }, user);
+    const second = await service.requestRegistrationRefund({ orderNo: "ORDER001", amountCent: 2, reason: "重复点击" }, user);
+
+    assert.equal((first.data as any).amountCent, 10000);
+    assert.equal((first.data as any).status, RefundStatus.REQUESTED);
+    assert.equal((second.data as any).id, (first.data as any).id);
+    assert.equal(prisma.orders[0]?.status, OrderStatus.PAID);
+  });
+
+  it("submits a real WeChat refund once and keeps the order paid until success", async () => {
+    withRegistrationWechatRefundConfig();
+    const prisma = createFinancePrismaMock({ seededRefunds: false, wechatPayment: true });
+    const refundClient = new FakeRefundClient({
+      refundId: "5030000708202609010000000001",
+      outRefundNo: "REG_REFUND_ORDER001",
+      status: "PROCESSING"
+    });
+    const service = new AdminFinanceService(prisma, refundClient as unknown as WechatPayRefundClient);
+    const created = await service.requestRegistrationRefund({ orderNo: "ORDER001", reason: "临时无法参会" }, user);
+
+    const approved = await service.approveRefund((created.data as any).id, admin);
+    const repeated = await service.approveRefund((created.data as any).id, admin);
+
+    assert.equal((approved.data as any).status, RefundStatus.PROCESSING);
+    assert.equal((repeated.data as any).status, RefundStatus.PROCESSING);
+    assert.equal(refundClient.calls.length, 1);
+    assert.equal(refundClient.calls[0]?.amountCent, 10000);
+    assert.equal(refundClient.calls[0]?.totalAmountCent, 10000);
+    assert.equal(prisma.orders[0]?.status, OrderStatus.PAID);
+  });
+
+  it("keeps a failed WeChat submission approved so the same refund number can be retried", async () => {
+    withRegistrationWechatRefundConfig();
+    const prisma = createFinancePrismaMock({ seededRefunds: false, wechatPayment: true });
+    const refundClient = new FailOnceRefundClient();
+    const service = new AdminFinanceService(prisma, refundClient as unknown as WechatPayRefundClient);
+    const created = await service.requestRegistrationRefund({ orderNo: "ORDER001", reason: "临时无法参会" }, user);
+    const refundId = (created.data as any).id;
+
+    await assert.rejects(() => service.approveRefund(refundId, admin), /temporary refund provider failure/);
+    const retryable = await prisma.refund.findUnique({ where: { id: refundId } });
+
+    assert.equal(retryable?.status, RefundStatus.APPROVED);
+    assert.equal(retryable?.processedAt, null);
+    assert.match(String(retryable?.failedReason), /temporary refund provider failure/);
+    await assert.rejects(
+      () => service.rejectRefund(refundId, { reason: "误操作驳回" }, admin),
+      (error: unknown) => error instanceof ConflictException && /结果未确认前不可驳回/.test(error.message)
+    );
+
+    const retried = await service.approveRefund(refundId, admin);
+    assert.equal((retried.data as any).status, RefundStatus.PROCESSING);
+    assert.equal(refundClient.calls.length, 2);
+    assert.equal(refundClient.calls[0]?.outRefundNo, refundClient.calls[1]?.outRefundNo);
+  });
+
+  it("waits for a provider query before marking an accepted WeChat refund successful", async () => {
+    withRegistrationWechatRefundConfig();
+    const prisma = createFinancePrismaMock({ seededRefunds: false, wechatPayment: true });
+    const refundClient = new FakeRefundClient(
+      {
+        refundId: "5030000708202609010000000002",
+        outRefundNo: "REG_REFUND_ORDER001",
+        status: "SUCCESS"
+      },
+      {
+        refundId: "5030000708202609010000000002",
+        outRefundNo: "REG_REFUND_ORDER001",
+        status: "SUCCESS",
+        amountCent: 10000,
+        totalAmountCent: 10000,
+        successTime: "2026-06-18T11:00:00+08:00"
+      }
+    );
+    const service = new AdminFinanceService(prisma, refundClient as unknown as WechatPayRefundClient);
+    const created = await service.requestRegistrationRefund({ orderNo: "ORDER001", reason: "临时无法参会" }, user);
+
+    const approved = await service.approveRefund((created.data as any).id, admin);
+    assert.equal((approved.data as any).status, RefundStatus.PROCESSING);
+    assert.equal(prisma.orders[0]?.status, OrderStatus.PAID);
+    assert.equal(prisma.registrationUpdates.length, 0);
+
+    const queried = await service.queryRefund((created.data as any).id);
+    const repeated = await service.queryRefund((created.data as any).id);
+
+    assert.equal((queried.data as any).status, RefundStatus.SUCCESS);
+    assert.equal((repeated.data as any).status, RefundStatus.SUCCESS);
+    assert.equal(refundClient.queryCalls.length, 1);
+    assert.equal(prisma.orders[0]?.status, OrderStatus.REFUNDED);
+    assert.equal(prisma.registrationUpdates[0]?.data.status, "REFUNDED");
+  });
+
+  it("rejects a WeChat refund when the successful payment amount differs from the order", async () => {
+    withRegistrationWechatRefundConfig();
+    const prisma = createFinancePrismaMock({ seededRefunds: false, wechatPayment: true });
+    const originalFindFirst = prisma.payment.findFirst;
+    prisma.payment.findFirst = async (args: any) => {
+      const payment = await originalFindFirst(args);
+      return payment ? { ...payment, amountCent: 9999 } : null;
+    };
+    const refundClient = new FakeRefundClient({
+      refundId: "5030000708202609010000000004",
+      outRefundNo: "ignored-by-echo",
+      status: "PROCESSING"
+    });
+    const service = new AdminFinanceService(prisma, refundClient as unknown as WechatPayRefundClient);
+    const created = await service.requestRegistrationRefund({ orderNo: "ORDER001", reason: "临时无法参会" }, user);
+
+    await assert.rejects(
+      () => service.approveRefund((created.data as any).id, admin),
+      (error: unknown) => error instanceof ConflictException && /支付成功金额与订单实付金额不一致/.test(error.message)
+    );
+    assert.equal(refundClient.calls.length, 0);
+  });
+
+  it("rejects a WeChat refund response with a different merchant refund number", async () => {
+    withRegistrationWechatRefundConfig();
+    const prisma = createFinancePrismaMock({ seededRefunds: false, wechatPayment: true });
+    const refundClient = new FakeRefundClient(
+      {
+        refundId: "5030000708202609010000000005",
+        outRefundNo: "MISMATCHED_REFUND_NO",
+        status: "PROCESSING"
+      },
+      undefined,
+      false
+    );
+    const service = new AdminFinanceService(prisma, refundClient as unknown as WechatPayRefundClient);
+    const created = await service.requestRegistrationRefund({ orderNo: "ORDER001", reason: "临时无法参会" }, user);
+
+    await assert.rejects(
+      () => service.approveRefund((created.data as any).id, admin),
+      (error: unknown) => error instanceof ConflictException && /商户退款单号与本地不一致/.test(error.message)
+    );
+    const retryable = await prisma.refund.findUnique({ where: { id: (created.data as any).id } });
+    assert.equal(retryable?.status, RefundStatus.APPROVED);
   });
 
   it("parses WeChat bill text and produces matched, mismatch, system-only, and WeChat-only results", () => {
@@ -136,7 +303,7 @@ describe("PublicOperationsService finance user scope", () => {
   });
 });
 
-function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProbe?: boolean } = {}) {
+function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProbe?: boolean; wechatPayment?: boolean } = {}) {
   const now = new Date("2026-06-18T10:00:00.000Z");
   const orders = [
     {
@@ -173,7 +340,7 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
   const payments: any[] = [
     {
       id: "payment-1",
-      provider: PaymentProvider.MOCK,
+      provider: options.wechatPayment ? PaymentProvider.WECHAT : PaymentProvider.MOCK,
       status: PaymentStatus.SUCCESS,
       outTradeNo: "ORDER001",
       transactionId: "mock-order-1",
@@ -231,6 +398,7 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
   const invoices: any[] = [];
   const invoiceProfiles: any[] = [];
   const auditLogs: any[] = [];
+  const registrationUpdates: any[] = [];
   orders[0]!.refunds = refunds;
   mallOrders[0]!.refunds = mallRefunds;
 
@@ -239,9 +407,13 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
     mallOrders,
     invoices,
     auditLogs,
+    registrationUpdates,
     $transaction: async (input: any) => (Array.isArray(input) ? Promise.all(input) : input(prisma)),
     payment: {
       findMany: async () => payments,
+      findFirst: async ({ where }: any) => payments.find((item) =>
+        item.order?.id === where.orderId && item.provider === where.provider && item.status === where.status
+      ) ?? null,
       count: async () => payments.length,
       aggregate: async ({ where }: any = {}) => ({ _sum: { amountCent: sumAmounts(payments, where) } })
     },
@@ -318,7 +490,13 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
         return refund;
       }
     },
-    registration: { count: async () => 1, updateMany: async () => ({ count: 1 }) },
+    registration: {
+      count: async () => 1,
+      updateMany: async (args: any) => {
+        registrationUpdates.push(args);
+        return { count: 1 };
+      }
+    },
     conference: { findMany: async () => [{ id: "conf-1", title: "会议一", orders: [{ ...orders[0], payments: payments.filter((item) => item.provider === PaymentProvider.WECHAT && item.status === PaymentStatus.SUCCESS), discountAmountCent: 0 }], _count: { registrations: 1 } }] },
     invoiceApplication: {
       findMany: async ({ where }: any = {}) => invoices.filter((item) => !where?.userId || item.userId === where.userId),
@@ -351,6 +529,54 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
     }
   };
   return prisma as PrismaService & typeof prisma;
+}
+
+function withRegistrationWechatRefundConfig() {
+  process.env.REFUND_ENABLED = "true";
+  process.env.REFUND_MODE = "wechat";
+  process.env.WECHAT_PAY_APP_ID = "wx-test";
+  process.env.WECHAT_PAY_MCH_ID = "1900000001";
+  process.env.WECHAT_PAY_MCH_SERIAL_NO = "merchant-serial";
+  process.env.WECHAT_PAY_API_V3_KEY = "12345678901234567890123456789012";
+  process.env.WECHAT_PAY_PRIVATE_KEY_PATH = readableTestKeyPath;
+  process.env.WECHAT_PAY_NOTIFY_URL = "https://example.com/api/payments/wechat/notify";
+  process.env.WECHAT_PAY_REFUND_NOTIFY_URL = "https://example.com/api/payments/wechat/refund-notify";
+}
+
+class FakeRefundClient {
+  readonly calls: Array<Record<string, any>> = [];
+  readonly queryCalls: Array<Record<string, any>> = [];
+
+  constructor(
+    private readonly result: WechatPayRefundResult,
+    private readonly queryResult?: WechatPayRefundQueryResult,
+    private readonly echoOutRefundNo = true
+  ) {}
+
+  async createRefund(input: Record<string, any>): Promise<WechatPayRefundResult> {
+    this.calls.push(input);
+    return this.echoOutRefundNo ? { ...this.result, outRefundNo: input.outRefundNo } : this.result;
+  }
+
+  async queryRefund(input: Record<string, any>): Promise<WechatPayRefundQueryResult> {
+    this.queryCalls.push(input);
+    if (!this.queryResult) throw new Error("query result not configured");
+    return { ...this.queryResult, outRefundNo: input.outRefundNo };
+  }
+}
+
+class FailOnceRefundClient {
+  readonly calls: Array<Record<string, any>> = [];
+
+  async createRefund(input: Record<string, any>): Promise<WechatPayRefundResult> {
+    this.calls.push(input);
+    if (this.calls.length === 1) throw new Error("temporary refund provider failure");
+    return {
+      refundId: "5030000708202609010000000003",
+      outRefundNo: String(input.outRefundNo),
+      status: "PROCESSING"
+    };
+  }
 }
 
 function sumAmounts(items: Array<{ amountCent: number; status: PaymentStatus | RefundStatus; provider?: PaymentProvider | null }>, where: any = {}) {

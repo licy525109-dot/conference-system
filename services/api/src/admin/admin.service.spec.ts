@@ -555,6 +555,107 @@ describe("Admin management", () => {
     );
   });
 
+  it("previews and deletes only clearly identified Mock conference data", async () => {
+    const registrations = [
+      {
+        id: "registration-mock",
+        registrationNo: "RREG-MOCK",
+        attendeeName: "Mock 嘉宾",
+        source: RegistrationSource.PAYMENT,
+        orderId: "order-mock",
+        attendees: [{ skuId: "sku-1" }],
+        order: { orderNo: "ORDER-MOCK", payments: [{ provider: PaymentProvider.MOCK, status: PaymentStatus.SUCCESS }], refunds: [] }
+      },
+      {
+        id: "registration-complimentary",
+        registrationNo: "RREG-COMP",
+        attendeeName: "邀请嘉宾",
+        source: RegistrationSource.ADMIN_COMPLIMENTARY,
+        orderId: "order-comp",
+        attendees: [{ skuId: "sku-1" }],
+        order: { orderNo: "ORDER-COMP", payments: [], refunds: [] }
+      },
+      {
+        id: "registration-wechat",
+        registrationNo: "RREG-WECHAT",
+        attendeeName: "真实支付嘉宾",
+        source: RegistrationSource.PAYMENT,
+        orderId: "order-wechat",
+        attendees: [{ skuId: "sku-1" }],
+        order: { orderNo: "ORDER-WECHAT", payments: [{ provider: PaymentProvider.WECHAT, status: PaymentStatus.SUCCESS }], refunds: [] }
+      }
+    ];
+    const orders = [
+      ...registrations.map((item) => ({
+        id: item.orderId,
+        orderNo: item.order.orderNo,
+        status: OrderStatus.PAID,
+        registration: { id: item.id },
+        payments: item.order.payments,
+        refunds: item.order.refunds
+      })),
+      { id: "order-empty", orderNo: "ORDER-EMPTY", status: OrderStatus.PENDING, registration: null, payments: [], refunds: [] },
+      { id: "order-paid-without-payment", orderNo: "ORDER-PAID-ANOMALY", status: OrderStatus.PAID, registration: null, payments: [], refunds: [] },
+      { id: "order-wechat-pending", orderNo: "ORDER-WECHAT-PENDING", status: OrderStatus.PENDING, registration: null, payments: [{ provider: PaymentProvider.WECHAT, status: PaymentStatus.PENDING }], refunds: [] }
+    ];
+    const deletedRegistrationIds: string[] = [];
+    const deletedOrderIds: string[] = [];
+    let deletedRefundWhere: Record<string, unknown> | undefined;
+    let restoredStock = 0;
+    const tx = {
+      conference: { findUnique: async () => ({ id: "conference-1", title: "示例会议" }) },
+      registration: {
+        findMany: async () => registrations,
+        deleteMany: async ({ where }: any) => {
+          deletedRegistrationIds.push(...where.id.in);
+          return { count: where.id.in.length };
+        }
+      },
+      order: {
+        findMany: async () => orders,
+        deleteMany: async ({ where }: any) => {
+          deletedOrderIds.push(...where.id.in);
+          return { count: where.id.in.length };
+        }
+      },
+      registrationSku: {
+        updateMany: async ({ data }: any) => {
+          restoredStock += data.soldCount.decrement;
+          return { count: 1 };
+        }
+      },
+      refund: {
+        deleteMany: async ({ where }: any) => {
+          deletedRefundWhere = where;
+          return { count: 0 };
+        }
+      },
+      invoiceApplication: { deleteMany: async () => ({ count: 0 }) },
+      auditLog: { create: async () => ({ id: "audit-cleanup" }) }
+    };
+    const prisma = {
+      ...tx,
+      $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)
+    } as unknown as PrismaService;
+    const service = new AdminManagementService(prisma);
+
+    const preview = await service.previewConferenceTestDataCleanup("conference-1");
+    const result = await service.cleanupConferenceTestData("conference-1", { confirmation: "示例会议" }, currentAdmin);
+
+    assert.equal((preview.data as any).mockRegistrations.count, 1);
+    assert.equal((preview.data as any).standaloneMockOrders.count, 1);
+    assert.equal((preview.data as any).protectedRecords.count, 4);
+    assert.deepEqual(deletedRegistrationIds, ["registration-mock"]);
+    assert.deepEqual(deletedOrderIds.sort(), ["order-empty", "order-mock"]);
+    assert.deepEqual((deletedRefundWhere as any)?.OR, [
+      { provider: null },
+      { provider: { not: PaymentProvider.WECHAT } }
+    ]);
+    assert.equal(restoredStock, 1);
+    assert.equal((result.data as any).deletedRegistrations, 1);
+    assert.equal((result.data as any).deletedOrders, 2);
+  });
+
   it("deletes an eligible complimentary registration and restores SKU inventory", async () => {
     const calls: string[] = [];
     let stockUpdate: { data: { soldCount: { decrement: number } } } | undefined;

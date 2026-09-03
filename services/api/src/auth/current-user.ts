@@ -2,6 +2,7 @@ export interface CurrentUser {
   id: string;
   openid: string | null;
   nickname: string | null;
+  phone?: string | null;
   wechatNickname?: string | null;
   wechatAvatarUrl?: string | null;
   registeredAt?: string;

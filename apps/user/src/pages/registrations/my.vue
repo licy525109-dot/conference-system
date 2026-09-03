@@ -57,11 +57,35 @@
           <text>确认时间：{{ formatDateTime(item.confirmedAt) }}</text>
           <text>会议时间：{{ formatDateTime(item.conference.startsAt) }}</text>
         </view>
+        <view v-if="item.refund" class="refund-state" :data-status="item.refund.status">
+          <text class="refund-state__label">退款</text>
+          <text>{{ refundStatusText(item.refund.status) }}</text>
+          <text v-if="item.refund.failedReason">{{ item.refund.failedReason }}</text>
+        </view>
         <view class="card-actions">
           <button class="ui-button-secondary schedule-button" @click="goSchedule(item)">查看会务安排</button>
           <button class="ui-button-primary credential-button" @click="goCredential(item)">查看报名凭证</button>
           <button class="ui-button-secondary credential-button" @click="goCheckin(item)">签到</button>
+          <button v-if="item.canRequestRefund" class="refund-button" @click="openRefund(item)">申请退款</button>
         </view>
+      </view>
+    </view>
+
+    <view v-if="refundTarget" class="refund-mask" @click="closeRefund">
+      <view class="refund-sheet" @click.stop>
+        <view class="refund-sheet__head">
+          <view>
+            <text class="refund-sheet__title">申请退款</text>
+            <text class="refund-sheet__amount">可退 ¥{{ formatCent(refundTarget.refundableAmountCent) }}</text>
+          </view>
+          <button class="refund-close" aria-label="关闭" @click="closeRefund">×</button>
+        </view>
+        <text class="refund-conference">{{ refundTarget.conference.title }}</text>
+        <text class="refund-tip">提交后由会务人员审核，微信退款到账时间以微信支付处理结果为准。</text>
+        <textarea v-model="refundReason" class="refund-reason" maxlength="120" placeholder="请填写无法参会的原因" />
+        <button class="refund-submit" :disabled="refunding" @click="submitRefund">
+          {{ refunding ? "提交中" : "确认提交退款申请" }}
+        </button>
       </view>
     </view>
     <WechatProfilePrompt />
@@ -82,7 +106,7 @@ import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { getPublishedPage, type PublishedPage } from "@/services/cms";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
-import { getMyRegistrations } from "@/services/registration";
+import { getMyRegistrations, requestRegistrationRefund } from "@/services/registration";
 import type { MyRegistrationItem } from "@/services/registration-types";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
@@ -91,6 +115,9 @@ import { goHome } from "@/utils/navigation";
 const items = ref<MyRegistrationItem[]>([]);
 const loading = ref(false);
 const error = ref("");
+const refundTarget = ref<MyRegistrationItem | null>(null);
+const refundReason = ref("");
+const refunding = ref(false);
 const cmsPage = ref<PublishedPage | null>(null);
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("my-registrations");
 
@@ -156,6 +183,46 @@ function goSchedule(item: MyRegistrationItem) {
   uni.navigateTo({
     url: `/pages/registrations/schedule?conferenceId=${encodeURIComponent(item.conference.id)}`
   });
+}
+
+function openRefund(item: MyRegistrationItem) {
+  refundTarget.value = item;
+  refundReason.value = "临时无法参会";
+}
+
+function closeRefund() {
+  if (refunding.value) return;
+  refundTarget.value = null;
+  refundReason.value = "";
+}
+
+async function submitRefund() {
+  if (!refundTarget.value || refunding.value) return;
+  if (!refundReason.value.trim()) {
+    uni.showToast({ title: "请填写退款原因", icon: "none" });
+    return;
+  }
+  refunding.value = true;
+  try {
+    await requestRegistrationRefund(refundTarget.value.order.orderNo, refundReason.value.trim());
+    closeRefundAfterSubmit();
+    await loadRegistrations();
+    uni.showToast({ title: "退款申请已提交", icon: "success", duration: 2200 });
+  } catch (err) {
+    console.error("[REGISTRATION_REFUND_REQUEST_ERROR]", err);
+    uni.showToast({ title: err instanceof Error ? err.message : "退款申请失败", icon: "none", duration: 2600 });
+  } finally {
+    refunding.value = false;
+  }
+}
+
+function closeRefundAfterSubmit() {
+  refundTarget.value = null;
+  refundReason.value = "";
+}
+
+function refundStatusText(status: string) {
+  return ({ REQUESTED: "已提交，等待审核", APPROVED: "审核通过", PROCESSING: "退款处理中", SUCCESS: "退款已完成", FAILED: "退款失败，请联系会务组", REJECTED: "退款申请未通过" } as Record<string, string>)[status] || status;
 }
 </script>
 
@@ -291,6 +358,25 @@ function goSchedule(item: MyRegistrationItem) {
   gap: 16rpx;
   margin-top: 22rpx;
 }
+
+.refund-state { display: grid; grid-template-columns: 74rpx minmax(0, 1fr); gap: 8rpx 14rpx; margin-top: 20rpx; padding: 18rpx 20rpx; border: 1px solid #eadfca; border-radius: 8rpx; background: #fbf6eb; color: #674f24; font-size: 27rpx; line-height: 1.5; }
+.refund-state__label { font-weight: 900; }
+.refund-state text:last-child:nth-child(3) { grid-column: 2; color: #8a5c50; font-size: 24rpx; }
+.refund-button { grid-column: 1 / -1; width: 100%; min-height: 76rpx; margin: 0; border: 1px solid #b98637; border-radius: var(--ui-radius); background: #ffffff; color: #8a641f; font-size: 27rpx; font-weight: 900; line-height: 74rpx; }
+.refund-button::after,
+.refund-close::after,
+.refund-submit::after { border: 0; }
+
+.refund-mask { position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end; background: rgba(14, 24, 37, 0.5); }
+.refund-sheet { width: 100%; padding: 32rpx 30rpx calc(34rpx + env(safe-area-inset-bottom)); border-radius: 20rpx 20rpx 0 0; background: #f8faf9; box-sizing: border-box; }
+.refund-sheet__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; }
+.refund-sheet__title { display: block; color: #162236; font-size: 38rpx; font-weight: 900; }
+.refund-sheet__amount { display: block; margin-top: 8rpx; color: #946d22; font-size: 34rpx; font-weight: 900; }
+.refund-close { width: 68rpx; height: 68rpx; margin: 0; padding: 0; border: 0; border-radius: 50%; background: #e8edef; color: #26374a; font-size: 44rpx; line-height: 64rpx; }
+.refund-conference { display: block; margin-top: 26rpx; color: #1c2b3f; font-size: 31rpx; font-weight: 900; line-height: 1.5; }
+.refund-tip { display: block; margin-top: 12rpx; color: #667383; font-size: 27rpx; line-height: 1.6; }
+.refund-reason { width: 100%; min-height: 190rpx; margin-top: 24rpx; padding: 22rpx; border: 1px solid #d8e0e4; border-radius: 9rpx; background: #ffffff; color: #172337; font-size: 30rpx; line-height: 1.55; box-sizing: border-box; }
+.refund-submit { width: 100%; min-height: 88rpx; margin: 24rpx 0 0; border: 0; border-radius: 10rpx; background: #315f7d; color: #ffffff; font-size: 31rpx; font-weight: 900; line-height: 88rpx; }
 
 .schedule-button {
   grid-column: 1 / -1;

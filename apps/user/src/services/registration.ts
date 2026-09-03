@@ -97,6 +97,18 @@ export function getMyRegistrations(): Promise<MyRegistrationItem[]> {
   }).then((data) => data.items);
 }
 
+export function requestRegistrationRefund(orderNo: string, reason: string): Promise<{
+  id: string;
+  status: string;
+  amountCent: number;
+}> {
+  return request("/my/refunds", {
+    method: "POST",
+    auth: true,
+    data: { orderNo, reason }
+  });
+}
+
 export function getRegistrationCredential(registrationId: string): Promise<RegistrationCredential> {
   return request<RegistrationCredential>(`/registrations/${encodeURIComponent(registrationId)}/credential`, {
     method: "GET",

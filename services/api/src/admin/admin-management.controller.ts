@@ -28,6 +28,22 @@ export class AdminManagementController {
     return this.adminManagementService.getConference(id);
   }
 
+  @Get("conferences/:id/test-data-cleanup")
+  @RequireAdminPermissions("registration:write", "order:delete")
+  previewConferenceTestDataCleanup(@Param("id") id: string) {
+    return this.adminManagementService.previewConferenceTestDataCleanup(id);
+  }
+
+  @Post("conferences/:id/test-data-cleanup")
+  @RequireAdminPermissions("registration:write", "order:delete")
+  cleanupConferenceTestData(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithCurrentAdmin
+  ) {
+    return this.adminManagementService.cleanupConferenceTestData(id, body, request.currentAdmin!);
+  }
+
   @Patch("conferences/:id")
   @RequireAdminPermissions("conference:write")
   updateConference(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {

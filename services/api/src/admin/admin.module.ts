@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { PrismaService } from "../prisma.service";
+import { WechatPayRefundClient } from "../payments/wechat-pay.refund-client";
+import { WechatPaySigner } from "../payments/wechat-pay.signer";
 import { AdminAccessController } from "./admin-access.controller";
 import { AdminAccessService } from "./admin-access.service";
 import { AdminAuditLogController } from "./admin-audit-log.controller";
@@ -79,6 +81,8 @@ import { UserNotificationsService } from "./user-notifications.service";
     AdminPaymentExceptionsService,
     WechatSubscribeClient,
     UserNotificationsService,
+    WechatPayRefundClient,
+    WechatPaySigner,
     PrismaService
   ],
   exports: [AdminAuthService, AdminJwtAuthGuard, AdminPermissionGuard, AdminNotificationsService]

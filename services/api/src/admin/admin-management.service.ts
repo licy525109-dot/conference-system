@@ -546,6 +546,102 @@ export class AdminManagementService {
     return this.closeOrder(orderNo, admin);
   }
 
+  async previewConferenceTestDataCleanup(conferenceId: string): Promise<ApiResponse<unknown>> {
+    return ok(await this.readConferenceTestDataPlan(this.prisma, conferenceId));
+  }
+
+  async cleanupConferenceTestData(
+    conferenceId: string,
+    input: unknown,
+    admin: CurrentAdmin
+  ): Promise<ApiResponse<unknown>> {
+    const body = readObject(input);
+    const confirmation = readRequiredString(body, "confirmation");
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const plan = await this.readConferenceTestDataPlan(tx, conferenceId);
+      if (confirmation !== plan.conferenceTitle) {
+        throw new BadRequestException("请输入完整会议名称确认清理");
+      }
+
+      const registrationIds = plan.mockRegistrations.items.map((item) => item.id);
+      const registeredOrderIds = plan.mockRegistrations.items.map((item) => item.orderId);
+      const standaloneOrderIds = plan.standaloneMockOrders.items.map((item) => item.id);
+      const orderIds = [...registeredOrderIds, ...standaloneOrderIds];
+      const skuCounts = new Map<string, number>();
+      for (const item of plan.mockRegistrations.items) {
+        for (const attendee of item.attendees) {
+          skuCounts.set(attendee.skuId, (skuCounts.get(attendee.skuId) ?? 0) + 1);
+        }
+      }
+
+      if (registrationIds.length > 0) {
+        const deleted = await tx.registration.deleteMany({ where: { id: { in: registrationIds } } });
+        if (deleted.count !== registrationIds.length) {
+          throw new ConflictException("测试报名数据已发生变化，请重新预览后再清理");
+        }
+        for (const [skuId, count] of skuCounts) {
+          const stockResult = await tx.registrationSku.updateMany({
+            where: { id: skuId, soldCount: { gte: count } },
+            data: { soldCount: { decrement: count } }
+          });
+          if (stockResult.count !== 1) {
+            throw new ConflictException("票种库存计数异常，测试数据未清理，请先核对库存");
+          }
+        }
+      }
+
+      if (orderIds.length > 0) {
+        await tx.refund.deleteMany({
+          where: {
+            orderId: { in: orderIds },
+            OR: [{ provider: null }, { provider: { not: PaymentProvider.WECHAT } }]
+          }
+        });
+        await tx.invoiceApplication.deleteMany({ where: { orderId: { in: orderIds } } });
+        const deleted = await tx.order.deleteMany({
+          where: {
+            id: { in: orderIds },
+            payments: { none: { provider: PaymentProvider.WECHAT } },
+            refunds: { none: { provider: PaymentProvider.WECHAT } }
+          }
+        });
+        if (deleted.count !== orderIds.length) {
+          throw new ConflictException("订单支付状态已发生变化，请重新预览后再清理");
+        }
+      }
+
+      await tx.auditLog.create({
+        data: {
+          adminUserId: admin.id,
+          action: AuditAction.DELETE,
+          entityType: "ConferenceTestData",
+          entityId: conferenceId,
+          summary: "Delete conference mock test data",
+          metadataJson: {
+            conferenceTitle: plan.conferenceTitle,
+            mockRegistrationCount: registrationIds.length,
+            standaloneMockOrderCount: standaloneOrderIds.length,
+            protectedRecordCount: plan.protectedRecords.count,
+            orderNos: [...plan.mockRegistrations.items, ...plan.standaloneMockOrders.items]
+              .slice(0, 50)
+              .map((item) => item.orderNo)
+          }
+        }
+      });
+
+      return {
+        conferenceId,
+        conferenceTitle: plan.conferenceTitle,
+        deletedRegistrations: registrationIds.length,
+        deletedOrders: orderIds.length,
+        protectedRecords: plan.protectedRecords.count
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    return ok(result);
+  }
+
   async closeOrdersByFilter(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const body = readObject(input);
     const where = parseOrderWhere(body);
@@ -603,6 +699,62 @@ export class AdminManagementService {
       page: pagination.page,
       pageSize: pagination.pageSize
     });
+  }
+
+  private async readConferenceTestDataPlan(
+    client: Pick<Prisma.TransactionClient, "conference" | "registration" | "order">,
+    conferenceId: string
+  ) {
+    const conference = await client.conference.findUnique({
+      where: { id: conferenceId },
+      select: { id: true, title: true }
+    });
+    if (!conference) throw new NotFoundException("Conference not found");
+
+    const [registrations, orders] = await Promise.all([
+      client.registration.findMany({
+        where: { conferenceId },
+        orderBy: [{ createdAt: "desc" }],
+        select: testDataRegistrationSelect
+      }),
+      client.order.findMany({
+        where: { conferenceId },
+        orderBy: [{ createdAt: "desc" }],
+        select: testDataOrderSelect
+      })
+    ]);
+    const mockRegistrations = registrations.filter(isMockRegistrationCleanupCandidate);
+    const standaloneOrders = orders.filter((item) => !item.registration);
+    const standaloneMockOrders = standaloneOrders.filter(isStandaloneMockOrderCleanupCandidate);
+    const protectedOrderNos = new Set([
+      ...registrations.filter((item) => !isMockRegistrationCleanupCandidate(item)).map((item) => item.order.orderNo),
+      ...standaloneOrders.filter((item) => !isStandaloneMockOrderCleanupCandidate(item)).map((item) => item.orderNo)
+    ]);
+
+    return {
+      conferenceId: conference.id,
+      conferenceTitle: conference.title,
+      mockRegistrations: {
+        count: mockRegistrations.length,
+        items: mockRegistrations.map((item) => ({
+          id: item.id,
+          registrationNo: item.registrationNo,
+          attendeeName: item.attendeeName,
+          orderId: item.orderId,
+          orderNo: item.order.orderNo,
+          attendees: item.attendees
+        }))
+      },
+      standaloneMockOrders: {
+        count: standaloneMockOrders.length,
+        items: standaloneMockOrders.map((item) => ({ id: item.id, orderNo: item.orderNo }))
+      },
+      protectedRecords: {
+        count: protectedOrderNos.size,
+        orderNos: Array.from(protectedOrderNos).slice(0, 20),
+        reason: "出现微信支付流水、人工免支付报名或来源不明确，系统不会自动删除"
+      }
+    };
   }
 
   async createComplimentaryRegistration(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
@@ -1550,6 +1702,31 @@ const registrationListSelect = {
   order: { select: { orderNo: true } }
 } satisfies Prisma.RegistrationSelect;
 
+const testDataRegistrationSelect = {
+  id: true,
+  registrationNo: true,
+  attendeeName: true,
+  source: true,
+  orderId: true,
+  attendees: { select: { skuId: true } },
+  order: {
+    select: {
+      orderNo: true,
+      payments: { select: { provider: true, status: true } },
+      refunds: { select: { provider: true } }
+    }
+  }
+} satisfies Prisma.RegistrationSelect;
+
+const testDataOrderSelect = {
+  id: true,
+  orderNo: true,
+  status: true,
+  registration: { select: { id: true } },
+  payments: { select: { provider: true, status: true } },
+  refunds: { select: { provider: true } }
+} satisfies Prisma.OrderSelect;
+
 const attendeeSelect = {
   id: true,
   skuId: true,
@@ -2252,6 +2429,27 @@ function orderDeleteBlockReason(order: Prisma.OrderGetPayload<{ select: typeof o
     return "存在成功支付流水的订单不能关闭";
   }
   return null;
+}
+
+function isMockRegistrationCleanupCandidate(
+  registration: Prisma.RegistrationGetPayload<{ select: typeof testDataRegistrationSelect }>
+): boolean {
+  return registration.source === RegistrationSource.PAYMENT
+    && registration.order.payments.length > 0
+    && registration.order.payments.every((payment) => payment.provider === PaymentProvider.MOCK)
+    && registration.order.refunds.every((refund) => refund.provider !== PaymentProvider.WECHAT);
+}
+
+function isStandaloneMockOrderCleanupCandidate(
+  order: Prisma.OrderGetPayload<{ select: typeof testDataOrderSelect }>
+): boolean {
+  const hasOnlyMockPayments = order.payments.length > 0
+    && order.payments.every((payment) => payment.provider === PaymentProvider.MOCK);
+  const isEmptyUnpaidOrder = order.payments.length === 0
+    && ([OrderStatus.PENDING, OrderStatus.CANCELLED, OrderStatus.CLOSED] as OrderStatus[]).includes(order.status);
+  return !order.registration
+    && (hasOnlyMockPayments || isEmptyUnpaidOrder)
+    && order.refunds.every((refund) => refund.provider !== PaymentProvider.WECHAT);
 }
 
 function sanitizeDeleteFilters(query: Record<string, unknown>): Prisma.InputJsonObject {

@@ -7,6 +7,8 @@ import type {
   AdminRegistrationDetail,
   AdminRegistrationAuditLog,
   AdminRegistrationFullDetail,
+  ConferenceTestDataCleanupPreview,
+  ConferenceTestDataCleanupResult,
   AdminAccount,
   AdminAuditLog,
   AdminUser,
@@ -245,6 +247,22 @@ export function deleteRegistration(id: string) {
   return apiRequest<{ id: string; registrationNo: string; deleted: boolean }>(`/admin/registrations/${encodeURIComponent(id)}`, {
     method: "DELETE"
   });
+}
+
+export function previewConferenceTestDataCleanup(conferenceId: string) {
+  return apiRequest<ConferenceTestDataCleanupPreview>(
+    `/admin/conferences/${encodeURIComponent(conferenceId)}/test-data-cleanup`
+  );
+}
+
+export function cleanupConferenceTestData(conferenceId: string, confirmation: string) {
+  return apiRequest<ConferenceTestDataCleanupResult>(
+    `/admin/conferences/${encodeURIComponent(conferenceId)}/test-data-cleanup`,
+    {
+      method: "POST",
+      body: JSON.stringify({ confirmation })
+    }
+  );
 }
 
 export function exportRegistrationsExcel(params: {

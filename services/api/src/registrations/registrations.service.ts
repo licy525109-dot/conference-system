@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { OrderStatus, PaymentStatus, Prisma, RegistrationSource, RegistrationStatus } from "@prisma/client";
+import { OrderStatus, PaymentStatus, Prisma, RefundStatus, RegistrationSource, RegistrationStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { createCheckinCredentialPayload } from "../checkin/checkin-credential";
 import { PrismaService } from "../prisma.service";
@@ -18,6 +18,7 @@ export interface MyRegistrationItem {
   attendeeName: string;
   phone: string;
   paidAmountCent: number;
+  refundableAmountCent: number;
   confirmedAt: string;
   createdAt: string;
   conference: {
@@ -33,7 +34,16 @@ export interface MyRegistrationItem {
   };
   order: {
     orderNo: string;
+    status: OrderStatus;
   };
+  refund: {
+    id: string;
+    status: RefundStatus;
+    amountCent: number;
+    reason: string | null;
+    failedReason: string | null;
+  } | null;
+  canRequestRefund: boolean;
 }
 
 export interface MyRegistrationsResponse {
@@ -81,33 +91,66 @@ export class RegistrationsService {
         },
         order: {
           select: {
-            orderNo: true
+            orderNo: true,
+            status: true,
+            refunds: {
+              orderBy: [{ createdAt: "desc" }],
+              select: {
+                id: true,
+                status: true,
+                amountCent: true,
+                reason: true,
+                failedReason: true
+              }
+            }
           }
         }
       }
     });
 
     return ok({
-      items: registrations.map((registration) => ({
-        id: registration.id,
-        registrationNo: registration.registrationNo,
-        status: registration.status,
-        source: registration.source,
-        attendeeName: registration.attendeeName,
-        phone: registration.phone,
-        paidAmountCent: registration.paidAmountCent,
-        confirmedAt: registration.confirmedAt.toISOString(),
-        createdAt: registration.createdAt.toISOString(),
-        conference: {
-          id: registration.conference.id,
-          title: registration.conference.title,
-          slug: registration.conference.slug,
-          startsAt: registration.conference.startsAt.toISOString(),
-          endsAt: registration.conference.endsAt.toISOString()
-        },
-        sku: registration.sku,
-        order: registration.order
-      }))
+      items: registrations.map((registration) => {
+        const refundableAmountCent = Math.max(
+          0,
+          registration.paidAmountCent - registration.order.refunds
+            .filter((refund) => refund.status === RefundStatus.SUCCESS)
+            .reduce((sum, refund) => sum + refund.amountCent, 0)
+        );
+        return {
+          id: registration.id,
+          registrationNo: registration.registrationNo,
+          status: registration.status,
+          source: registration.source,
+          attendeeName: registration.attendeeName,
+          phone: registration.phone,
+          paidAmountCent: registration.paidAmountCent,
+          refundableAmountCent,
+          confirmedAt: registration.confirmedAt.toISOString(),
+          createdAt: registration.createdAt.toISOString(),
+          conference: {
+            id: registration.conference.id,
+            title: registration.conference.title,
+            slug: registration.conference.slug,
+            startsAt: registration.conference.startsAt.toISOString(),
+            endsAt: registration.conference.endsAt.toISOString()
+          },
+          sku: registration.sku,
+          order: {
+            orderNo: registration.order.orderNo,
+            status: registration.order.status
+          },
+          refund: registration.order.refunds[0] ?? null,
+          canRequestRefund:
+            process.env.REFUND_ENABLED === "true" &&
+            registration.source === RegistrationSource.PAYMENT &&
+            registration.status === RegistrationStatus.CONFIRMED &&
+            registration.order.status === OrderStatus.PAID &&
+            refundableAmountCent > 0 &&
+            !registration.order.refunds.some((refund) =>
+              ([RefundStatus.REQUESTED, RefundStatus.APPROVED, RefundStatus.PROCESSING] as RefundStatus[]).includes(refund.status)
+            )
+        };
+      })
     });
   }
 

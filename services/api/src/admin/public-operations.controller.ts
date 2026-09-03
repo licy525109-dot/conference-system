@@ -3,10 +3,14 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { RequestWithCurrentUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PublicOperationsService } from "./public-operations.service";
+import { AdminFinanceService } from "./admin-finance.service";
 
 @Controller()
 export class PublicOperationsController {
-  constructor(private readonly operations: PublicOperationsService) {}
+  constructor(
+    private readonly operations: PublicOperationsService,
+    private readonly finance: AdminFinanceService
+  ) {}
 
   @Post("coupons/claim")
   @UseGuards(JwtAuthGuard)
@@ -70,6 +74,12 @@ export class PublicOperationsController {
   @UseGuards(JwtAuthGuard)
   myRefunds(@Req() request: RequestWithCurrentUser) {
     return this.operations.myRefunds(request.currentUser);
+  }
+
+  @Post("my/refunds")
+  @UseGuards(JwtAuthGuard)
+  requestRefund(@Body() body: unknown, @Req() request: RequestWithCurrentUser) {
+    return this.finance.requestRegistrationRefund(body, request.currentUser!);
   }
 
   @Post("my/uploads/aftersale")

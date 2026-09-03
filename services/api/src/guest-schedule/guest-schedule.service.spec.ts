@@ -45,6 +45,10 @@ describe("GuestScheduleService", () => {
     assert.equal(prisma.userNotifications[0]?.userId, "user-1");
     assert.equal(prisma.userNotifications[0]?.type, "GUEST_SCHEDULE_PUBLISHED");
     assert.equal(prisma.userNotifications[0]?.route, "/pages/registrations/schedule?conferenceId=conference-1");
+    assert.equal(
+      ((prisma.userNotifications[0]?.payloadJson as { items?: Array<{ notes?: string }> })?.items?.[0]?.notes),
+      "请提前十五分钟到场"
+    );
     assert.equal(prisma.auditLogs.length, 1);
   });
 

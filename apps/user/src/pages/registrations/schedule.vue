@@ -49,7 +49,6 @@
       </scroll-view>
 
       <view class="conference-overview">
-        <view class="conference-overview__accent" />
         <view class="conference-overview__body">
           <text class="conference-name">{{ selectedConference?.title }}</text>
           <view class="conference-facts">
@@ -66,6 +65,22 @@
             <text>{{ selectedConferenceItems.length }} 项已发布</text>
             <text v-if="latestPublishedAt">更新于 {{ formatShortTime(latestPublishedAt) }}</text>
           </view>
+        </view>
+      </view>
+
+      <view v-if="featuredItem" class="featured-schedule">
+        <view class="featured-heading">
+          <text class="featured-kicker">{{ isUpcoming(featuredItem) ? "下一项安排" : "重点安排" }}</text>
+          <text class="featured-type">{{ featuredItem.typeLabel }}</text>
+        </view>
+        <text class="featured-time">{{ fullDate(featuredItem.startsAt) }}，{{ timeRange(featuredItem.startsAt, featuredItem.endsAt) }}</text>
+        <text class="featured-name">{{ featuredItem.name }}</text>
+        <view v-if="hasItemDetails(featuredItem)" class="featured-details">
+          <text v-if="featuredItem.location">地点：{{ featuredItem.location }}</text>
+          <text v-if="featuredItem.role">身份：{{ featuredItem.role }}</text>
+          <text v-if="featuredItem.tableNo" class="featured-strong">席位：{{ featuredItem.tableNo }}{{ featuredItem.isTableLeader ? "，本桌桌长" : "" }}</text>
+          <text v-if="featuredItem.shareTopic">分享内容：{{ featuredItem.shareTopic }}</text>
+          <text v-if="featuredItem.notes">提醒：{{ featuredItem.notes }}</text>
         </view>
       </view>
 
@@ -163,6 +178,7 @@
       </view>
     </template>
 
+    <WechatProfilePrompt />
     <CustomTabbar active-page-key="notifications" />
   </view>
 </template>
@@ -171,6 +187,7 @@
 import { computed, ref, watch } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
 import CustomTabbar from "@/components/CustomTabbar.vue";
+import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
@@ -221,10 +238,15 @@ const days = computed(() => {
   const keys = Array.from(new Set(selectedAttendeeItems.value.map((item) => dayKey(item.startsAt))));
   return keys.sort().map((key) => ({ key, label: dayLabel(key), weekday: weekdayLabel(key) }));
 });
+const activeDay = computed(() => selectedDay.value || days.value[0]?.key || "");
 const visibleItems = computed(() => selectedAttendeeItems.value
-  .filter((item) => dayKey(item.startsAt) === selectedDay.value)
+  .filter((item) => dayKey(item.startsAt) === activeDay.value)
   .sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
-const selectedDayLabel = computed(() => days.value.find((item) => item.key === selectedDay.value)?.label || "");
+const selectedDayLabel = computed(() => days.value.find((item) => item.key === activeDay.value)?.label || "");
+const featuredItem = computed(() => {
+  const sorted = [...selectedAttendeeItems.value].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  return sorted.find((item) => new Date(item.endsAt || item.startsAt).getTime() >= Date.now()) || sorted[0] || null;
+});
 const latestPublishedAt = computed(() => selectedConferenceItems.value
   .map((item) => item.publishedAt)
   .filter((value): value is string => Boolean(value))
@@ -256,11 +278,7 @@ async function load() {
     items.value = scheduleItems;
     subscriptionConfig.value = config;
     const requested = initialConferenceId.value;
-    selectedConferenceId.value = conferences.value.some((item) => item.id === requested)
-      ? requested
-      : conferences.value[0]?.id || "";
-    selectedAttendeeId.value = attendees.value[0]?.id || "";
-    selectedDay.value = days.value[0]?.key || "";
+    initializeSelection(scheduleItems, requested);
   } catch (err) {
     console.error("[GUEST_SCHEDULE_LOAD_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
@@ -272,6 +290,17 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+function initializeSelection(scheduleItems: MyGuestScheduleItem[], requestedConferenceId: string) {
+  const requestedExists = scheduleItems.some((item) => item.conference.id === requestedConferenceId);
+  const conferenceId = requestedExists ? requestedConferenceId : scheduleItems[0]?.conference.id || "";
+  const conferenceItems = scheduleItems.filter((item) => item.conference.id === conferenceId);
+  const attendeeId = conferenceItems[0]?.attendee.id || "";
+  const attendeeItems = conferenceItems.filter((item) => item.attendee.id === attendeeId);
+  selectedConferenceId.value = conferenceId;
+  selectedAttendeeId.value = attendeeId;
+  selectedDay.value = attendeeItems[0] ? dayKey(attendeeItems[0].startsAt) : "";
 }
 
 async function subscribe() {
@@ -313,6 +342,18 @@ function weekdayLabel(key: string) {
 
 function timeOnly(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+}
+
+function timeRange(startsAt: string, endsAt: string | null) {
+  return endsAt ? `${timeOnly(startsAt)} - ${timeOnly(endsAt)}` : timeOnly(startsAt);
+}
+
+function fullDate(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "short" }).format(new Date(value));
+}
+
+function isUpcoming(item: MyGuestScheduleItem) {
+  return new Date(item.endsAt || item.startsAt).getTime() >= Date.now();
 }
 
 function formatConferenceDate(startsAt?: string, endsAt?: string) {
@@ -366,7 +407,7 @@ function formatShortTime(value: string) {
   display: block;
   margin-top: 7rpx;
   color: #758190;
-  font-size: 21rpx;
+  font-size: 28rpx;
   line-height: 1.45;
 }
 
@@ -447,11 +488,6 @@ function formatShortTime(value: string) {
   box-shadow: 0 8rpx 24rpx rgba(23, 32, 47, 0.05);
 }
 
-.conference-overview__accent {
-  width: 8rpx;
-  background: #315d7d;
-}
-
 .conference-overview__body {
   min-width: 0;
   flex: 1;
@@ -461,7 +497,7 @@ function formatShortTime(value: string) {
 .conference-name {
   display: block;
   color: #17202f;
-  font-size: 30rpx;
+  font-size: 34rpx;
   font-weight: 900;
   line-height: 1.4;
 }
@@ -478,7 +514,7 @@ function formatShortTime(value: string) {
   grid-template-columns: 58rpx minmax(0, 1fr);
   gap: 12rpx;
   color: #4f5e6d;
-  font-size: 22rpx;
+  font-size: 28rpx;
   line-height: 1.48;
 }
 
@@ -494,7 +530,71 @@ function formatShortTime(value: string) {
   padding-top: 16rpx;
   border-top: 1px solid #edf0f2;
   color: #86919d;
-  font-size: 20rpx;
+  font-size: 25rpx;
+}
+
+.featured-schedule {
+  margin-top: 20rpx;
+  padding: 28rpx;
+  border: 1px solid #cbdde5;
+  border-radius: 8rpx;
+  background: #eef5f7;
+}
+
+.featured-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.featured-kicker,
+.featured-type {
+  color: #28536d;
+  font-size: 27rpx;
+  font-weight: 900;
+}
+
+.featured-type {
+  padding: 5rpx 12rpx;
+  border-radius: 5rpx;
+  background: #dcebf0;
+  font-size: 24rpx;
+}
+
+.featured-time {
+  display: block;
+  margin-top: 21rpx;
+  color: #1f526f;
+  font-size: 33rpx;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.featured-name {
+  display: block;
+  margin-top: 9rpx;
+  color: #142033;
+  font-size: 40rpx;
+  font-weight: 900;
+  line-height: 1.4;
+}
+
+.featured-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  margin-top: 20rpx;
+  padding-top: 18rpx;
+  border-top: 1px solid #cedde3;
+  color: #3b4d5e;
+  font-size: 30rpx;
+  line-height: 1.55;
+}
+
+.featured-strong {
+  color: #8a651f;
+  font-weight: 900;
 }
 
 .attendee-block {
@@ -505,7 +605,7 @@ function formatShortTime(value: string) {
   display: block;
   margin-bottom: 12rpx;
   color: #6d7986;
-  font-size: 21rpx;
+  font-size: 27rpx;
   font-weight: 700;
 }
 
@@ -527,13 +627,13 @@ function formatShortTime(value: string) {
 }
 
 .attendee-option text:first-child {
-  font-size: 23rpx;
+  font-size: 28rpx;
   font-weight: 900;
 }
 
 .attendee-option text:last-child {
   color: #87929e;
-  font-size: 18rpx;
+  font-size: 23rpx;
 }
 
 .attendee-option.active {
@@ -563,11 +663,11 @@ function formatShortTime(value: string) {
 }
 
 .day-option text:first-child {
-  font-size: 18rpx;
+  font-size: 23rpx;
 }
 
 .day-option text:last-child {
-  font-size: 23rpx;
+  font-size: 29rpx;
   font-weight: 900;
 }
 
@@ -599,13 +699,13 @@ function formatShortTime(value: string) {
 
 .section-title {
   color: #172235;
-  font-size: 29rpx;
+  font-size: 34rpx;
   font-weight: 900;
 }
 
 .section-subtitle {
   color: #84909d;
-  font-size: 20rpx;
+  font-size: 27rpx;
 }
 
 .section-count {
@@ -613,7 +713,7 @@ function formatShortTime(value: string) {
   border-radius: 5rpx;
   background: #edf2f4;
   color: #526272;
-  font-size: 19rpx;
+  font-size: 25rpx;
   font-weight: 800;
 }
 
@@ -637,13 +737,13 @@ function formatShortTime(value: string) {
 
 .time-main {
   color: #17263a;
-  font-size: 23rpx;
+  font-size: 28rpx;
   font-weight: 900;
 }
 
 .time-end {
   color: #909aa5;
-  font-size: 18rpx;
+  font-size: 23rpx;
 }
 
 .timeline-rail {
@@ -699,7 +799,7 @@ function formatShortTime(value: string) {
   border-radius: 4rpx;
   background: #e7f0f5;
   color: #315d7d;
-  font-size: 18rpx;
+  font-size: 24rpx;
   font-weight: 800;
   line-height: 1.35;
 }
@@ -720,7 +820,7 @@ function formatShortTime(value: string) {
   display: block;
   margin-top: 13rpx;
   color: #152034;
-  font-size: 28rpx;
+  font-size: 34rpx;
   font-weight: 900;
   line-height: 1.42;
 }
@@ -739,7 +839,7 @@ function formatShortTime(value: string) {
   grid-template-columns: 56rpx minmax(0, 1fr);
   gap: 10rpx;
   color: #4e5b69;
-  font-size: 21rpx;
+  font-size: 29rpx;
   line-height: 1.5;
 }
 
@@ -754,17 +854,17 @@ function formatShortTime(value: string) {
 
 .schedule-note {
   padding: 13rpx 15rpx;
-  border-left: 4rpx solid #b8ccd6;
+  border: 1px solid #d8e2e6;
   background: #f1f5f6;
   color: #53606d;
-  font-size: 20rpx;
+  font-size: 28rpx;
   line-height: 1.55;
 }
 
 .day-empty {
   padding: 52rpx 0 60rpx;
   color: #8a95a1;
-  font-size: 22rpx;
+  font-size: 29rpx;
   text-align: center;
 }
 
@@ -783,13 +883,13 @@ function formatShortTime(value: string) {
   flex-direction: column;
   gap: 4rpx;
   color: #60776f;
-  font-size: 19rpx;
+  font-size: 27rpx;
   line-height: 1.45;
 }
 
 .subscribe-title {
   color: #214b40;
-  font-size: 23rpx;
+  font-size: 31rpx;
   font-weight: 900;
 }
 
@@ -802,7 +902,7 @@ function formatShortTime(value: string) {
   border-radius: 7rpx;
   background: #2f7865;
   color: #ffffff;
-  font-size: 21rpx;
+  font-size: 27rpx;
   font-weight: 800;
   line-height: 58rpx;
 }

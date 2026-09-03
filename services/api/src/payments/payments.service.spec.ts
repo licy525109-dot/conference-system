@@ -1,18 +1,20 @@
 import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import {
   CheckInStatus,
   CouponRedemptionStatus,
   OrderStatus,
   PaymentProvider,
   PaymentStatus,
+  RefundStatus,
   RegistrationStatus
 } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { PaymentsService } from "./payments.service";
+import { WechatPayNotifyVerifier } from "./wechat-pay.notify-verifier";
 
 const now = new Date("2026-06-06T14:50:00.000Z");
 const currentUser: CurrentUser = {
@@ -213,6 +215,184 @@ describe("PaymentsService payment status", () => {
     await assert.rejects(() => service.getPaymentStatus("REG001", undefined), UnauthorizedException);
   });
 });
+
+describe("PaymentsService WeChat refund notify", () => {
+  it("marks a full registration refund successful only after a verified callback", async () => {
+    withWechatRefundNotifyConfig();
+    const prisma = createRefundNotifyPrismaMock();
+    const verifier = new FakeRefundNotifyVerifier(refundNotifyPayload("SUCCESS", 10000));
+    const service = new PaymentsService(prisma as unknown as PrismaService, undefined, verifier);
+
+    const response = await service.handleRefundNotify(refundNotifyRequest());
+
+    assert.deepEqual(response, { code: "SUCCESS", message: "OK" });
+    assert.equal(verifier.verifyCalls, 1);
+    assert.equal(prisma.refundRecord.status, RefundStatus.SUCCESS);
+    assert.equal(prisma.orderRecord.status, OrderStatus.REFUNDED);
+    assert.equal(prisma.registrationUpdates[0]?.data.status, RegistrationStatus.REFUNDED);
+  });
+
+  it("does not downgrade a successful refund when a later failure notification arrives", async () => {
+    withWechatRefundNotifyConfig();
+    const prisma = createRefundNotifyPrismaMock({ refundStatus: RefundStatus.SUCCESS, orderStatus: OrderStatus.REFUNDED });
+    const verifier = new FakeRefundNotifyVerifier(refundNotifyPayload("CLOSED", 10000));
+    const service = new PaymentsService(prisma as unknown as PrismaService, undefined, verifier);
+
+    await service.handleRefundNotify(refundNotifyRequest());
+
+    assert.equal(prisma.refundRecord.status, RefundStatus.SUCCESS);
+    assert.equal(prisma.refundUpdates.length, 0);
+    assert.equal(prisma.orderRecord.status, OrderStatus.REFUNDED);
+  });
+
+  it("keeps a processing refund notification non-terminal", async () => {
+    withWechatRefundNotifyConfig();
+    const prisma = createRefundNotifyPrismaMock({ refundStatus: RefundStatus.REQUESTED });
+    const verifier = new FakeRefundNotifyVerifier(refundNotifyPayload("PROCESSING", 10000));
+    const service = new PaymentsService(prisma as unknown as PrismaService, undefined, verifier);
+
+    await service.handleRefundNotify(refundNotifyRequest());
+
+    assert.equal(prisma.refundRecord.status, RefundStatus.PROCESSING);
+    assert.equal(prisma.refundUpdates[0]?.processedAt, null);
+    assert.equal(prisma.refundUpdates[0]?.failedReason, null);
+    assert.equal(prisma.orderRecord.status, OrderStatus.PAID);
+  });
+
+  it("rejects an unsupported WeChat refund status without changing local state", async () => {
+    withWechatRefundNotifyConfig();
+    const prisma = createRefundNotifyPrismaMock();
+    const verifier = new FakeRefundNotifyVerifier(refundNotifyPayload("UNKNOWN", 10000));
+    const service = new PaymentsService(prisma as unknown as PrismaService, undefined, verifier);
+
+    await assert.rejects(() => service.handleRefundNotify(refundNotifyRequest()), BadRequestException);
+
+    assert.equal(prisma.refundUpdates.length, 0);
+    assert.equal(prisma.orderRecord.status, OrderStatus.PAID);
+  });
+
+  it("rejects a refund callback whose amount differs from the approved server amount", async () => {
+    withWechatRefundNotifyConfig();
+    const prisma = createRefundNotifyPrismaMock();
+    const verifier = new FakeRefundNotifyVerifier(refundNotifyPayload("SUCCESS", 1));
+    const service = new PaymentsService(prisma as unknown as PrismaService, undefined, verifier);
+
+    await assert.rejects(() => service.handleRefundNotify(refundNotifyRequest()), ConflictException);
+
+    assert.equal(prisma.refundRecord.status, RefundStatus.PROCESSING);
+    assert.equal(prisma.refundUpdates.length, 0);
+    assert.equal(prisma.orderRecord.status, OrderStatus.PAID);
+  });
+
+  it("rejects a refund callback whose original order total differs from the paid order", async () => {
+    withWechatRefundNotifyConfig();
+    const prisma = createRefundNotifyPrismaMock();
+    const verifier = new FakeRefundNotifyVerifier(refundNotifyPayload("SUCCESS", 10000, 9999));
+    const service = new PaymentsService(prisma as unknown as PrismaService, undefined, verifier);
+
+    await assert.rejects(() => service.handleRefundNotify(refundNotifyRequest()), ConflictException);
+
+    assert.equal(prisma.refundUpdates.length, 0);
+    assert.equal(prisma.orderRecord.status, OrderStatus.PAID);
+  });
+});
+
+function withWechatRefundNotifyConfig(): void {
+  process.env.WECHAT_PAY_APP_ID = "wx-test";
+  process.env.WECHAT_PAY_MCH_ID = "1900000001";
+  process.env.WECHAT_PAY_MCH_SERIAL_NO = "merchant-serial";
+  process.env.WECHAT_PAY_API_V3_KEY = "12345678901234567890123456789012";
+  process.env.WECHAT_PAY_PRIVATE_KEY_PATH = __filename;
+  process.env.WECHAT_PAY_NOTIFY_URL = "https://example.com/api/payments/wechat/notify";
+}
+
+function refundNotifyRequest() {
+  const body = {
+    id: "refund-notify-1",
+    event_type: "REFUND.SUCCESS",
+    resource_type: "encrypt-resource",
+    resource: {
+      algorithm: "AEAD_AES_256_GCM",
+      ciphertext: "encrypted",
+      nonce: "refund-nonce",
+      associated_data: "refund"
+    }
+  };
+  return {
+    body,
+    rawBody: Buffer.from(JSON.stringify(body), "utf8"),
+    headers: { timestamp: "1", nonce: "nonce", signature: "signature", serial: "serial" }
+  };
+}
+
+function refundNotifyPayload(status: string, amountCent: number, totalAmountCent = 10000): Record<string, unknown> {
+  return {
+    out_refund_no: "REG_REFUND_ORDER001",
+    refund_id: "5030000708202609010000000001",
+    refund_status: status,
+    success_time: status === "SUCCESS" ? "2026-09-03T15:00:00+08:00" : undefined,
+    amount: { refund: amountCent, total: totalAmountCent }
+  };
+}
+
+function createRefundNotifyPrismaMock(options: { refundStatus?: RefundStatus; orderStatus?: OrderStatus } = {}) {
+  const orderRecord = { id: "order-1", paidAmountCent: 10000, payableAmountCent: 10000, status: options.orderStatus ?? OrderStatus.PAID };
+  const refundRecord = {
+    id: "refund-1",
+    outRefundNo: "REG_REFUND_ORDER001",
+    refundNo: "RF001",
+    amountCent: 10000,
+    status: options.refundStatus ?? RefundStatus.PROCESSING,
+    order: orderRecord
+  };
+  const refundUpdates: Array<Record<string, any>> = [];
+  const registrationUpdates: Array<Record<string, any>> = [];
+  const prisma: any = {
+    refundRecord,
+    orderRecord,
+    refundUpdates,
+    registrationUpdates,
+    refund: {
+      findFirst: async () => refundRecord,
+      update: async ({ data }: any) => {
+        refundUpdates.push(data);
+        Object.assign(refundRecord, data);
+        return refundRecord;
+      }
+    },
+    mallRefund: { findFirst: async () => null },
+    order: {
+      update: async ({ data }: any) => {
+        Object.assign(orderRecord, data);
+        return orderRecord;
+      }
+    },
+    registration: {
+      updateMany: async (args: any) => {
+        registrationUpdates.push(args);
+        return { count: 1 };
+      }
+    },
+    $transaction: async (operation: (tx: any) => Promise<unknown>) => operation(prisma)
+  };
+  return prisma;
+}
+
+class FakeRefundNotifyVerifier extends WechatPayNotifyVerifier {
+  verifyCalls = 0;
+
+  constructor(private readonly payload: Record<string, unknown>) {
+    super();
+  }
+
+  override verifySignature(): void {
+    this.verifyCalls += 1;
+  }
+
+  override decryptResource(): Record<string, unknown> {
+    return this.payload;
+  }
+}
 
 function withMockPaymentMode(): void {
   process.env.PAYMENT_MODE = "mock";

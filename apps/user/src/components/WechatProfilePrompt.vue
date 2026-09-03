@@ -1,8 +1,25 @@
 <template>
   <view v-if="visible && miniProgramEnabled" class="profile-mask">
     <view class="profile-dialog">
-      <text class="dialog-title">完善微信资料</text>
-      <text class="dialog-summary">用于报名信息识别</text>
+      <text class="dialog-title">{{ dialogTitle }}</text>
+      <text class="dialog-summary">{{ dialogSummary }}</text>
+
+      <view class="phone-panel" :class="{ 'phone-panel--bound': phone }">
+        <view class="phone-copy">
+          <text class="phone-title">{{ phone ? "手机号已绑定" : "微信手机号" }}</text>
+          <text class="phone-description">{{ phone ? maskPhone(phone) : "用于匹配报名、凭证和会务安排" }}</text>
+        </view>
+        <button
+          v-if="!phone"
+          class="phone-button"
+          open-type="getPhoneNumber"
+          :disabled="bindingPhone"
+          @getphonenumber="onGetPhoneNumber"
+        >
+          {{ bindingPhone ? "绑定中" : "一键绑定" }}
+        </button>
+        <text v-else class="bound-mark">已完成</text>
+      </view>
 
       <view class="profile-preview">
         <button class="avatar-button" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
@@ -38,12 +55,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ensureLogin } from "@/services/auth";
-import { getWechatProfile, updateWechatProfile, uploadWechatAvatar } from "@/services/profile";
+import { bindWechatPhone, getWechatProfile, updateWechatProfile, uploadWechatAvatar } from "@/services/profile";
 
 const miniProgramEnabled = ref(false);
 const visible = ref(false);
 const saving = ref(false);
+const bindingPhone = ref(false);
 const error = ref("");
+const phone = ref("");
 const wechatNickname = ref("");
 const wechatAvatarUrl = ref("");
 const pendingAvatarPath = ref("");
@@ -51,6 +70,8 @@ const avatarLoadFailed = ref(false);
 
 const displayAvatarUrl = computed(() => (avatarLoadFailed.value ? "" : pendingAvatarPath.value || wechatAvatarUrl.value));
 const previewName = computed(() => wechatNickname.value.trim() || "请选择头像并填写昵称");
+const dialogTitle = computed(() => phone.value ? "完善微信资料" : "绑定微信手机号");
+const dialogSummary = computed(() => phone.value ? "头像和昵称用于报名凭证展示" : "授权后自动读取微信绑定手机号，无需手动输入");
 
 onMounted(() => {
   uni.$on("wechat-profile:open", openProfilePrompt);
@@ -78,11 +99,43 @@ async function checkProfile(options?: { forceOpen?: boolean }) {
   try {
     await ensureLogin();
     const profile = await getWechatProfile();
+    phone.value = profile.phone || "";
     wechatNickname.value = profile.wechatNickname || "";
     wechatAvatarUrl.value = profile.wechatAvatarUrl || "";
-    visible.value = options?.forceOpen ? true : !wechatNickname.value || !wechatAvatarUrl.value;
+    visible.value = options?.forceOpen ? true : !phone.value || !wechatNickname.value || !wechatAvatarUrl.value;
   } catch (err) {
     console.error("[WECHAT_PROFILE_PROMPT_LOAD_ERROR]", err);
+  }
+}
+
+async function onGetPhoneNumber(event: unknown) {
+  const detail = readEventDetail(event);
+  const code = typeof detail.code === "string" ? detail.code.trim() : "";
+  const errMsg = typeof detail.errMsg === "string" ? detail.errMsg : "";
+  if (!code || !errMsg.includes(":ok")) {
+    error.value = "需要你点击允许后才能自动绑定微信手机号";
+    return;
+  }
+
+  bindingPhone.value = true;
+  error.value = "";
+  try {
+    await ensureLogin();
+    const result = await bindWechatPhone(code);
+    phone.value = result.user.phone || "";
+    uni.$emit("auth:changed", result.user);
+    uni.$emit("wechat-phone:updated", result.user);
+    const linked = result.linkedRegistrations;
+    uni.showToast({
+      title: linked > 0 ? `已绑定，并找回 ${linked} 条报名` : "手机号已绑定",
+      icon: "success",
+      duration: 2400
+    });
+  } catch (err) {
+    console.error("[WECHAT_PHONE_BIND_ERROR]", err);
+    error.value = "手机号绑定失败，请重新授权";
+  } finally {
+    bindingPhone.value = false;
   }
 }
 
@@ -104,6 +157,11 @@ function onNicknameInput(event: unknown) {
 }
 
 async function saveProfile() {
+  if (!phone.value) {
+    error.value = "请先点击一键绑定，授权读取微信手机号";
+    return;
+  }
+
   if (!wechatNickname.value.trim()) {
     error.value = "请填写微信昵称";
     return;
@@ -166,6 +224,18 @@ function readEventValue(event: unknown): unknown {
   return undefined;
 }
 
+function readEventDetail(event: unknown): Record<string, unknown> {
+  if (typeof event === "object" && event !== null && "detail" in event) {
+    const detail = (event as { detail?: unknown }).detail;
+    return typeof detail === "object" && detail !== null ? detail as Record<string, unknown> : {};
+  }
+  return {};
+}
+
+function maskPhone(value: string): string {
+  return value.length >= 7 ? `${value.slice(0, 3)} **** ${value.slice(-4)}` : value;
+}
+
 function isRemoteUrl(value: string): boolean {
   return value.startsWith("http://") || value.startsWith("https://");
 }
@@ -209,6 +279,66 @@ function isRemoteUrl(value: string): boolean {
   font-size: 26rpx;
   line-height: 1.5;
   text-align: center;
+}
+
+.phone-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-bottom: 28rpx;
+  padding: 22rpx 24rpx;
+  border: 1px solid var(--ui-color-border);
+  border-radius: 10rpx;
+  background: var(--ui-color-primary-soft);
+}
+
+.phone-panel--bound {
+  background: #edf7f3;
+}
+
+.phone-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.phone-title {
+  color: var(--ui-color-text);
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.phone-description {
+  color: var(--ui-color-muted);
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.phone-button {
+  min-width: 154rpx;
+  height: 68rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  border-radius: 8rpx;
+  background: var(--ui-color-primary);
+  color: #ffffff;
+  font-size: 25rpx;
+  font-weight: 900;
+  line-height: 68rpx;
+}
+
+.phone-button::after {
+  border: 0;
+}
+
+.bound-mark {
+  flex: 0 0 auto;
+  color: #226c58;
+  font-size: 24rpx;
+  font-weight: 900;
 }
 
 .profile-preview {

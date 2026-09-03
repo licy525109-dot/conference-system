@@ -106,15 +106,19 @@ MALL_WECHAT_REFUND_ENABLED=false
 
 | 配置 | 说明 |
 | --- | --- |
-| `REFUND_ENABLED` | 报名退款能力开关。 |
+| `REFUND_ENABLED` | 报名退款申请与后台审核入口开关。生产退款启用时设为 `true`。 |
+| `REFUND_MODE` | 报名退款执行模式。生产环境使用 `wechat`；`mock` 仅限本地或测试环境；`disabled` 不向微信发起退款。 |
+| `WECHAT_REFUND_ENABLED` | `REFUND_MODE=wechat` 的兼容开关，建议新环境统一使用 `REFUND_MODE`。 |
 | `INVOICE_ENABLED` | 发票申请能力开关。 |
-| `WECHAT_PAY_REFUND_NOTIFY_URL` | 真实微信退款回调地址。 |
+| `WECHAT_PAY_REFUND_NOTIFY_URL` | 真实微信退款回调地址，必须是公网 HTTPS 且不能带查询参数，例如 `https://guanchaohuiji.com/api/payments/wechat/refund-notify`。 |
 | `FINANCE_RECONCILIATION_ENABLED` | 财务对账能力开关。 |
 | `WECHAT_PAY_BILL_STORAGE_PATH` | 微信账单下载文件保存路径。 |
 
 验收：
 
-- 未配置微信退款时不显示退款成功到账。
+- 未配置微信退款时不显示退款成功到账，也不会把审核通过伪装成已退款。
+- 微信退款申请接口返回后只进入“退款处理中”；仅退款结果通知或后台主动查单返回 `SUCCESS` 后，订单和报名才更新为“已退款”。
+- 生产环境必须使用一笔真实小额微信订单完成申请、后台审批、退款回调和商户平台到账核对。
 - 发票第一版为自有人工开票流程。
 - 对账不自动改订单支付状态。
 

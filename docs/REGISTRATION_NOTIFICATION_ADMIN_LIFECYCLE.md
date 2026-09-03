@@ -4,6 +4,15 @@
 
 Improve the post-registration experience and give operators a complete, auditable way to manage complimentary guests, published guest schedules, users, coupons, promotions, and disposable conference data.
 
+## September 2026 scope extension
+
+1. A mini-program login may create a user before a phone number is available. When the profile has no phone, the mini program immediately presents a one-tap WeChat phone authorization action. WeChat requires a user gesture, so the phone number is never fetched silently.
+2. The phone authorization code is exchanged only by the API server through WeChat's `phonenumber.getPhoneNumber` endpoint. The client never submits a trusted phone number for this flow.
+3. Notification cards must expose the useful schedule fields directly. Opening a notification shows the complete published snapshot in place, including time, location, role, table assignment, table-leader status, topic, and notes.
+4. Registration refunds support a user request followed by administrator approval. The server derives the refundable amount from the paid order and successful refunds; the client cannot choose a trusted amount.
+5. A real WeChat refund is marked successful only after a verified refund callback or an explicit provider status query. The create-refund response only moves the local request to processing. Repeated requests and callbacks must be idempotent, and a successful refund cannot be downgraded by a late notification.
+6. Mock and complimentary test registrations may be permanently removed. Real WeChat payment history is retained; once refunded, it may be archived from operational lists instead of being hard deleted.
+
 ## Product rules
 
 1. A normal registration is still created only after a successful payment callback.

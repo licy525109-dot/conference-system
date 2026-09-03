@@ -13,6 +13,7 @@ export interface UserNotificationScheduleItem {
   tableNo: string | null;
   isTableLeader: boolean;
   shareTopic: string | null;
+  notes: string | null;
 }
 
 export interface UserNotification {

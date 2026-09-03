@@ -1,8 +1,8 @@
 import "reflect-metadata";
-import { describe, it } from "node:test";
+import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { UnauthorizedException } from "@nestjs/common";
-import { CheckInStatus, OrderStatus, PaymentProvider, PaymentStatus, RegistrationSource, RegistrationStatus } from "@prisma/client";
+import { CheckInStatus, OrderStatus, PaymentProvider, PaymentStatus, RefundStatus, RegistrationSource, RegistrationStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { RegistrationsService } from "./registrations.service";
@@ -16,6 +16,10 @@ const currentUser: CurrentUser = {
 process.env.JWT_SECRET = "test_registration_credential_jwt_secret";
 
 describe("RegistrationsService listMine", () => {
+  beforeEach(() => {
+    delete process.env.REFUND_ENABLED;
+  });
+
   it("requires login", async () => {
     const service = new RegistrationsService(createPrismaMock());
 
@@ -23,6 +27,7 @@ describe("RegistrationsService listMine", () => {
   });
 
   it("returns only current user's registrations ordered by createdAt desc", async () => {
+    process.env.REFUND_ENABLED = "true";
     const prisma = createPrismaMock();
     const service = new RegistrationsService(prisma);
 
@@ -41,6 +46,7 @@ describe("RegistrationsService listMine", () => {
       attendeeName: "李四",
       phone: "13900000000",
       paidAmountCent: 70000,
+      refundableAmountCent: 70000,
       confirmedAt: "2026-06-07T10:00:00.000Z",
       createdAt: "2026-06-07T10:00:00.000Z",
       conference: {
@@ -55,9 +61,30 @@ describe("RegistrationsService listMine", () => {
         name: "仅参会"
       },
       order: {
-        orderNo: "ORDER-NEW"
-      }
+        orderNo: "ORDER-NEW",
+        status: OrderStatus.PAID
+      },
+      refund: null,
+      canRequestRefund: true
     });
+  });
+
+  it("shows only the server-calculated remaining refundable amount after a partial refund", async () => {
+    process.env.REFUND_ENABLED = "true";
+    const prisma = createPrismaMock();
+    const registration = prisma.registrations.find((item) => item.id === "registration-new")!;
+    (registration.order as unknown as { refunds: Array<Record<string, unknown>> }).refunds = [
+      { id: "refund-success", status: RefundStatus.SUCCESS, amountCent: 20000, reason: "部分退款", failedReason: null, createdAt: new Date("2026-06-09T10:00:00.000Z") },
+      { id: "refund-failed", status: RefundStatus.FAILED, amountCent: 10000, reason: "失败重试", failedReason: "已关闭", createdAt: new Date("2026-06-08T10:00:00.000Z") }
+    ];
+    const service = new RegistrationsService(prisma);
+
+    const response = await service.listMine(currentUser);
+    const item = response.data.items.find((current) => current.id === "registration-new")!;
+
+    assert.equal(item.refundableAmountCent, 50000);
+    assert.equal(item.refund?.id, "refund-success");
+    assert.equal(item.canRequestRefund, true);
   });
 
   it("returns an empty list when current user has no registrations", async () => {
@@ -108,6 +135,7 @@ function createPrismaMock() {
   ];
 
   const mock = {
+    registrations,
     lastFindManyArgs: undefined as RegistrationFindManyArgs | undefined,
     registration: {
       findMany: async (args: RegistrationFindManyArgs) => {
@@ -222,7 +250,9 @@ function createRegistration(
       name: skuName
     },
     order: {
-      orderNo
+      orderNo,
+      status: OrderStatus.PAID,
+      refunds: []
     }
   };
 }

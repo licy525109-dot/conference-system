@@ -8,6 +8,11 @@ interface ProfileResponse {
   user: CurrentUser;
 }
 
+interface PhoneBindingResponse extends ProfileResponse {
+  linkedOrders: number;
+  linkedRegistrations: number;
+}
+
 interface AvatarUploadResponse extends ProfileResponse {
   avatarUrl: string;
 }
@@ -36,6 +41,16 @@ export async function updateWechatProfile(input: {
   });
   cacheUser(data.user);
   return data.user;
+}
+
+export async function bindWechatPhone(code: string): Promise<PhoneBindingResponse> {
+  const data = await request<PhoneBindingResponse>("/auth/me/phone/wechat", {
+    method: "POST",
+    auth: true,
+    data: { code }
+  });
+  cacheUser(data.user);
+  return data;
 }
 
 export function uploadWechatAvatar(filePath: string): Promise<string> {

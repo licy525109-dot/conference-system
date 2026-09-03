@@ -176,7 +176,7 @@ function isTabbarLikePage(url: string): boolean {
   gap: 7rpx;
   min-width: 0;
   color: var(--ui-color-muted);
-  font-size: 22rpx;
+  font-size: 26rpx;
   font-weight: 700;
   transition: transform 140ms ease, color 140ms ease;
 }
@@ -203,7 +203,7 @@ function isTabbarLikePage(url: string): boolean {
   border-radius: 14rpx;
   background: var(--cms-primary-soft);
   color: var(--cms-primary-strong);
-  font-size: 20rpx;
+  font-size: 24rpx;
   font-weight: 900;
   line-height: 1;
 }

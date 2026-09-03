@@ -227,7 +227,8 @@ export class GuestScheduleService {
               role: item.role,
               tableNo: item.tableNo,
               isTableLeader: item.isTableLeader,
-              shareTopic: item.shareTopic
+              shareTopic: item.shareTopic,
+              notes: item.notes
             }))
           }
         }

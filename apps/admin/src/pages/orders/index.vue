@@ -94,7 +94,10 @@
         <div v-if="detail.registration" class="inline-actions">
           <el-button type="primary" @click="navigateTo('/registrations/detail', { id: detail.registration.id })">查看报名详情</el-button>
         </div>
-        <el-alert class="reserved-alert" title="退款与重新处理支付成功属于高风险预留能力，本页仅展示异常、记录人工处理备注，不修改支付状态。" type="info" :closable="false" />
+        <el-alert class="reserved-alert" title="报名退款请前往“财务管理 > 退款管理”审核。退款成功只以微信退款结果或已验签回调为准，本页不允许手动修改支付状态。" type="info" :closable="false" />
+        <div v-if="detail.status === 'PAID' && hasPermission('refund:view')" class="inline-actions">
+          <el-button @click="navigateTo('/finance/refunds')">前往退款管理</el-button>
+        </div>
         <section v-if="detail.paymentExceptions.length > 0" class="exception-panel">
           <h3>异常识别</h3>
           <el-alert

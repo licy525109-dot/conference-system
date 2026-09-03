@@ -25,6 +25,12 @@ export class AuthController {
     return this.authService.updateWechatProfile(request.currentUser!, body);
   }
 
+  @Post("me/phone/wechat")
+  @UseGuards(JwtAuthGuard)
+  bindWechatPhone(@Body() body: unknown, @Req() request: RequestWithCurrentUser) {
+    return this.authService.bindWechatPhone(request.currentUser!, body);
+  }
+
   @Post("me/avatar")
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(

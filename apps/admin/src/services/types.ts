@@ -184,6 +184,39 @@ export interface AdminRegistration {
   createdAt: string;
 }
 
+export interface ConferenceTestDataCleanupPreview {
+  conferenceId: string;
+  conferenceTitle: string;
+  mockRegistrations: {
+    count: number;
+    items: Array<{
+      id: string;
+      registrationNo: string;
+      attendeeName: string;
+      orderId: string;
+      orderNo: string;
+      attendees: Array<{ skuId: string }>;
+    }>;
+  };
+  standaloneMockOrders: {
+    count: number;
+    items: Array<{ id: string; orderNo: string }>;
+  };
+  protectedRecords: {
+    count: number;
+    orderNos: string[];
+    reason: string;
+  };
+}
+
+export interface ConferenceTestDataCleanupResult {
+  conferenceId: string;
+  conferenceTitle: string;
+  deletedRegistrations: number;
+  deletedOrders: number;
+  protectedRecords: number;
+}
+
 export interface AdminRegistrationDetail extends AdminRegistration {
   formDataJson: Record<string, unknown>;
   attendees: AdminRegistrationAttendee[];

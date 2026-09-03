@@ -6,6 +6,7 @@ export interface MyRegistrationItem {
   attendeeName: string;
   phone: string;
   paidAmountCent: number;
+  refundableAmountCent: number;
   confirmedAt: string;
   createdAt: string;
   conference: {
@@ -21,7 +22,16 @@ export interface MyRegistrationItem {
   };
   order: {
     orderNo: string;
+    status: string;
   };
+  refund: {
+    id: string;
+    status: string;
+    amountCent: number;
+    reason: string | null;
+    failedReason: string | null;
+  } | null;
+  canRequestRefund: boolean;
 }
 
 export interface RegistrationCredential {

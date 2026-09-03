@@ -1,7 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuditAction, InvoiceStatus, OrderStatus, PaymentProvider, PaymentStatus, Prisma, RefundStatus } from "@prisma/client";
 import { isMallMockRefundEnabled, isMallWechatRefundConfigured } from "../mall/mall-payment.config";
+import { readWechatPayConfig } from "../payments/wechat-pay.config";
+import { WechatPayRefundClient } from "../payments/wechat-pay.refund-client";
+import { WechatPaySigner } from "../payments/wechat-pay.signer";
 import { PrismaService } from "../prisma.service";
+import { CurrentUser } from "../auth/current-user";
 import { CurrentAdmin } from "./current-admin";
 
 type FinanceSourceType = "REGISTRATION" | "MALL" | "ALL";
@@ -32,7 +36,10 @@ const PAID_MALL_ORDER_STATUSES = ["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "
 
 @Injectable()
 export class AdminFinanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wechatRefundClient: WechatPayRefundClient = new WechatPayRefundClient(new WechatPaySigner())
+  ) {}
 
   async overview() {
     const actualPaymentWhere = { status: PaymentStatus.SUCCESS, provider: PaymentProvider.WECHAT } as const;
@@ -236,6 +243,64 @@ export class AdminFinanceService {
     return sourceType === "MALL" ? this.createMallRefund(body, admin) : this.createRegistrationRefund(body, admin);
   }
 
+  async requestRegistrationRefund(input: unknown, currentUser: CurrentUser) {
+    if (!isFeatureEnabled("REFUND_ENABLED")) throw new ForbiddenException("报名退款暂未开放");
+    const body = readObject(input);
+    const orderNo = readRequiredString(body, "orderNo");
+    const reason = readOptionalString(body.reason) || "临时无法参会";
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const refund = await this.prisma.$transaction(async (tx) => {
+          const order = await tx.order.findFirst({
+            where: { orderNo, userId: currentUser.id },
+            include: { refunds: true }
+          });
+          if (!order) throw new NotFoundException("报名订单不存在");
+
+          const existing = order.refunds.find((item) => ACTIVE_REFUND_STATUSES.includes(item.status));
+          if (existing) return existing;
+          if (order.status === OrderStatus.REFUNDED) {
+            const success = order.refunds.find((item) => item.status === RefundStatus.SUCCESS);
+            if (success) return success;
+          }
+          if (order.status !== OrderStatus.PAID) throw new ConflictException("仅已支付且未退款的报名订单可申请退款");
+
+          const availableAmountCent = refundableAmount(order.paidAmountCent ?? order.payableAmountCent, order.refunds);
+          if (availableAmountCent <= 0) throw new ConflictException("该订单没有可退金额");
+          const created = await tx.refund.create({
+            data: {
+              refundNo: generateCode("RF"),
+              outRefundNo: `REG_REFUND_${order.orderNo}_${Date.now()}`,
+              orderNo: order.orderNo,
+              orderId: order.id,
+              userId: currentUser.id,
+              amountCent: availableAmountCent,
+              reason,
+              status: RefundStatus.REQUESTED
+            }
+          });
+          await tx.auditLog.create({
+            data: {
+              action: AuditAction.CREATE,
+              entityType: "Refund",
+              entityId: created.id,
+              summary: "User requested registration refund",
+              metadataJson: { userId: currentUser.id, orderNo: order.orderNo, amountCent: availableAmountCent }
+            }
+          });
+          return created;
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        return ok(formatRegistrationRefund(refund));
+      } catch (error) {
+        if (attempt < 2 && isSerializableTransactionConflict(error)) continue;
+        throw error;
+      }
+    }
+
+    throw new ConflictException("退款申请提交冲突，请重试");
+  }
+
   async listRefunds(query: Record<string, unknown>) {
     const { page, pageSize, skip } = readPage(query);
     const sourceType = readSourceType(query.sourceType);
@@ -266,8 +331,8 @@ export class AdminFinanceService {
 
   async refundConfig() {
     const publicBase = resolvePublicApiBase();
-    const registrationWechatConfigured = isRegistrationWechatRefundConfigured() && Boolean(process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim());
-    const mallWechatConfigured = isMallWechatRefundConfigured() && Boolean(process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim());
+    const registrationWechatConfigured = hasWechatRefundRuntimeConfig(isRegistrationWechatRefundConfigured());
+    const mallWechatConfigured = hasWechatRefundRuntimeConfig(isMallWechatRefundConfigured());
     return ok({
       registration: {
         enabled: isFeatureEnabled("REFUND_ENABLED"),
@@ -319,6 +384,9 @@ export class AdminFinanceService {
     if (registration) {
       if (registration.status === RefundStatus.REJECTED) return ok(formatRegistrationRefund(registration));
       if (!([RefundStatus.REQUESTED, RefundStatus.APPROVED] as RefundStatus[]).includes(registration.status)) throw new ConflictException("当前退款状态不可驳回");
+      if (registration.provider === PaymentProvider.WECHAT && registration.status === RefundStatus.APPROVED) {
+        throw new ConflictException("微信退款已尝试提交，结果未确认前不可驳回，请先查询或重试退款");
+      }
       const refund = await this.prisma.refund.update({ where: { id }, data: { status: RefundStatus.REJECTED, rejectReason: reason } });
       await this.writeAudit(admin, AuditAction.UPDATE, "Refund", id, "Reject registration refund", { reason });
       return ok(formatRegistrationRefund(refund));
@@ -339,7 +407,44 @@ export class AdminFinanceService {
 
   async queryRefund(id: string) {
     const registration = await this.prisma.refund.findUnique({ where: { id }, include: { order: { include: { conference: true, user: true } }, user: true } });
-    if (registration) return ok(formatRegistrationRefund(registration));
+    if (registration) {
+      if (registration.status === RefundStatus.SUCCESS) return ok(formatRegistrationRefund(registration));
+      if (registration.provider === PaymentProvider.WECHAT && isRegistrationWechatRefundConfigured() && registration.outRefundNo) {
+        const result = await this.wechatRefundClient.queryRefund({
+          config: readWechatPayConfig(),
+          outRefundNo: registration.outRefundNo
+        });
+        if (result.outRefundNo !== registration.outRefundNo) throw new ConflictException("微信退款查询返回的商户退款单号不一致");
+        if (result.amountCent !== registration.amountCent) throw new ConflictException("微信退款查询金额与本地退款金额不一致");
+        const expectedTotalCent = registration.order?.paidAmountCent ?? registration.order?.payableAmountCent;
+        if (typeof expectedTotalCent === "number" && result.totalAmountCent !== expectedTotalCent) {
+          throw new ConflictException("微信退款查询订单金额与本地实付金额不一致");
+        }
+        const status = mapVerifiedWechatRefundStatus(result.status);
+        const successTime = status === RefundStatus.SUCCESS && result.successTime ? new Date(result.successTime) : null;
+        const processedAt = status === RefundStatus.PROCESSING
+          ? null
+          : successTime && !Number.isNaN(successTime.getTime()) ? successTime : new Date();
+        const updated = await this.prisma.$transaction(async (tx) => {
+          const refund = await tx.refund.update({
+            where: { id: registration.id },
+            data: {
+              providerRefundId: result.refundId,
+              status,
+              processedAt,
+              failedReason: status === RefundStatus.FAILED ? `微信退款状态：${result.status}` : null
+            }
+          });
+          if (status === RefundStatus.SUCCESS && registration.order && registration.amountCent >= (registration.order.paidAmountCent ?? registration.order.payableAmountCent)) {
+            await tx.order.update({ where: { id: registration.order.id }, data: { status: OrderStatus.REFUNDED } });
+            await tx.registration.updateMany({ where: { orderId: registration.order.id }, data: { status: "REFUNDED" } });
+          }
+          return refund;
+        });
+        return ok(formatRegistrationRefund({ ...registration, ...updated }));
+      }
+      return ok(formatRegistrationRefund(registration));
+    }
     const mall = await this.prisma.mallRefund.findUnique({ where: { id }, include: { order: { include: { user: true, items: { take: 3 } } }, afterSale: true } });
     if (mall) return ok(formatMallRefund(mall));
     throw new NotFoundException("Refund not found");
@@ -622,8 +727,8 @@ export class AdminFinanceService {
 
   private async approveRegistrationRefund(current: Prisma.RefundGetPayload<{ include: { order: true } }>, admin: CurrentAdmin) {
     if (current.status === RefundStatus.SUCCESS) return ok(formatRegistrationRefund(current));
-    if (([RefundStatus.PROCESSING, RefundStatus.APPROVED] as RefundStatus[]).includes(current.status)) return ok(formatRegistrationRefund(current));
-    if (current.status !== RefundStatus.REQUESTED) throw new ConflictException("当前退款状态不可批准");
+    if (current.status === RefundStatus.PROCESSING) return ok(formatRegistrationRefund(current));
+    if (!([RefundStatus.REQUESTED, RefundStatus.APPROVED] as RefundStatus[]).includes(current.status)) throw new ConflictException("当前退款状态不可批准");
     const now = new Date();
     if (isRegistrationMockRefundEnabled()) {
       const refund = await this.prisma.$transaction(async (tx) => {
@@ -639,6 +744,69 @@ export class AdminFinanceService {
       });
       await this.writeAudit(admin, AuditAction.UPDATE, "Refund", current.id, "Approve registration refund with mock success", { provider: "MOCK" });
       return ok(formatRegistrationRefund(refund));
+    }
+    if (isRegistrationWechatRefundConfigured()) {
+      if (!current.order) throw new ConflictException("退款申请未关联报名订单");
+      const payment = await this.prisma.payment.findFirst({
+        where: { orderId: current.order.id, provider: PaymentProvider.WECHAT, status: PaymentStatus.SUCCESS },
+        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }]
+      });
+      if (!payment) throw new ConflictException("未找到可退款的微信支付成功记录");
+      const orderPaidAmountCent = current.order.paidAmountCent ?? current.order.payableAmountCent;
+      if (payment.amountCent !== orderPaidAmountCent) {
+        throw new ConflictException("微信支付成功金额与订单实付金额不一致，请先完成支付异常核对");
+      }
+      if (current.amountCent > orderPaidAmountCent) throw new ConflictException("退款金额超过订单实付金额");
+
+      if (current.status === RefundStatus.REQUESTED) {
+        await this.prisma.refund.update({
+          where: { id: current.id },
+          data: { provider: PaymentProvider.WECHAT, status: RefundStatus.APPROVED, approvedAt: now, failedReason: null }
+        });
+      }
+
+      try {
+        const result = await this.wechatRefundClient.createRefund({
+          config: readWechatPayConfig(),
+          outTradeNo: payment.outTradeNo,
+          outRefundNo: current.outRefundNo || current.refundNo,
+          amountCent: current.amountCent,
+          totalAmountCent: payment.amountCent,
+          reason: current.reason
+        });
+        if (result.outRefundNo !== (current.outRefundNo || current.refundNo)) {
+          throw new ConflictException("微信退款响应的商户退款单号与本地不一致");
+        }
+        // The create-refund response only confirms that WeChat accepted the request.
+        // A verified refund notification or an explicit provider query is required before success.
+        const refund = await this.prisma.$transaction(async (tx) => {
+          const updated = await tx.refund.update({
+            where: { id: current.id },
+            data: {
+              provider: PaymentProvider.WECHAT,
+              providerRefundId: result.refundId,
+              status: RefundStatus.PROCESSING,
+              processedAt: null,
+              failedReason: null
+            }
+          });
+          return updated;
+        });
+        await this.writeAudit(admin, AuditAction.UPDATE, "Refund", current.id, "Submit registration refund to WeChat", {
+          provider: "WECHAT",
+          status: result.status,
+          outRefundNo: result.outRefundNo
+        });
+        return ok(formatRegistrationRefund(refund));
+      } catch (error) {
+        const failedReason = readableRefundFailure(error);
+        await this.prisma.refund.update({
+          where: { id: current.id },
+          data: { provider: PaymentProvider.WECHAT, status: RefundStatus.APPROVED, processedAt: null, failedReason }
+        });
+        await this.writeAudit(admin, AuditAction.UPDATE, "Refund", current.id, "Registration WeChat refund submission failed and remains retryable", { failedReason });
+        throw error;
+      }
     }
     const refund = await this.prisma.refund.update({
       where: { id: current.id },
@@ -893,6 +1061,17 @@ function formatDateFields(item: Record<string, unknown>): Record<string, unknown
 function refundableAmount(paidAmountCent: number, refunds: Array<{ amountCent: number; status: RefundStatus }>) {
   const refundedCent = refunds.filter((item) => FINISHED_REFUND_STATUSES.includes(item.status)).reduce((sum, item) => sum + item.amountCent, 0);
   return Math.max(0, paidAmountCent - refundedCent);
+}
+
+function isSerializableTransactionConflict(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2034";
+}
+
+function mapVerifiedWechatRefundStatus(status: string): RefundStatus {
+  if (status === "SUCCESS") return RefundStatus.SUCCESS;
+  if (status === "PROCESSING") return RefundStatus.PROCESSING;
+  if (status === "CLOSED" || status === "ABNORMAL") return RefundStatus.FAILED;
+  throw new ConflictException("微信退款查询返回未知状态，请人工核对商户平台");
 }
 
 function buildLocalPaymentDifferences(payment: LocalPaymentRow): Prisma.FinanceReconciliationItemCreateWithoutBatchInput[] {
@@ -1190,6 +1369,25 @@ function isRegistrationMockRefundEnabled(): boolean {
 
 function isRegistrationWechatRefundConfigured(): boolean {
   return process.env.REFUND_MODE === "wechat" || process.env.WECHAT_REFUND_ENABLED === "true";
+}
+
+function hasWechatRefundRuntimeConfig(modeEnabled: boolean): boolean {
+  if (!modeEnabled) return false;
+  const refundNotifyUrl = process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim();
+  if (!refundNotifyUrl) return false;
+  try {
+    const url = new URL(refundNotifyUrl);
+    if (url.protocol !== "https:" || url.search) return false;
+    readWechatPayConfig();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readableRefundFailure(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message.trim().slice(0, 500);
+  return "微信退款申请失败，请核对商户退款配置";
 }
 
 function isWechatBillDownloadEnabled(): boolean {

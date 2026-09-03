@@ -7,6 +7,14 @@
     >
       <template #actions>
         <el-button type="primary" @click="openComplimentary">添加免支付嘉宾</el-button>
+        <el-button
+          v-if="canCleanupTestData"
+          type="danger"
+          plain
+          :disabled="!conferenceId"
+          :loading="cleaningTestData"
+          @click="cleanCurrentConferenceTestData"
+        >清理当前会议测试数据</el-button>
         <el-button :loading="exporting" @click="exportExcel">导出 Excel</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </template>
@@ -167,10 +175,12 @@ import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo } from "../../router";
-import { createComplimentaryRegistration, deleteRegistration, exportRegistrationsExcel, getRegistration, listConferences, listRegistrations, listSkus, listUsers, manualCheckin, updateRegistrationRemark } from "../../services/admin";
+import { cleanupConferenceTestData, createComplimentaryRegistration, deleteRegistration, exportRegistrationsExcel, getRegistration, listConferences, listRegistrations, listSkus, listUsers, manualCheckin, previewConferenceTestDataCleanup, updateRegistrationRemark } from "../../services/admin";
 import type { AdminAppUser, AdminRegistration, AdminRegistrationDetail, Conference, Sku } from "../../services/types";
+import { useAdminSession } from "../../stores/admin-session";
 
 const items = ref<AdminRegistration[]>([]);
+const { hasPermission } = useAdminSession();
 const conferences = ref<Conference[]>([]);
 const complimentarySkus = ref<Sku[]>([]);
 const users = ref<AdminAppUser[]>([]);
@@ -185,6 +195,7 @@ const exporting = ref(false);
 const detailVisible = ref(false);
 const complimentaryVisible = ref(false);
 const complimentarySaving = ref(false);
+const cleaningTestData = ref(false);
 const remark = ref("");
 const complimentaryForm = reactive({
   conferenceId: "",
@@ -209,6 +220,7 @@ const displayedItems = computed(() => {
     return true;
   });
 });
+const canCleanupTestData = computed(() => hasPermission("registration:write") && hasPermission("order:delete"));
 
 onMounted(async () => {
   await Promise.all([loadConferences(), loadUsersForSelection(), load()]);
@@ -284,6 +296,46 @@ async function removeRegistration(row: AdminRegistration) {
   await deleteRegistration(row.id);
   await load();
   ElMessage.success("报名记录已删除");
+}
+
+async function cleanCurrentConferenceTestData() {
+  if (!conferenceId.value || cleaningTestData.value) {
+    ElMessage.warning("请先选择要清理的会议");
+    return;
+  }
+  cleaningTestData.value = true;
+  try {
+    const preview = await previewConferenceTestDataCleanup(conferenceId.value);
+    const deletableCount = preview.mockRegistrations.count + preview.standaloneMockOrders.count;
+    if (deletableCount === 0) {
+      ElMessage.info(preview.protectedRecords.count > 0
+        ? `没有可自动清理的 Mock 数据；${preview.protectedRecords.count} 条记录受保护`
+        : "当前会议没有可清理的测试数据");
+      return;
+    }
+
+    const message = [
+      `将永久删除 Mock 报名 ${preview.mockRegistrations.count} 条、相关及孤立测试订单共 ${preview.mockRegistrations.count + preview.standaloneMockOrders.count} 条。`,
+      `另有 ${preview.protectedRecords.count} 条记录受保护并会跳过。`,
+      "真实微信支付流水和人工免支付嘉宾不会删除。",
+      `请输入完整会议名称确认：${preview.conferenceTitle}`
+    ].join("\n");
+    const { value } = await ElMessageBox.prompt(message, "清理会议测试数据", {
+      confirmButtonText: "确认永久删除",
+      cancelButtonText: "取消",
+      type: "warning",
+      inputPlaceholder: preview.conferenceTitle,
+      inputValidator: (input) => input === preview.conferenceTitle || "会议名称不一致"
+    });
+    const result = await cleanupConferenceTestData(conferenceId.value, value);
+    await load();
+    ElMessage.success(`已删除 ${result.deletedRegistrations} 条 Mock 报名和 ${result.deletedOrders} 条测试订单；保护 ${result.protectedRecords} 条`);
+  } catch (error) {
+    if (error === "cancel" || error === "close") return;
+    throw error;
+  } finally {
+    cleaningTestData.value = false;
+  }
 }
 
 async function load() {

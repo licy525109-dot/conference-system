@@ -210,6 +210,33 @@ describe("AuthService mock WeChat login", () => {
       BadRequestException
     );
   });
+
+  it("binds only the phone verified by WeChat and links unclaimed registrations", async () => {
+    withRealAuthEnv();
+    const prisma = createPrismaMock();
+    const service = new AuthService(prisma, createWechatAuthMock({
+      openid: "real-openid-001",
+      sessionKey: "session-key",
+      unionid: null,
+      phone: "13800138000"
+    }));
+    const login = await service.wechatLogin({ code: "wx-code-001" });
+    prisma.orders.push({ phone: "13800138000", userId: null });
+    prisma.orders.push({ phone: "13900139000", userId: null });
+    prisma.registrations.push({ phone: "13800138000", userId: null });
+
+    const response = await service.bindWechatPhone(login.data.user, {
+      code: "phone-code-001",
+      phone: "13900139000"
+    });
+
+    assert.equal(response.data.user.phone, "13800138000");
+    assert.equal(response.data.linkedOrders, 1);
+    assert.equal(response.data.linkedRegistrations, 1);
+    assert.equal(prisma.orders[0]?.userId, login.data.user.id);
+    assert.equal(prisma.orders[1]?.userId, null);
+    assert.equal(prisma.registrations[0]?.userId, login.data.user.id);
+  });
 });
 
 function withAuthEnv(): void {
@@ -231,21 +258,31 @@ function withRealAuthEnvWithoutCredentials(): void {
   delete process.env.WECHAT_APP_SECRET;
 }
 
-function createWechatAuthMock(session: { openid: string; sessionKey: string; unionid: string | null }): WechatAuthService {
+function createWechatAuthMock(session: { openid: string; sessionKey: string; unionid: string | null; phone?: string }): WechatAuthService {
   return {
     code2Session: async (code: string) => {
       assert.equal(code, "wx-code-001");
       return session;
+    },
+    getPhoneNumber: async (code: string) => {
+      assert.equal(code, "phone-code-001");
+      const phone = session.phone ?? "13800138000";
+      return { phoneNumber: `+86${phone}`, purePhoneNumber: phone, countryCode: "86" };
     }
   } as WechatAuthService;
 }
 
 function createPrismaMock() {
   const users: UserRecord[] = [];
+  const orders: Array<{ phone: string; userId: string | null }> = [];
+  const registrations: Array<{ phone: string; userId: string | null }> = [];
   let nextUserNumber = 1;
 
   const mock = {
     users,
+    orders,
+    registrations,
+    $transaction: async (callback: (client: any) => Promise<unknown>) => callback(mock),
     user: {
       upsert: async (args: UserUpsertArgs) => {
         const existing = users.find((user) => user.openid === args.where.openid);
@@ -270,6 +307,7 @@ function createPrismaMock() {
           nickname: args.create.nickname,
           wechatNickname: null,
           wechatAvatarUrl: null,
+          phone: null,
           profileUpdatedAt: null,
           createdAt: now,
           lastActiveAt: args.create.lastActiveAt ?? null
@@ -292,6 +330,9 @@ function createPrismaMock() {
         if ("wechatAvatarUrl" in args.data) {
           user.wechatAvatarUrl = args.data.wechatAvatarUrl ?? null;
         }
+        if ("phone" in args.data) {
+          user.phone = args.data.phone ?? null;
+        }
         if (args.data.profileUpdatedAt instanceof Date) {
           user.profileUpdatedAt = args.data.profileUpdatedAt;
         }
@@ -299,6 +340,20 @@ function createPrismaMock() {
           user.lastActiveAt = args.data.lastActiveAt;
         }
         return selectUser(user);
+      }
+    },
+    order: {
+      updateMany: async ({ where, data }: { where: { phone: string; userId: null }; data: { userId: string } }) => {
+        const matches = orders.filter((item) => item.phone === where.phone && item.userId === null);
+        matches.forEach((item) => { item.userId = data.userId; });
+        return { count: matches.length };
+      }
+    },
+    registration: {
+      updateMany: async ({ where, data }: { where: { phone: string; userId: null }; data: { userId: string } }) => {
+        const matches = registrations.filter((item) => item.phone === where.phone && item.userId === null);
+        matches.forEach((item) => { item.userId = data.userId; });
+        return { count: matches.length };
       }
     }
   };
@@ -311,6 +366,7 @@ function selectUser(user: UserRecord) {
     id: user.id,
     openid: user.openid,
     nickname: user.nickname,
+    phone: user.phone,
     wechatNickname: user.wechatNickname,
     wechatAvatarUrl: user.wechatAvatarUrl,
     createdAt: user.createdAt,
@@ -331,6 +387,7 @@ interface UserRecord {
   openid: string;
   unionid: string | null;
   nickname: string | null;
+  phone: string | null;
   wechatNickname: string | null;
   wechatAvatarUrl: string | null;
   profileUpdatedAt: Date | null;
@@ -368,6 +425,7 @@ interface UserUpdateArgs {
   data: {
     wechatNickname?: string | null;
     wechatAvatarUrl?: string | null;
+    phone?: string | null;
     profileUpdatedAt?: Date;
     lastActiveAt?: Date;
   };
