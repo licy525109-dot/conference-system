@@ -404,6 +404,54 @@ export class AdminMembersService {
     return ok({ items: items.map(formatUser), total, page, pageSize });
   }
 
+  async updateUser(id: string, input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    if (!Object.hasOwn(body, "nickname") && !Object.hasOwn(body, "phone")) {
+      throw new BadRequestException("请至少修改昵称或手机号");
+    }
+    const existing = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) throw new NotFoundException("User not found");
+    const nickname = Object.hasOwn(body, "nickname") ? readProfileString(body.nickname, "nickname", 80) : undefined;
+    const phone = Object.hasOwn(body, "phone") ? readProfileString(body.phone, "phone", 30) : undefined;
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(typeof nickname !== "undefined" ? { nickname } : {}),
+        ...(typeof phone !== "undefined" ? { phone } : {})
+      },
+      include: { memberships: { include: { level: true }, orderBy: { createdAt: "desc" }, take: 3 } }
+    });
+    await this.writeAudit(admin, AuditAction.UPDATE, "User", id, "Update mini program user profile", {
+      changedFields: [typeof nickname !== "undefined" ? "nickname" : null, typeof phone !== "undefined" ? "phone" : null].filter(Boolean)
+    });
+    return ok(formatUser(user));
+  }
+
+  async deleteUser(id: string, admin: CurrentAdmin) {
+    const existing = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, _count: { select: { orders: true, registrations: true } } }
+    });
+    if (!existing) throw new NotFoundException("User not found");
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          adminUserId: admin.id,
+          action: AuditAction.DELETE,
+          entityType: "User",
+          entityId: id,
+          summary: "Delete mini program user identity",
+          metadataJson: {
+            detachedOrderCount: existing._count.orders,
+            detachedRegistrationCount: existing._count.registrations
+          }
+        }
+      });
+    });
+    return ok({ id, deleted: true, historicalRecordsRetained: true });
+  }
+
   private async requireLevel(levelId: string) {
     const level = await this.prisma.memberLevel.findUnique({ where: { id: levelId } });
     if (!level) throw new NotFoundException("Member level not found");
@@ -737,6 +785,14 @@ function readOptionalString(body: Record<string, unknown>, key: string): string 
 
 function readNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readProfileString(value: unknown, field: string, maxLength: number): string | null {
+  if (value === null || value === "") return null;
+  if (typeof value !== "string") throw new BadRequestException(`${field} 必须是字符串`);
+  const trimmed = value.trim();
+  if (trimmed.length > maxLength) throw new BadRequestException(`${field} 内容过长`);
+  return trimmed || null;
 }
 
 function readEnum(body: Record<string, unknown>, key: string, allowed: Set<string>): string | undefined {

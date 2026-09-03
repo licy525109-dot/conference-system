@@ -166,6 +166,8 @@ export interface AdminRegistration {
   phone: string;
   paidAmountCent: number;
   status: string;
+  source: "PAYMENT" | "ADMIN_COMPLIMENTARY" | string;
+  complimentary: boolean;
   user: AdminWechatUser | null;
   orderNo: string;
   confirmedAt: string;
@@ -290,6 +292,7 @@ export interface Coupon {
   redemptionCount: number;
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null;
 }
 
 export interface PromotionRule {
@@ -297,6 +300,7 @@ export interface PromotionRule {
   name: string;
   type: "FULL_REDUCTION";
   conferenceId: string | null;
+  conferenceTitle: string | null;
   allowedSkuIds: string[];
   minAmountCent: number | null;
   minQuantity: number | null;

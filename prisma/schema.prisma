@@ -68,6 +68,11 @@ enum RegistrationStatus {
   REFUNDED
 }
 
+enum RegistrationSource {
+  PAYMENT
+  ADMIN_COMPLIMENTARY
+}
+
 enum CheckInStatus {
   NOT_REQUIRED
   PENDING
@@ -247,6 +252,7 @@ model User {
   mallOrders                MallOrder[]
   notificationSubscriptions NotificationSubscription[]
   notificationLogs          NotificationLog[]
+  userNotifications         UserNotification[]
   adminWechatBindings       AdminWechatBinding[]
   checkinStaffAssignments   CheckinStaffAssignment[]
   couponClaims              CouponClaim[]
@@ -1790,6 +1796,7 @@ model Coupon {
   allowedSkuIds          Json?
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
+  deletedAt              DateTime?
   conference             Conference?            @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
   discounts              OrderDiscount[]
   redemptions            CouponRedemption[]
@@ -1802,6 +1809,7 @@ model Coupon {
   @@index([scope])
   @@index([conferenceId])
   @@index([createdAt])
+  @@index([deletedAt])
   @@map("coupons")
 }
 
@@ -1921,6 +1929,7 @@ model Registration {
   formDataJson    Json
   paidAmountCent  Int
   status          RegistrationStatus     @default(CONFIRMED)
+  source          RegistrationSource     @default(PAYMENT)
   confirmedAt     DateTime               @default(now())
   adminRemark     String?
   remarkUpdatedAt DateTime?
@@ -2010,6 +2019,26 @@ model NotificationSubscription {
   @@index([templateCode])
   @@index([enabled])
   @@map("notification_subscriptions")
+}
+
+model UserNotification {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String
+  title       String
+  summary     String?
+  route       String?
+  payloadJson Json?
+  sourceKey   String?  @unique
+  readAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([type])
+  @@map("user_notifications")
 }
 
 model NotificationChannelConfig {

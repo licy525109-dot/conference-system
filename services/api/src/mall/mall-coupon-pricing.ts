@@ -21,6 +21,7 @@ interface MallCouponRecord {
   totalLimit: number | null;
   perUserLimit: number | null;
   enabled: boolean;
+  deletedAt: Date | null;
   startAt: Date | null;
   endAt: Date | null;
   allowedSkuIds: Prisma.JsonValue | null;
@@ -123,6 +124,7 @@ async function ensureCouponLimit(client: CouponClient, coupon: MallCouponRecord,
 }
 
 function validateMallCoupon(coupon: MallCouponRecord, items: MallCouponPricedItem[], originAmountCent: number) {
+  if (coupon.deletedAt) throw new BadRequestException("优惠券不存在或已删除");
   if (!coupon.enabled) throw new BadRequestException("优惠券未启用");
   if (coupon.scope !== CouponScope.MALL && coupon.scope !== CouponScope.BOTH) throw new BadRequestException("优惠券不适用于商品购买");
   const now = new Date();

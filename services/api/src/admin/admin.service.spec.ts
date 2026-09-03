@@ -10,6 +10,8 @@ import {
   FormFieldType,
   OrderStatus,
   PaymentStatus,
+  PaymentProvider,
+  RegistrationSource,
   RegistrationSkuStatus,
   RegistrationStatus
 } from "@prisma/client";
@@ -309,6 +311,350 @@ describe("Admin management", () => {
         ),
       BadRequestException
     );
+  });
+
+  it("requires every full-reduction rule to target a conference", async () => {
+    const service = new AdminManagementService(createPrismaMock());
+
+    await assert.rejects(
+      () => service.createPromotionRule({ name: "无归属满减", discountAmountCent: 1000 }, currentAdmin),
+      (error: unknown) => {
+        assert.ok(error instanceof BadRequestException);
+        assert.match(error.message, /必须选择具体会议|conferenceId/);
+        return true;
+      }
+    );
+  });
+
+  it("deletes only an empty conference and records the cleanup", async () => {
+    const calls: string[] = [];
+    const tx = {
+      coupon: {
+        updateMany: async (args: { data: { enabled: boolean; deletedAt: Date } }) => {
+          calls.push("coupons");
+          assert.equal(args.data.enabled, false);
+          assert.ok(args.data.deletedAt instanceof Date);
+          return { count: 1 };
+        }
+      },
+      promotionRule: {
+        updateMany: async (args: { data: { enabled: boolean } }) => {
+          calls.push("promotions");
+          assert.equal(args.data.enabled, false);
+          return { count: 1 };
+        }
+      },
+      conference: {
+        delete: async () => {
+          calls.push("conference");
+          return { id: "conference-empty" };
+        }
+      },
+      auditLog: {
+        create: async () => {
+          calls.push("audit");
+          return { id: "audit-1" };
+        }
+      }
+    };
+    const prisma = {
+      conference: {
+        findUnique: async () => ({
+          id: "conference-empty",
+          title: "空白测试会议",
+          _count: { orders: 0, registrations: 0 }
+        })
+      },
+      $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)
+    } as unknown as PrismaService;
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.deleteConference("conference-empty", currentAdmin);
+
+    assert.deepEqual(response.data, { id: "conference-empty", deleted: true });
+    assert.deepEqual(calls, ["coupons", "promotions", "conference", "audit"]);
+  });
+
+  it("refuses to delete a conference with historical orders", async () => {
+    const prisma = {
+      conference: {
+        findUnique: async () => ({
+          id: "conference-used",
+          title: "已有订单会议",
+          _count: { orders: 1, registrations: 0 }
+        })
+      }
+    } as unknown as PrismaService;
+    const service = new AdminManagementService(prisma);
+
+    await assert.rejects(
+      () => service.deleteConference("conference-used", currentAdmin),
+      (error: unknown) => {
+        assert.ok(error instanceof ConflictException);
+        assert.match(error.message, /已有订单或报名记录/);
+        return true;
+      }
+    );
+  });
+
+  it("soft deletes a coupon so historical redemption data remains available", async () => {
+    let updateData: { enabled: boolean; deletedAt: Date } | undefined;
+    const audits: unknown[] = [];
+    const prisma = {
+      coupon: {
+        findUnique: async () => ({ id: "coupon-1", code: "INVITE100", deletedAt: null }),
+        update: async (args: { data: { enabled: boolean; deletedAt: Date } }) => {
+          updateData = args.data;
+          return { id: "coupon-1" };
+        }
+      },
+      auditLog: {
+        create: async (args: unknown) => {
+          audits.push(args);
+          return { id: "audit-coupon" };
+        }
+      }
+    } as unknown as PrismaService;
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.deleteCoupon("coupon-1", currentAdmin);
+
+    assert.equal((response.data as { deleted: boolean }).deleted, true);
+    assert.equal(updateData?.enabled, false);
+    assert.ok(updateData?.deletedAt instanceof Date);
+    assert.equal(audits.length, 1);
+  });
+
+  it("creates a complimentary registration without creating a payment record", async () => {
+    const stockUpdates: unknown[] = [];
+    let createdOrder: Record<string, unknown> | undefined;
+    let createdRegistration: Record<string, unknown> | undefined;
+    const createdAt = new Date("2026-09-03T08:00:00.000Z");
+    const tx = {
+      registrationSku: {
+        updateMany: async (args: unknown) => {
+          stockUpdates.push(args);
+          return { count: 1 };
+        }
+      },
+      order: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          createdOrder = args.data;
+          return { id: "order-complimentary" };
+        }
+      },
+      registration: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          createdRegistration = args.data;
+          return {
+            id: "registration-complimentary",
+            registrationNo: String(args.data.registrationNo),
+            conferenceId: "conference-1",
+            skuId: "sku-1",
+            attendeeName: "免支付嘉宾",
+            phone: "13800000000",
+            paidAmountCent: 0,
+            status: RegistrationStatus.CONFIRMED,
+            source: RegistrationSource.ADMIN_COMPLIMENTARY,
+            confirmedAt: createdAt,
+            adminRemark: "主办方邀请",
+            remarkUpdatedAt: null,
+            remarkUpdatedBy: null,
+            createdAt,
+            formDataJson: { attendeeName: "免支付嘉宾", phone: "13800000000" },
+            user: null,
+            conference: { title: "示例会议" },
+            sku: { name: "嘉宾票" },
+            attendees: [{
+              id: "attendee-complimentary",
+              skuId: "sku-1",
+              name: "免支付嘉宾",
+              phone: "13800000000",
+              company: null,
+              title: null,
+              formDataJson: null,
+              checkInStatus: CheckInStatus.NOT_REQUIRED,
+              checkedInAt: null,
+              checkedInBy: null,
+              adminRemark: "主办方邀请",
+              createdAt,
+              sku: { name: "嘉宾票" }
+            }],
+            order: {
+              id: "order-complimentary",
+              orderNo: "ADMIN_COMP",
+              status: OrderStatus.PAID,
+              originAmountCent: 88000,
+              discountAmountCent: 88000,
+              payableAmountCent: 0,
+              paidAmountCent: 0,
+              submittedFormJson: {},
+              registrationSnapshotJson: {},
+              createdAt,
+              paidAt: createdAt,
+              items: [],
+              discounts: [],
+              payments: []
+            }
+          };
+        }
+      },
+      auditLog: {
+        create: async () => ({ id: "audit-complimentary" })
+      }
+    };
+    const prisma = {
+      conference: {
+        findUnique: async () => ({ id: "conference-1", title: "示例会议", checkInEnabled: false })
+      },
+      registrationSku: {
+        findFirst: async () => ({ id: "sku-1", name: "嘉宾票", priceCent: 88000, stock: 10, soldCount: 1 })
+      },
+      $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)
+    } as unknown as PrismaService;
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.createComplimentaryRegistration({
+      conferenceId: "conference-1",
+      skuId: "sku-1",
+      attendeeName: "免支付嘉宾",
+      phone: "13800000000",
+      adminRemark: "主办方邀请"
+    }, currentAdmin);
+
+    assert.equal(stockUpdates.length, 1);
+    assert.equal(createdOrder?.payableAmountCent, 0);
+    assert.equal(createdOrder?.paidAmountCent, 0);
+    assert.equal(createdOrder?.status, OrderStatus.PAID);
+    assert.equal(createdRegistration?.source, RegistrationSource.ADMIN_COMPLIMENTARY);
+    assert.deepEqual((response.data as { order: { payments: unknown[] } }).order.payments, []);
+  });
+
+  it("never deletes a registration backed by a successful WeChat payment", async () => {
+    const prisma = {
+      registration: {
+        findUnique: async () => ({
+          id: "registration-wechat",
+          registrationNo: "RREG-WECHAT",
+          source: RegistrationSource.PAYMENT,
+          orderId: "order-wechat",
+          attendees: [{ skuId: "sku-1" }],
+          order: { payments: [{ provider: PaymentProvider.WECHAT, status: PaymentStatus.SUCCESS }] }
+        })
+      }
+    } as unknown as PrismaService;
+    const service = new AdminManagementService(prisma);
+
+    await assert.rejects(
+      () => service.deleteRegistration("registration-wechat", currentAdmin),
+      (error: unknown) => {
+        assert.ok(error instanceof ConflictException);
+        assert.match(error.message, /真实微信支付报名/);
+        return true;
+      }
+    );
+  });
+
+  it("deletes an eligible complimentary registration and restores SKU inventory", async () => {
+    const calls: string[] = [];
+    let stockUpdate: { data: { soldCount: { decrement: number } } } | undefined;
+    const tx = {
+      registration: {
+        delete: async () => {
+          calls.push("registration");
+          return { id: "registration-complimentary" };
+        }
+      },
+      registrationSku: {
+        updateMany: async (args: { data: { soldCount: { decrement: number } } }) => {
+          calls.push("stock");
+          stockUpdate = args;
+          return { count: 1 };
+        }
+      },
+      order: {
+        delete: async () => {
+          calls.push("order");
+          return { id: "order-complimentary" };
+        }
+      },
+      auditLog: {
+        create: async () => {
+          calls.push("audit");
+          return { id: "audit-registration" };
+        }
+      }
+    };
+    const prisma = {
+      registration: {
+        findUnique: async () => ({
+          id: "registration-complimentary",
+          registrationNo: "RADMIN_COMP",
+          source: RegistrationSource.ADMIN_COMPLIMENTARY,
+          orderId: "order-complimentary",
+          attendees: [{ skuId: "sku-1" }, { skuId: "sku-1" }],
+          order: { payments: [] }
+        })
+      },
+      $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)
+    } as unknown as PrismaService;
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.deleteRegistration("registration-complimentary", currentAdmin);
+
+    assert.equal((response.data as { deleted: boolean }).deleted, true);
+    assert.equal(stockUpdate?.data.soldCount.decrement, 2);
+    assert.deepEqual(calls, ["registration", "stock", "order", "audit"]);
+  });
+
+  it("aborts complimentary registration deletion when inventory cannot be restored", async () => {
+    const calls: string[] = [];
+    const tx = {
+      registration: {
+        delete: async () => {
+          calls.push("registration");
+          return { id: "registration-complimentary" };
+        }
+      },
+      registrationSku: {
+        updateMany: async () => {
+          calls.push("stock");
+          return { count: 0 };
+        }
+      },
+      order: {
+        delete: async () => {
+          calls.push("order");
+          return { id: "order-complimentary" };
+        }
+      },
+      auditLog: {
+        create: async () => {
+          calls.push("audit");
+          return { id: "audit-registration" };
+        }
+      }
+    };
+    const prisma = {
+      registration: {
+        findUnique: async () => ({
+          id: "registration-complimentary",
+          registrationNo: "RADMIN_COMP",
+          source: RegistrationSource.ADMIN_COMPLIMENTARY,
+          orderId: "order-complimentary",
+          attendees: [{ skuId: "sku-1" }],
+          order: { payments: [] }
+        })
+      },
+      $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)
+    } as unknown as PrismaService;
+    const service = new AdminManagementService(prisma);
+
+    await assert.rejects(
+      () => service.deleteRegistration("registration-complimentary", currentAdmin),
+      /票种库存计数异常/
+    );
+    assert.deepEqual(calls, ["registration", "stock"]);
   });
 
   it("checks in a pending attendee and rejects duplicate check-in", async () => {

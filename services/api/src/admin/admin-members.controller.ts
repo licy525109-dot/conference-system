@@ -16,6 +16,18 @@ export class AdminMembersController {
     return this.membersService.listUsers(query);
   }
 
+  @Patch("users/:id")
+  @RequireAdminPermissions("member:write")
+  updateUser(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.membersService.updateUser(id, body, request.currentAdmin!);
+  }
+
+  @Delete("users/:id")
+  @RequireAdminPermissions("member:write")
+  deleteUser(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.membersService.deleteUser(id, request.currentAdmin!);
+  }
+
   @Get("member-levels")
   @RequireAdminPermissions("member:view")
   listLevels() {

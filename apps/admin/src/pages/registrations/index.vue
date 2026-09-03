@@ -6,6 +6,7 @@
       subtitle="查看报名记录、参会人信息、内部备注和核销进度。后台补签仅用于现场异常处理，常规签到请使用客户自助或工作人员扫码。"
     >
       <template #actions>
+        <el-button type="primary" @click="openComplimentary">添加免支付嘉宾</el-button>
         <el-button :loading="exporting" @click="exportExcel">导出 Excel</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </template>
@@ -40,6 +41,7 @@
           <template #default="{ row }">
             <strong>{{ row.registrationNo }}</strong>
             <div class="muted-text">{{ row.orderNo }}</div>
+            <el-tag v-if="row.complimentary" size="small" type="success">主办方邀请</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="微信用户" min-width="200">
@@ -64,7 +66,12 @@
         </el-table-column>
         <el-table-column label="人数" width="80"><template #default="{ row }">{{ row.attendeeCount }}</template></el-table-column>
         <el-table-column label="报名状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
-        <el-table-column label="支付状态" width="110"><template #default><AdminStatusBadge status="PAID" /></template></el-table-column>
+        <el-table-column label="支付状态" width="110">
+          <template #default="{ row }">
+            <AdminStatusBadge v-if="!row.complimentary" status="PAID" />
+            <el-tag v-else size="small" type="success">免支付</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="核销" width="140">
           <template #default="{ row }">
             <AdminStatusBadge :label="progressText(row.checkInProgress)" :tone="checkInTone(row.checkInProgress)" />
@@ -72,12 +79,52 @@
         </el-table-column>
         <el-table-column label="金额" width="100"><template #default="{ row }">¥{{ formatCent(row.paidAmountCent) }}</template></el-table-column>
         <el-table-column label="备注" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.adminRemark || "-" }}</template></el-table-column>
-        <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openDetail(row.id)">详情</el-button></template></el-table-column>
+        <el-table-column label="操作" width="180" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" @click="openDetail(row.id)">详情</el-button>
+            <el-button size="small" type="danger" plain @click="removeRegistration(row)">删除</el-button>
+          </template>
+        </el-table-column>
         <template #empty>
           <AdminEmptyState title="暂无报名记录" description="调整筛选条件，或从会议管理进入报名主链路。" action-text="查看会议" @action="goConferences" />
         </template>
       </el-table>
     </section>
+
+    <el-dialog v-model="complimentaryVisible" title="添加免支付嘉宾" width="680px">
+      <el-alert
+        title="此操作会创建主办方邀请报名，不会生成支付流水。要接收小程序会务消息，请关联已登录过小程序的用户。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
+      <el-form class="complimentary-form" :model="complimentaryForm" label-width="120px">
+        <el-form-item label="会议" required>
+          <el-select v-model="complimentaryForm.conferenceId" filterable style="width: 100%" @change="loadComplimentarySkus">
+            <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="票种" required>
+          <el-select v-model="complimentaryForm.skuId" filterable style="width: 100%">
+            <el-option v-for="item in complimentarySkus" :key="item.id" :label="`${item.name}（剩余 ${Math.max(0, item.stock - item.soldCount)}）`" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关联小程序用户">
+          <el-select v-model="complimentaryForm.userId" clearable filterable placeholder="不关联则无法推送小程序消息" style="width: 100%">
+            <el-option v-for="item in users" :key="item.id" :label="userLabel(item)" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="嘉宾姓名" required><el-input v-model="complimentaryForm.attendeeName" maxlength="80" /></el-form-item>
+        <el-form-item label="手机号" required><el-input v-model="complimentaryForm.phone" maxlength="30" /></el-form-item>
+        <el-form-item label="公司"><el-input v-model="complimentaryForm.company" maxlength="120" /></el-form-item>
+        <el-form-item label="职位"><el-input v-model="complimentaryForm.title" maxlength="120" /></el-form-item>
+        <el-form-item label="内部备注"><el-input v-model="complimentaryForm.adminRemark" type="textarea" :rows="3" maxlength="500" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="complimentaryVisible = false">取消</el-button>
+        <el-button type="primary" :loading="complimentarySaving" @click="saveComplimentary">确认添加</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="detailVisible" title="报名详情" width="900px">
       <div v-if="detail" class="admin-page">
@@ -113,18 +160,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo } from "../../router";
-import { exportRegistrationsExcel, getRegistration, listConferences, listRegistrations, manualCheckin, updateRegistrationRemark } from "../../services/admin";
-import type { AdminRegistration, AdminRegistrationDetail, Conference } from "../../services/types";
+import { createComplimentaryRegistration, deleteRegistration, exportRegistrationsExcel, getRegistration, listConferences, listRegistrations, listSkus, listUsers, manualCheckin, updateRegistrationRemark } from "../../services/admin";
+import type { AdminAppUser, AdminRegistration, AdminRegistrationDetail, Conference, Sku } from "../../services/types";
 
 const items = ref<AdminRegistration[]>([]);
 const conferences = ref<Conference[]>([]);
+const complimentarySkus = ref<Sku[]>([]);
+const users = ref<AdminAppUser[]>([]);
 const detail = ref<AdminRegistrationDetail | null>(null);
 const keyword = ref("");
 const conferenceId = ref("");
@@ -134,7 +183,19 @@ const checkInStatus = ref("");
 const loading = ref(false);
 const exporting = ref(false);
 const detailVisible = ref(false);
+const complimentaryVisible = ref(false);
+const complimentarySaving = ref(false);
 const remark = ref("");
+const complimentaryForm = reactive({
+  conferenceId: "",
+  skuId: "",
+  userId: "",
+  attendeeName: "",
+  phone: "",
+  company: "",
+  title: "",
+  adminRemark: ""
+});
 
 const displayedItems = computed(() => {
   return items.value.filter((item) => {
@@ -150,11 +211,79 @@ const displayedItems = computed(() => {
 });
 
 onMounted(async () => {
-  await Promise.all([loadConferences(), load()]);
+  await Promise.all([loadConferences(), loadUsersForSelection(), load()]);
 });
 
 async function loadConferences() {
   conferences.value = (await listConferences({ page: 1, pageSize: 100 })).items;
+}
+
+async function loadUsersForSelection() {
+  users.value = (await listUsers({ page: 1, pageSize: 100 })).items;
+}
+
+async function loadComplimentarySkus() {
+  complimentarySkus.value = complimentaryForm.conferenceId
+    ? (await listSkus(complimentaryForm.conferenceId)).items
+    : [];
+  complimentaryForm.skuId = complimentarySkus.value[0]?.id ?? "";
+}
+
+async function openComplimentary() {
+  Object.assign(complimentaryForm, {
+    conferenceId: conferenceId.value || conferences.value[0]?.id || "",
+    skuId: "",
+    userId: "",
+    attendeeName: "",
+    phone: "",
+    company: "",
+    title: "",
+    adminRemark: ""
+  });
+  await loadComplimentarySkus();
+  complimentaryVisible.value = true;
+}
+
+async function saveComplimentary() {
+  if (!complimentaryForm.conferenceId || !complimentaryForm.skuId || !complimentaryForm.attendeeName.trim() || !complimentaryForm.phone.trim()) {
+    ElMessage.warning("请完整填写会议、票种、嘉宾姓名和手机号");
+    return;
+  }
+  complimentarySaving.value = true;
+  try {
+    await createComplimentaryRegistration({
+      conferenceId: complimentaryForm.conferenceId,
+      skuId: complimentaryForm.skuId,
+      userId: complimentaryForm.userId || null,
+      attendeeName: complimentaryForm.attendeeName.trim(),
+      phone: complimentaryForm.phone.trim(),
+      company: complimentaryForm.company.trim() || null,
+      title: complimentaryForm.title.trim() || null,
+      adminRemark: complimentaryForm.adminRemark.trim() || null
+    });
+    complimentaryVisible.value = false;
+    await load();
+    ElMessage.success("免支付嘉宾已添加");
+  } finally {
+    complimentarySaving.value = false;
+  }
+}
+
+async function removeRegistration(row: AdminRegistration) {
+  try {
+    await ElMessageBox.confirm(
+      row.complimentary
+        ? `确认删除免支付嘉宾「${row.attendeeName}」的报名记录？相关会务安排也会删除。`
+        : `仅 Mock 测试报名允许删除；真实微信支付报名会被服务端拦截。确认检查并删除「${row.registrationNo}」？`,
+      "删除报名",
+      { confirmButtonText: "确认删除", cancelButtonText: "取消", type: "warning" }
+    );
+  } catch {
+    return;
+  }
+  await deleteRegistration(row.id);
+  await load();
+  ElMessage.success("报名记录已删除");
 }
 
 async function load() {
@@ -234,6 +363,10 @@ function userInitial(row: AdminRegistration) {
   return String(row.user?.wechatNickname || row.user?.nickname || row.attendeeName || "微").slice(0, 1);
 }
 
+function userLabel(user: AdminAppUser) {
+  return `${user.wechatNickname || user.nickname || "未命名用户"}${user.phone ? ` · ${user.phone}` : ""}`;
+}
+
 function goConferences() {
   navigateTo("/conferences");
 }
@@ -267,6 +400,10 @@ function goConferences() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.complimentary-form {
+  margin-top: 22px;
 }
 
 .wechat-user-cell small {

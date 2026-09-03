@@ -29,7 +29,12 @@
         <el-table-column label="优惠" width="120"><template #default="{ row }">{{ discountText(row) }}</template></el-table-column>
         <el-table-column label="门槛" width="160"><template #default="{ row }">{{ thresholdText(row.minAmountCent, row.minQuantity) }}</template></el-table-column>
         <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
-        <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="操作" width="170">
+          <template #default="{ row }">
+            <el-button size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button size="small" type="danger" plain @click="removeCoupon(row)">删除</el-button>
+          </template>
+        </el-table-column>
         <template #empty>
           <AdminEmptyState title="暂无优惠券" description="可创建优惠码、领取限制和适用范围；没有配置时订单按原价或会员价计算。" action-text="新增优惠券" @action="openCreate" />
         </template>
@@ -68,13 +73,13 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
-import { createCoupon, listCoupons, updateCoupon } from "../../services/admin";
+import { createCoupon, deleteCoupon, listCoupons, updateCoupon } from "../../services/admin";
 import type { Coupon } from "../../services/types";
 
 const props = defineProps<{ conferenceId?: string; embedded?: boolean }>();
@@ -167,6 +172,21 @@ async function save() {
   dialogVisible.value = false;
   await load();
   ElMessage.success("优惠券已保存");
+}
+
+async function removeCoupon(row: Coupon) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除优惠券「${row.name}」？删除后不可用于新订单，历史优惠记录会保留。`,
+      "删除优惠券",
+      { confirmButtonText: "确认删除", cancelButtonText: "取消", type: "warning" }
+    );
+  } catch {
+    return;
+  }
+  await deleteCoupon(row.id);
+  await load();
+  ElMessage.success("优惠券已删除");
 }
 
 function discountText(row: Coupon) {

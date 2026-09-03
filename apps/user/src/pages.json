@@ -86,6 +86,12 @@
       }
     },
     {
+      "path": "pages/notifications/index",
+      "style": {
+        "navigationBarTitleText": "消息通知"
+      }
+    },
+    {
       "path": "pages/admin/notifications/index",
       "style": {
         "navigationBarTitleText": "管理员通知中心"

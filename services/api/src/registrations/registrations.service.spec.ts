@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { UnauthorizedException } from "@nestjs/common";
-import { CheckInStatus, OrderStatus, PaymentProvider, PaymentStatus, RegistrationStatus } from "@prisma/client";
+import { CheckInStatus, OrderStatus, PaymentProvider, PaymentStatus, RegistrationSource, RegistrationStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { RegistrationsService } from "./registrations.service";
@@ -37,6 +37,7 @@ describe("RegistrationsService listMine", () => {
       id: "registration-new",
       registrationNo: "REGNO-NEW",
       status: RegistrationStatus.CONFIRMED,
+      source: RegistrationSource.PAYMENT,
       attendeeName: "李四",
       phone: "13900000000",
       paidAmountCent: 70000,
@@ -93,7 +94,8 @@ describe("RegistrationsService listMine", () => {
     assert.equal(data.payment.provider, PaymentProvider.WECHAT);
     assert.equal(data.payment.paidAmountCent, 1);
     assert.equal(data.ticket.name, "仅参会");
-    assert.ok(data.formSummary.some((item: { label: string; value: string }) => item.label === "company" && item.value === "观潮科技"));
+    assert.ok(data.formSummary.some((item: { label: string; value: string }) => item.label === "role" && item.value === "运营经理"));
+    assert.equal(data.formSummary.some((item: { label: string }) => item.label === "company"), false);
     assert.match(data.qrPayload, /^CONF_REG:/);
   });
 });
@@ -133,6 +135,7 @@ function createCredentialRegistration() {
     formDataJson: { company: "观潮科技", name: "李四", phone: "13900000000" },
     paidAmountCent: 1,
     status: RegistrationStatus.CONFIRMED,
+    source: RegistrationSource.PAYMENT,
     confirmedAt: new Date("2026-06-07T10:00:00.000Z"),
     createdAt: new Date("2026-06-07T10:00:00.000Z"),
     user: {
@@ -201,6 +204,7 @@ function createRegistration(
     registrationNo,
     userId,
     status: RegistrationStatus.CONFIRMED,
+    source: RegistrationSource.PAYMENT,
     attendeeName,
     phone,
     paidAmountCent,

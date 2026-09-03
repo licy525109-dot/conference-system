@@ -6,15 +6,43 @@ import { AdminNotificationsService } from "./admin-notifications.service";
 import { AdminPermissionGuard } from "./admin-permission.guard";
 import { RequestWithCurrentAdmin } from "./current-admin";
 import { RequireAdminPermissions } from "./require-permissions.decorator";
+import { UserNotificationsService } from "./user-notifications.service";
 
 @Controller("notifications")
 export class NotificationsController {
-  constructor(private readonly notificationsService: AdminNotificationsService) {}
+  constructor(
+    private readonly notificationsService: AdminNotificationsService,
+    private readonly userNotificationsService: UserNotificationsService
+  ) {}
 
   @Post("subscribe")
   @UseGuards(JwtAuthGuard)
   subscribe(@Body() body: unknown, @Req() request: RequestWithCurrentUser) {
     return this.notificationsService.subscribe(body, request.currentUser!);
+  }
+
+  @Get("my")
+  @UseGuards(JwtAuthGuard)
+  my(@Query() query: Record<string, unknown>, @Req() request: RequestWithCurrentUser) {
+    return this.userNotificationsService.list(request.currentUser!, query);
+  }
+
+  @Get("unread-count")
+  @UseGuards(JwtAuthGuard)
+  unreadCount(@Req() request: RequestWithCurrentUser) {
+    return this.userNotificationsService.unreadCount(request.currentUser!);
+  }
+
+  @Patch("read-all")
+  @UseGuards(JwtAuthGuard)
+  markAllRead(@Req() request: RequestWithCurrentUser) {
+    return this.userNotificationsService.markAllRead(request.currentUser!);
+  }
+
+  @Patch(":id/read")
+  @UseGuards(JwtAuthGuard)
+  markRead(@Param("id") id: string, @Req() request: RequestWithCurrentUser) {
+    return this.userNotificationsService.markRead(id, request.currentUser!);
   }
 }
 

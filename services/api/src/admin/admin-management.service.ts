@@ -8,8 +8,10 @@ import {
   DiscountType,
   FormFieldType,
   OrderStatus,
+  PaymentProvider,
   PaymentStatus,
   Prisma,
+  RegistrationSource,
   RegistrationSkuStatus,
   RegistrationStatus
 } from "@prisma/client";
@@ -172,6 +174,45 @@ export class AdminManagementService {
     });
 
     return ok(formatConferenceDetail(conference));
+  }
+
+  async deleteConference(id: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const conference = await this.prisma.conference.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        _count: { select: { orders: true, registrations: true } }
+      }
+    });
+    if (!conference) throw new NotFoundException("Conference not found");
+    if (conference._count.orders > 0 || conference._count.registrations > 0) {
+      throw new ConflictException("该会议已有订单或报名记录，不能删除；请保留真实业务数据，或先清理可删除的测试报名");
+    }
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.coupon.updateMany({
+        where: { conferenceId: id, deletedAt: null },
+        data: { enabled: false, deletedAt: now }
+      });
+      await tx.promotionRule.updateMany({
+        where: { conferenceId: id },
+        data: { enabled: false }
+      });
+      await tx.conference.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          adminUserId: admin.id,
+          action: AuditAction.DELETE,
+          entityType: "Conference",
+          entityId: id,
+          summary: "Delete empty conference",
+          metadataJson: { title: conference.title }
+        }
+      });
+    });
+    return ok({ id, deleted: true });
   }
 
   async updateConferenceStatus(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
@@ -564,6 +605,195 @@ export class AdminManagementService {
     });
   }
 
+  async createComplimentaryRegistration(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const body = readObject(input);
+    const conferenceId = readRequiredString(body, "conferenceId");
+    const skuId = readRequiredString(body, "skuId");
+    const attendeeName = readRequiredString(body, "attendeeName");
+    const phone = readRequiredString(body, "phone");
+    const company = readOptionalNullableString(body, "company") ?? null;
+    const title = readOptionalNullableString(body, "title") ?? null;
+    const userId = readOptionalNullableString(body, "userId") ?? null;
+    const adminRemark = readOptionalNullableString(body, "adminRemark") ?? null;
+    const suppliedFormData = readOptionalJsonObject(body, "formDataJson") ?? {};
+    const formDataJson = {
+      ...suppliedFormData,
+      attendeeName,
+      phone,
+      ...(company ? { company } : {}),
+      ...(title ? { title } : {})
+    } satisfies Prisma.InputJsonObject;
+
+    const [conference, sku, user] = await Promise.all([
+      this.prisma.conference.findUnique({
+        where: { id: conferenceId },
+        select: { id: true, title: true, checkInEnabled: true }
+      }),
+      this.prisma.registrationSku.findFirst({
+        where: { id: skuId, conferenceId },
+        select: { id: true, name: true, priceCent: true, stock: true, soldCount: true }
+      }),
+      userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } }) : Promise.resolve(null)
+    ]);
+    if (!conference) throw new NotFoundException("Conference not found");
+    if (!sku) throw new NotFoundException("Registration SKU not found");
+    if (userId && !user) throw new NotFoundException("User not found");
+    if (sku.stock - sku.soldCount < 1) throw new ConflictException("该票种库存不足");
+
+    const now = new Date();
+    const orderNo = generateAdminOrderNo(now);
+    const registrationNo = `R${orderNo}`;
+    const registration = await this.prisma.$transaction(async (tx) => {
+      const stockResult = await tx.registrationSku.updateMany({
+        where: { id: sku.id, soldCount: { lt: sku.stock } },
+        data: { soldCount: { increment: 1 } }
+      });
+      if (stockResult.count !== 1) throw new ConflictException("该票种库存刚刚发生变化，请刷新后重试");
+
+      const order = await tx.order.create({
+        data: {
+          orderNo,
+          userId,
+          conferenceId,
+          skuId,
+          originAmountCent: sku.priceCent,
+          discountAmountCent: sku.priceCent,
+          payableAmountCent: 0,
+          paidAmountCent: 0,
+          status: OrderStatus.PAID,
+          attendeeName,
+          phone,
+          submittedFormJson: formDataJson,
+          registrationSnapshotJson: {
+            source: RegistrationSource.ADMIN_COMPLIMENTARY,
+            conferenceId,
+            skuId,
+            skuName: sku.name,
+            attendeeName,
+            phone,
+            formData: formDataJson
+          },
+          paidAt: now,
+          items: {
+            create: {
+              skuId,
+              skuName: sku.name,
+              unitPriceCent: sku.priceCent,
+              quantity: 1,
+              totalAmountCent: sku.priceCent
+            }
+          },
+          ...(sku.priceCent > 0
+            ? {
+                discounts: {
+                  create: {
+                    type: DiscountType.MEMBER_PRICE,
+                    title: "主办方邀请免支付",
+                    amountCent: sku.priceCent,
+                    snapshotJson: { source: RegistrationSource.ADMIN_COMPLIMENTARY }
+                  }
+                }
+              }
+            : {})
+        }
+      });
+      const created = await tx.registration.create({
+        data: {
+          registrationNo,
+          userId,
+          conferenceId,
+          skuId,
+          orderId: order.id,
+          attendeeName,
+          phone,
+          formDataJson,
+          paidAmountCent: 0,
+          status: RegistrationStatus.CONFIRMED,
+          source: RegistrationSource.ADMIN_COMPLIMENTARY,
+          confirmedAt: now,
+          adminRemark,
+          attendees: {
+            create: {
+              skuId,
+              name: attendeeName,
+              phone,
+              company,
+              title,
+              formDataJson,
+              checkInStatus: conference.checkInEnabled ? CheckInStatus.PENDING : CheckInStatus.NOT_REQUIRED,
+              adminRemark
+            }
+          }
+        },
+        select: registrationDetailSelect
+      });
+      await tx.auditLog.create({
+        data: {
+          adminUserId: admin.id,
+          action: AuditAction.CREATE,
+          entityType: "Registration",
+          entityId: created.id,
+          summary: "Create complimentary registration",
+          metadataJson: { registrationNo, conferenceId, skuId, linkedUser: Boolean(userId) }
+        }
+      });
+      return created;
+    });
+    return ok(formatRegistrationDetail(registration));
+  }
+
+  async deleteRegistration(id: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const registration = await this.prisma.registration.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        registrationNo: true,
+        source: true,
+        orderId: true,
+        attendees: { select: { skuId: true } },
+        order: { select: { payments: { select: { provider: true, status: true } } } }
+      }
+    });
+    if (!registration) throw new NotFoundException("Registration not found");
+    const successfulWechatPayment = registration.order.payments.some(
+      (payment) => payment.provider === PaymentProvider.WECHAT && payment.status === PaymentStatus.SUCCESS
+    );
+    const mockOnly = registration.order.payments.length > 0
+      && registration.order.payments.every((payment) => payment.provider === PaymentProvider.MOCK);
+    if (successfulWechatPayment || (registration.source !== RegistrationSource.ADMIN_COMPLIMENTARY && !mockOnly)) {
+      throw new ConflictException("真实微信支付报名必须保留用于财务审计，不能删除");
+    }
+
+    const skuCounts = new Map<string, number>();
+    for (const attendee of registration.attendees) {
+      skuCounts.set(attendee.skuId, (skuCounts.get(attendee.skuId) ?? 0) + 1);
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.registration.delete({ where: { id } });
+      for (const [attendeeSkuId, count] of skuCounts) {
+        const stockResult = await tx.registrationSku.updateMany({
+          where: { id: attendeeSkuId, soldCount: { gte: count } },
+          data: { soldCount: { decrement: count } }
+        });
+        if (stockResult.count !== 1) {
+          throw new ConflictException("票种库存计数异常，报名记录未删除，请先核对库存");
+        }
+      }
+      await tx.order.delete({ where: { id: registration.orderId } });
+      await tx.auditLog.create({
+        data: {
+          adminUserId: admin.id,
+          action: AuditAction.DELETE,
+          entityType: "Registration",
+          entityId: id,
+          summary: "Delete eligible registration",
+          metadataJson: { registrationNo: registration.registrationNo, source: registration.source }
+        }
+      });
+    });
+    return ok({ id, registrationNo: registration.registrationNo, deleted: true });
+  }
+
   async getRegistration(id: string): Promise<ApiResponse<unknown>> {
     const registration = await this.prisma.registration.findUnique({
       where: { id },
@@ -745,6 +975,7 @@ export class AdminManagementService {
     const enabled = readOptionalBoolean(query, "enabled");
     const keyword = readOptionalString(query, "keyword");
     const where: Prisma.CouponWhereInput = {
+      deletedAt: null,
       ...(conferenceId ? { conferenceId } : {}),
       ...(typeof enabled === "boolean" ? { enabled } : {}),
       ...(keyword
@@ -821,9 +1052,9 @@ export class AdminManagementService {
   async updateCoupon(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const existing = await this.prisma.coupon.findUnique({
       where: { id },
-      select: { id: true, type: true }
+      select: { id: true, type: true, deletedAt: true }
     });
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
       throw new NotFoundException("Coupon not found");
     }
 
@@ -868,13 +1099,28 @@ export class AdminManagementService {
     return ok(formatCoupon(coupon));
   }
 
+  async deleteCoupon(id: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const existing = await this.prisma.coupon.findUnique({
+      where: { id },
+      select: { id: true, code: true, deletedAt: true }
+    });
+    if (!existing || existing.deletedAt) throw new NotFoundException("Coupon not found");
+    const deletedAt = new Date();
+    await this.prisma.coupon.update({
+      where: { id },
+      data: { enabled: false, deletedAt }
+    });
+    await this.writeAudit(admin, AuditAction.DELETE, "Coupon", id, "Soft delete coupon", { code: existing.code });
+    return ok({ id, deleted: true, deletedAt: deletedAt.toISOString() });
+  }
+
   async listPromotionRules(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
     const pagination = parsePagination(query);
     const conferenceId = readOptionalString(query, "conferenceId");
     const enabled = readOptionalBoolean(query, "enabled");
     const keyword = readOptionalString(query, "keyword");
     const where: Prisma.PromotionRuleWhereInput = {
-      ...(conferenceId ? { conferenceId } : {}),
+      conferenceId: conferenceId || { not: null },
       ...(typeof enabled === "boolean" ? { enabled } : {}),
       ...(keyword ? { name: { contains: keyword, mode: "insensitive" } } : {})
     };
@@ -902,12 +1148,15 @@ export class AdminManagementService {
     const request = parsePromotionRuleInput(input, false);
     validatePromotionRuleInput(request);
     const name = ensureDefined(request.name, "name");
+    const conferenceId = ensureDefined(request.conferenceId, "conferenceId");
+    if (!conferenceId) throw new BadRequestException("满减规则必须选择具体会议");
+    await this.ensureConference(conferenceId);
     const discountAmountCent = ensureDefined(request.discountAmountCent, "discountAmountCent");
 
     const data: Prisma.PromotionRuleUncheckedCreateInput = {
       name,
       type: DiscountType.FULL_REDUCTION,
-      conferenceId: request.conferenceId,
+      conferenceId,
       allowedSkuIds: toNullableJsonInput(request.allowedSkuIds),
       minAmountCent: request.minAmountCent,
       minQuantity: request.minQuantity,
@@ -933,7 +1182,7 @@ export class AdminManagementService {
   async updatePromotionRule(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const existing = await this.prisma.promotionRule.findUnique({
       where: { id },
-      select: { id: true }
+      select: { id: true, conferenceId: true }
     });
     if (!existing) {
       throw new NotFoundException("Promotion rule not found");
@@ -941,9 +1190,12 @@ export class AdminManagementService {
 
     const request = parsePromotionRuleInput(input, true);
     validatePromotionRuleInput(request);
+    const conferenceId = typeof request.conferenceId !== "undefined" ? request.conferenceId : existing.conferenceId;
+    if (!conferenceId) throw new BadRequestException("满减规则必须选择具体会议");
+    await this.ensureConference(conferenceId);
     const data: Prisma.PromotionRuleUncheckedUpdateInput = {
       ...(typeof request.name !== "undefined" ? { name: request.name } : {}),
-      ...(typeof request.conferenceId !== "undefined" ? { conferenceId: request.conferenceId } : {}),
+      ...(typeof request.conferenceId !== "undefined" ? { conferenceId } : {}),
       ...(typeof request.allowedSkuIds !== "undefined" ? { allowedSkuIds: toNullableJsonInput(request.allowedSkuIds) } : {}),
       ...(typeof request.minAmountCent !== "undefined" ? { minAmountCent: request.minAmountCent } : {}),
       ...(typeof request.minQuantity !== "undefined" ? { minQuantity: request.minQuantity } : {}),
@@ -1281,6 +1533,7 @@ const registrationListSelect = {
   phone: true,
   paidAmountCent: true,
   status: true,
+  source: true,
   confirmedAt: true,
   adminRemark: true,
   remarkUpdatedAt: true,
@@ -1333,7 +1586,8 @@ const couponSelect = {
   conferenceId: true,
   allowedSkuIds: true,
   createdAt: true,
-  updatedAt: true
+  updatedAt: true,
+  deletedAt: true
 } satisfies Prisma.CouponSelect;
 
 const promotionRuleSelect = {
@@ -1350,7 +1604,8 @@ const promotionRuleSelect = {
   endAt: true,
   stackableWithCoupon: true,
   createdAt: true,
-  updatedAt: true
+  updatedAt: true,
+  conference: { select: { title: true } }
 } satisfies Prisma.PromotionRuleSelect;
 
 const registrationDetailSelect = {
@@ -1559,6 +1814,8 @@ function formatRegistrationListItem(registration: Prisma.RegistrationGetPayload<
     phone: registration.phone,
     paidAmountCent: registration.paidAmountCent,
     status: registration.status,
+    source: registration.source,
+    complimentary: registration.source === RegistrationSource.ADMIN_COMPLIMENTARY,
     user: formatUserProfile(registration.user),
     orderNo: registration.order.orderNo,
     confirmedAt: registration.confirmedAt.toISOString(),
@@ -1687,6 +1944,7 @@ function formatCoupon(coupon: Prisma.CouponGetPayload<{ select: typeof couponSel
     endAt: coupon.endAt?.toISOString() ?? null,
     createdAt: coupon.createdAt.toISOString(),
     updatedAt: coupon.updatedAt.toISOString(),
+    deletedAt: coupon.deletedAt?.toISOString() ?? null,
     redemptionCount: 0
   };
 }
@@ -1698,8 +1956,15 @@ function formatPromotionRule(rule: Prisma.PromotionRuleGetPayload<{ select: type
     startAt: rule.startAt?.toISOString() ?? null,
     endAt: rule.endAt?.toISOString() ?? null,
     createdAt: rule.createdAt.toISOString(),
-    updatedAt: rule.updatedAt.toISOString()
+    updatedAt: rule.updatedAt.toISOString(),
+    conferenceTitle: rule.conference?.title ?? null
   };
+}
+
+function generateAdminOrderNo(now: Date): string {
+  const date = now.toISOString().slice(0, 10).replaceAll("-", "");
+  const randomPart = Math.random().toString(36).slice(2, 10).toUpperCase().padEnd(8, "0");
+  return `ADM${date}${randomPart}`;
 }
 
 function summarizeCheckIn(attendees: Array<{ checkInStatus: CheckInStatus }>) {

@@ -2,6 +2,7 @@ export interface MyRegistrationItem {
   id: string;
   registrationNo: string;
   status: string;
+  source: "PAYMENT" | "ADMIN_COMPLIMENTARY" | string;
   attendeeName: string;
   phone: string;
   paidAmountCent: number;
@@ -29,13 +30,15 @@ export interface RegistrationCredential {
   credentialCode: string;
   qrPayload: string;
   status: string;
+  source: "PAYMENT" | "ADMIN_COMPLIMENTARY" | string;
+  complimentary: boolean;
   checkIn: {
     status: "NOT_REQUIRED" | "PENDING" | "CHECKED_IN" | "CANCELLED" | string;
     checkedInAt: string | null;
   };
   user: {
     id: string | null;
-    nickname: string;
+    nickname: string | null;
     avatarUrl: string | null;
     phoneMasked: string;
   };
@@ -44,15 +47,15 @@ export interface RegistrationCredential {
     name: string;
     startTime: string;
     endTime: string;
-    venue: string;
-    address: string;
+    venue: string | null;
+    address: string | null;
   };
   attendee: {
-    name: string;
-    mobile: string;
-    mobileMasked: string;
-    company: string;
-    title: string;
+    name: string | null;
+    mobile: string | null;
+    mobileMasked: string | null;
+    company: string | null;
+    title: string | null;
   };
   ticket: {
     id: string;

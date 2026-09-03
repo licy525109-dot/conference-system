@@ -58,14 +58,14 @@
         </el-table-column>
         <el-table-column label="openid / unionid" min-width="180"><template #default="{ row }">{{ row.openid || "-" }}</template></el-table-column>
         <el-table-column label="用户来源" width="120"><template #default>微信小程序</template></el-table-column>
-        <el-table-column label="标签" width="120"><template #default><span class="muted-text">未配置</span></template></el-table-column>
         <el-table-column label="注册时间" width="150"><template #default="{ row }">{{ formatDate(row.createdAt) }}</template></el-table-column>
         <el-table-column label="最近活跃" width="150"><template #default="{ row }">{{ formatDate(row.lastActiveAt) }}</template></el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="350" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openUserDetail(row)">查看详情</el-button>
+            <el-button size="small" @click="openEditUser(row)">编辑</el-button>
             <el-button size="small" @click="openGrant(row.id)">授予会员</el-button>
-            <el-button size="small" @click="goUserOrders">查看订单</el-button>
+            <el-button size="small" type="danger" plain @click="removeUser(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -157,6 +157,21 @@
       </el-descriptions>
     </el-dialog>
 
+    <el-dialog v-model="userEditVisible" title="编辑用户" width="540px">
+      <el-form :model="userEditForm" label-width="100px">
+        <el-form-item label="昵称"><el-input v-model="userEditForm.nickname" maxlength="80" /></el-form-item>
+        <el-form-item label="手机号">
+          <el-input v-model="userEditForm.phone" maxlength="30" :disabled="userEditForm.clearPhone" placeholder="留空则保持原手机号" />
+          <div class="muted-text">当前：{{ selectedUser?.phone || "未绑定" }}</div>
+        </el-form-item>
+        <el-form-item label="清除手机号"><el-switch v-model="userEditForm.clearPhone" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="userEditVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveUser">保存</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="grantVisible" title="授予会员" width="620px">
       <el-form :model="grantForm" label-width="130px">
         <el-form-item>
@@ -227,15 +242,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
-import { currentRoute, navigateTo } from "../../router";
-import { changeMembershipLevel, disableMembership, grantMembership, listMemberLevels, listMemberships, listUsers, renewMembership } from "../../services/admin";
+import { currentRoute } from "../../router";
+import { changeMembershipLevel, deleteUser, disableMembership, grantMembership, listMemberLevels, listMemberships, listUsers, renewMembership, updateUser } from "../../services/admin";
 import type { AdminAppUser, MemberLevel, UserMembership } from "../../services/types";
 
 const users = ref<AdminAppUser[]>([]);
@@ -253,9 +268,11 @@ const grantsVisible = ref(false);
 const selectedMembership = ref<UserMembership | null>(null);
 const selectedUser = ref<AdminAppUser | null>(null);
 const userDetailVisible = ref(false);
+const userEditVisible = ref(false);
 const actionMode = ref<"renew" | "disable" | "changeLevel">("renew");
 const grantForm = reactive({ userId: "", levelId: "", durationDays: undefined as number | undefined, source: "ADMIN_GRANT", remark: "" });
 const actionForm = reactive({ durationDays: 365, levelId: "", reason: "", remark: "" });
+const userEditForm = reactive({ nickname: "", phone: "", clearPhone: false });
 const enabledLevels = computed(() => levels.value.filter((item) => item.enabled));
 const isUserList = computed(() => currentRoute.value.path === "/users");
 const actionTitle = computed(() => (actionMode.value === "renew" ? "续期会员" : actionMode.value === "disable" ? "停用会员" : "调整会员等级"));
@@ -335,8 +352,36 @@ function openUserDetail(row: AdminAppUser) {
   userDetailVisible.value = true;
 }
 
-function goUserOrders() {
-  navigateTo("/orders");
+function openEditUser(row: AdminAppUser) {
+  selectedUser.value = row;
+  Object.assign(userEditForm, { nickname: row.nickname ?? row.wechatNickname ?? "", phone: "", clearPhone: false });
+  userEditVisible.value = true;
+}
+
+async function saveUser() {
+  if (!selectedUser.value) return;
+  await updateUser(selectedUser.value.id, {
+    nickname: userEditForm.nickname.trim() || null,
+    ...(userEditForm.clearPhone ? { phone: null } : userEditForm.phone.trim() ? { phone: userEditForm.phone.trim() } : {})
+  });
+  userEditVisible.value = false;
+  await loadUsers();
+  ElMessage.success("用户信息已更新");
+}
+
+async function removeUser(row: AdminAppUser) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除「${userName(row)}」的小程序用户身份？历史订单和报名会保留，但会与该账号解除关联。`,
+      "删除用户",
+      { confirmButtonText: "确认删除", cancelButtonText: "取消", type: "warning" }
+    );
+  } catch {
+    return;
+  }
+  await deleteUser(row.id);
+  await Promise.all([loadUsers(), loadMemberships()]);
+  ElMessage.success("用户身份已删除，历史财务记录已保留");
 }
 
 async function saveAction() {
