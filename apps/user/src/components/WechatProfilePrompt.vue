@@ -54,8 +54,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { ensureLogin } from "@/services/auth";
+import { ensureLogin, isAuthSessionExpiredError, refreshLogin } from "@/services/auth";
 import { bindWechatPhone, getWechatProfile, updateWechatProfile, uploadWechatAvatar } from "@/services/profile";
+import { ApiRequestError } from "@/services/request";
 
 const miniProgramEnabled = ref(false);
 const visible = ref(false);
@@ -120,8 +121,7 @@ async function onGetPhoneNumber(event: unknown) {
   bindingPhone.value = true;
   error.value = "";
   try {
-    await ensureLogin();
-    const result = await bindWechatPhone(code);
+    const result = await bindPhoneWithFreshSession(code);
     phone.value = result.user.phone || "";
     uni.$emit("auth:changed", result.user);
     uni.$emit("wechat-phone:updated", result.user);
@@ -133,10 +133,30 @@ async function onGetPhoneNumber(event: unknown) {
     });
   } catch (err) {
     console.error("[WECHAT_PHONE_BIND_ERROR]", err);
-    error.value = "手机号绑定失败，请重新授权";
+    error.value = phoneBindingErrorMessage(err);
   } finally {
     bindingPhone.value = false;
   }
+}
+
+async function bindPhoneWithFreshSession(code: string) {
+  try {
+    await ensureLogin();
+    return await bindWechatPhone(code);
+  } catch (err) {
+    if (!isAuthSessionExpiredError(err)) throw err;
+    await refreshLogin();
+    return bindWechatPhone(code);
+  }
+}
+
+function phoneBindingErrorMessage(err: unknown): string {
+  if (err instanceof ApiRequestError) {
+    const message = err.responseMessage?.trim() || "";
+    if (message && /微信|手机号|AppID|AppSecret|错误码|授权/.test(message)) return message;
+    if (!err.statusCode) return "网络连接失败，请检查网络后重新点击“一键绑定”";
+  }
+  return "手机号绑定未完成，请重新点击“一键绑定”；仍失败请联系管理员核对小程序能力配置";
 }
 
 function onChooseAvatar(event: unknown) {
@@ -276,7 +296,7 @@ function isRemoteUrl(value: string): boolean {
   display: block;
   margin: 10rpx 0 28rpx;
   color: var(--ui-color-muted);
-  font-size: 26rpx;
+  font-size: 29rpx;
   line-height: 1.5;
   text-align: center;
 }
@@ -313,7 +333,7 @@ function isRemoteUrl(value: string): boolean {
 
 .phone-description {
   color: var(--ui-color-muted);
-  font-size: 24rpx;
+  font-size: 27rpx;
   line-height: 1.45;
 }
 
@@ -325,7 +345,7 @@ function isRemoteUrl(value: string): boolean {
   border-radius: 8rpx;
   background: var(--ui-color-primary);
   color: #ffffff;
-  font-size: 25rpx;
+  font-size: 28rpx;
   font-weight: 900;
   line-height: 68rpx;
 }
@@ -392,7 +412,7 @@ function isRemoteUrl(value: string): boolean {
 
 .label {
   color: var(--ui-color-text);
-  font-size: 26rpx;
+  font-size: 29rpx;
   font-weight: 800;
 }
 
@@ -402,15 +422,16 @@ function isRemoteUrl(value: string): boolean {
   border: 1px solid var(--ui-color-border);
   border-radius: var(--ui-radius);
   color: var(--ui-color-text);
-  font-size: 28rpx;
+  font-size: 31rpx;
   box-sizing: border-box;
 }
 
 .error-text {
   margin-top: 18rpx;
   color: var(--ui-color-danger);
-  font-size: 25rpx;
-  text-align: center;
+  font-size: 29rpx;
+  line-height: 1.55;
+  text-align: left;
 }
 
 .actions {
@@ -424,7 +445,7 @@ function isRemoteUrl(value: string): boolean {
   flex: 1;
   min-height: 76rpx;
   border-radius: var(--ui-radius);
-  font-size: 27rpx;
+  font-size: 30rpx;
   line-height: 76rpx;
 }
 

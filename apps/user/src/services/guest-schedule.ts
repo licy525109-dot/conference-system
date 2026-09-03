@@ -54,7 +54,8 @@ export async function getMyGuestSchedules(conferenceId?: string): Promise<MyGues
   return data.items;
 }
 
-export function getGuestScheduleSubscriptionConfig(): Promise<GuestScheduleSubscriptionConfig> {
+export async function getGuestScheduleSubscriptionConfig(): Promise<GuestScheduleSubscriptionConfig> {
+  await ensureLogin();
   return request<GuestScheduleSubscriptionConfig>("/guest-schedules/subscription-config", { method: "GET", auth: true });
 }
 

@@ -16,31 +16,32 @@
     <view v-if="showBodyVideo" class="page-bg-overlay" />
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
 
-    <view class="page-heading">
-      <view class="page-heading__copy">
-        <text class="page-title">我的会务安排</text>
-        <text class="page-subtitle">主办方发布的工作坊、晚宴及分享安排</text>
+    <view class="page-content">
+      <view class="page-heading">
+        <view class="page-heading__copy">
+          <text class="page-title">我的会务安排</text>
+          <text class="page-subtitle">主办方已确认并发布的工作坊、晚宴及分享安排</text>
+        </view>
+        <button class="refresh-button" :disabled="loading" @click="load">{{ loading ? "同步中" : "刷新" }}</button>
       </view>
-      <button class="refresh-button" :disabled="loading" @click="load">{{ loading ? "同步中" : "刷新" }}</button>
-    </view>
 
-    <LoadingState v-if="loading && items.length === 0" title="正在同步安排" description="请稍候" />
-    <ErrorState v-else-if="error && items.length === 0" :message="error" primary-text="重新加载" @retry="load" />
-    <EmptyState
-      v-else-if="items.length === 0"
-      title="暂无已发布安排"
-      description="主办方确认并发布后，你会在消息列表和这里看到具体事项。"
-      mark="排"
-    />
+      <LoadingState v-if="loading && items.length === 0" title="正在同步安排" description="请稍候" />
+      <ErrorState v-else-if="error && items.length === 0" :message="error" primary-text="重新加载" @retry="load" />
+      <EmptyState
+        v-else-if="items.length === 0"
+        title="暂无已发布安排"
+        description="主办方确认并发布后，你会在消息列表和这里看到具体事项。"
+        mark="排"
+      />
 
-    <template v-else>
+      <template v-else>
       <scroll-view v-if="conferences.length > 1" class="conference-switch" scroll-x :show-scrollbar="false">
         <view class="conference-switch__inner">
           <button
             v-for="conference in conferences"
             :key="conference.id"
             class="conference-option"
-            :class="{ active: conference.id === selectedConferenceId }"
+            :class="{ active: conference.id === selectedConference?.id }"
             @click="selectedConferenceId = conference.id"
           >
             {{ conference.title }}
@@ -75,12 +76,16 @@
         </view>
         <text class="featured-time">{{ fullDate(featuredItem.startsAt) }}，{{ timeRange(featuredItem.startsAt, featuredItem.endsAt) }}</text>
         <text class="featured-name">{{ featuredItem.name }}</text>
-        <view v-if="hasItemDetails(featuredItem)" class="featured-details">
-          <text v-if="featuredItem.location">地点：{{ featuredItem.location }}</text>
-          <text v-if="featuredItem.role">身份：{{ featuredItem.role }}</text>
-          <text v-if="featuredItem.tableNo" class="featured-strong">席位：{{ featuredItem.tableNo }}{{ featuredItem.isTableLeader ? "，本桌桌长" : "" }}</text>
-          <text v-if="featuredItem.shareTopic">分享内容：{{ featuredItem.shareTopic }}</text>
-          <text v-if="featuredItem.notes">提醒：{{ featuredItem.notes }}</text>
+        <view v-if="scheduleFields(featuredItem).length" class="featured-details">
+          <view
+            v-for="field in scheduleFields(featuredItem)"
+            :key="field.key"
+            class="featured-field"
+            :class="{ 'featured-field--strong': field.emphasis }"
+          >
+            <text class="featured-field__label">{{ field.label }}：</text>
+            <text class="featured-field__value">{{ field.value }}</text>
+          </view>
         </view>
       </view>
 
@@ -92,7 +97,7 @@
               v-for="attendee in attendees"
               :key="attendee.id"
               class="attendee-option"
-              :class="{ active: attendee.id === selectedAttendeeId }"
+              :class="{ active: attendee.id === currentAttendee?.id }"
               @click="selectedAttendeeId = attendee.id"
             >
               <text>{{ attendee.name }}</text>
@@ -108,7 +113,7 @@
             v-for="day in days"
             :key="day.key"
             class="day-option"
-            :class="{ active: day.key === selectedDay }"
+            :class="{ active: day.key === activeDay }"
             @click="selectedDay = day.key"
           >
             <text>{{ day.weekday }}</text>
@@ -139,24 +144,17 @@
             <view class="schedule-card">
               <view class="schedule-card__head">
                 <text class="type-label" :data-type="item.type">{{ item.typeLabel }}</text>
-                <text v-if="item.role" class="role-label">{{ item.role }}</text>
               </view>
               <text class="schedule-name">{{ item.name }}</text>
-              <view v-if="hasItemDetails(item)" class="schedule-details">
-                <view v-if="item.location" class="detail-row">
-                  <text class="detail-label">地点</text>
-                  <text class="detail-value">{{ item.location }}</text>
-                </view>
-                <view v-if="item.tableNo" class="detail-row detail-row--highlight">
-                  <text class="detail-label">席位</text>
-                  <text class="detail-value">{{ item.tableNo }}{{ item.isTableLeader ? " · 本桌桌长" : "" }}</text>
-                </view>
-                <view v-if="item.shareTopic" class="detail-row">
-                  <text class="detail-label">内容</text>
-                  <text class="detail-value">{{ item.shareTopic }}</text>
-                </view>
-                <view v-if="item.notes" class="schedule-note">
-                  <text>{{ item.notes }}</text>
+              <view v-if="scheduleFields(item).length" class="schedule-details">
+                <view
+                  v-for="field in scheduleFields(item)"
+                  :key="field.key"
+                  class="detail-row"
+                  :class="{ 'detail-row--highlight': field.emphasis, 'detail-row--note': field.key === 'notes' }"
+                >
+                  <text class="detail-label">{{ field.label }}：</text>
+                  <text class="detail-value">{{ field.value }}</text>
                 </view>
               </view>
             </view>
@@ -176,7 +174,8 @@
           {{ subscribed ? "已开启" : subscribing ? "处理中" : "开启" }}
         </button>
       </view>
-    </template>
+      </template>
+    </view>
 
     <WechatProfilePrompt />
     <CustomTabbar active-page-key="notifications" />
@@ -201,6 +200,7 @@ import {
   type GuestScheduleSubscriptionConfig,
   type MyGuestScheduleItem
 } from "@/services/guest-schedule";
+import { buildGuestScheduleFields } from "@/utils/guestSchedulePresentation";
 
 const items = ref<MyGuestScheduleItem[]>([]);
 const loading = ref(false);
@@ -227,18 +227,23 @@ const attendees = computed(() => {
     seen.set(item.attendee.id, {
       id: item.attendee.id,
       name: item.attendee.name,
-      registrationNo: item.attendee.registration.registrationNo
+      registrationNo: item.attendee.registration?.registrationNo || ""
     });
   }
   return Array.from(seen.values());
 });
 const currentAttendee = computed(() => attendees.value.find((item) => item.id === selectedAttendeeId.value) ?? attendees.value[0]);
-const selectedAttendeeItems = computed(() => selectedConferenceItems.value.filter((item) => item.attendee.id === currentAttendee.value?.id));
+const selectedAttendeeItems = computed(() => {
+  const attendeeId = currentAttendee.value?.id;
+  if (!attendeeId) return selectedConferenceItems.value;
+  const matching = selectedConferenceItems.value.filter((item) => item.attendee.id === attendeeId);
+  return matching.length > 0 ? matching : selectedConferenceItems.value;
+});
 const days = computed(() => {
   const keys = Array.from(new Set(selectedAttendeeItems.value.map((item) => dayKey(item.startsAt))));
   return keys.sort().map((key) => ({ key, label: dayLabel(key), weekday: weekdayLabel(key) }));
 });
-const activeDay = computed(() => selectedDay.value || days.value[0]?.key || "");
+const activeDay = computed(() => days.value.some((day) => day.key === selectedDay.value) ? selectedDay.value : days.value[0]?.key || "");
 const visibleItems = computed(() => selectedAttendeeItems.value
   .filter((item) => dayKey(item.startsAt) === activeDay.value)
   .sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
@@ -303,6 +308,10 @@ function initializeSelection(scheduleItems: MyGuestScheduleItem[], requestedConf
   selectedDay.value = attendeeItems[0] ? dayKey(attendeeItems[0].startsAt) : "";
 }
 
+function scheduleFields(item: MyGuestScheduleItem) {
+  return buildGuestScheduleFields(item);
+}
+
 async function subscribe() {
   if (!subscriptionConfig.value || subscribing.value || subscribed.value) return;
   subscribing.value = true;
@@ -316,10 +325,6 @@ async function subscribe() {
   } finally {
     subscribing.value = false;
   }
-}
-
-function hasItemDetails(item: MyGuestScheduleItem) {
-  return Boolean(item.location || item.tableNo || item.shareTopic || item.notes);
 }
 
 function dayKey(value: string) {
@@ -377,6 +382,11 @@ function formatShortTime(value: string) {
   background-color: #f3f6f5;
 }
 
+.page-content {
+  position: relative;
+  z-index: 1;
+}
+
 .page-heading,
 .section-heading,
 .schedule-card__head,
@@ -421,7 +431,7 @@ function formatShortTime(value: string) {
   border-radius: 8rpx;
   background: #ffffff;
   color: #315d7d;
-  font-size: 22rpx;
+  font-size: 26rpx;
   font-weight: 800;
   line-height: 60rpx;
 }
@@ -497,7 +507,7 @@ function formatShortTime(value: string) {
 .conference-name {
   display: block;
   color: #17202f;
-  font-size: 34rpx;
+  font-size: 37rpx;
   font-weight: 900;
   line-height: 1.4;
 }
@@ -511,16 +521,24 @@ function formatShortTime(value: string) {
 
 .fact {
   display: grid;
-  grid-template-columns: 58rpx minmax(0, 1fr);
+  grid-template-columns: 78rpx minmax(0, 1fr);
   gap: 12rpx;
   color: #4f5e6d;
-  font-size: 28rpx;
+  font-size: 31rpx;
   line-height: 1.48;
 }
 
 .fact-label {
   color: #8b96a1;
+  white-space: nowrap;
 }
+
+/* #ifdef H5 */
+.fact-label :deep(span) {
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+/* #endif */
 
 .publish-meta {
   display: flex;
@@ -530,7 +548,7 @@ function formatShortTime(value: string) {
   padding-top: 16rpx;
   border-top: 1px solid #edf0f2;
   color: #86919d;
-  font-size: 25rpx;
+  font-size: 28rpx;
 }
 
 .featured-schedule {
@@ -559,7 +577,7 @@ function formatShortTime(value: string) {
   padding: 5rpx 12rpx;
   border-radius: 5rpx;
   background: #dcebf0;
-  font-size: 24rpx;
+  font-size: 28rpx;
 }
 
 .featured-time {
@@ -588,11 +606,37 @@ function formatShortTime(value: string) {
   padding-top: 18rpx;
   border-top: 1px solid #cedde3;
   color: #3b4d5e;
-  font-size: 30rpx;
+  font-size: 34rpx;
   line-height: 1.55;
 }
 
-.featured-strong {
+.featured-field {
+  display: grid;
+  grid-template-columns: 178rpx minmax(0, 1fr);
+  gap: 10rpx;
+}
+
+.featured-field__label {
+  color: #657381;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* #ifdef H5 */
+.featured-field__label :deep(span) {
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+/* #endif */
+
+.featured-field__value {
+  min-width: 0;
+  color: #26384b;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.featured-field--strong .featured-field__value {
   color: #8a651f;
   font-weight: 900;
 }
@@ -793,13 +837,12 @@ function formatShortTime(value: string) {
   align-items: flex-start;
 }
 
-.type-label,
-.role-label {
+.type-label {
   padding: 4rpx 10rpx;
   border-radius: 4rpx;
   background: #e7f0f5;
   color: #315d7d;
-  font-size: 24rpx;
+  font-size: 28rpx;
   font-weight: 800;
   line-height: 1.35;
 }
@@ -807,20 +850,11 @@ function formatShortTime(value: string) {
 .type-label[data-type="DINNER"] { background: #f7eedc; color: #805e20; }
 .type-label[data-type="SPEECH"] { background: #e4f2ee; color: #216d5b; }
 
-.role-label {
-  max-width: 180rpx;
-  overflow: hidden;
-  background: #eef1f3;
-  color: #65717e;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .schedule-name {
   display: block;
   margin-top: 13rpx;
   color: #152034;
-  font-size: 34rpx;
+  font-size: 38rpx;
   font-weight: 900;
   line-height: 1.42;
 }
@@ -836,15 +870,31 @@ function formatShortTime(value: string) {
 
 .detail-row {
   display: grid;
-  grid-template-columns: 56rpx minmax(0, 1fr);
+  grid-template-columns: 174rpx minmax(0, 1fr);
   gap: 10rpx;
   color: #4e5b69;
-  font-size: 29rpx;
-  line-height: 1.5;
+  font-size: 34rpx;
+  line-height: 1.55;
 }
 
 .detail-label {
-  color: #8a95a0;
+  color: #657381;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* #ifdef H5 */
+.detail-label :deep(span) {
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+/* #endif */
+
+.detail-value {
+  min-width: 0;
+  color: #26384b;
+  font-weight: 800;
+  overflow-wrap: anywhere;
 }
 
 .detail-row--highlight .detail-value {
@@ -852,13 +902,11 @@ function formatShortTime(value: string) {
   font-weight: 900;
 }
 
-.schedule-note {
-  padding: 13rpx 15rpx;
-  border: 1px solid #d8e2e6;
-  background: #f1f5f6;
-  color: #53606d;
-  font-size: 28rpx;
-  line-height: 1.55;
+.detail-row--note {
+  margin-top: 3rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 7rpx;
+  background: #edf2f4;
 }
 
 .day-empty {

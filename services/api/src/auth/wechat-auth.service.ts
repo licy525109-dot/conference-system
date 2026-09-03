@@ -23,6 +23,12 @@ const CODE2SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session";
 const ACCESS_TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token";
 const PHONE_NUMBER_URL = "https://api.weixin.qq.com/wxa/business/getuserphonenumber";
 const CODE2SESSION_TIMEOUT_MS = 5000;
+const RETRYABLE_ACCESS_TOKEN_ERRCODES = new Set([40001, 40014, 42001]);
+
+type WechatHttpPayload = {
+  ok: boolean;
+  payload: Record<string, unknown>;
+};
 
 @Injectable()
 export class WechatAuthService {
@@ -78,30 +84,52 @@ export class WechatAuthService {
 
   async getPhoneNumber(code: string): Promise<WechatPhoneNumber> {
     const accessToken = await this.getAccessToken();
+    try {
+      return await this.exchangePhoneCode(code, accessToken);
+    } catch (error) {
+      if (!(error instanceof WechatApiResponseError) || !RETRYABLE_ACCESS_TOKEN_ERRCODES.has(error.errcode)) {
+        throw normalizePhoneNumberError(error);
+      }
+
+      this.cachedAccessToken = undefined;
+      const refreshedAccessToken = await this.getAccessToken();
+      try {
+        return await this.exchangePhoneCode(code, refreshedAccessToken);
+      } catch (retryError) {
+        throw normalizePhoneNumberError(retryError);
+      }
+    }
+  }
+
+  private async exchangePhoneCode(code: string, accessToken: string): Promise<WechatPhoneNumber> {
     const url = new URL(PHONE_NUMBER_URL);
     url.searchParams.set("access_token", accessToken);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), CODE2SESSION_TIMEOUT_MS);
 
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code }),
-        signal: controller.signal
-      });
-      const payload = await safeJson(response);
+      const response = await this.fetchPhoneNumberPayload(url, code, controller.signal);
       if (!response.ok) {
         throw new BadGatewayException("WeChat phone number request failed");
       }
-      return parsePhoneNumberPayload(payload);
+      return parsePhoneNumberPayload(response.payload);
     } catch (error) {
-      if (error instanceof HttpException) throw error;
+      if (error instanceof HttpException || error instanceof WechatApiResponseError) throw error;
       if (isAbortError(error)) throw new GatewayTimeoutException("WeChat phone number request timed out");
       throw new BadGatewayException("WeChat phone number request failed");
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  protected async fetchPhoneNumberPayload(url: URL, code: string, signal: AbortSignal): Promise<WechatHttpPayload> {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code }),
+      signal
+    });
+    return { ok: response.ok, payload: await safeJson(response) };
   }
 
   private async getAccessToken(): Promise<string> {
@@ -119,14 +147,16 @@ export class WechatAuthService {
     const timeout = setTimeout(() => controller.abort(), CODE2SESSION_TIMEOUT_MS);
 
     try {
-      const response = await fetch(url, { signal: controller.signal });
-      const payload = await safeJson(response);
-      const token = payload.access_token;
-      const errcode = payload.errcode;
-      if (!response.ok || (typeof errcode === "number" && errcode !== 0) || typeof token !== "string" || !token) {
-        throw new BadGatewayException("WeChat access token request failed");
+      const response = await this.fetchAccessTokenPayload(url, controller.signal);
+      const token = response.payload.access_token;
+      const error = readWechatApiError(response.payload);
+      if (error) {
+        throw normalizeAccessTokenError(error);
       }
-      const expiresIn = typeof payload.expires_in === "number" ? payload.expires_in : 7200;
+      if (!response.ok || typeof token !== "string" || !token) {
+        throw new BadGatewayException("微信手机号服务暂不可用，请稍后重试");
+      }
+      const expiresIn = typeof response.payload.expires_in === "number" ? response.payload.expires_in : 7200;
       this.cachedAccessToken = {
         value: token,
         expiresAt: Date.now() + Math.max(60, expiresIn - 120) * 1000
@@ -139,6 +169,11 @@ export class WechatAuthService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  protected async fetchAccessTokenPayload(url: URL, signal: AbortSignal): Promise<WechatHttpPayload> {
+    const response = await fetch(url, { signal });
+    return { ok: response.ok, payload: await safeJson(response) };
   }
 }
 
@@ -162,10 +197,8 @@ function parseCode2SessionPayload(payload: Record<string, unknown>): WechatSessi
 }
 
 function parsePhoneNumberPayload(payload: Record<string, unknown>): WechatPhoneNumber {
-  const errcode = payload.errcode;
-  if (typeof errcode === "number" && errcode !== 0) {
-    throw new BadRequestException(`WeChat phone number failed with errcode ${errcode}`);
-  }
+  const error = readWechatApiError(payload);
+  if (error) throw error;
   const phoneInfo = payload.phone_info;
   if (!isRecord(phoneInfo)) {
     throw new BadGatewayException("WeChat phone number response is missing phone_info");
@@ -177,6 +210,49 @@ function parsePhoneNumberPayload(payload: Record<string, unknown>): WechatPhoneN
     throw new BadGatewayException("WeChat phone number response is invalid");
   }
   return { phoneNumber, purePhoneNumber, countryCode };
+}
+
+function readWechatApiError(payload: Record<string, unknown>): WechatApiResponseError | null {
+  const parsed = Number(payload.errcode);
+  if (!Number.isFinite(parsed) || parsed === 0) return null;
+  return new WechatApiResponseError(parsed, typeof payload.errmsg === "string" ? payload.errmsg : "");
+}
+
+function normalizeAccessTokenError(error: WechatApiResponseError): HttpException {
+  if ([40013, 40001, 40125].includes(error.errcode)) {
+    return new BadGatewayException("微信小程序 AppID 或 AppSecret 配置不正确，请管理员核对生产环境配置");
+  }
+  if ([40164, 89501, 89503, 89506, 89507].includes(error.errcode)) {
+    return new BadGatewayException("微信接口尚未放行生产服务器，请管理员在小程序后台确认接口调用权限");
+  }
+  return new BadGatewayException(`微信手机号服务暂不可用（错误码 ${error.errcode}），请稍后重试`);
+}
+
+function normalizePhoneNumberError(error: unknown): HttpException {
+  if (error instanceof HttpException) return error;
+  if (!(error instanceof WechatApiResponseError)) {
+    return new BadGatewayException("微信手机号服务暂不可用，请稍后重试");
+  }
+  if (error.errcode === 40029) {
+    return new BadRequestException("本次手机号授权已失效，请重新点击“一键绑定”并允许授权");
+  }
+  if (error.errcode === 48001) {
+    return new BadRequestException("当前小程序尚未开通微信手机号验证能力，请管理员在小程序后台完成认证和能力开通");
+  }
+  if ([40013, 40125].includes(error.errcode)) {
+    return new BadGatewayException("微信小程序 AppID 或 AppSecret 配置不正确，请管理员核对生产环境配置");
+  }
+  if (error.errcode === -1) {
+    return new BadGatewayException("微信手机号服务繁忙，请稍后重试");
+  }
+  return new BadGatewayException(`微信手机号绑定未完成（错误码 ${error.errcode}），请联系管理员核对小程序能力配置`);
+}
+
+class WechatApiResponseError extends Error {
+  constructor(readonly errcode: number, readonly errmsg: string) {
+    super(`WeChat API error ${errcode}`);
+    this.name = "WechatApiResponseError";
+  }
 }
 
 async function safeJson(response: Response): Promise<Record<string, unknown>> {

@@ -40,7 +40,7 @@
             <text>{{ formatMessageTime(item.createdAt) }}</text>
           </view>
           <text class="message-title">{{ item.title }}</text>
-          <text v-if="item.summary" class="message-summary">{{ item.summary }}</text>
+          <text v-if="item.summary" class="message-summary">本次更新：{{ item.summary }}</text>
           <view v-if="schedulePreview(item).length" class="schedule-preview">
             <view v-for="schedule in schedulePreview(item)" :key="schedule.id" class="preview-row">
               <view class="preview-time">
@@ -48,9 +48,16 @@
                 <text>{{ timeOnly(schedule.startsAt) }}</text>
               </view>
               <view class="preview-copy">
-                <text>{{ schedule.name }}</text>
-                <text v-if="schedule.location || schedule.tableNo">{{ [schedule.location, schedule.tableNo].filter(Boolean).join(' · ') }}</text>
-                <text v-if="schedule.role || schedule.shareTopic">{{ [schedule.role, schedule.shareTopic].filter(Boolean).join(' · ') }}</text>
+                <text class="preview-name">{{ schedule.name }}</text>
+                <view
+                  v-for="field in scheduleFields(schedule)"
+                  :key="field.key"
+                  class="preview-field"
+                  :class="{ 'preview-field--strong': field.emphasis }"
+                >
+                  <text class="preview-field__label">{{ field.label }}：</text>
+                  <text class="preview-field__value">{{ field.value }}</text>
+                </view>
               </view>
             </view>
           </view>
@@ -73,7 +80,7 @@
         </view>
 
         <scroll-view class="detail-scroll" scroll-y>
-          <text v-if="selectedNotification.summary" class="detail-summary">{{ selectedNotification.summary }}</text>
+          <text v-if="selectedNotification.summary" class="detail-summary">本次更新：{{ selectedNotification.summary }}</text>
           <view v-if="detailLoading" class="detail-loading">正在同步完整安排...</view>
           <view v-if="detailSchedules.length" class="detail-schedules">
             <view v-for="schedule in detailSchedules" :key="schedule.id" class="detail-schedule">
@@ -83,12 +90,16 @@
               </view>
               <text class="detail-schedule__type">{{ schedule.typeLabel || typeLabel(schedule.type) }}</text>
               <text class="detail-schedule__name">{{ schedule.name }}</text>
-              <view class="detail-fields">
-                <view v-if="schedule.location" class="detail-field"><text>地点</text><text>{{ schedule.location }}</text></view>
-                <view v-if="schedule.role" class="detail-field"><text>身份</text><text>{{ schedule.role }}</text></view>
-                <view v-if="schedule.tableNo" class="detail-field detail-field--strong"><text>席位</text><text>{{ schedule.tableNo }}{{ schedule.isTableLeader ? "，本桌桌长" : "" }}</text></view>
-                <view v-if="schedule.shareTopic" class="detail-field"><text>内容</text><text>{{ schedule.shareTopic }}</text></view>
-                <view v-if="schedule.notes" class="detail-note"><text>{{ schedule.notes }}</text></view>
+              <view v-if="scheduleFields(schedule).length" class="detail-fields">
+                <view
+                  v-for="field in scheduleFields(schedule)"
+                  :key="field.key"
+                  class="detail-field"
+                  :class="{ 'detail-field--strong': field.emphasis, 'detail-field--note': field.key === 'notes' }"
+                >
+                  <text class="detail-field__label">{{ field.label }}：</text>
+                  <text class="detail-field__value">{{ field.value }}</text>
+                </view>
               </view>
             </view>
           </view>
@@ -116,6 +127,7 @@ import { clearExpiredAuthSession, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionEx
 import { getGuestScheduleSubscriptionConfig, subscribeGuestScheduleUpdates, type GuestScheduleSubscriptionConfig } from "@/services/guest-schedule";
 import { getMyGuestSchedules, type MyGuestScheduleItem } from "@/services/guest-schedule";
 import { getMyNotifications, markAllNotificationsRead, markNotificationRead, type UserNotification, type UserNotificationScheduleItem } from "@/services/user-notifications";
+import { buildGuestScheduleFields } from "@/utils/guestSchedulePresentation";
 
 const items = ref<UserNotification[]>([]);
 const unreadCount = ref(0);
@@ -235,6 +247,10 @@ function schedulePreview(item: UserNotification) {
   return item.payloadJson?.items?.slice(0, 2) ?? [];
 }
 
+function scheduleFields(item: UserNotificationScheduleItem | MyGuestScheduleItem) {
+  return buildGuestScheduleFields(item);
+}
+
 function typeText(type: string) {
   return type === "GUEST_SCHEDULE_PUBLISHED" ? "会务安排" : "系统通知";
 }
@@ -314,15 +330,23 @@ function formatMessageTime(value: string) {
 .message-dot { width: 10rpx; height: 10rpx; border-radius: 50%; background: #c5cbd1; }
 .unread .message-dot { background: #2e6689; }
 .message-body { min-width: 0; }
-.message-meta { color: #74808d; font-size: 26rpx; }
-.message-title { display: block; margin-top: 15rpx; color: #142033; font-size: 36rpx; font-weight: 900; line-height: 1.42; }
-.message-summary { display: block; margin-top: 10rpx; color: #4f5d6c; font-size: 30rpx; line-height: 1.6; }
-.schedule-preview { display: flex; flex-direction: column; gap: 12rpx; margin-top: 20rpx; padding: 17rpx 18rpx; border: 1px solid #d7e1e6; border-radius: 8rpx; background: #f5f7f8; }
-.preview-row { display: grid; grid-template-columns: 104rpx minmax(0, 1fr); gap: 18rpx; }
-.preview-time { display: flex; flex-direction: column; gap: 3rpx; color: #28536d; font-size: 27rpx; font-weight: 900; }
-.preview-copy { display: flex; min-width: 0; flex-direction: column; gap: 5rpx; color: #243447; font-size: 30rpx; font-weight: 800; line-height: 1.45; }
-.preview-copy text + text { color: #65717e; font-size: 26rpx; font-weight: 600; }
-.message-footer { margin-top: 22rpx; padding-top: 18rpx; border-top: 1px solid #e8ecef; color: #737f8b; font-size: 27rpx; }
+.message-meta { color: #657381; font-size: 29rpx; line-height: 1.45; }
+.message-title { display: block; margin-top: 16rpx; color: #142033; font-size: 40rpx; font-weight: 900; line-height: 1.42; overflow-wrap: anywhere; }
+.message-summary { display: block; margin-top: 12rpx; color: #435263; font-size: 32rpx; line-height: 1.6; }
+.schedule-preview { display: flex; flex-direction: column; gap: 20rpx; margin-top: 22rpx; padding: 22rpx; border: 1px solid #cfdae0; border-radius: 8rpx; background: #f5f8f8; }
+.preview-row { display: grid; grid-template-columns: 112rpx minmax(0, 1fr); gap: 20rpx; }
+.preview-row + .preview-row { padding-top: 20rpx; border-top: 1px solid #dce4e7; }
+.preview-time { display: flex; flex-direction: column; gap: 4rpx; color: #214d69; font-size: 30rpx; font-weight: 900; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.preview-copy { display: flex; min-width: 0; flex-direction: column; gap: 10rpx; color: #243447; line-height: 1.5; }
+.preview-name { color: #17263a; font-size: 35rpx; font-weight: 900; overflow-wrap: anywhere; }
+.preview-field { display: grid; grid-template-columns: 178rpx minmax(0, 1fr); gap: 8rpx; font-size: 34rpx; }
+.preview-field__label { color: #657381; font-weight: 700; white-space: nowrap; }
+/* #ifdef H5 */
+.preview-field__label :deep(span) { letter-spacing: 0; white-space: nowrap; }
+/* #endif */
+.preview-field__value { min-width: 0; color: #26384b; font-weight: 800; overflow-wrap: anywhere; }
+.preview-field--strong .preview-field__value { color: #8a651f; font-weight: 900; }
+.message-footer { margin-top: 24rpx; padding-top: 20rpx; border-top: 1px solid #e1e7e9; color: #657381; font-size: 30rpx; line-height: 1.4; }
 .message-footer text:last-child { color: #315f7d; font-weight: 800; }
 
 .detail-mask { position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end; background: rgba(13, 23, 35, 0.5); }
@@ -337,20 +361,24 @@ function formatMessageTime(value: string) {
 .detail-scroll { min-height: 240rpx; flex: 1; overflow-x: hidden; overflow-y: auto; padding: 24rpx 0; box-sizing: border-box; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .detail-scroll :deep(.uni-scroll-view) { height: 100%; min-height: 0; }
 .detail-scroll :deep(.uni-scroll-view-content) { padding-bottom: 10rpx; box-sizing: border-box; }
-.detail-summary { display: block; margin-bottom: 22rpx; color: #536171; font-size: 30rpx; line-height: 1.6; }
+.detail-summary { display: block; margin-bottom: 22rpx; color: #435263; font-size: 32rpx; line-height: 1.6; }
 .detail-loading,
 .detail-empty { padding: 42rpx 20rpx; color: #6c7885; font-size: 30rpx; line-height: 1.55; text-align: center; }
 .detail-schedules { display: flex; flex-direction: column; gap: 20rpx; }
 .detail-schedule { padding: 26rpx; border: 1px solid #dce4e7; border-radius: 10rpx; background: #ffffff; }
-.detail-schedule__time { display: flex; align-items: baseline; justify-content: space-between; gap: 16rpx; color: #28536d; font-size: 30rpx; font-weight: 900; }
-.detail-schedule__type { display: inline-block; margin-top: 20rpx; padding: 6rpx 12rpx; border-radius: 6rpx; background: #e8f1f5; color: #28536d; font-size: 25rpx; font-weight: 900; }
-.detail-schedule__name { display: block; margin-top: 13rpx; color: #152237; font-size: 36rpx; font-weight: 900; line-height: 1.45; }
-.detail-fields { display: flex; flex-direction: column; gap: 13rpx; margin-top: 20rpx; }
-.detail-field { display: grid; grid-template-columns: 80rpx minmax(0, 1fr); gap: 14rpx; color: #273649; font-size: 30rpx; line-height: 1.5; }
-.detail-field text:first-child { color: #778390; }
-.detail-field--strong text:last-child { color: #9a711d; font-weight: 900; }
-.detail-note { padding: 18rpx 20rpx; border-radius: 8rpx; background: #f1f4f5; color: #3c4a59; font-size: 29rpx; line-height: 1.6; }
-.detail-action { min-height: 86rpx; margin: 10rpx 0 0; border: 0; border-radius: 10rpx; background: #285d7e; color: #ffffff; font-size: 31rpx; font-weight: 900; line-height: 86rpx; }
+.detail-schedule__time { display: flex; align-items: baseline; justify-content: space-between; gap: 16rpx; color: #214d69; font-size: 32rpx; font-weight: 900; font-variant-numeric: tabular-nums; }
+.detail-schedule__type { display: inline-block; margin-top: 20rpx; padding: 7rpx 13rpx; border-radius: 6rpx; background: #e8f1f5; color: #28536d; font-size: 28rpx; font-weight: 900; }
+.detail-schedule__name { display: block; margin-top: 14rpx; color: #152237; font-size: 39rpx; font-weight: 900; line-height: 1.45; overflow-wrap: anywhere; }
+.detail-fields { display: flex; flex-direction: column; gap: 14rpx; margin-top: 22rpx; }
+.detail-field { display: grid; grid-template-columns: 178rpx minmax(0, 1fr); gap: 10rpx; color: #273649; font-size: 34rpx; line-height: 1.55; }
+.detail-field__label { color: #657381; font-weight: 700; white-space: nowrap; }
+/* #ifdef H5 */
+.detail-field__label :deep(span) { letter-spacing: 0; white-space: nowrap; }
+/* #endif */
+.detail-field__value { min-width: 0; font-weight: 800; overflow-wrap: anywhere; }
+.detail-field--strong .detail-field__value { color: #8a651f; font-weight: 900; }
+.detail-field--note { margin-top: 4rpx; padding: 18rpx 20rpx; border-radius: 8rpx; background: #edf2f4; }
+.detail-action { min-height: 90rpx; margin: 10rpx 0 0; border: 0; border-radius: 10rpx; background: #285d7e; color: #ffffff; font-size: 33rpx; font-weight: 900; line-height: 90rpx; }
 
 @media (min-width: 760px) { .page { max-width: 760px; margin: 0 auto; } }
 </style>
