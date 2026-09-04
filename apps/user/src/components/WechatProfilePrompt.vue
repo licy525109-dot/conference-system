@@ -113,6 +113,10 @@ async function onGetPhoneNumber(event: unknown) {
   const detail = readEventDetail(event);
   const code = typeof detail.code === "string" ? detail.code.trim() : "";
   const errMsg = typeof detail.errMsg === "string" ? detail.errMsg : "";
+  if (Number(detail.errno) === 1400001) {
+    error.value = "手机号验证额度不足，请联系管理员在微信公众平台“付费管理”补充额度";
+    return;
+  }
   if (!code || !errMsg.includes(":ok")) {
     error.value = "需要你点击允许后才能自动绑定微信手机号";
     return;

@@ -4,17 +4,19 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException
 } from "@nestjs/common";
 import { PaymentProvider, PaymentStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
-import { readWechatPayConfig } from "../payments/wechat-pay.config";
+import { isWechatPayEnabled, readWechatPayConfig } from "../payments/wechat-pay.config";
 import { buildWechatPayDescription } from "../payments/wechat-pay.description";
 import { WechatPayEncryptedResource, WechatPayHeaders, WechatPayNotifyVerifier } from "../payments/wechat-pay.notify-verifier";
 import { WechatPayPrepayClient } from "../payments/wechat-pay.prepay-client";
 import { WechatNotifySuccessResponse, WechatPrepayResponse } from "../payments/wechat-pay.service";
 import { WechatPaySigner } from "../payments/wechat-pay.signer";
+import { WechatPayTransactionClient } from "../payments/wechat-pay.transaction-client";
 import { isMallMockPaymentEnabled, isMallWechatPaymentEnabled, readMallWechatNotifyUrl, type MallPaymentRuntimeConfig } from "./mall-payment.config";
 import { MallPaymentCompletionService } from "./mall-payment-completion.service";
 
@@ -25,7 +27,8 @@ export class MallPaymentService {
     private readonly paymentCompletionService: MallPaymentCompletionService,
     private readonly prepayClient: WechatPayPrepayClient,
     private readonly signer: WechatPaySigner,
-    private readonly notifyVerifier: WechatPayNotifyVerifier
+    private readonly notifyVerifier: WechatPayNotifyVerifier,
+    @Optional() private readonly wechatPayTransactionClient?: WechatPayTransactionClient
   ) {}
 
   async prepayWechat(orderId: string, currentUser: CurrentUser | undefined): Promise<WechatPrepayResponse> {
@@ -39,6 +42,7 @@ export class MallPaymentService {
     });
     if (!order) throw new NotFoundException("商城订单不存在");
     assertMallOrderPayable(order.status, order.payableAmountCent);
+    if (order.expiredAt && order.expiredAt <= new Date()) throw new ConflictException("商城订单已超时，请重新下单");
 
     const openid = order.user?.openid ?? currentUser.openid;
     if (!openid || openid.startsWith("mock_")) throw new ConflictException("当前商城订单未绑定有效微信身份，请重新登录后支付。");
@@ -71,6 +75,7 @@ export class MallPaymentService {
         description: buildWechatPayDescription("商城", order.items[0]?.productTitle || "商品", order.orderNo),
         out_trade_no: outTradeNo,
         notify_url: readMallWechatNotifyUrl(paymentConfig),
+        ...(order.expiredAt ? { time_expire: order.expiredAt.toISOString() } : {}),
         amount: {
           total: order.payableAmountCent,
           currency: "CNY"
@@ -98,6 +103,7 @@ export class MallPaymentService {
     const order = await this.prisma.mallOrder.findFirst({ where: { id: orderId, userId: currentUser.id } });
     if (!order) throw new NotFoundException("商城订单不存在");
     assertMallOrderPayable(order.status, order.payableAmountCent);
+    if (order.expiredAt && order.expiredAt <= new Date()) throw new ConflictException("商城订单已超时，请重新下单");
 
     const outTradeNo = toMallMockOutTradeNo(order.orderNo);
     await this.prisma.mallPayment.upsert({
@@ -129,14 +135,40 @@ export class MallPaymentService {
 
   async paymentStatus(orderId: string, currentUser: CurrentUser | undefined) {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
-    const order = await this.prisma.mallOrder.findFirst({
-      where: { id: orderId, userId: currentUser.id },
-      include: {
-        payments: { orderBy: { createdAt: "desc" }, take: 1 },
-        refunds: { orderBy: { createdAt: "desc" }, take: 1 },
-        afterSales: { orderBy: { createdAt: "desc" }, take: 1 }
+    let order = await this.findOwnedPaymentStatusOrder(orderId, currentUser.id);
+    if (!order) throw new NotFoundException("商城订单不存在");
+
+    const pendingWechatPayment = order.status === "PENDING_PAYMENT"
+      ? order.payments.find((payment) => payment.provider === PaymentProvider.WECHAT && payment.outTradeNo)
+      : null;
+    if (pendingWechatPayment && this.wechatPayTransactionClient && isWechatPayEnabled()) {
+      try {
+        const transaction = await this.wechatPayTransactionClient.queryByOutTradeNo(pendingWechatPayment.outTradeNo);
+        if (
+          transaction.tradeState === "SUCCESS" &&
+          transaction.transactionId &&
+          Number.isInteger(transaction.amountTotal) &&
+          (transaction.amountTotal ?? -1) >= 0
+        ) {
+          await this.paymentCompletionService.completePayment({
+            provider: PaymentProvider.WECHAT,
+            outTradeNo: pendingWechatPayment.outTradeNo,
+            transactionId: transaction.transactionId,
+            paidAmountCent: transaction.amountTotal!,
+            paidAt: transaction.successTime ?? new Date(),
+            rawSummary: { source: "USER_PAYMENT_STATUS_QUERY" }
+          });
+          order = await this.findOwnedPaymentStatusOrder(orderId, currentUser.id);
+        }
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: "WECHAT_PAY_MALL_USER_STATUS_RECONCILIATION_FAILED",
+          orderId,
+          outTradeNo: pendingWechatPayment.outTradeNo,
+          message: error instanceof Error ? error.message : "unknown error"
+        }));
       }
-    });
+    }
     if (!order) throw new NotFoundException("商城订单不存在");
     const payment = order.payments[0] ?? null;
     const refund = order.refunds[0] ?? null;
@@ -153,6 +185,17 @@ export class MallPaymentService {
       refundStatus: refund?.status ?? null,
       afterSaleStatus: afterSale?.status ?? null
     };
+  }
+
+  private findOwnedPaymentStatusOrder(orderId: string, userId: string) {
+    return this.prisma.mallOrder.findFirst({
+      where: { id: orderId, userId },
+      include: {
+        payments: { orderBy: { createdAt: "desc" }, take: 1 },
+        refunds: { orderBy: { createdAt: "desc" }, take: 1 },
+        afterSales: { orderBy: { createdAt: "desc" }, take: 1 }
+      }
+    });
   }
 
   async handleWechatNotify(input: {

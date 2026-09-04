@@ -57,6 +57,7 @@
 import { computed } from "vue";
 import type { RegistrationSku } from "@/services/conference";
 import { formatCent } from "@/utils/money";
+import { remainingRegistrationStock } from "@/utils/registration-stock";
 
 const props = defineProps<{
   visible: boolean;
@@ -79,7 +80,7 @@ function selectSku(sku: RegistrationSku) {
 }
 
 function remainingStock(sku: RegistrationSku): number {
-  return Math.max(sku.stock - sku.soldCount, 0);
+  return remainingRegistrationStock(sku);
 }
 
 function stockLabel(sku: RegistrationSku): string {

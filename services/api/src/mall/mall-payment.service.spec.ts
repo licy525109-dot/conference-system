@@ -110,6 +110,33 @@ describe("MallPaymentService", () => {
     assert.equal(prisma.inventoryLogs.length, 1);
   });
 
+  it("allows only one concurrent mall payment callback to consume inventory", async () => {
+    const prisma = createPrismaMock({ withWechatPayment: true });
+    const service = new MallPaymentCompletionService(prisma);
+    const input = {
+      provider: PaymentProvider.WECHAT,
+      outTradeNo: "MALL_SHOP001",
+      transactionId: "wx-transaction-1",
+      paidAmountCent: 12000,
+      paidAt: now,
+      rawSummary: { id: "notify-concurrent" }
+    };
+
+    const results = await Promise.allSettled([
+      service.completePayment(input),
+      service.completePayment(input)
+    ]);
+
+    assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
+    assert.equal(results.filter((item) => item.status === "rejected").length, 1);
+    assert.equal(prisma.skus[0]?.lockedStock, 0);
+    assert.equal(prisma.skus[0]?.soldCount, 7);
+    assert.equal(prisma.inventoryLogs.length, 1);
+
+    await service.completePayment(input);
+    assert.equal(prisma.inventoryLogs.length, 1);
+  });
+
   it("rejects amount mismatch without updating mall order or stock", async () => {
     const prisma = createPrismaMock({ withWechatPayment: true });
     const service = new MallPaymentCompletionService(prisma);
@@ -153,6 +180,29 @@ describe("MallPaymentService", () => {
     const service = createMallPaymentService(createPrismaMock());
 
     await assert.rejects(() => service.prepayWechat("mall-order-1", currentUser), ForbiddenException);
+  });
+
+  it("reconciles a successful WeChat payment before returning pending status", async () => {
+    withWechatPayConfig();
+    const prisma = createPrismaMock({ withWechatPayment: true });
+    const transactionClient = {
+      queryByOutTradeNo: async () => ({
+        outTradeNo: "MALL_SHOP001",
+        transactionId: "wx-mall-query-1",
+        tradeState: "SUCCESS",
+        amountTotal: 12000,
+        successTime: now
+      })
+    };
+    const service = createMallPaymentService(prisma, transactionClient);
+
+    const result = await service.paymentStatus("mall-order-1", currentUser);
+
+    assert.equal(result.status, "PAID");
+    assert.equal(result.paymentProvider, PaymentProvider.WECHAT);
+    assert.equal(result.paymentStatus, PaymentStatus.SUCCESS);
+    assert.equal(prisma.skus[0]?.lockedStock, 0);
+    assert.equal(prisma.skus[0]?.soldCount, 7);
   });
 });
 
@@ -225,7 +275,10 @@ function withWechatPayConfig(): void {
   process.env.WECHAT_PAY_MALL_NOTIFY_URL = "https://example.com/api/mall/payments/wechat/notify";
 }
 
-function createMallPaymentService(prisma: PrismaMock & PrismaService) {
+function createMallPaymentService(
+  prisma: PrismaMock & PrismaService,
+  transactionClient?: { queryByOutTradeNo(outTradeNo: string): Promise<unknown> }
+) {
   const paymentCompletion = new MallPaymentCompletionService(prisma);
   const prepayClient = {
     createJsapiPrepay: async (input: { body: Record<string, any> }) => {
@@ -246,7 +299,14 @@ function createMallPaymentService(prisma: PrismaMock & PrismaService) {
     verifySignature: () => undefined,
     decryptResource: () => ({})
   };
-  return new MallPaymentService(prisma, paymentCompletion, prepayClient as any, signer as any, notifyVerifier as any);
+  return new MallPaymentService(
+    prisma,
+    paymentCompletion,
+    prepayClient as any,
+    signer as any,
+    notifyVerifier as any,
+    transactionClient as any
+  );
 }
 
 function createPrismaMock(options: PrismaMockOptions = {}) {
@@ -295,11 +355,25 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
         const order = orders.find((item) => item.id === where.id && item.userId === where.userId);
         return order ? toOrderResult(order, skus, mallPayments, refunds, afterSales) : null;
       },
+      findUnique: async ({ where }: any) => {
+        const order = orders.find((item) => item.id === where.id);
+        return order ? toOrderResult(order, skus, mallPayments, refunds, afterSales) : null;
+      },
       update: async ({ where, data, include }: any) => {
         const order = orders.find((item) => item.id === where.id);
         assert.ok(order);
         Object.assign(order, data, { updatedAt: now });
         return include ? toOrderResult(order, skus, mallPayments, refunds, afterSales) : order;
+      },
+      updateMany: async ({ where, data }: any) => {
+        const order = orders.find((item) => {
+          if (item.id !== where.id) return false;
+          if (Array.isArray(where.status?.in)) return where.status.in.includes(item.status);
+          return item.status === where.status;
+        });
+        if (!order) return { count: 0 };
+        Object.assign(order, data, { updatedAt: now });
+        return { count: 1 };
       }
     },
     mallPayment: {
@@ -361,7 +435,25 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
         return item;
       }
     },
+    refund: {
+      findUnique: async () => null
+    },
     mallRefund: {
+      findUnique: async ({ where }: any) => {
+        const item = refunds.find((entry) => entry.id === where.id);
+        if (!item) return null;
+        const order = orders.find((entry) => entry.id === item.mallOrderId)!;
+        const afterSale = item.afterSaleId ? afterSales.find((entry) => entry.id === item.afterSaleId) ?? null : null;
+        return { ...item, order, afterSale };
+      },
+      findFirst: async ({ where }: any) => refunds.find((entry) =>
+        (!where.mallOrderId || entry.mallOrderId === where.mallOrderId) &&
+        (!where.status || entry.status === where.status)
+      ) ?? null,
+      count: async ({ where }: any = {}) => refunds.filter((entry) =>
+        (!where.mallOrderId || entry.mallOrderId === where.mallOrderId) &&
+        (!where.status?.in || where.status.in.includes(entry.status))
+      ).length,
       create: async ({ data }: any) => {
         const item = createRefund({ id: `refund-${refunds.length + 1}`, ...data });
         refunds.push(item);
@@ -372,7 +464,14 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
         assert.ok(item);
         Object.assign(item, data, { updatedAt: now });
         return item;
-      }
+      },
+      aggregate: async ({ where }: any) => ({
+        _sum: {
+          amountCent: refunds
+            .filter((entry) => entry.mallOrderId === where.mallOrderId && entry.status === where.status)
+            .reduce((sum, entry) => sum + entry.amountCent, 0)
+        }
+      })
     },
     $transaction: async (operation: any) => (Array.isArray(operation) ? Promise.all(operation) : operation(mock))
   };
@@ -456,6 +555,7 @@ function createRefund(input: Partial<MallRefundRecord>): MallRefundRecord {
     outRefundNo: input.outRefundNo || "MALL_REFUND_SHOP001",
     mallOrderId: input.mallOrderId || "mall-order-1",
     afterSaleId: input.afterSaleId ?? "after-sale-1",
+    previousOrderStatus: input.previousOrderStatus ?? "PAID",
     provider: input.provider ?? null,
     providerRefundId: input.providerRefundId ?? null,
     amountCent: input.amountCent ?? 12000,
@@ -503,6 +603,7 @@ interface PrismaMock {
   mallInventoryLog: Record<string, (...args: any[]) => Promise<any>>;
   auditLog: Record<string, (...args: any[]) => Promise<any>>;
   mallAfterSale: Record<string, (...args: any[]) => Promise<any>>;
+  refund: Record<string, (...args: any[]) => Promise<any>>;
   mallRefund: Record<string, (...args: any[]) => Promise<any>>;
   $transaction(operation: any): Promise<any>;
 }
@@ -577,6 +678,7 @@ interface MallRefundRecord {
   outRefundNo: string;
   mallOrderId: string;
   afterSaleId: string | null;
+  previousOrderStatus: string | null;
   provider: PaymentProvider | null;
   providerRefundId: string | null;
   amountCent: number;

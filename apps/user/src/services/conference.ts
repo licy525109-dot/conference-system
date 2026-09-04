@@ -22,6 +22,7 @@ export interface RegistrationSku {
   description: string | null;
   priceCent: number;
   stock: number;
+  lockedStock?: number;
   soldCount: number;
 }
 

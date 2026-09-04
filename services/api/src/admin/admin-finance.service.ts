@@ -1,11 +1,16 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { accessSync, constants } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { AuditAction, InvoiceStatus, OrderStatus, PaymentProvider, PaymentStatus, Prisma, RefundStatus } from "@prisma/client";
-import { isMallMockRefundEnabled, isMallWechatRefundConfigured } from "../mall/mall-payment.config";
+import { isMallMockRefundEnabled, isMallWechatRefundConfigured, readMallRefundMode } from "../mall/mall-payment.config";
 import { readWechatPayConfig } from "../payments/wechat-pay.config";
 import { WechatPayRefundClient } from "../payments/wechat-pay.refund-client";
 import { WechatPaySigner } from "../payments/wechat-pay.signer";
+import { RegistrationRefundFinalizationService } from "../payments/registration-refund-finalization.service";
+import { MallRefundFinalizationService } from "../payments/mall-refund-finalization.service";
 import { PrismaService } from "../prisma.service";
 import { CurrentUser } from "../auth/current-user";
+import { AdminNotificationsService } from "./admin-notifications.service";
 import { CurrentAdmin } from "./current-admin";
 
 type FinanceSourceType = "REGISTRATION" | "MALL" | "ALL";
@@ -38,7 +43,10 @@ const PAID_MALL_ORDER_STATUSES = ["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "
 export class AdminFinanceService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly wechatRefundClient: WechatPayRefundClient = new WechatPayRefundClient(new WechatPaySigner())
+    private readonly wechatRefundClient: WechatPayRefundClient = new WechatPayRefundClient(new WechatPaySigner()),
+    @Optional() private readonly notificationsService?: AdminNotificationsService,
+    @Optional() private readonly registrationRefundFinalization: RegistrationRefundFinalizationService = new RegistrationRefundFinalizationService(prisma),
+    @Optional() private readonly mallRefundFinalization: MallRefundFinalizationService = new MallRefundFinalizationService(prisma)
   ) {}
 
   async overview() {
@@ -265,6 +273,7 @@ export class AdminFinanceService {
             if (success) return success;
           }
           if (order.status !== OrderStatus.PAID) throw new ConflictException("仅已支付且未退款的报名订单可申请退款");
+          await assertNoBlockingInvoice(tx, "REGISTRATION", order.orderNo);
 
           const availableAmountCent = refundableAmount(order.paidAmountCent ?? order.payableAmountCent, order.refunds);
           if (availableAmountCent <= 0) throw new ConflictException("该订单没有可退金额");
@@ -291,6 +300,7 @@ export class AdminFinanceService {
           });
           return created;
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        await this.notifyRegistrationRefund(refund);
         return ok(formatRegistrationRefund(refund));
       } catch (error) {
         if (attempt < 2 && isSerializableTransactionConflict(error)) continue;
@@ -336,21 +346,21 @@ export class AdminFinanceService {
     return ok({
       registration: {
         enabled: isFeatureEnabled("REFUND_ENABLED"),
-        requiresApproval: process.env.REFUND_REQUIRES_APPROVAL !== "false",
+        requiresApproval: true,
         mockEnabled: isRegistrationMockRefundEnabled(),
         wechatRefundEnabled: registrationWechatConfigured,
         callbackUrl: process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim() || `${publicBase}/payments/wechat/refund-notify`,
-        autoRestoreQuota: process.env.REFUND_AUTO_RESTORE_QUOTA === "true",
+        autoRestoreQuota: true,
         deadlineText: process.env.REFUND_DEADLINE_TEXT || "退款截止时间未配置，请按运营规则人工核对。",
         description: process.env.REFUND_DESCRIPTION || "未开启微信真实退款时，只记录退款申请和审核，不会自动打款。"
       },
       mall: {
-        enabled: process.env.MALL_REFUND_MODE !== "disabled" || process.env.MALL_MOCK_REFUND_ENABLED === "true" || process.env.MALL_WECHAT_REFUND_ENABLED === "true",
-        requiresApproval: process.env.MALL_REFUND_REQUIRES_APPROVAL !== "false",
+        enabled: readMallRefundMode() !== "disabled" || process.env.MALL_MOCK_REFUND_ENABLED === "true" || process.env.MALL_WECHAT_REFUND_ENABLED === "true",
+        requiresApproval: true,
         mockEnabled: isMallMockRefundEnabled(),
         wechatRefundEnabled: mallWechatConfigured,
         callbackUrl: process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim() || `${publicBase}/payments/wechat/refund-notify`,
-        autoRestoreStock: process.env.MALL_REFUND_AUTO_RESTORE_STOCK === "true",
+        autoRestoreStock: false,
         deadlineText: process.env.MALL_REFUND_DEADLINE_TEXT || "商城退款截止时间未配置，请按售后规则人工核对。",
         description: process.env.MALL_REFUND_DESCRIPTION || "商城退款和报名退款彼此隔离；未配置微信退款时，不会自动打款。"
       },
@@ -389,26 +399,39 @@ export class AdminFinanceService {
       }
       const refund = await this.prisma.refund.update({ where: { id }, data: { status: RefundStatus.REJECTED, rejectReason: reason } });
       await this.writeAudit(admin, AuditAction.UPDATE, "Refund", id, "Reject registration refund", { reason });
+      await this.notifyRegistrationRefund(refund);
       return ok(formatRegistrationRefund(refund));
     }
     const mall = await this.prisma.mallRefund.findUnique({ where: { id }, include: { afterSale: true, order: true } });
     if (!mall) throw new NotFoundException("Refund not found");
     if (mall.status === RefundStatus.REJECTED) return ok(formatMallRefund(mall));
     if (!([RefundStatus.REQUESTED, RefundStatus.APPROVED] as RefundStatus[]).includes(mall.status)) throw new ConflictException("当前退款状态不可驳回");
+    if (mall.provider === PaymentProvider.WECHAT && mall.status === RefundStatus.APPROVED) {
+      throw new ConflictException("微信退款已尝试提交，结果未确认前不可驳回，请先查询或重试退款");
+    }
     const refund = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.mallRefund.update({ where: { id }, data: { status: RefundStatus.REJECTED, rejectReason: reason } });
       if (mall.afterSaleId) await tx.mallAfterSale.update({ where: { id: mall.afterSaleId }, data: { status: "REJECTED", handledAt: new Date(), note: reason } });
-      if (mall.order.status === "REFUNDING") await tx.mallOrder.update({ where: { id: mall.mallOrderId }, data: { status: "PAID" } });
+      if (mall.order.status === "REFUNDING") {
+        await tx.mallOrder.update({
+          where: { id: mall.mallOrderId },
+          data: { status: restoreMallOrderStatus(mall.previousOrderStatus ?? mall.afterSale?.previousOrderStatus) }
+        });
+      }
       return updated;
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "MallRefund", id, "Reject mall refund", { reason });
+    await this.notifyMallRefund(refund, mall.order.userId, mall.order.orderNo);
     return ok(formatMallRefund(refund));
   }
 
   async queryRefund(id: string) {
     const registration = await this.prisma.refund.findUnique({ where: { id }, include: { order: { include: { conference: true, user: true } }, user: true } });
     if (registration) {
-      if (registration.status === RefundStatus.SUCCESS) return ok(formatRegistrationRefund(registration));
+      if (registration.status === RefundStatus.SUCCESS) {
+        if (registration.orderId) await this.registrationRefundFinalization.finalizeIfFullyRefunded(registration.orderId);
+        return ok(formatRegistrationRefund(registration));
+      }
       if (registration.provider === PaymentProvider.WECHAT && isRegistrationWechatRefundConfigured() && registration.outRefundNo) {
         const result = await this.wechatRefundClient.queryRefund({
           config: readWechatPayConfig(),
@@ -435,18 +458,66 @@ export class AdminFinanceService {
               failedReason: status === RefundStatus.FAILED ? `微信退款状态：${result.status}` : null
             }
           });
-          if (status === RefundStatus.SUCCESS && registration.order && registration.amountCent >= (registration.order.paidAmountCent ?? registration.order.payableAmountCent)) {
-            await tx.order.update({ where: { id: registration.order.id }, data: { status: OrderStatus.REFUNDED } });
-            await tx.registration.updateMany({ where: { orderId: registration.order.id }, data: { status: "REFUNDED" } });
-          }
           return refund;
         });
+        if (status === RefundStatus.SUCCESS && registration.orderId) {
+          await this.registrationRefundFinalization.finalizeIfFullyRefunded(registration.orderId);
+        }
+        await this.notifyRegistrationRefund({ ...registration, ...updated });
         return ok(formatRegistrationRefund({ ...registration, ...updated }));
       }
       return ok(formatRegistrationRefund(registration));
     }
     const mall = await this.prisma.mallRefund.findUnique({ where: { id }, include: { order: { include: { user: true, items: { take: 3 } } }, afterSale: true } });
-    if (mall) return ok(formatMallRefund(mall));
+    if (mall) {
+      if (mall.status === RefundStatus.SUCCESS) {
+        await this.mallRefundFinalization.finalizeIfFullyRefunded(mall.mallOrderId);
+        return ok(formatMallRefund(mall));
+      }
+      if (mall.provider === PaymentProvider.WECHAT && isMallWechatRefundConfigured()) {
+        const result = await this.wechatRefundClient.queryRefund({
+          config: readWechatPayConfig(),
+          outRefundNo: mall.outRefundNo
+        });
+        if (result.outRefundNo !== mall.outRefundNo) throw new ConflictException("微信退款查询返回的商户退款单号不一致");
+        if (result.amountCent !== mall.amountCent) throw new ConflictException("微信退款查询金额与本地退款金额不一致");
+        const expectedTotalCent = mall.order.paidAmountCent ?? mall.order.payableAmountCent;
+        if (result.totalAmountCent !== expectedTotalCent) throw new ConflictException("微信退款查询订单金额与本地实付金额不一致");
+        const status = mapVerifiedWechatRefundStatus(result.status);
+        const successTime = status === RefundStatus.SUCCESS && result.successTime ? new Date(result.successTime) : null;
+        const processedAt = status === RefundStatus.PROCESSING
+          ? null
+          : successTime && !Number.isNaN(successTime.getTime()) ? successTime : new Date();
+        const updated = await this.prisma.$transaction(async (tx) => {
+          const refund = await tx.mallRefund.update({
+            where: { id: mall.id },
+            data: {
+              providerRefundId: result.refundId,
+              status,
+              processedAt,
+              failedReason: status === RefundStatus.FAILED ? `微信退款状态：${result.status}` : null
+            }
+          });
+          if (mall.afterSaleId && status === RefundStatus.SUCCESS) {
+            await tx.mallAfterSale.update({ where: { id: mall.afterSaleId }, data: { status: "COMPLETED", handledAt: processedAt } });
+          }
+          if (result.status === "CLOSED") {
+            await tx.mallOrder.updateMany({
+              where: { id: mall.mallOrderId, status: "REFUNDING" },
+              data: { status: restoreMallOrderStatus(mall.previousOrderStatus) }
+            });
+          }
+          return refund;
+        });
+        if (status === RefundStatus.SUCCESS) {
+          await this.mallRefundFinalization.finalizeIfFullyRefunded(mall.mallOrderId);
+        }
+        const merged = { ...mall, ...updated };
+        await this.notifyMallRefund(merged, mall.order.userId, mall.order.orderNo);
+        return ok(formatMallRefund(merged));
+      }
+      return ok(formatMallRefund(mall));
+    }
     throw new NotFoundException("Refund not found");
   }
 
@@ -668,61 +739,98 @@ export class AdminFinanceService {
 
   private async createRegistrationRefund(body: Record<string, unknown>, admin: CurrentAdmin) {
     if (!isFeatureEnabled("REFUND_ENABLED")) return ok({ skippedReason: "REFUND_ENABLED=false", sourceType: "REGISTRATION" });
-    const order = await this.prisma.order.findUnique({ where: { orderNo: readRequiredString(body, "orderNo") }, include: { refunds: true } });
-    if (!order || order.status !== OrderStatus.PAID) throw new ConflictException("仅已支付报名订单可退款");
-    const availableAmountCent = refundableAmount(order.paidAmountCent ?? order.payableAmountCent, order.refunds);
-    const amountCent = readOptionalNonNegativeInt(body.amountCent) ?? availableAmountCent;
-    if (amountCent <= 0 || amountCent > availableAmountCent) throw new BadRequestException("退款金额不能超过可退金额");
-    const existing = order.refunds.find((item) => ACTIVE_REFUND_STATUSES.includes(item.status));
-    if (existing) {
-      if (existing.amountCent !== amountCent) throw new ConflictException("该报名订单已有处理中退款申请");
-      return ok(formatRegistrationRefund(existing));
-    }
-    const refund = await this.prisma.refund.create({
-      data: {
-        refundNo: generateCode("RF"),
-        outRefundNo: `REG_REFUND_${order.orderNo}_${Date.now()}`,
-        orderNo: order.orderNo,
-        orderId: order.id,
-        userId: order.userId,
-        amountCent,
-        reason: readRequiredString(body, "reason"),
-        status: RefundStatus.REQUESTED
+    const orderNo = readRequiredString(body, "orderNo");
+    const reason = readRequiredString(body, "reason");
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const outcome = await this.prisma.$transaction(async (tx) => {
+          const order = await tx.order.findUnique({ where: { orderNo }, include: { refunds: true } });
+          if (!order || order.status !== OrderStatus.PAID) throw new ConflictException("仅已支付报名订单可退款");
+          const availableAmountCent = refundableAmount(order.paidAmountCent ?? order.payableAmountCent, order.refunds);
+          const amountCent = readOptionalNonNegativeInt(body.amountCent) ?? availableAmountCent;
+          if (amountCent <= 0 || amountCent > availableAmountCent) throw new BadRequestException("退款金额不能超过可退金额");
+          const existing = order.refunds.find((item) => ACTIVE_REFUND_STATUSES.includes(item.status));
+          if (existing) {
+            if (existing.amountCent !== amountCent) throw new ConflictException("该报名订单已有处理中退款申请");
+            return { refund: existing, created: false, amountCent };
+          }
+          await assertNoBlockingInvoice(tx, "REGISTRATION", order.orderNo);
+          const refund = await tx.refund.create({
+            data: {
+              refundNo: generateCode("RF"),
+              outRefundNo: `REG_REFUND_${order.orderNo}_${Date.now()}`,
+              orderNo: order.orderNo,
+              orderId: order.id,
+              userId: order.userId,
+              amountCent,
+              reason,
+              status: RefundStatus.REQUESTED
+            }
+          });
+          return { refund, created: true, amountCent };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        if (outcome.created) {
+          await this.writeAudit(admin, AuditAction.CREATE, "Refund", outcome.refund.id, "Create registration refund request", { orderNo, amountCent: outcome.amountCent });
+          await this.notifyRegistrationRefund(outcome.refund);
+        }
+        return ok(formatRegistrationRefund(outcome.refund));
+      } catch (error) {
+        if (attempt < 2 && isSerializableTransactionConflict(error)) continue;
+        throw error;
       }
-    });
-    await this.writeAudit(admin, AuditAction.CREATE, "Refund", refund.id, "Create registration refund request", { orderNo: order.orderNo, amountCent });
-    return ok(formatRegistrationRefund(refund));
+    }
+    throw new ConflictException("退款申请提交冲突，请重试");
   }
 
   private async createMallRefund(body: Record<string, unknown>, admin: CurrentAdmin) {
-    const order = await this.prisma.mallOrder.findUnique({ where: { orderNo: readRequiredString(body, "orderNo") }, include: { refunds: true, afterSales: { orderBy: { createdAt: "desc" }, take: 1 } } });
-    if (!order || !PAID_MALL_ORDER_STATUSES.includes(order.status as (typeof PAID_MALL_ORDER_STATUSES)[number])) throw new ConflictException("仅已支付商城订单可退款");
-    const availableAmountCent = refundableAmount(order.paidAmountCent ?? order.payableAmountCent, order.refunds);
-    const amountCent = readOptionalNonNegativeInt(body.amountCent) ?? availableAmountCent;
-    if (amountCent <= 0 || amountCent > availableAmountCent) throw new BadRequestException("商城退款金额不能超过可退金额");
-    const existing = order.refunds.find((item) => ACTIVE_REFUND_STATUSES.includes(item.status));
-    if (existing) {
-      if (existing.amountCent !== amountCent) throw new ConflictException("该商城订单已有处理中退款申请");
-      return ok(formatMallRefund(existing));
-    }
-    const afterSaleId = readNullableString(body.afterSaleId) ?? order.afterSales[0]?.id ?? null;
-    const refund = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.mallRefund.create({
-        data: {
-          refundNo: generateCode("MRF"),
-          outRefundNo: `MALL_REFUND_${order.orderNo}_${Date.now()}`,
-          mallOrderId: order.id,
-          afterSaleId,
-          amountCent,
-        reason: readRequiredString(body, "reason"),
-          status: RefundStatus.REQUESTED
+    const orderNo = readRequiredString(body, "orderNo");
+    const reason = readRequiredString(body, "reason");
+    const requestedAfterSaleId = readNullableString(body.afterSaleId);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const outcome = await this.prisma.$transaction(async (tx) => {
+          const order = await tx.mallOrder.findUnique({ where: { orderNo }, include: { refunds: true, afterSales: { orderBy: { createdAt: "desc" }, take: 1 } } });
+          if (!order || !PAID_MALL_ORDER_STATUSES.includes(order.status as (typeof PAID_MALL_ORDER_STATUSES)[number])) throw new ConflictException("仅已支付商城订单可退款");
+          const availableAmountCent = refundableAmount(order.paidAmountCent ?? order.payableAmountCent, order.refunds);
+          const amountCent = readOptionalNonNegativeInt(body.amountCent) ?? availableAmountCent;
+          if (amountCent <= 0 || amountCent > availableAmountCent) throw new BadRequestException("商城退款金额不能超过可退金额");
+          const existing = order.refunds.find((item) => ACTIVE_REFUND_STATUSES.includes(item.status));
+          if (existing) {
+            if (existing.amountCent !== amountCent) throw new ConflictException("该商城订单已有处理中退款申请");
+            return { refund: existing, created: false, amountCent, userId: order.userId };
+          }
+          await assertNoBlockingInvoice(tx, "MALL", order.orderNo);
+          if (requestedAfterSaleId) {
+            const belongsToOrder = await tx.mallAfterSale.findFirst({ where: { id: requestedAfterSaleId, orderId: order.id }, select: { id: true } });
+            if (!belongsToOrder) throw new BadRequestException("售后申请不属于当前商城订单");
+          }
+          const afterSaleId = requestedAfterSaleId ?? order.afterSales[0]?.id ?? null;
+          const refund = await tx.mallRefund.create({
+            data: {
+              refundNo: generateCode("MRF"),
+              outRefundNo: `MALL_REFUND_${order.orderNo}_${Date.now()}`,
+              mallOrderId: order.id,
+              afterSaleId,
+              previousOrderStatus: order.status,
+              amountCent,
+              reason,
+              status: RefundStatus.REQUESTED
+            }
+          });
+          await tx.mallOrder.update({ where: { id: order.id }, data: { status: "REFUNDING" } });
+          return { refund, created: true, amountCent, userId: order.userId };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        if (outcome.created) {
+          await this.writeAudit(admin, AuditAction.CREATE, "MallRefund", outcome.refund.id, "Create mall refund request", { orderNo, amountCent: outcome.amountCent });
+          await this.notifyMallRefund(outcome.refund, outcome.userId, orderNo);
         }
-      });
-      await tx.mallOrder.update({ where: { id: order.id }, data: { status: "REFUNDING" } });
-      return created;
-    });
-    await this.writeAudit(admin, AuditAction.CREATE, "MallRefund", refund.id, "Create mall refund request", { orderNo: order.orderNo, amountCent });
-    return ok(formatMallRefund(refund));
+        return ok(formatMallRefund(outcome.refund));
+      } catch (error) {
+        if (attempt < 2 && isSerializableTransactionConflict(error)) continue;
+        throw error;
+      }
+    }
+    throw new ConflictException("商城退款申请提交冲突，请重试");
   }
 
   private async approveRegistrationRefund(current: Prisma.RefundGetPayload<{ include: { order: true } }>, admin: CurrentAdmin) {
@@ -736,13 +844,11 @@ export class AdminFinanceService {
           where: { id: current.id },
           data: { provider: PaymentProvider.MOCK, providerRefundId: `mock-${current.refundNo}`, status: RefundStatus.SUCCESS, approvedAt: now, processedAt: now, failedReason: null }
         });
-        if (current.order && current.amountCent >= (current.order.paidAmountCent ?? current.order.payableAmountCent)) {
-          await tx.order.update({ where: { id: current.order.id }, data: { status: OrderStatus.REFUNDED } });
-          await tx.registration.updateMany({ where: { orderId: current.order.id }, data: { status: "REFUNDED" } });
-        }
         return updated;
       });
+      if (current.orderId) await this.registrationRefundFinalization.finalizeIfFullyRefunded(current.orderId);
       await this.writeAudit(admin, AuditAction.UPDATE, "Refund", current.id, "Approve registration refund with mock success", { provider: "MOCK" });
+      await this.notifyRegistrationRefund(refund);
       return ok(formatRegistrationRefund(refund));
     }
     if (isRegistrationWechatRefundConfigured()) {
@@ -797,6 +903,7 @@ export class AdminFinanceService {
           status: result.status,
           outRefundNo: result.outRefundNo
         });
+        await this.notifyRegistrationRefund(refund);
         return ok(formatRegistrationRefund(refund));
       } catch (error) {
         const failedReason = readableRefundFailure(error);
@@ -818,13 +925,17 @@ export class AdminFinanceService {
       }
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "Refund", current.id, "Approve registration refund", { provider: refund.provider, status: refund.status });
+    await this.notifyRegistrationRefund(refund);
     return ok(formatRegistrationRefund(refund));
   }
 
   private async approveMallRefund(current: Prisma.MallRefundGetPayload<{ include: { order: true; afterSale: true } }>, admin: CurrentAdmin) {
-    if (current.status === RefundStatus.SUCCESS) return ok(formatMallRefund(current));
-    if (([RefundStatus.PROCESSING, RefundStatus.APPROVED] as RefundStatus[]).includes(current.status)) return ok(formatMallRefund(current));
-    if (current.status !== RefundStatus.REQUESTED) throw new ConflictException("当前退款状态不可批准");
+    if (current.status === RefundStatus.SUCCESS) {
+      await this.mallRefundFinalization.finalizeIfFullyRefunded(current.mallOrderId);
+      return ok(formatMallRefund(current));
+    }
+    if (current.status === RefundStatus.PROCESSING) return ok(formatMallRefund(current));
+    if (!([RefundStatus.REQUESTED, RefundStatus.APPROVED] as RefundStatus[]).includes(current.status)) throw new ConflictException("当前退款状态不可批准");
     const now = new Date();
     if (isMallMockRefundEnabled()) {
       const refund = await this.prisma.$transaction(async (tx) => {
@@ -832,12 +943,75 @@ export class AdminFinanceService {
           where: { id: current.id },
           data: { provider: PaymentProvider.MOCK, providerRefundId: `mock-${current.refundNo}`, status: RefundStatus.SUCCESS, approvedAt: now, processedAt: now, failedReason: null }
         });
-        if (current.amountCent >= (current.order.paidAmountCent ?? current.order.payableAmountCent)) await tx.mallOrder.update({ where: { id: current.mallOrderId }, data: { status: "REFUNDED" } });
         if (current.afterSaleId) await tx.mallAfterSale.update({ where: { id: current.afterSaleId }, data: { status: "COMPLETED", handledAt: now } });
         return updated;
       });
+      await this.mallRefundFinalization.finalizeIfFullyRefunded(current.mallOrderId);
       await this.writeAudit(admin, AuditAction.UPDATE, "MallRefund", current.id, "Approve mall refund with mock success", { provider: "MOCK" });
+      await this.notifyMallRefund(refund, current.order.userId, current.order.orderNo);
       return ok(formatMallRefund(refund));
+    }
+    if (isMallWechatRefundConfigured()) {
+      const payment = await this.prisma.mallPayment.findFirst({
+        where: { mallOrderId: current.mallOrderId, provider: PaymentProvider.WECHAT, status: PaymentStatus.SUCCESS },
+        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }]
+      });
+      if (!payment) throw new ConflictException("未找到可退款的商城微信支付成功记录");
+      const orderPaidAmountCent = current.order.paidAmountCent ?? current.order.payableAmountCent;
+      if (payment.amountCent !== orderPaidAmountCent) {
+        throw new ConflictException("商城微信支付成功金额与订单实付金额不一致，请先完成支付异常核对");
+      }
+      if (current.amountCent > orderPaidAmountCent) throw new ConflictException("商城退款金额超过订单实付金额");
+
+      await this.prisma.mallRefund.update({
+        where: { id: current.id },
+        data: { provider: PaymentProvider.WECHAT, status: RefundStatus.APPROVED, approvedAt: now, failedReason: null }
+      });
+      try {
+        const result = await this.wechatRefundClient.createRefund({
+          config: readWechatPayConfig(),
+          outTradeNo: payment.outTradeNo,
+          outRefundNo: current.outRefundNo,
+          amountCent: current.amountCent,
+          totalAmountCent: payment.amountCent,
+          reason: current.reason
+        });
+        if (result.outRefundNo !== current.outRefundNo) {
+          throw new ConflictException("微信退款响应的商户退款单号与本地不一致");
+        }
+        const refund = await this.prisma.$transaction(async (tx) => {
+          const updated = await tx.mallRefund.update({
+            where: { id: current.id },
+            data: {
+              provider: PaymentProvider.WECHAT,
+              providerRefundId: result.refundId,
+              status: RefundStatus.PROCESSING,
+              processedAt: null,
+              failedReason: null
+            }
+          });
+          await tx.mallOrder.update({ where: { id: current.mallOrderId }, data: { status: "REFUNDING" } });
+          if (current.afterSaleId) {
+            await tx.mallAfterSale.update({ where: { id: current.afterSaleId }, data: { status: "PROCESSING", handledAt: now } });
+          }
+          return updated;
+        });
+        await this.writeAudit(admin, AuditAction.UPDATE, "MallRefund", current.id, "Submit mall refund to WeChat", {
+          provider: "WECHAT",
+          status: result.status,
+          outRefundNo: result.outRefundNo
+        });
+        await this.notifyMallRefund(refund, current.order.userId, current.order.orderNo);
+        return ok(formatMallRefund(refund));
+      } catch (error) {
+        const failedReason = readableRefundFailure(error);
+        await this.prisma.mallRefund.update({
+          where: { id: current.id },
+          data: { provider: PaymentProvider.WECHAT, status: RefundStatus.APPROVED, processedAt: null, failedReason }
+        });
+        await this.writeAudit(admin, AuditAction.UPDATE, "MallRefund", current.id, "Mall WeChat refund submission failed and remains retryable", { failedReason });
+        throw error;
+      }
     }
     const refund = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.mallRefund.update({
@@ -854,7 +1028,54 @@ export class AdminFinanceService {
       return updated;
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "MallRefund", current.id, "Approve mall refund", { provider: refund.provider, status: refund.status });
+    await this.notifyMallRefund(refund, current.order.userId, current.order.orderNo);
     return ok(formatMallRefund(refund));
+  }
+
+  private notifyRegistrationRefund(refund: {
+    id: string;
+    refundNo: string;
+    orderNo: string;
+    userId: string | null;
+    amountCent: number;
+    status: RefundStatus;
+    rejectReason?: string | null;
+    failedReason?: string | null;
+  }) {
+    return this.notificationsService?.dispatchRefundStatus({
+      userId: refund.userId,
+      refundId: refund.id,
+      refundNo: refund.refundNo,
+      orderNo: refund.orderNo,
+      sourceType: "REGISTRATION",
+      amountCent: refund.amountCent,
+      status: refund.status,
+      reason: refund.rejectReason || refund.failedReason
+    });
+  }
+
+  private notifyMallRefund(
+    refund: {
+      id: string;
+      refundNo: string;
+      amountCent: number;
+      status: RefundStatus;
+      rejectReason?: string | null;
+      failedReason?: string | null;
+    },
+    userId: string | null,
+    orderNo: string
+  ) {
+    return this.notificationsService?.dispatchRefundStatus({
+      userId,
+      refundId: refund.id,
+      refundNo: refund.refundNo,
+      orderNo,
+      sourceType: "MALL",
+      amountCent: refund.amountCent,
+      status: refund.status,
+      reason: refund.rejectReason || refund.failedReason
+    });
   }
 
   private async attachReconciliationStatus(items: Array<Record<string, unknown>>) {
@@ -1009,6 +1230,27 @@ function formatMallRefund(refund: any) {
     maxRefundableAmountCent: typeof paidAmountCent === "number" && Array.isArray(refund.order?.refunds) ? refundableAmount(paidAmountCent, refund.order.refunds.filter((item: any) => item.id !== refund.id)) : null,
     refundNotice: refund.failedReason ?? refundStatusNotice("MALL", refund.status, refund.provider)
   };
+}
+
+function restoreMallOrderStatus(status: string | null | undefined): "PAID" | "SHIPPED" | "COMPLETED" {
+  if (status === "SHIPPED" || status === "COMPLETED") return status;
+  return "PAID";
+}
+
+async function assertNoBlockingInvoice(
+  tx: Prisma.TransactionClient,
+  sourceType: "REGISTRATION" | "MALL",
+  orderNo: string
+): Promise<void> {
+  const invoice = await tx.invoiceApplication.findFirst({
+    where: {
+      sourceType,
+      orderNo,
+      status: { in: [InvoiceStatus.REQUESTED, InvoiceStatus.APPROVED, InvoiceStatus.ISSUED] }
+    },
+    select: { id: true }
+  });
+  if (invoice) throw new ConflictException("订单存在待处理或已开具发票，请先完成发票驳回、作废或红冲后再退款");
 }
 
 function refundStatusNotice(sourceType: "REGISTRATION" | "MALL", status: RefundStatus, provider: PaymentProvider | null) {
@@ -1364,6 +1606,7 @@ function isFeatureEnabled(name: string): boolean {
 }
 
 function isRegistrationMockRefundEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
   return process.env.REFUND_MODE === "mock" || process.env.MOCK_REFUND_ENABLED === "true";
 }
 
@@ -1374,10 +1617,15 @@ function isRegistrationWechatRefundConfigured(): boolean {
 function hasWechatRefundRuntimeConfig(modeEnabled: boolean): boolean {
   if (!modeEnabled) return false;
   const refundNotifyUrl = process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim();
+  const platformPublicKeyPath = process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH?.trim();
+  const platformVerificationKeyId = process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY_ID?.trim()
+    || process.env.WECHAT_PAY_PLATFORM_CERT_SERIAL_NO?.trim();
   if (!refundNotifyUrl) return false;
+  if (!platformPublicKeyPath || !platformVerificationKeyId) return false;
   try {
     const url = new URL(refundNotifyUrl);
     if (url.protocol !== "https:" || url.search) return false;
+    accessSync(platformPublicKeyPath, constants.R_OK);
     readWechatPayConfig();
     return true;
   } catch {
@@ -1400,7 +1648,7 @@ function resolvePublicApiBase(): string {
 }
 
 function generateCode(prefix: string): string {
-  return `${prefix}${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  return `${prefix}${Date.now()}${randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

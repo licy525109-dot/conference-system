@@ -88,7 +88,7 @@ export class WechatPayService {
       throw new ConflictException("Only pending orders can be prepaid");
     }
 
-    if (order.expiredAt && order.expiredAt < this.getCurrentTime()) {
+    if (order.expiredAt && order.expiredAt <= this.getCurrentTime()) {
       throw new ConflictException("Order has expired");
     }
 
@@ -142,6 +142,7 @@ export class WechatPayService {
           description: buildWechatPayDescription("会议报名", order.conference.title, order.orderNo),
           out_trade_no: outTradeNo,
           notify_url: config.notifyUrl,
+          ...(order.expiredAt ? { time_expire: order.expiredAt.toISOString() } : {}),
           amount: {
             total: order.payableAmountCent,
             currency: "CNY"
@@ -318,11 +319,22 @@ export class WechatPayService {
         signal: controller.signal
       });
 
-      const payload = (await response.json().catch(() => ({}))) as unknown;
+      const rawBody = Buffer.from(await response.arrayBuffer());
+      const payload = parseJsonResponse(rawBody);
       const requestId = response.headers.get("request-id") ?? response.headers.get("Request-ID");
       if (!response.ok) {
         throw new WechatPayPrepayHttpError(response.status, payload, undefined, requestId);
       }
+
+      this.notifyVerifier.verifySignature({
+        headers: {
+          timestamp: response.headers.get("wechatpay-timestamp") ?? "",
+          nonce: response.headers.get("wechatpay-nonce") ?? "",
+          signature: response.headers.get("wechatpay-signature") ?? "",
+          serial: response.headers.get("wechatpay-serial") ?? ""
+        },
+        rawBody
+      });
 
       if (!isRecord(payload) || typeof payload.prepay_id !== "string" || payload.prepay_id.length === 0) {
         throw new WechatPayPrepayHttpError(response.status, payload, "WeChat Pay prepay response is invalid", requestId);
@@ -349,6 +361,15 @@ export class WechatPayService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+}
+
+function parseJsonResponse(rawBody: Buffer): unknown {
+  if (rawBody.length === 0) return {};
+  try {
+    return JSON.parse(rawBody.toString("utf8")) as unknown;
+  } catch {
+    return {};
   }
 }
 

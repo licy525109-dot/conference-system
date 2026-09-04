@@ -6,6 +6,7 @@ import { AuditAction } from "@prisma/client";
 import { decryptSecret, encryptSecret, maskSecret } from "../wecom.crypto";
 import { WecomTokenService } from "./wecom-token.service";
 import { WecomClientAdapter } from "../adapters/wecom-client.adapter";
+import { validateWecomGroupRobotWebhookUrl } from "../wecom-group-robot-url";
 
 @Injectable()
 export class WecomConfigService {
@@ -24,6 +25,9 @@ export class WecomConfigService {
     const body = readObject(input);
     const current = await this.ensureDefaultIntegration();
     const authMode = has(body, "authMode") ? readAuthMode(body.authMode) : current.authMode;
+    const groupRobotWebhookUrl = has(body, "groupRobotWebhookUrl") && !isMaskedSensitive(body.groupRobotWebhookUrl)
+      ? readValidatedGroupRobotWebhookUrl(body.groupRobotWebhookUrl)
+      : undefined;
     validateAuthModeSecrets(authMode, current, body);
     const updated = await this.prisma.wecomIntegration.update({
       where: { id: current.id },
@@ -41,7 +45,7 @@ export class WecomConfigService {
         ...(readSensitive(body.appSecret) ? { appSecretEnc: encryptSecret(readSensitive(body.appSecret)) } : {}),
         ...(readSensitive(body.callbackToken) ? { callbackTokenEnc: encryptSecret(readSensitive(body.callbackToken)) } : {}),
         ...(readSensitive(body.callbackEncodingAesKey) ? { callbackEncodingAesKeyEnc: encryptSecret(readSensitive(body.callbackEncodingAesKey)) } : {}),
-        ...(has(body, "groupRobotWebhookUrl") && !isMaskedSensitive(body.groupRobotWebhookUrl) ? { groupRobotWebhookUrlEnc: encryptNullableSecret(body.groupRobotWebhookUrl) } : {}),
+        ...(typeof groupRobotWebhookUrl !== "undefined" ? { groupRobotWebhookUrlEnc: encryptNullableSecret(groupRobotWebhookUrl) } : {}),
         ...(has(body, "groupRobotSecret") && !isMaskedSensitive(body.groupRobotSecret) ? { groupRobotSecretEnc: encryptNullableSecret(body.groupRobotSecret) } : {})
       }
     });
@@ -181,6 +185,11 @@ export class WecomConfigService {
       data: { adminUserId: admin.id, action, entityType, entityId, summary, metadataJson: (metadata ?? {}) as Prisma.InputJsonValue }
     });
   }
+}
+
+function readValidatedGroupRobotWebhookUrl(value: unknown): string | null {
+  const text = readNullableString(value);
+  return text ? validateWecomGroupRobotWebhookUrl(text) : null;
 }
 
 export function defaultCallbackUrls() {

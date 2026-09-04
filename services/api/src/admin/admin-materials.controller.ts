@@ -5,6 +5,7 @@ import { AdminPermissionGuard } from "./admin-permission.guard";
 import { AdminMaterialsService } from "./admin-materials.service";
 import { RequestWithCurrentAdmin } from "./current-admin";
 import { RequireAdminPermissions } from "./require-permissions.decorator";
+import { resolvePublicOrigin } from "../security/public-origin";
 
 @Controller("admin")
 @UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
@@ -47,7 +48,7 @@ export class AdminMaterialsController {
     @UploadedFile() file: { buffer: Buffer; originalname?: string; mimetype?: string; size: number } | undefined,
     @Req() request: RequestWithCurrentAdmin & { headers?: Record<string, string | string[] | undefined> }
   ) {
-    return this.materialsService.createAsset(body, file, getPublicOrigin(request), request.currentAdmin!);
+    return this.materialsService.createAsset(body, file, resolvePublicOrigin(request.headers), request.currentAdmin!);
   }
 
   @Patch("materials/:id")
@@ -67,22 +68,4 @@ export class AdminMaterialsController {
   hardDeleteAsset(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
     return this.materialsService.hardDeleteAsset(id, request.currentAdmin!);
   }
-}
-
-function getPublicOrigin(request: { headers?: Record<string, string | string[] | undefined> }): string {
-  const configured = process.env.PUBLIC_ORIGIN || process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_BASE_URL;
-  if (configured) return stripApiSuffix(configured);
-  const forwardedProto = readFirstHeader(request.headers?.["x-forwarded-proto"]);
-  const forwardedHost = readFirstHeader(request.headers?.["x-forwarded-host"]);
-  const host = forwardedHost || readFirstHeader(request.headers?.host) || "localhost:3000";
-  const proto = forwardedProto || (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
-  return stripApiSuffix(`${proto}://${host}`);
-}
-
-function readFirstHeader(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function stripApiSuffix(value: string): string {
-  return value.trim().replace(/\/+$/, "").replace(/\/api$/, "");
 }

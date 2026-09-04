@@ -62,4 +62,32 @@ describe("Admin payment exception detection", () => {
       ["PAYMENT_AMOUNT_MISMATCH"]
     );
   });
+
+  it("does not report a consistently refunded order as a payment exception", () => {
+    const exceptions = detectPaymentExceptions({
+      id: "order-refunded",
+      orderNo: "REG-REFUNDED",
+      status: OrderStatus.REFUNDED,
+      payableAmountCent: 70000,
+      paidAmountCent: 70000,
+      expiredAt: null,
+      paidAt: new Date("2026-06-16T02:00:00.000Z"),
+      createdAt: new Date("2026-06-16T01:00:00.000Z"),
+      payments: [{
+        id: "payment-refunded",
+        status: PaymentStatus.SUCCESS,
+        amountCent: 70000,
+        failedReason: null,
+        createdAt: new Date("2026-06-16T01:30:00.000Z"),
+        paidAt: new Date("2026-06-16T02:00:00.000Z")
+      }],
+      registration: {
+        id: "registration-refunded",
+        registrationNo: "R-REFUNDED",
+        status: RegistrationStatus.REFUNDED
+      }
+    });
+
+    assert.deepEqual(exceptions, []);
+  });
 });

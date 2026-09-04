@@ -4,6 +4,7 @@ import { RequestWithCurrentUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PublicOperationsService } from "./public-operations.service";
 import { AdminFinanceService } from "./admin-finance.service";
+import { resolvePublicOrigin } from "../security/public-origin";
 
 @Controller()
 export class PublicOperationsController {
@@ -89,7 +90,7 @@ export class PublicOperationsController {
     @UploadedFile() file: { buffer: Buffer; originalname?: string; mimetype?: string; size: number } | undefined,
     @Req() request: RequestWithCurrentUser & { headers?: Record<string, string | string[] | undefined> }
   ) {
-    return this.operations.uploadAfterSaleAttachment(file, getPublicOrigin(request));
+    return this.operations.uploadAfterSaleAttachment(file, resolvePublicOrigin(request.headers));
   }
 
   @Get("my/mall-orders")
@@ -109,16 +110,4 @@ export class PublicOperationsController {
   createMallAfterSale(@Body() body: unknown, @Req() request: RequestWithCurrentUser) {
     return this.operations.createMallAfterSale(body, request.currentUser);
   }
-}
-
-function getPublicOrigin(request: { headers?: Record<string, string | string[] | undefined> }): string {
-  const forwardedProto = readFirstHeader(request.headers?.["x-forwarded-proto"]);
-  const forwardedHost = readFirstHeader(request.headers?.["x-forwarded-host"]);
-  const host = forwardedHost || readFirstHeader(request.headers?.host) || "localhost:3000";
-  const proto = forwardedProto || (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
-function readFirstHeader(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
 }

@@ -38,6 +38,17 @@ describe("WeCom configuration compatibility", () => {
     await assert.rejects(() => service.updateConfig({ authMode: WecomAuthMode.LEGACY_CUSTOMER_CONTACT }, admin), BadRequestException);
   });
 
+  it("rejects a group robot webhook outside the official WeCom host", async () => {
+    const integration = integrationRecord();
+    const prisma = createConfigPrismaMock(integration);
+    const service = new WecomConfigService(asPrisma(prisma), createTokenService(prisma), createWecomClientMock());
+
+    await assert.rejects(
+      () => service.updateConfig({ groupRobotWebhookUrl: "https://example.com/cgi-bin/webhook/send?key=secret" }, admin),
+      BadRequestException
+    );
+  });
+
   it("selects the configured secret and separates token cache by auth mode", async () => {
     const integration = integrationRecord({ authMode: WecomAuthMode.SELF_BUILT_APP, appSecretEnc: encryptSecret("app-secret"), customerContactSecretEnc: encryptSecret("legacy-secret") });
     const requestedSecrets: string[] = [];

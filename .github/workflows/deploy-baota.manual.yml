@@ -3,6 +3,7 @@ name: Manual Baota Deploy
 # Manual only.
 # No push trigger.
 # Secrets required: BAOTA_HOST, BAOTA_PORT, BAOTA_USER, BAOTA_SSH_KEY.
+# BAOTA_HOST_FINGERPRINT may override the code-reviewed production host fingerprint.
 # Review scripts/deploy/baota-deploy.example.sh before first run.
 # Preferred server script: /www/scripts/conference-system-deploy-ci.sh.
 # Fallback server script: CONFIRM_DEPLOY=YES /www/scripts/conference-system-deploy.sh.
@@ -14,8 +15,41 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    name: Validate release before deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://conference:validation-only@127.0.0.1:5432/conference
+      VITE_API_BASE_URL: https://guanchaohuiji.com/api
+      VITE_MP_WEIXIN_API_BASE_URL: https://guanchaohuiji.com/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @conference/api exec prisma generate --schema ../../prisma/schema.prisma
+      - run: pnpm --filter @conference/api exec prisma validate --schema ../../prisma/schema.prisma
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm --filter @conference/api build
+      - run: pnpm --filter @conference/admin build
+      - run: pnpm --filter @conference/user build:h5
+      - run: pnpm --filter @conference/user build:mp-weixin
+      - run: pnpm exec tsx scripts/smoke/check-admin-permissions.ts
+      - run: bash -n scripts/deploy/baota-deploy.sh
+      - run: bash -n scripts/smoke/production-smoke.sh
+      - run: bash -n scripts/smoke/check-production-config.sh
+
   deploy:
     name: Run reviewed Baota deploy script
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - name: Validate required secrets
@@ -25,11 +59,12 @@ jobs:
           BAOTA_PORT: ${{ secrets.BAOTA_PORT }}
           BAOTA_USER: ${{ secrets.BAOTA_USER }}
           BAOTA_SSH_KEY: ${{ secrets.BAOTA_SSH_KEY }}
+          BAOTA_HOST_FINGERPRINT: ${{ vars.BAOTA_HOST_FINGERPRINT || 'SHA256:D4Ynce1wyalvG3lA2ir+1fS/BoBL870JQZ6xYw4UIDQ' }}
         run: |
           set -euo pipefail
-          for name in BAOTA_HOST BAOTA_PORT BAOTA_USER BAOTA_SSH_KEY; do
+          for name in BAOTA_HOST BAOTA_PORT BAOTA_USER BAOTA_SSH_KEY BAOTA_HOST_FINGERPRINT; do
             if [[ -z "${!name}" ]]; then
-              echo "Missing required GitHub Secret: ${name}" >&2
+              echo "Missing required deployment setting: ${name}" >&2
               exit 1
             fi
           done
@@ -37,12 +72,21 @@ jobs:
       - name: Prepare SSH key
         shell: bash
         env:
+          BAOTA_HOST: ${{ secrets.BAOTA_HOST }}
+          BAOTA_PORT: ${{ secrets.BAOTA_PORT }}
           BAOTA_SSH_KEY: ${{ secrets.BAOTA_SSH_KEY }}
+          BAOTA_HOST_FINGERPRINT: ${{ vars.BAOTA_HOST_FINGERPRINT || 'SHA256:D4Ynce1wyalvG3lA2ir+1fS/BoBL870JQZ6xYw4UIDQ' }}
         run: |
           set -euo pipefail
           install -m 700 -d "$RUNNER_TEMP/ssh"
           printf '%s\n' "$BAOTA_SSH_KEY" > "$RUNNER_TEMP/ssh/baota_key"
           chmod 600 "$RUNNER_TEMP/ssh/baota_key"
+          ssh-keyscan -T 10 -p "$BAOTA_PORT" "$BAOTA_HOST" > "$RUNNER_TEMP/ssh/known_hosts" 2>/dev/null
+          if ! ssh-keygen -lf "$RUNNER_TEMP/ssh/known_hosts" -E sha256 | awk '{print $2}' | grep -Fxq "$BAOTA_HOST_FINGERPRINT"; then
+            echo "Baota SSH host fingerprint verification failed" >&2
+            exit 1
+          fi
+          chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
 
       - name: Execute server deployment script
         shell: bash
@@ -55,7 +99,8 @@ jobs:
           SSH_OPTS=(
             -i "$RUNNER_TEMP/ssh/baota_key"
             -p "$BAOTA_PORT"
-            -o StrictHostKeyChecking=accept-new
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts"
             -o IdentitiesOnly=yes
           )
           ssh "${SSH_OPTS[@]}" "${BAOTA_USER}@${BAOTA_HOST}" 'bash -s' <<'REMOTE_SCRIPT'
@@ -74,4 +119,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -f "$RUNNER_TEMP/ssh/baota_key"
+          rm -f "$RUNNER_TEMP/ssh/baota_key" "$RUNNER_TEMP/ssh/known_hosts"

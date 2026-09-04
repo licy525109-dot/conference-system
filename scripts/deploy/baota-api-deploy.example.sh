@@ -6,7 +6,7 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/www/wwwroot/conference-system}"
 ENV_FILE="${ENV_FILE:-/www/wwwroot/conference-system/.env.production}"
-API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:3001/api/health}"
+API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:3001/api/health/ready}"
 PM2_PROCESS="${PM2_PROCESS:-conference-api}"
 POSTGRES_READY_TIMEOUT_SECONDS="${POSTGRES_READY_TIMEOUT_SECONDS:-60}"
 
@@ -110,13 +110,14 @@ pnpm install --frozen-lockfile
 echo "Generating Prisma client."
 pnpm --filter @conference/api exec prisma generate --schema ../../prisma/schema.prisma
 
+echo "Building API before changing the production database."
+pnpm build:api
+
 echo "Running Prisma migrate deploy."
 echo "Do not use prisma migrate dev in production."
 echo "Do not use prisma migrate reset in production."
 echo "Production migration rollback is manual and application-specific."
 pnpm --filter @conference/api exec prisma migrate deploy --schema ../../prisma/schema.prisma
-
-pnpm build:api
 
 echo "Restarting PM2 process: ${PM2_PROCESS}"
 pm2 restart "$PM2_PROCESS"

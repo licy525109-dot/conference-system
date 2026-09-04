@@ -48,7 +48,7 @@ CMS_PAGE_KEY=index bash scripts/smoke/production-smoke.sh
 
 ## `production-smoke.sh` 检查内容
 
-1. API health：`GET /api/health`。
+1. API readiness：`GET /api/health/ready`。
 2. 公开会议接口：`GET /api/conferences?page=1&pageSize=1`。
 3. 已发布 CMS 页面：`GET /api/pages/:pageKey/published`。
 4. 动态底部导航：`GET /api/app/tabbar`。
@@ -75,7 +75,7 @@ Production smoke passed
 ```bash
 pm2 status conference-api
 pm2 logs conference-api --lines 100
-curl http://127.0.0.1:3001/api/health
+curl http://127.0.0.1:3001/api/health/ready
 ```
 
 重点检查 PM2 是否 online、端口是否为 3001、Nginx `/api` 反向代理是否正确。

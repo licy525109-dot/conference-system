@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { NotFoundException } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { PublicOperationsService } from "./public-operations.service";
@@ -76,9 +77,18 @@ describe("PublicOperationsService AI knowledge base", () => {
 
     assert.deepEqual(response.data.items, ["会议什么时候开始？"]);
   });
+
+  it("does not expose AI content for an unpublished conference", async () => {
+    const { prisma, logs } = createAiPrismaMock({ publishedConferenceIds: [] });
+    const service = new PublicOperationsService(prisma);
+
+    await assert.rejects(() => service.askAi("conference-a", { question: "内部议程是什么？" }, currentUser), NotFoundException);
+    await assert.rejects(() => service.aiSuggestions("conference-a"), NotFoundException);
+    assert.equal(logs.length, 0);
+  });
 });
 
-function createAiPrismaMock(options: { config?: AiConfigRecord } = {}) {
+function createAiPrismaMock(options: { config?: AiConfigRecord; publishedConferenceIds?: string[] } = {}) {
   const logs: AiLogRecord[] = [];
   const config = options.config ?? aiConfig({ enabled: true });
   const knowledgeBases: Record<string, KnowledgeBaseRecord> = {
@@ -112,7 +122,11 @@ function createAiPrismaMock(options: { config?: AiConfigRecord } = {}) {
     { id: "suggestion-a", conferenceId: "conference-a", question: "会议什么时候开始？", enabled: true, sortOrder: 0, createdAt: new Date("2026-06-18T00:00:00.000Z") },
     { id: "suggestion-b", conferenceId: "conference-b", question: "晚宴在哪里？", enabled: true, sortOrder: 0, createdAt: new Date("2026-06-18T00:00:00.000Z") }
   ];
+  const publishedConferenceIds = options.publishedConferenceIds ?? ["conference-a", "conference-b"];
   const mock = {
+    conference: {
+      findFirst: async ({ where }: { where: { id: string } }) => publishedConferenceIds.includes(where.id) ? { id: where.id } : null
+    },
     aiConfig: {
       upsert: async () => config
     },

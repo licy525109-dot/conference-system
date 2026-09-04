@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { BadGatewayException, InternalServerErrorException } from "@nestjs/common";
 import { WechatPayConfig } from "./wechat-pay.config";
+import { WechatPayHeaders, WechatPayNotifyVerifier } from "./wechat-pay.notify-verifier";
 import { WechatPayRefundClient } from "./wechat-pay.refund-client";
 import { WechatPaySigner } from "./wechat-pay.signer";
 
@@ -39,6 +40,7 @@ describe("WechatPayRefundClient", () => {
     });
 
     assert.equal(result.status, "PROCESSING");
+    assert.equal(client.verifier.calls, 1);
     assert.equal(signer.lastInput?.urlPathWithQuery, "/v3/refund/domestic/refunds");
     assert.equal(client.lastAuthorization, "test-authorization");
     const body = JSON.parse(client.lastBody ?? "{}") as Record<string, any>;
@@ -83,6 +85,7 @@ describe("WechatPayRefundClient", () => {
     assert.equal(result.status, "SUCCESS");
     assert.equal(result.amountCent, 328000);
     assert.equal(result.totalAmountCent, 328000);
+    assert.equal(client.verifier.calls, 1);
     assert.equal(signer.lastInput?.method, "GET");
     assert.equal(signer.lastInput?.body, "");
     assert.equal(signer.lastInput?.urlPathWithQuery, "/v3/refund/domestic/refunds/REG_REFUND_ORDER001");
@@ -113,8 +116,12 @@ class TestRefundClient extends WechatPayRefundClient {
   lastAuthorization: string | null = null;
   lastQueryUrl: string | null = null;
 
-  constructor(signer: WechatPaySigner, private readonly response: Response) {
-    super(signer);
+  constructor(
+    signer: WechatPaySigner,
+    private readonly response: Response,
+    readonly verifier = new AcceptingResponseVerifier()
+  ) {
+    super(signer, verifier);
   }
 
   protected override async postRefund(body: string, authorization: string): Promise<Response> {
@@ -127,5 +134,13 @@ class TestRefundClient extends WechatPayRefundClient {
     this.lastQueryUrl = url;
     this.lastAuthorization = authorization;
     return this.response;
+  }
+}
+
+class AcceptingResponseVerifier extends WechatPayNotifyVerifier {
+  calls = 0;
+
+  override verifySignature(_input: { headers: WechatPayHeaders; rawBody: Buffer }): void {
+    this.calls += 1;
   }
 }

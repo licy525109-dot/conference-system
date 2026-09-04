@@ -108,6 +108,7 @@ export class ConferencesService {
             description: true,
             priceCent: true,
             stock: true,
+            lockedStock: true,
             soldCount: true
           }
         },
@@ -361,6 +362,7 @@ export interface ConferenceDetailResponse {
     description: string | null;
     priceCent: number;
     stock: number;
+    lockedStock: number;
     soldCount: number;
   }>;
 }

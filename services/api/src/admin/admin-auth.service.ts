@@ -231,6 +231,7 @@ export class AdminAuthService {
 
   private signAdminToken(admin: CurrentAdmin, expiresInSeconds?: number): string {
     const now = Math.floor(Date.now() / 1000);
+    const ttl = expiresInSeconds ?? readTokenTtlSeconds(process.env.ADMIN_JWT_TTL_SECONDS, 8 * 60 * 60, 15 * 60, 7 * 24 * 60 * 60);
     return signJwt(
       {
         sub: admin.id,
@@ -238,7 +239,7 @@ export class AdminAuthService {
         type: "admin",
         username: admin.username,
         iat: now,
-        ...(expiresInSeconds ? { exp: now + expiresInSeconds } : {})
+        exp: now + ttl
       },
       this.getJwtSecret()
     );
@@ -252,6 +253,11 @@ export class AdminAuthService {
 
     return secret;
   }
+}
+
+function readTokenTtlSeconds(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
 function ok<TData>(data: TData): ApiResponse<TData> {

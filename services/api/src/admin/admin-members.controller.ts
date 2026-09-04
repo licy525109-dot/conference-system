@@ -16,6 +16,12 @@ export class AdminMembersController {
     return this.membersService.listUsers(query);
   }
 
+  @Get("users/:id/phone")
+  @RequireAdminPermissions("member:phone:view")
+  revealUserPhone(@Param("id") id: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.membersService.revealUserPhone(id, request.currentAdmin!);
+  }
+
   @Patch("users/:id")
   @RequireAdminPermissions("member:write")
   updateUser(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {

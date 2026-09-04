@@ -1,11 +1,14 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { randomBytes } from "node:crypto";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { applyMallCoupon, type MallCouponPricedItem } from "./mall-coupon-pricing";
 import { resolveMallPaymentRuntime, type MallPaymentRuntimeConfig } from "./mall-payment.config";
 
 const FORBIDDEN_AMOUNT_FIELDS = new Set(["originAmountCent", "discountAmountCent", "payableAmountCent", "paidAmountCent", "amountCent", "totalAmountCent", "priceCent"]);
+const MALL_ORDER_EXPIRES_IN_MS = 15 * 60 * 1000;
+const MAX_SERIALIZABLE_ATTEMPTS = 3;
 
 const mallOrderInclude = {
   user: true,
@@ -68,7 +71,7 @@ export class MallService {
     const remark = readNullableString(body.remark);
     const couponCode = readNullableString(body.couponCode);
 
-    const order = await this.prisma.$transaction(async (tx) => {
+    const order = await runSerializableTransactionWithRetry(this.prisma, async (tx) => {
       const orderItems: Prisma.MallOrderItemCreateWithoutOrderInput[] = [];
       const pricedItems: MallCouponPricedItem[] = [];
       const logInputs: Array<{
@@ -122,6 +125,7 @@ export class MallService {
       const coupon = await applyMallCoupon(tx, { couponCode, userId: currentUser.id, items: pricedItems, originAmountCent });
       const discountAmountCent = coupon?.discountAmountCent ?? 0;
       const payableAmountCent = Math.max(0, originAmountCent - discountAmountCent);
+      if (payableAmountCent <= 0) throw new ConflictException("商城公开订单应付金额必须大于 0");
       const receiverName = requiresReceiver ? readRequiredString(body, "receiverName") : readNullableString(body.receiverName);
       const receiverPhone = requiresReceiver ? readRequiredString(body, "receiverPhone") : readNullableString(body.receiverPhone);
       const receiverAddress = requiresReceiver ? readRequiredString(body, "receiverAddress") : readNullableString(body.receiverAddress);
@@ -136,6 +140,7 @@ export class MallService {
           status: "PENDING_PAYMENT",
           couponId: coupon?.couponId ?? null,
           couponCode: coupon?.couponCode ?? null,
+          expiredAt: new Date(Date.now() + MALL_ORDER_EXPIRES_IN_MS),
           receiverName,
           receiverPhone,
           receiverAddress,
@@ -199,6 +204,29 @@ function ok<T>(data: T) {
   return { code: "OK" as const, message: "ok" as const, data };
 }
 
+async function runSerializableTransactionWithRetry<T>(
+  prisma: PrismaService,
+  operation: (tx: Prisma.TransactionClient) => Promise<T>
+): Promise<T> {
+  for (let attempt = 1; attempt <= MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable
+      });
+    } catch (error) {
+      if (attempt < MAX_SERIALIZABLE_ATTEMPTS && isSerializableTransactionConflict(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new ConflictException("商城下单请求冲突，请重试");
+}
+
+function isSerializableTransactionConflict(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2034";
+}
+
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value || "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -238,6 +266,8 @@ function formatOrder(item: Prisma.MallOrderGetPayload<{ include: typeof mallOrde
   const paymentRuntime = resolveMallPaymentRuntime(paymentConfig);
   return {
     ...item,
+    expiredAt: item.expiredAt?.toISOString() ?? null,
+    closedAt: item.closedAt?.toISOString() ?? null,
     paidAt: item.paidAt?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
@@ -331,5 +361,5 @@ function assertNoClientAmount(body: Record<string, unknown>) {
 }
 
 function generateOrderNo(prefix: string): string {
-  return `${prefix}${new Date().toISOString().slice(0, 10).replaceAll("-", "")}${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+  return `${prefix}${new Date().toISOString().slice(0, 10).replaceAll("-", "")}${randomBytes(4).toString("hex").toUpperCase()}`;
 }

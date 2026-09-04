@@ -91,6 +91,7 @@ function requestMiniProgramPayment(input: WechatPrepayResponse): Promise<void> {
   return new Promise((resolve, reject) => {
     uni.requestPayment({
       provider: "wxpay",
+      orderInfo: "",
       timeStamp: input.timeStamp,
       nonceStr: input.nonceStr,
       package: input.package,

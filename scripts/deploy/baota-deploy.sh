@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 077
 
 PROJECT_DIR="${PROJECT_DIR:-/www/wwwroot/conference-system}"
 ADMIN_ROOT="${ADMIN_ROOT:-/www/wwwroot/admin.guanchaohuiji.com}"
@@ -7,10 +8,13 @@ H5_ROOT="${H5_ROOT:-/www/wwwroot/m.guanchaohuiji.com}"
 H5_PUBLIC_URL="${H5_PUBLIC_URL:-https://m.guanchaohuiji.com}"
 USER_API_BASE_URL="${USER_API_BASE_URL:-https://guanchaohuiji.com/api}"
 BRANCH="${BRANCH:-main}"
-API_HEALTH_LOCAL="${API_HEALTH_LOCAL:-http://127.0.0.1:3001/api/health}"
-API_HEALTH_PUBLIC="${API_HEALTH_PUBLIC:-https://guanchaohuiji.com/api/health}"
+API_HEALTH_LOCAL="${API_HEALTH_LOCAL:-http://127.0.0.1:3001/api/health/ready}"
+API_HEALTH_PUBLIC="${API_HEALTH_PUBLIC:-https://guanchaohuiji.com/api/health/ready}"
 BACKUP_ROOT="${BACKUP_ROOT:-/www/backup}"
 PM2_PROCESS="${PM2_PROCESS:-conference-api}"
+POSTGRES_SERVICE="${POSTGRES_SERVICE:-postgres}"
+POSTGRES_USER="${POSTGRES_USER:-conference}"
+POSTGRES_DB="${POSTGRES_DB:-conference_dev}"
 LOCK_DIR="${LOCK_DIR:-/tmp/conference-system-baota-deploy.lock}"
 PHASE="init"
 BACKUP=""
@@ -69,6 +73,31 @@ clear_static_root() {
   local target="$1"
   mkdir -p "$target"
   find "$target" -mindepth 1 -maxdepth 1 ! -name ".user.ini" -exec rm -rf {} +
+}
+
+check_migration_baseline() {
+  local state
+  state="$(docker compose -f docker-compose.prod.yml exec -T "$POSTGRES_SERVICE" \
+    psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+    "SELECT CASE WHEN to_regclass('_prisma_migrations') IS NOT NULL THEN 'TRACKED' WHEN to_regclass('conferences') IS NOT NULL OR to_regclass('orders') IS NOT NULL OR to_regclass('users') IS NOT NULL THEN 'UNTRACKED_SCHEMA' ELSE 'EMPTY' END;")"
+  state="${state//[[:space:]]/}"
+  case "$state" in
+    TRACKED)
+      echo "Prisma migration history: tracked"
+      ;;
+    EMPTY)
+      echo "Prisma migration history: empty database, initial migration is allowed"
+      ;;
+    UNTRACKED_SCHEMA)
+      echo "ERROR: database already contains conference-system tables but has no Prisma migration history." >&2
+      echo "Back up the database, compare its schema with prisma/schema.prisma, and baseline it explicitly before deployment." >&2
+      exit 4
+      ;;
+    *)
+      echo "ERROR: could not determine Prisma migration baseline state." >&2
+      exit 4
+      ;;
+  esac
 }
 
 trap on_error ERR
@@ -131,14 +160,17 @@ PHASE="backup env database frontend static"
 log "2. 备份 env、数据库、后台与用户端 H5 静态文件"
 BACKUP="${BACKUP_ROOT}/conference-system-auto-deploy-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP"
+chmod 700 "$BACKUP"
 if [[ -f "$PROJECT_DIR/.env.production" ]]; then
   cp "$PROJECT_DIR/.env.production" "$BACKUP/.env.production"
+  chmod 600 "$BACKUP/.env.production"
 else
   echo "WARN: .env.production not found at ${PROJECT_DIR}/.env.production"
 fi
 
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U conference -d conference_dev > "$BACKUP/conference_dev.sql"
+docker compose -f docker-compose.prod.yml exec -T "$POSTGRES_SERVICE" \
+  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" > "$BACKUP/${POSTGRES_DB}.sql"
+chmod 600 "$BACKUP/${POSTGRES_DB}.sql"
 copy_admin_backup
 copy_h5_backup
 echo "Backup directory: ${BACKUP}"
@@ -175,19 +207,22 @@ PHASE="check production configuration"
 log "6. 生产配置核查"
 PROJECT_DIR="$PROJECT_DIR" bash scripts/smoke/check-production-config.sh
 
-PHASE="prisma generate and migrate"
-log "7. Prisma"
+PHASE="check migration baseline"
+log "7. 数据库迁移基线核查"
+check_migration_baseline
+
+PHASE="prisma generate"
+log "8. 生成 Prisma Client"
 pnpm --filter @conference/api exec prisma generate --schema ../../prisma/schema.prisma
-pnpm --filter @conference/api exec prisma migrate deploy --schema ../../prisma/schema.prisma
 
 PHASE="build api user h5 and admin"
-log "8. 构建 API、用户端 H5 和 Admin"
+log "9. 构建 API、用户端 H5 和 Admin"
 pnpm --filter @conference/api build
 pnpm --filter @conference/user build:h5
 pnpm --filter @conference/admin build
 
 PHASE="check frontend dist"
-log "9. 构建产物检查"
+log "10. 构建产物检查"
 if [[ ! -f apps/user/dist/build/h5/index.html ]]; then
   echo "ERROR: user H5 dist is missing index.html" >&2
   exit 3
@@ -201,8 +236,16 @@ if grep -R -E "ReservedPage|功能建设中|预留页面" -n apps/admin/dist; th
   exit 3
 fi
 
+PHASE="migrate and restart api"
+log "11. 执行数据库迁移并立即重启 API"
+pnpm --filter @conference/api exec prisma migrate deploy --schema ../../prisma/schema.prisma
+pm2 restart "$PM2_PROCESS" --update-env
+sleep 5
+curl -fsS "$API_HEALTH_LOCAL"
+echo
+
 PHASE="publish frontend static"
-log "10. 发布用户端 H5 和后台静态文件"
+log "12. 发布用户端 H5 和后台静态文件"
 H5_STATIC_PUBLISHED=1
 clear_static_root "$H5_ROOT"
 cp -a "$PROJECT_DIR/apps/user/dist/build/h5"/. "$H5_ROOT"/
@@ -219,13 +262,8 @@ fi
 nginx -t
 nginx -s reload
 
-PHASE="restart api"
-log "11. 重启 API"
-pm2 restart "$PM2_PROCESS" --update-env
-
 PHASE="health check"
-log "12. 健康检查"
-sleep 5
+log "13. 健康检查"
 curl -fsS "$API_HEALTH_LOCAL"
 echo
 curl -fsS "$API_HEALTH_PUBLIC"
@@ -234,7 +272,7 @@ curl -fsS "${H5_PUBLIC_URL%/}/" >/dev/null
 echo "User H5: ok (${H5_PUBLIC_URL%/}/)"
 
 PHASE="pm2 status"
-log "13. 输出 PM2 状态"
+log "14. 输出 PM2 状态"
 pm2 list
 pm2 logs "$PM2_PROCESS" --lines 60 --nostream
 

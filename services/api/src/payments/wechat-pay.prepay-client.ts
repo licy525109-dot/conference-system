@@ -1,5 +1,6 @@
 import { BadGatewayException, GatewayTimeoutException, Injectable } from "@nestjs/common";
 import { WechatPayConfig } from "./wechat-pay.config";
+import { WechatPayNotifyVerifier } from "./wechat-pay.notify-verifier";
 import { WechatPaySigner } from "./wechat-pay.signer";
 
 const JSAPI_PREPAY_URL = "https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi";
@@ -9,7 +10,10 @@ const WECHAT_PAY_PREPAY_FAILED_CODE = "WECHAT_PAY_PREPAY_FAILED";
 
 @Injectable()
 export class WechatPayPrepayClient {
-  constructor(private readonly signer: WechatPaySigner) {}
+  constructor(
+    private readonly signer: WechatPaySigner,
+    private readonly responseVerifier: WechatPayNotifyVerifier = new WechatPayNotifyVerifier()
+  ) {}
 
   async createJsapiPrepay(input: {
     config: WechatPayConfig;
@@ -26,22 +30,18 @@ export class WechatPayPrepayClient {
     const timeout = setTimeout(() => controller.abort(), WECHAT_PAY_HTTP_TIMEOUT_MS);
 
     try {
-      const response = await fetch(JSAPI_PREPAY_URL, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json",
-          authorization
-        },
-        body,
-        signal: controller.signal
-      });
-
-      const payload = (await response.json().catch(() => ({}))) as unknown;
+      const response = await this.postPrepay(body, authorization, controller.signal);
+      const rawBody = Buffer.from(await response.arrayBuffer());
+      const payload = parseJsonResponse(rawBody);
       const requestId = response.headers.get("request-id") ?? response.headers.get("Request-ID");
       if (!response.ok) {
         throw new WechatPayPrepayHttpError(response.status, payload, undefined, requestId);
       }
+
+      this.responseVerifier.verifySignature({
+        headers: readSignatureHeaders(response.headers),
+        rawBody
+      });
 
       if (!isRecord(payload) || typeof payload.prepay_id !== "string" || payload.prepay_id.length === 0) {
         throw new WechatPayPrepayHttpError(response.status, payload, "WeChat Pay prepay response is invalid", requestId);
@@ -69,6 +69,37 @@ export class WechatPayPrepayClient {
       clearTimeout(timeout);
     }
   }
+
+  protected postPrepay(body: string, authorization: string, signal: AbortSignal): Promise<Response> {
+    return fetch(JSAPI_PREPAY_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization
+      },
+      body,
+      signal
+    });
+  }
+}
+
+function parseJsonResponse(rawBody: Buffer): unknown {
+  if (rawBody.length === 0) return {};
+  try {
+    return JSON.parse(rawBody.toString("utf8")) as unknown;
+  } catch {
+    return {};
+  }
+}
+
+function readSignatureHeaders(headers: Headers) {
+  return {
+    timestamp: headers.get("wechatpay-timestamp") ?? "",
+    nonce: headers.get("wechatpay-nonce") ?? "",
+    signature: headers.get("wechatpay-signature") ?? "",
+    serial: headers.get("wechatpay-serial") ?? ""
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

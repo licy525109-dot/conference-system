@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { randomBytes } from "node:crypto";
 import {
   AuditAction,
   CheckInStatus,
@@ -16,7 +17,9 @@ import {
   RegistrationStatus
 } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { closePendingRegistrationOrder } from "../order-lifecycle/order-reservations";
 import { CurrentAdmin } from "./current-admin";
+import { AdminNotificationsService } from "./admin-notifications.service";
 import { detectPaymentExceptions } from "./admin-payment-exceptions.service";
 import { type CheckinMethod, formatCheckinConfig } from "../checkin/checkin.service";
 import { createCheckinCredentialPayload } from "../checkin/checkin-credential";
@@ -33,7 +36,10 @@ const MAX_PAGE_SIZE = 100;
 
 @Injectable()
 export class AdminManagementService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notificationsService?: AdminNotificationsService
+  ) {}
 
   async listConferences(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
     const pagination = parsePagination(query);
@@ -340,13 +346,13 @@ export class AdminManagementService {
   async updateSku(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const existing = await this.prisma.registrationSku.findUnique({
       where: { id },
-      select: { id: true, soldCount: true }
+      select: { id: true, soldCount: true, lockedStock: true }
     });
     if (!existing) {
       throw new NotFoundException("Registration SKU not found");
     }
 
-    const request = parseSkuInput(input, true, existing.soldCount);
+    const request = parseSkuInput(input, true, existing.soldCount + existing.lockedStock);
     const sku = await this.prisma.registrationSku.update({
       where: { id },
       data: {
@@ -532,10 +538,10 @@ export class AdminManagementService {
       throw new ConflictException(blockReason);
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.CLOSED } });
-      await tx.payment.updateMany({ where: { orderId: order.id, status: PaymentStatus.PENDING }, data: { status: PaymentStatus.CLOSED, failedReason: "后台关闭待支付订单" } });
-    });
+    const closed = await this.prisma.$transaction((tx) =>
+      closePendingRegistrationOrder(tx, order, new Date(), "后台关闭待支付订单")
+    );
+    if (!closed) throw new ConflictException("订单状态刚刚发生变化，请刷新后重试");
     await this.writeAudit(admin, AuditAction.UPDATE, "Order", order.id, "Close pending order", {
       orderNo: order.orderNo
     });
@@ -654,22 +660,22 @@ export class AdminManagementService {
     });
     const candidates = onlyExceptions ? orders.filter((order) => detectPaymentExceptions(order).length > 0) : orders;
     const closeable = candidates.filter((order) => !orderDeleteBlockReason(order));
-    if (closeable.length > 0) {
-      const ids = closeable.map((order) => order.id);
-      await this.prisma.$transaction([
-        this.prisma.order.updateMany({ where: { id: { in: ids }, status: OrderStatus.PENDING }, data: { status: OrderStatus.CLOSED } }),
-        this.prisma.payment.updateMany({ where: { orderId: { in: ids }, status: PaymentStatus.PENDING }, data: { status: PaymentStatus.CLOSED, failedReason: "后台批量关闭待支付订单" } })
-      ]);
+    let closedCount = 0;
+    for (const order of closeable) {
+      const closed = await this.prisma.$transaction((tx) =>
+        closePendingRegistrationOrder(tx, order, new Date(), "后台批量关闭待支付订单")
+      );
+      if (closed) closedCount += 1;
     }
     await this.writeAudit(admin, AuditAction.UPDATE, "Order", null, "Bulk close pending orders by filter", {
       filters: sanitizeDeleteFilters(body),
       matchedCount: candidates.length,
-      closedCount: closeable.length,
-      skippedCount: candidates.length - closeable.length
+      closedCount,
+      skippedCount: candidates.length - closedCount
     });
     return ok({
-      closed: closeable.length,
-      skipped: candidates.length - closeable.length,
+      closed: closedCount,
+      skipped: candidates.length - closedCount,
       failed: 0,
       matched: candidates.length
     });
@@ -783,21 +789,26 @@ export class AdminManagementService {
       }),
       this.prisma.registrationSku.findFirst({
         where: { id: skuId, conferenceId },
-        select: { id: true, name: true, priceCent: true, stock: true, soldCount: true }
+        select: { id: true, name: true, priceCent: true, stock: true, lockedStock: true, soldCount: true }
       }),
       userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } }) : Promise.resolve(null)
     ]);
     if (!conference) throw new NotFoundException("Conference not found");
     if (!sku) throw new NotFoundException("Registration SKU not found");
     if (userId && !user) throw new NotFoundException("User not found");
-    if (sku.stock - sku.soldCount < 1) throw new ConflictException("该票种库存不足");
+    if (sku.stock - sku.lockedStock - sku.soldCount < 1) throw new ConflictException("该票种库存不足");
 
     const now = new Date();
     const orderNo = generateAdminOrderNo(now);
     const registrationNo = `R${orderNo}`;
     const registration = await this.prisma.$transaction(async (tx) => {
       const stockResult = await tx.registrationSku.updateMany({
-        where: { id: sku.id, soldCount: { lt: sku.stock } },
+        where: {
+          id: sku.id,
+          lockedStock: sku.lockedStock,
+          soldCount: sku.soldCount,
+          stock: { gte: sku.lockedStock + sku.soldCount + 1 }
+        },
         data: { soldCount: { increment: 1 } }
       });
       if (stockResult.count !== 1) throw new ConflictException("该票种库存刚刚发生变化，请刷新后重试");
@@ -890,6 +901,29 @@ export class AdminManagementService {
         }
       });
       return created;
+    });
+    await this.notificationsService?.dispatchBusinessNotification({
+      userId,
+      sourceKey: `registration-confirmed:${orderNo}`,
+      type: "REGISTRATION_CONFIRMED",
+      title: "主办方邀请报名已确认",
+      summary: `${conference.title} · ${attendeeName}`,
+      route: `/pages/registration-success/index?registrationId=${encodeURIComponent(registration.id)}`,
+      payloadJson: {
+        registrationId: registration.id,
+        orderNo,
+        conferenceTitle: conference.title,
+        attendeeName,
+        paidAmountCent: 0,
+        complimentary: true
+      },
+      templateCode: "REGISTRATION_SUCCESS",
+      variables: {
+        会议名称: conference.title,
+        参会人姓名: attendeeName,
+        订单号: orderNo,
+        报名状态: "主办方邀请，已确认"
+      }
     });
     return ok(formatRegistrationDetail(registration));
   }
@@ -1378,7 +1412,7 @@ export class AdminManagementService {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
       .slice(0, 48) || "conference";
-    const suffix = Math.random().toString(36).slice(2, 8);
+    const suffix = randomBytes(4).toString("hex").slice(0, 6);
     return `${base}-${suffix}`;
   }
 
@@ -1520,6 +1554,7 @@ const skuSelect = {
   description: true,
   priceCent: true,
   stock: true,
+  lockedStock: true,
   soldCount: true,
   status: true,
   saleStartAt: true,
@@ -1654,8 +1689,15 @@ const orderDeleteSelect = {
   payableAmountCent: true,
   paidAmountCent: true,
   expiredAt: true,
+  inventoryReservedAt: true,
   paidAt: true,
   createdAt: true,
+  items: {
+    select: {
+      skuId: true,
+      quantity: true
+    }
+  },
   registration: {
     select: {
       id: true,
@@ -1667,6 +1709,7 @@ const orderDeleteSelect = {
     orderBy: [{ createdAt: "desc" }],
     select: {
       id: true,
+      provider: true,
       status: true,
       amountCent: true,
       failedReason: true,
@@ -2140,7 +2183,7 @@ function formatPromotionRule(rule: Prisma.PromotionRuleGetPayload<{ select: type
 
 function generateAdminOrderNo(now: Date): string {
   const date = now.toISOString().slice(0, 10).replaceAll("-", "");
-  const randomPart = Math.random().toString(36).slice(2, 10).toUpperCase().padEnd(8, "0");
+  const randomPart = randomBytes(4).toString("hex").toUpperCase();
   return `ADM${date}${randomPart}`;
 }
 
@@ -2338,11 +2381,11 @@ function validateCheckInBindings(
   }
 }
 
-function parseSkuInput(input: unknown, partial: boolean, soldCount = 0) {
+function parseSkuInput(input: unknown, partial: boolean, allocatedStock = 0) {
   const body = readObject(input);
   const stock = partial ? readOptionalNonNegativeInt(body, "stock") : readRequiredNonNegativeInt(body, "stock");
-  if (typeof stock === "number" && stock < soldCount) {
-    throw new BadRequestException("stock cannot be less than soldCount");
+  if (typeof stock === "number" && stock < allocatedStock) {
+    throw new BadRequestException("stock cannot be less than soldCount plus lockedStock");
   }
 
   return {
@@ -2427,6 +2470,9 @@ function orderDeleteBlockReason(order: Prisma.OrderGetPayload<{ select: typeof o
   }
   if (order.payments.some((payment) => payment.status === PaymentStatus.SUCCESS)) {
     return "存在成功支付流水的订单不能关闭";
+  }
+  if (order.payments.some((payment) => payment.provider === PaymentProvider.WECHAT)) {
+    return "该订单已发起微信预支付，请等待系统完成查单和关单后自动关闭";
   }
   return null;
 }
@@ -2547,7 +2593,7 @@ function parseCouponInput(input: unknown, partial: boolean) {
 }
 
 function generateCouponCode(): string {
-  return `AUTO${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  return `AUTO${Date.now()}${randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
 function parsePromotionRuleInput(input: unknown, partial: boolean) {

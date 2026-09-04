@@ -7,6 +7,29 @@ packages:
   - "apps/*"
   - "services/*"
   - "packages/*"
+overrides:
+  '@dcloudio/uni-cli-shared>esbuild': 0.25.12
+  '@intlify/core-base': 9.14.5
+  '@intlify/vue-devtools': 9.14.5
+  '@jimp/core>phin': 3.7.1
+  '@nestjs/common>file-type': 21.3.2
+  '@nestjs/platform-express>body-parser': 1.20.6
+  '@vue/server-renderer': 3.5.35
+  adm-zip: 0.6.0
+  browserslist: 4.28.7
+  deepmerge-ts: 8.0.0
+  'express@4.22.1>body-parser': 1.20.6
+  jpeg-js: 0.4.4
+  multer: 2.2.0
+  nanoid: 3.3.18
+  postcss: 8.5.23
+  '@dcloudio/uni-cli-shared>postcss-selector-parser': 6.1.3
+  '@dcloudio/uni-h5>postcss-selector-parser': 6.1.3
+  'postcss-modules-local-by-default>postcss-selector-parser': 7.1.3
+  'postcss-modules-scope>postcss-selector-parser': 7.1.3
+  qs: 6.16.0
+  'vite@5.2.8>esbuild': 0.25.12
+  ws: 8.21.0
 allowBuilds:
   '@nestjs/core': true
   '@prisma/client': true

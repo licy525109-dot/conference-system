@@ -40,7 +40,7 @@
             <text>{{ formatMessageTime(item.createdAt) }}</text>
           </view>
           <text class="message-title">{{ item.title }}</text>
-          <text v-if="item.summary" class="message-summary">本次更新：{{ item.summary }}</text>
+          <text v-if="item.summary" class="message-summary">{{ item.summary }}</text>
           <view v-if="schedulePreview(item).length" class="schedule-preview">
             <view v-for="schedule in schedulePreview(item)" :key="schedule.id" class="preview-row">
               <view class="preview-time">
@@ -63,7 +63,7 @@
           </view>
           <view class="message-footer">
             <text>{{ item.readAt ? "已读" : "新消息" }}</text>
-            <text>查看完整安排 ›</text>
+            <text>{{ notificationActionText(item) }} ›</text>
           </view>
         </view>
       </view>
@@ -73,14 +73,14 @@
       <view class="detail-sheet" @click.stop>
         <view class="detail-head">
           <view class="detail-head__copy">
-            <text class="detail-kicker">会务安排</text>
+            <text class="detail-kicker">{{ typeText(selectedNotification.type) }}</text>
             <text class="detail-title">{{ selectedNotification.title }}</text>
           </view>
           <button class="detail-close" aria-label="关闭" @click="closeDetail">×</button>
         </view>
 
         <scroll-view class="detail-scroll" scroll-y>
-          <text v-if="selectedNotification.summary" class="detail-summary">本次更新：{{ selectedNotification.summary }}</text>
+          <text v-if="selectedNotification.summary" class="detail-summary">{{ selectedNotification.summary }}</text>
           <view v-if="detailLoading" class="detail-loading">正在同步完整安排...</view>
           <view v-if="detailSchedules.length" class="detail-schedules">
             <view v-for="schedule in detailSchedules" :key="schedule.id" class="detail-schedule">
@@ -103,10 +103,21 @@
               </view>
             </view>
           </view>
-          <view v-else-if="!detailLoading" class="detail-empty">这条通知没有可展示的事项，请联系会务组核对发布内容。</view>
+          <view v-if="notificationFields(selectedNotification).length" class="detail-business-fields">
+            <view v-for="field in notificationFields(selectedNotification)" :key="field.label" class="detail-business-field">
+              <text class="detail-business-field__label">{{ field.label }}</text>
+              <text class="detail-business-field__value" :class="{ 'detail-business-field__value--strong': field.strong }">{{ field.value }}</text>
+            </view>
+          </view>
+          <view
+            v-else-if="!detailLoading && detailSchedules.length === 0"
+            class="detail-empty"
+          >这条通知暂无更多详情，请联系会务组核对。</view>
         </scroll-view>
 
-        <button v-if="selectedConferenceId" class="detail-action" @click="openFullSchedule">打开完整日程</button>
+        <button v-if="canOpenRelated(selectedNotification)" class="detail-action" @click="openRelated">
+          {{ notificationActionText(selectedNotification) }}
+        </button>
       </view>
     </view>
 
@@ -201,7 +212,7 @@ async function openNotification(item: UserNotification) {
   selectedNotification.value = item;
   selectedConferenceId.value = item.payloadJson?.conferenceId || "";
   detailSchedules.value = item.payloadJson?.items || [];
-  if (!selectedConferenceId.value) return;
+  if (item.type !== "GUEST_SCHEDULE_PUBLISHED" || !selectedConferenceId.value) return;
 
   detailLoading.value = true;
   try {
@@ -222,10 +233,16 @@ function closeDetail() {
   selectedConferenceId.value = "";
 }
 
-function openFullSchedule() {
+function openRelated() {
+  const notification = selectedNotification.value;
   const conferenceId = selectedConferenceId.value;
+  const route = notification?.route || "";
   closeDetail();
-  uni.navigateTo({ url: `/pages/registrations/schedule?conferenceId=${encodeURIComponent(conferenceId)}` });
+  if (notification?.type === "GUEST_SCHEDULE_PUBLISHED" && conferenceId) {
+    uni.navigateTo({ url: `/pages/registrations/schedule?conferenceId=${encodeURIComponent(conferenceId)}` });
+    return;
+  }
+  if (route) uni.navigateTo({ url: route.startsWith("/") ? route : `/${route}` });
 }
 
 async function subscribe() {
@@ -252,7 +269,48 @@ function scheduleFields(item: UserNotificationScheduleItem | MyGuestScheduleItem
 }
 
 function typeText(type: string) {
-  return type === "GUEST_SCHEDULE_PUBLISHED" ? "会务安排" : "系统通知";
+  return ({
+    GUEST_SCHEDULE_PUBLISHED: "会务安排",
+    REGISTRATION_CONFIRMED: "报名确认",
+    PAYMENT_SUCCESS: "支付结果",
+    REFUND_STATUS_UPDATED: "退款进度"
+  } as Record<string, string>)[type] || "系统通知";
+}
+
+function notificationActionText(item: UserNotification) {
+  if (item.type === "GUEST_SCHEDULE_PUBLISHED") return "查看完整安排";
+  if (item.type === "REFUND_STATUS_UPDATED") return "查看退款记录";
+  if (item.type === "PAYMENT_SUCCESS" || item.type === "REGISTRATION_CONFIRMED") return "查看报名凭证";
+  return item.route ? "查看详情" : "打开消息";
+}
+
+function canOpenRelated(item: UserNotification) {
+  return Boolean(item.route || (item.type === "GUEST_SCHEDULE_PUBLISHED" && item.payloadJson?.conferenceId));
+}
+
+function notificationFields(item: UserNotification) {
+  const payload = item.payloadJson;
+  if (!payload || item.type === "GUEST_SCHEDULE_PUBLISHED") return [];
+  const fields: Array<{ label: string; value: string; strong?: boolean }> = [];
+  const add = (label: string, value: unknown, strong = false) => {
+    const text = typeof value === "string" ? value.trim() : typeof value === "number" ? String(value) : "";
+    if (text) fields.push({ label, value: text, strong });
+  };
+  add("会议名称", payload.conferenceTitle);
+  add("参会人", payload.attendeeName);
+  add("订单号", payload.orderNo);
+  if (item.type === "PAYMENT_SUCCESS" && typeof payload.paidAmountCent === "number") {
+    add("支付金额", `¥${formatCent(payload.paidAmountCent)}`, true);
+  }
+  add("退款单号", payload.refundNo);
+  if (typeof payload.amountCent === "number") add("退款金额", `¥${formatCent(payload.amountCent)}`, true);
+  add("退款状态", payload.statusLabel, true);
+  add("处理说明", payload.reason);
+  return fields;
+}
+
+function formatCent(value: number) {
+  return (value / 100).toFixed(2);
 }
 
 function timeOnly(value: string) {
@@ -378,6 +436,12 @@ function formatMessageTime(value: string) {
 .detail-field__value { min-width: 0; font-weight: 800; overflow-wrap: anywhere; }
 .detail-field--strong .detail-field__value { color: #8a651f; font-weight: 900; }
 .detail-field--note { margin-top: 4rpx; padding: 18rpx 20rpx; border-radius: 8rpx; background: #edf2f4; }
+.detail-business-fields { display: flex; flex-direction: column; margin-top: 8rpx; border: 1px solid #dce4e7; border-radius: 10rpx; background: #ffffff; }
+.detail-business-field { display: grid; grid-template-columns: 178rpx minmax(0, 1fr); gap: 14rpx; padding: 22rpx 24rpx; font-size: 33rpx; line-height: 1.55; }
+.detail-business-field + .detail-business-field { border-top: 1px solid #e1e7e9; }
+.detail-business-field__label { color: #657381; font-weight: 700; }
+.detail-business-field__value { min-width: 0; color: #1b2b40; font-weight: 800; overflow-wrap: anywhere; }
+.detail-business-field__value--strong { color: #8a651f; font-weight: 900; }
 .detail-action { min-height: 90rpx; margin: 10rpx 0 0; border: 0; border-radius: 10rpx; background: #285d7e; color: #ffffff; font-size: 33rpx; font-weight: 900; line-height: 90rpx; }
 
 @media (min-width: 760px) { .page { max-width: 760px; margin: 0 auto; } }

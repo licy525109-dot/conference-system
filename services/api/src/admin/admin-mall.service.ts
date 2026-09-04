@@ -1,8 +1,11 @@
 import { existsSync } from "node:fs";
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { AuditAction, PaymentProvider, Prisma, RefundStatus } from "@prisma/client";
-import { isMallMockRefundEnabled, isMallWechatRefundConfigured, resolveMallPaymentRuntime, validateMallNotifyUrl, type MallPaymentRuntimeConfig } from "../mall/mall-payment.config";
+import { randomBytes } from "node:crypto";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { AuditAction, Prisma, RefundStatus } from "@prisma/client";
+import { resolveMallPaymentRuntime, validateMallNotifyUrl, type MallPaymentRuntimeConfig } from "../mall/mall-payment.config";
+import { closePendingMallOrder } from "../order-lifecycle/order-reservations";
 import { PrismaService } from "../prisma.service";
+import { AdminFinanceService } from "./admin-finance.service";
 import { CurrentAdmin } from "./current-admin";
 
 const PRODUCT_STATUSES = ["DRAFT", "PUBLISHED", "OFFLINE"] as const;
@@ -16,7 +19,10 @@ const DEFAULT_MALL_NOTIFY_URL = "https://guanchaohuiji.com/api/mall/payments/wec
 
 @Injectable()
 export class AdminMallService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly financeService: AdminFinanceService = new AdminFinanceService(prisma)
+  ) {}
 
   async listCategories(query: Record<string, unknown> = {}) {
     const { page, pageSize, skip } = readPage(query);
@@ -261,14 +267,20 @@ export class AdminMallService {
   }
 
   async closeOrder(id: string, admin: CurrentAdmin) {
-    const order = await this.prisma.mallOrder.findUnique({ where: { id }, include: { items: true } });
+    const order = await this.prisma.mallOrder.findUnique({
+      where: { id },
+      include: { items: true, payments: { select: { provider: true } } }
+    });
     if (!order) throw new NotFoundException("Mall order not found");
     if (order.status === "CLOSED") return ok(formatOrder(await this.getOrderEntity(id), await this.getPaymentRuntimeConfig()));
     if (order.status !== "PENDING_PAYMENT") throw new ConflictException("仅待支付商城订单可关闭");
-    await this.prisma.$transaction(async (tx) => {
-      for (const item of order.items) await releaseLockedStock(tx, item.skuId, item.quantity, order.id, "ORDER_CLOSE", "关闭待支付商城订单释放库存");
-      await tx.mallOrder.update({ where: { id }, data: { status: "CLOSED" } });
-    });
+    if (order.payments.some((payment) => payment.provider === "WECHAT")) {
+      throw new ConflictException("该订单已发起微信预支付，请等待系统完成查单和关单后自动关闭");
+    }
+    const closed = await this.prisma.$transaction((tx) =>
+      closePendingMallOrder(tx, order, new Date(), "关闭待支付商城订单释放库存", "ORDER_CLOSE")
+    );
+    if (!closed) throw new ConflictException("商城订单状态刚刚发生变化，请刷新后重试");
     await this.writeAudit(admin, AuditAction.UPDATE, "MallOrder", id, "Close mall order", { orderNo: order.orderNo });
     return ok(formatOrder(await this.getOrderEntity(id), await this.getPaymentRuntimeConfig()));
   }
@@ -375,22 +387,30 @@ export class AdminMallService {
   async createAfterSale(input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
     const orderId = readRequiredString(body, "orderId");
-    const order = await this.prisma.mallOrder.findUnique({ where: { id: orderId } });
-    if (!order) throw new NotFoundException("Mall order not found");
-    if (!["PAID", "SHIPPED", "COMPLETED"].includes(order.status)) throw new ConflictException("仅已支付、已发货或已完成订单可创建售后");
-    const item = await this.prisma.$transaction(async (tx) => {
+    const item = await runSerializableTransactionWithRetry(this.prisma, async (tx) => {
+      const order = await tx.mallOrder.findUnique({ where: { id: orderId }, include: { afterSales: true } });
+      if (!order) throw new NotFoundException("Mall order not found");
+      if (!["PAID", "SHIPPED", "COMPLETED"].includes(order.status)) throw new ConflictException("仅已支付、已发货或已完成订单可创建售后");
+      if (order.afterSales.some((existing) => !["REJECTED", "CANCELLED", "COMPLETED"].includes(existing.status))) {
+        throw new ConflictException("该订单已有处理中售后申请");
+      }
+      const claimed = await tx.mallOrder.updateMany({
+        where: { id: orderId, status: { in: ["PAID", "SHIPPED", "COMPLETED"] } },
+        data: { status: "REFUNDING" }
+      });
+      if (claimed.count !== 1) throw new ConflictException("订单状态已变化，请刷新后重试");
       const created = await tx.mallAfterSale.create({
         data: {
           orderId,
           type: readStatus(readRequiredString(body, "type"), AFTER_SALE_TYPES, "售后类型") ?? "REFUND",
           status: "REQUESTED",
+          previousOrderStatus: order.status,
           reason: readRequiredString(body, "reason"),
           note: readNullableString(body.note),
           attachmentsJson: readAttachmentUrls(body.attachments ?? body.attachmentUrls)
         },
         include: mallAfterSaleInclude
       });
-      await tx.mallOrder.update({ where: { id: orderId }, data: { status: "REFUNDING" } });
       return created;
     });
     await this.writeAudit(admin, AuditAction.CREATE, "MallAfterSale", item.id, "Create mall after-sale", { orderId, type: item.type });
@@ -400,10 +420,17 @@ export class AdminMallService {
   async updateAfterSale(id: string, input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
     const status = typeof body.status === "undefined" ? undefined : readStatus(readRequiredString(body, "status"), AFTER_SALE_STATUSES, "售后状态");
-    const current = await this.prisma.mallAfterSale.findUnique({ where: { id }, include: { order: true } });
-    if (!current) throw new NotFoundException("Mall after-sale not found");
-    if (status && !canMoveAfterSale(current.status, status)) throw new ConflictException("当前售后状态不可流转");
-    const item = await this.prisma.$transaction(async (tx) => {
+    const outcome = await runSerializableTransactionWithRetry(this.prisma, async (tx) => {
+      const current = await tx.mallAfterSale.findUnique({ where: { id }, include: { order: true, refunds: true } });
+      if (!current) throw new NotFoundException("Mall after-sale not found");
+      if (status && !canMoveAfterSale(current.status, status)) throw new ConflictException("当前售后状态不可流转");
+      if (
+        status === "COMPLETED" &&
+        ["REFUND", "RETURN_REFUND"].includes(current.type) &&
+        !current.refunds.some((refund) => refund.status === RefundStatus.SUCCESS)
+      ) {
+        throw new ConflictException("退款尚未成功，不能手动完成该售后单");
+      }
       const updated = await tx.mallAfterSale.update({
         where: { id },
         data: {
@@ -414,17 +441,30 @@ export class AdminMallService {
         },
         include: mallAfterSaleInclude
       });
-      if (status === "REJECTED" || status === "CANCELLED") await tx.mallOrder.update({ where: { id: current.orderId }, data: { status: current.order.status === "REFUNDING" ? "PAID" : current.order.status } });
-      if (status === "APPROVED" || status === "PROCESSING" || status === "COMPLETED") await tx.mallOrder.update({ where: { id: current.orderId }, data: { status: "REFUNDING" } });
-      return updated;
+      if (status === "REJECTED" || status === "CANCELLED" || (status === "COMPLETED" && current.type === "EXCHANGE")) {
+        await tx.mallOrder.updateMany({
+          where: { id: current.orderId, status: "REFUNDING" },
+          data: { status: restoreMallOrderStatus(current.previousOrderStatus) }
+        });
+      }
+      if (status === "APPROVED" || status === "PROCESSING") {
+        await tx.mallOrder.updateMany({
+          where: { id: current.orderId, status: { not: "REFUNDED" } },
+          data: { status: "REFUNDING" }
+        });
+      }
+      return { item: updated, orderId: current.orderId };
     });
-    await this.writeAudit(admin, AuditAction.UPDATE, "MallAfterSale", id, "Update mall after-sale", { orderId: current.orderId, status: item.status });
+    const item = outcome.item;
+    await this.writeAudit(admin, AuditAction.UPDATE, "MallAfterSale", id, "Update mall after-sale", { orderId: outcome.orderId, status: item.status });
     if (status === "APPROVED") return this.processAfterSaleRefund(id, admin);
     return ok(formatAfterSale(item));
   }
 
   async processAfterSaleRefund(id: string, admin: CurrentAdmin) {
-    const item = await this.prisma.$transaction(async (tx) => processMallRefund(tx, id));
+    const refundId = await this.prisma.$transaction(async (tx) => ensureMallRefundForAfterSale(tx, id));
+    await this.financeService.approveRefund(refundId, admin);
+    const item = await this.prisma.mallAfterSale.findUniqueOrThrow({ where: { id }, include: mallAfterSaleInclude });
     await this.writeAudit(admin, AuditAction.UPDATE, "MallAfterSale", id, "Process mall after-sale refund", {
       orderId: item.orderId,
       status: item.status,
@@ -568,6 +608,8 @@ function formatOrder(item: MallOrderWithInclude, paymentConfig?: MallPaymentRunt
   const paymentRuntime = resolveMallPaymentRuntime(paymentConfig);
   return {
     ...item,
+    expiredAt: item.expiredAt?.toISOString() ?? null,
+    closedAt: item.closedAt?.toISOString() ?? null,
     paidAt: item.paidAt?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
@@ -712,7 +754,7 @@ function buildRefundNotice(item: Prisma.MallAfterSaleGetPayload<{ include: typeo
   return "退款请求已创建，请继续处理。";
 }
 
-async function processMallRefund(tx: Prisma.TransactionClient, afterSaleId: string) {
+async function ensureMallRefundForAfterSale(tx: Prisma.TransactionClient, afterSaleId: string): Promise<string> {
   const current = await tx.mallAfterSale.findUnique({
     where: { id: afterSaleId },
     include: {
@@ -729,7 +771,7 @@ async function processMallRefund(tx: Prisma.TransactionClient, afterSaleId: stri
   const existingOrderRefund = current.order.refunds.find((item) => activeRefundStatuses.includes(item.status));
   if (existingOrderRefund && existingOrderRefund.afterSaleId !== afterSaleId) throw new ConflictException("该商城订单已有退款请求");
   if (current.status === "COMPLETED" && existingOrderRefund?.status === RefundStatus.SUCCESS) {
-    return tx.mallAfterSale.findUniqueOrThrow({ where: { id: afterSaleId }, include: mallAfterSaleInclude });
+    return existingOrderRefund.id;
   }
   if (!["APPROVED", "PROCESSING"].includes(current.status)) throw new ConflictException("仅已同意或处理中的售后可处理退款");
 
@@ -742,6 +784,7 @@ async function processMallRefund(tx: Prisma.TransactionClient, afterSaleId: stri
         outRefundNo: `MALL_REFUND_${current.order.orderNo}`,
         mallOrderId: current.orderId,
         afterSaleId,
+        previousOrderStatus: current.previousOrderStatus ?? current.order.status,
         amountCent: paidAmountCent,
         status: RefundStatus.REQUESTED,
         reason: current.reason
@@ -749,43 +792,7 @@ async function processMallRefund(tx: Prisma.TransactionClient, afterSaleId: stri
     });
   }
 
-  if (refund.status === RefundStatus.SUCCESS) {
-    return tx.mallAfterSale.findUniqueOrThrow({ where: { id: afterSaleId }, include: mallAfterSaleInclude });
-  }
-
-  const now = new Date();
-  if (isMallMockRefundEnabled()) {
-    await tx.mallRefund.update({
-      where: { id: refund.id },
-      data: {
-        provider: PaymentProvider.MOCK,
-        providerRefundId: `mock-${refund.refundNo}`,
-        status: RefundStatus.SUCCESS,
-        approvedAt: refund.approvedAt ?? now,
-        processedAt: now,
-        failedReason: null
-      }
-    });
-    await tx.mallOrder.update({ where: { id: current.orderId }, data: { status: "REFUNDED" } });
-    await tx.mallAfterSale.update({ where: { id: afterSaleId }, data: { status: "COMPLETED", handledAt: now } });
-    return tx.mallAfterSale.findUniqueOrThrow({ where: { id: afterSaleId }, include: mallAfterSaleInclude });
-  }
-
-  const failedReason = isMallWechatRefundConfigured()
-    ? "微信商城退款 provider 已启用，但自动出款调用仍需在生产证书配置后处理；当前先进入处理中。"
-    : "微信退款未配置，仅进入待处理状态，不会伪造退款成功。";
-  await tx.mallRefund.update({
-    where: { id: refund.id },
-    data: {
-      provider: isMallWechatRefundConfigured() ? PaymentProvider.WECHAT : null,
-      status: RefundStatus.PROCESSING,
-      approvedAt: refund.approvedAt ?? now,
-      failedReason
-    }
-  });
-  await tx.mallOrder.update({ where: { id: current.orderId }, data: { status: "REFUNDING" } });
-  await tx.mallAfterSale.update({ where: { id: afterSaleId }, data: { status: "PROCESSING", handledAt: now } });
-  return tx.mallAfterSale.findUniqueOrThrow({ where: { id: afterSaleId }, include: mallAfterSaleInclude });
+  return refund.id;
 }
 
 function formatInventoryLog(item: Prisma.MallInventoryLogGetPayload<Record<string, never>> & {
@@ -802,7 +809,7 @@ function formatInventoryLog(item: Prisma.MallInventoryLogGetPayload<Record<strin
 }
 
 function generateCode(prefix: string): string {
-  return `${prefix}${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  return `${prefix}${Date.now()}${randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
 interface ProductImageInput {
@@ -821,27 +828,6 @@ async function replaceProductImages(tx: Prisma.TransactionClient, productId: str
   }
 }
 
-async function releaseLockedStock(tx: Prisma.TransactionClient, skuId: string, quantity: number, orderId: string, action: string, remark: string) {
-  const sku = await tx.productSku.findUnique({ where: { id: skuId } });
-  if (!sku) throw new NotFoundException("Product SKU not found");
-  const releaseQuantity = Math.min(quantity, sku.lockedStock);
-  if (releaseQuantity <= 0) return;
-  await tx.productSku.update({ where: { id: skuId }, data: { lockedStock: { decrement: releaseQuantity } } });
-  await tx.mallInventoryLog.create({
-    data: {
-      skuId,
-      orderId,
-      action,
-      quantity: releaseQuantity,
-      beforeLockedStock: sku.lockedStock,
-      afterLockedStock: sku.lockedStock - releaseQuantity,
-      beforeSoldCount: sku.soldCount,
-      afterSoldCount: sku.soldCount,
-      remark
-    }
-  });
-}
-
 function canMoveAfterSale(current: string, next: string): boolean {
   if (current === next) return true;
   if (["COMPLETED", "CANCELLED", "REJECTED"].includes(current)) return false;
@@ -849,6 +835,32 @@ function canMoveAfterSale(current: string, next: string): boolean {
   if (current === "APPROVED") return ["PROCESSING", "COMPLETED", "CANCELLED"].includes(next);
   if (current === "PROCESSING") return ["COMPLETED", "CANCELLED"].includes(next);
   return false;
+}
+
+function restoreMallOrderStatus(status: string | null): "PAID" | "SHIPPED" | "COMPLETED" {
+  if (status === "SHIPPED" || status === "COMPLETED") return status;
+  return "PAID";
+}
+
+async function runSerializableTransactionWithRetry<T>(
+  prisma: PrismaService,
+  operation: (tx: Prisma.TransactionClient) => Promise<T>
+): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable
+      });
+    } catch (error) {
+      if (attempt < 2 && isSerializableTransactionConflict(error)) continue;
+      throw error;
+    }
+  }
+  throw new ConflictException("售后操作冲突，请重试");
+}
+
+function isSerializableTransactionConflict(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2034";
 }
 
 function readObject(value: unknown): Record<string, unknown> {

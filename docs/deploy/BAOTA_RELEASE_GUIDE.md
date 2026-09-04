@@ -11,7 +11,7 @@
 - API listens on `3001`
 - `3000` is `certificate-site`, not the conference API
 - PostgreSQL runs through server-side `docker-compose.prod.yml`
-- API health check: `curl http://127.0.0.1:3001/api/health`
+- API readiness check: `curl http://127.0.0.1:3001/api/health/ready`
 
 Do not commit or overwrite server-only assets from local Git.
 
@@ -68,7 +68,7 @@ pnpm build:user:h5
 pnpm build:admin
 rsync -a --delete --exclude='.user.ini' apps/user/dist/build/h5/ /www/wwwroot/m.guanchaohuiji.com/
 rsync -a --delete --exclude='.user.ini' apps/admin/dist/ /www/wwwroot/admin.guanchaohuiji.com/
-curl http://127.0.0.1:3001/api/health
+curl http://127.0.0.1:3001/api/health/ready
 ```
 
 The old example script `scripts/deploy/baota-deploy.example.sh` follows this legacy frontend-only flow. The current automatic deployment uses `scripts/deploy/baota-deploy.sh`.
@@ -101,7 +101,7 @@ git pull --ff-only origin main
 pnpm install --frozen-lockfile
 pnpm build:api
 pm2 restart conference-api
-curl http://127.0.0.1:3001/api/health
+curl http://127.0.0.1:3001/api/health/ready
 ```
 
 If Prisma migrations changed, follow section 6 before restarting the API.
@@ -142,7 +142,7 @@ Do not print the contents of `.env.production` in terminal output or logs.
 
 - `3001` is the real `conference-api` port.
 - `3000` is `certificate-site`.
-- Health checks must use `http://127.0.0.1:3001/api/health`.
+- Deployment readiness checks must use `http://127.0.0.1:3001/api/health/ready`.
 - Nginx reverse proxy and WeChat callback configuration must point to the real conference API route, not the certificate site.
 
 ## 8. Rsync and `.user.ini`
@@ -162,7 +162,7 @@ After frontend-only deployment:
 ```bash
 curl -I https://m.guanchaohuiji.com/
 curl -I https://admin.guanchaohuiji.com/
-curl http://127.0.0.1:3001/api/health
+curl http://127.0.0.1:3001/api/health/ready
 ```
 
 After backend deployment:
@@ -170,7 +170,7 @@ After backend deployment:
 ```bash
 pm2 status conference-api
 pm2 logs conference-api --lines 100
-curl http://127.0.0.1:3001/api/health
+curl http://127.0.0.1:3001/api/health/ready
 ```
 
 Manual smoke checks:

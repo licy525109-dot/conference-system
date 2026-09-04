@@ -48,6 +48,7 @@ export function isMallWechatPaymentEnabled(config?: MallPaymentRuntimeConfig | n
 }
 
 export function isMallMockPaymentEnabled(config?: MallPaymentRuntimeConfig | null): boolean {
+  if (process.env.NODE_ENV === "production") return false;
   return resolveMallPaymentRuntime(config).mockEnabled;
 }
 
@@ -58,6 +59,7 @@ export function readMallRefundMode(): MallRefundMode {
 }
 
 export function isMallMockRefundEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
   return readMallRefundMode() === "mock" || process.env.MALL_MOCK_REFUND_ENABLED === "true";
 }
 

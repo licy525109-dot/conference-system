@@ -1,4 +1,5 @@
 import { inflateSync } from "node:zlib";
+import { randomBytes } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   AuditAction,
@@ -58,7 +59,7 @@ export class AdminOperationsService {
     let created = 0;
     for (const rule of rules) {
       for (const sku of rule.conference.skus) {
-        const remainingStock = Math.max(0, sku.stock - sku.soldCount);
+        const remainingStock = Math.max(0, sku.stock - sku.lockedStock - sku.soldCount);
         if (remainingStock <= rule.thresholdRemaining) {
           await this.prisma.inventoryAlertLog.create({
             data: {
@@ -473,13 +474,14 @@ export class AdminOperationsService {
 
   async updateAiConfig(input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
+    const baseUrl = typeof body.baseUrl === "undefined" ? undefined : normalizeBaseUrl(readNullableString(body.baseUrl));
     const updated = await this.prisma.aiConfig.upsert({
       where: { name: "default" },
       create: {
         name: "default",
         enabled: readOptionalBoolean(body.enabled) ?? false,
         provider: normalizeAiProvider(readOptionalString(body.provider) ?? "LOCAL_FALLBACK"),
-        baseUrl: readNullableString(body.baseUrl),
+        baseUrl: baseUrl ?? null,
         model: readOptionalString(body.model) ?? "local-keyword",
         apiKeyEnc: readSensitive(body.apiKey) ? encryptSecret(readSensitive(body.apiKey)) : null,
         temperature: readOptionalNonNegativeInt(body.temperature) ?? 0,
@@ -491,7 +493,7 @@ export class AdminOperationsService {
       update: {
         ...(typeof body.enabled !== "undefined" ? { enabled: readBoolean(body.enabled, "enabled") } : {}),
         ...(typeof body.provider !== "undefined" ? { provider: normalizeAiProvider(readRequiredString(body, "provider")) } : {}),
-        ...(typeof body.baseUrl !== "undefined" ? { baseUrl: readNullableString(body.baseUrl) } : {}),
+        ...(typeof baseUrl !== "undefined" ? { baseUrl } : {}),
         ...(typeof body.model !== "undefined" ? { model: readRequiredString(body, "model") } : {}),
         ...(readSensitive(body.apiKey) ? { apiKeyEnc: encryptSecret(readSensitive(body.apiKey)) } : {}),
         ...(typeof body.temperature !== "undefined" ? { temperature: readNonNegativeInt(body.temperature, "temperature") } : {}),
@@ -508,10 +510,15 @@ export class AdminOperationsService {
   async testAiConfig(input: unknown, admin: CurrentAdmin) {
     const body = isRecord(input) ? input : {};
     const current = await this.ensureAiConfig();
-    const provider = normalizeAiProvider(readOptionalString(body.provider) ?? process.env.AI_PROVIDER ?? current.provider ?? "LOCAL_FALLBACK");
+    const provider = normalizeAiProvider(process.env.AI_PROVIDER ?? readOptionalString(body.provider) ?? current.provider ?? "LOCAL_FALLBACK");
     const model = readOptionalString(body.model) ?? process.env.AI_MODEL ?? current.model ?? "local-keyword";
-    const apiKey = readSensitive(body.apiKey) ?? process.env.AI_API_KEY ?? decryptSecret(current.apiKeyEnc);
-    const baseUrl = normalizeBaseUrl(readNullableString(body.baseUrl) ?? process.env.AI_BASE_URL ?? current.baseUrl ?? defaultAiBaseUrl(provider));
+    const envApiKey = process.env.AI_API_KEY?.trim();
+    const apiKey = envApiKey || readSensitive(body.apiKey) || decryptSecret(current.apiKeyEnc);
+    const baseUrl = normalizeBaseUrl(
+      envApiKey
+        ? process.env.AI_BASE_URL ?? defaultAiBaseUrl(provider)
+        : readNullableString(body.baseUrl) ?? process.env.AI_BASE_URL ?? current.baseUrl ?? defaultAiBaseUrl(provider)
+    );
 
     let result: Record<string, unknown>;
     if (provider === "LOCAL_FALLBACK") {
@@ -997,7 +1004,35 @@ function defaultAiBaseUrl(provider: string): string | null {
 
 function normalizeBaseUrl(value: string | null | undefined): string | null {
   if (!value) return null;
-  return value.replace(/\/+$/, "");
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new BadRequestException("AI Base URL 格式无效");
+  }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+    throw new BadRequestException("AI Base URL 必须是不含账号密码的 http/https 地址");
+  }
+  if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
+    throw new BadRequestException("生产环境 AI Base URL 必须使用 HTTPS");
+  }
+  if (process.env.NODE_ENV === "production" && isLocalHostname(url.hostname)) {
+    throw new BadRequestException("生产环境 AI Base URL 不能指向本机或内网地址");
+  }
+  return url.toString().replace(/\/+$/, "");
+}
+
+function isLocalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+  if (host === "::1" || host === "0.0.0.0") return true;
+  const parts = host.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  return parts[0] === 10
+    || parts[0] === 127
+    || (parts[0] === 169 && parts[1] === 254)
+    || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+    || (parts[0] === 192 && parts[1] === 168);
 }
 
 async function probeAiProvider(baseUrl: string, apiKey: string, provider: string, model: string): Promise<Record<string, unknown>> {
@@ -1151,7 +1186,7 @@ function maskEnvSecret(value: string | undefined): string {
 }
 
 function generateCode(prefix: string): string {
-  return `${prefix}${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  return `${prefix}${Date.now()}${randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
 function isEnabled(name: string): boolean {

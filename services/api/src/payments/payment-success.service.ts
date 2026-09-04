@@ -1,5 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { CheckInStatus, OrderStatus, PaymentProvider, PaymentStatus, Prisma, RegistrationStatus } from "@prisma/client";
+import { AdminNotificationsService } from "../admin/admin-notifications.service";
 import { PrismaService } from "../prisma.service";
 
 export interface ProcessPaymentSuccessInput {
@@ -21,7 +22,10 @@ export interface ProcessPaymentSuccessResult {
 
 @Injectable()
 export class PaymentSuccessService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notificationsService?: AdminNotificationsService
+  ) {}
 
   async processPaymentSuccess(input: ProcessPaymentSuccessInput): Promise<ProcessPaymentSuccessResult> {
     const result = await this.prisma.$transaction(async (tx) => {
@@ -34,12 +38,20 @@ export class PaymentSuccessService {
           conferenceId: true,
           skuId: true,
           payableAmountCent: true,
+          inventoryReservedAt: true,
           status: true,
           registrationSnapshotJson: true,
           paidAt: true,
           conference: {
             select: {
-              checkInEnabled: true
+              checkInEnabled: true,
+              title: true
+            }
+          },
+          items: {
+            select: {
+              skuId: true,
+              quantity: true
             }
           },
           registration: {
@@ -62,6 +74,10 @@ export class PaymentSuccessService {
 
       if (!order) {
         throw new NotFoundException("Order not found");
+      }
+
+      if (input.paidAmountCent !== order.payableAmountCent) {
+        throw new ConflictException("Payment amount does not match order payable amount");
       }
 
       if (order.status === OrderStatus.PAID) {
@@ -89,18 +105,32 @@ export class PaymentSuccessService {
           }
         });
 
-        return { registrationId };
+        return {
+          registrationId,
+          userId: order.userId,
+          conferenceTitle: order.conference.title,
+          attendeeName: order.registration?.attendeeName || "参会人",
+          paidAmountCent: order.payableAmountCent
+        };
       }
 
       if (order.status !== OrderStatus.PENDING) {
         throw new ConflictException("Only pending orders can be paid");
       }
 
-      if (input.paidAmountCent !== order.payableAmountCent) {
-        throw new ConflictException("Payment amount does not match order payable amount");
-      }
-
       const snapshot = parseRegistrationSnapshot(order.registrationSnapshotJson);
+
+      const claimedOrder = await tx.order.updateMany({
+        where: { id: order.id, status: OrderStatus.PENDING },
+        data: {
+          status: OrderStatus.PAID,
+          paidAmountCent: order.payableAmountCent,
+          paidAt: input.paidAt
+        }
+      });
+      if (claimedOrder.count !== 1) {
+        throw new ConflictException("Order payment is already being processed");
+      }
 
       await tx.payment.upsert({
         where: { outTradeNo: input.outTradeNo },
@@ -125,14 +155,7 @@ export class PaymentSuccessService {
         }
       });
 
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          status: OrderStatus.PAID,
-          paidAmountCent: order.payableAmountCent,
-          paidAt: input.paidAt
-        }
-      });
+      await consumeRegistrationInventory(tx, order);
 
       const txWithCouponRedemption = tx as Prisma.TransactionClient & {
         couponRedemption?: {
@@ -160,7 +183,11 @@ export class PaymentSuccessService {
 
       if (existingRegistration) {
         return {
-          registrationId: existingRegistration.id
+          registrationId: existingRegistration.id,
+          userId: order.userId,
+          conferenceTitle: order.conference.title,
+          attendeeName: snapshot.attendeeName,
+          paidAmountCent: order.payableAmountCent
         };
       }
 
@@ -178,21 +205,41 @@ export class PaymentSuccessService {
           attendees: buildAttendeesFromSnapshot(snapshot)
         });
 
-        for (const item of snapshot.items) {
-          await tx.registrationSku.update({
-            where: { id: item.skuId },
-            data: {
-              soldCount: {
-                increment: item.quantity
-              }
-            }
-          });
-        }
       }
 
       return {
-        registrationId: registration.id
+        registrationId: registration.id,
+        userId: order.userId,
+        conferenceTitle: order.conference.title,
+        attendeeName: snapshot.attendeeName,
+        paidAmountCent: order.payableAmountCent
       };
+    });
+
+    const isPaid = result.paidAmountCent > 0;
+    await this.notificationsService?.dispatchBusinessNotification({
+      userId: result.userId,
+      sourceKey: `registration-confirmed:${input.orderNo}`,
+      type: isPaid ? "PAYMENT_SUCCESS" : "REGISTRATION_CONFIRMED",
+      title: isPaid ? "支付成功，报名已确认" : "报名已确认",
+      summary: `${result.conferenceTitle} · ${result.attendeeName}`,
+      route: `/pages/registration-success/index?registrationId=${encodeURIComponent(result.registrationId)}`,
+      payloadJson: {
+        registrationId: result.registrationId,
+        orderNo: input.orderNo,
+        conferenceTitle: result.conferenceTitle,
+        attendeeName: result.attendeeName,
+        paidAmountCent: result.paidAmountCent,
+        paymentProvider: input.provider
+      },
+      templateCode: isPaid ? "PAYMENT_SUCCESS" : "REGISTRATION_SUCCESS",
+      variables: {
+        会议名称: result.conferenceTitle,
+        参会人姓名: result.attendeeName,
+        订单号: input.orderNo,
+        报名状态: "已确认",
+        支付金额: `¥${(result.paidAmountCent / 100).toFixed(2)}`
+      }
     });
 
     return {
@@ -201,6 +248,46 @@ export class PaymentSuccessService {
       paymentStatus: "SUCCESS",
       registrationId: result.registrationId
     };
+  }
+}
+
+async function consumeRegistrationInventory(
+  tx: Prisma.TransactionClient,
+  order: {
+    id: string;
+    orderNo: string;
+    inventoryReservedAt: Date | null;
+    items: Array<{ skuId: string; quantity: number }>;
+  }
+): Promise<void> {
+  for (const item of order.items) {
+    if (order.inventoryReservedAt) {
+      const updated = await tx.registrationSku.updateMany({
+        where: { id: item.skuId, lockedStock: { gte: item.quantity } },
+        data: {
+          lockedStock: { decrement: item.quantity },
+          soldCount: { increment: item.quantity }
+        }
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException("Registration inventory reservation is inconsistent");
+      }
+      continue;
+    }
+
+    // Orders created before inventory reservations were introduced have no
+    // locked stock. A verified paid order must still be fulfilled.
+    await tx.registrationSku.update({
+      where: { id: item.skuId },
+      data: { soldCount: { increment: item.quantity } }
+    });
+    console.warn(JSON.stringify({
+      event: "LEGACY_REGISTRATION_ORDER_WITHOUT_INVENTORY_RESERVATION",
+      orderId: order.id,
+      orderNo: order.orderNo,
+      skuId: item.skuId,
+      quantity: item.quantity
+    }));
   }
 }
 

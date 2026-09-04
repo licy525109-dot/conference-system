@@ -187,10 +187,16 @@ function createMallPrismaMock(options: { stock?: number; lockedStock?: number; s
     auditLogs,
     productSku: {
       findUnique: async ({ where }: { where: { id: string } }) => skus.find((item) => item.id === where.id) ?? null,
-      updateMany: async ({ where, data }: { where: { id: string; lockedStock: number; soldCount: number; stock: { gte: number } }; data: { lockedStock: { increment: number } } }) => {
+      updateMany: async ({ where, data }: { where: { id: string; lockedStock: number | { gte: number }; soldCount?: number; stock?: { gte: number } }; data: { lockedStock: { increment?: number; decrement?: number } } }) => {
         const sku = skus.find((item) => item.id === where.id);
-        if (!sku || sku.lockedStock !== where.lockedStock || sku.soldCount !== where.soldCount || sku.stock < where.stock.gte) return { count: 0 };
-        sku.lockedStock += data.lockedStock.increment;
+        if (!sku) return { count: 0 };
+        if (typeof where.lockedStock === "number") {
+          if (sku.lockedStock !== where.lockedStock || sku.soldCount !== where.soldCount || !where.stock || sku.stock < where.stock.gte) return { count: 0 };
+        } else if (sku.lockedStock < where.lockedStock.gte) {
+          return { count: 0 };
+        }
+        sku.lockedStock += data.lockedStock.increment ?? 0;
+        sku.lockedStock -= data.lockedStock.decrement ?? 0;
         return { count: 1 };
       },
       update: async ({ where, data }: { where: { id: string }; data: { lockedStock: { decrement: number } } }) => {
@@ -216,6 +222,8 @@ function createMallPrismaMock(options: { stock?: number; lockedStock?: number; s
           receiverAddress: data.receiverAddress,
           fulfillmentType: data.fulfillmentType,
           remark: data.remark ?? null,
+          expiredAt: data.expiredAt ?? null,
+          closedAt: null,
           paidAt: null,
           createdAt: now,
           updatedAt: now,
@@ -254,7 +262,20 @@ function createMallPrismaMock(options: { stock?: number; lockedStock?: number; s
         if (!order) throw new Error("order not found");
         Object.assign(order, data, { updatedAt: now });
         return order;
+      },
+      updateMany: async ({ where, data }: { where: { id: string; status: string }; data: { status: string; closedAt: Date } }) => {
+        const order = orders.find((item) => item.id === where.id && item.status === where.status);
+        if (!order) return { count: 0 };
+        Object.assign(order, data, { updatedAt: now });
+        return { count: 1 };
       }
+    },
+    mallCouponRedemption: {
+      create: async () => ({ id: "mall-coupon-redemption-1" }),
+      updateMany: async () => ({ count: 0 })
+    },
+    mallPayment: {
+      updateMany: async () => ({ count: 0 })
     },
     mallInventoryLog: {
       create: async ({ data }: { data: Omit<InventoryLogRecord, "id" | "createdAt"> }) => {
@@ -308,6 +329,7 @@ interface MallOrderCreateInput {
   receiverAddress: string | null;
   fulfillmentType: string;
   remark?: string | null;
+  expiredAt?: Date;
   items: {
     create: Array<{
       sku: { connect: { id: string } };
@@ -338,6 +360,8 @@ interface OrderRecord {
   receiverAddress: string | null;
   fulfillmentType: string;
   remark: string | null;
+  expiredAt: Date | null;
+  closedAt: Date | null;
   paidAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

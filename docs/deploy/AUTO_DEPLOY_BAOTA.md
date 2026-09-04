@@ -41,6 +41,14 @@ BAOTA_USER
 BAOTA_SSH_KEY
 ```
 
+必填 Variables：
+
+```text
+BAOTA_HOST_FINGERPRINT=SHA256:<服务器控制台核对过的 ED25519 指纹>
+```
+
+该值用于在临时 GitHub Runner 中固定服务器身份。必须通过服务器控制台或一台已经信任该服务器的运维电脑核对，不能直接信任同一次 `ssh-keyscan` 返回的值。
+
 可选 Variables：
 
 ```text
@@ -101,8 +109,8 @@ H5_ROOT=/www/wwwroot/m.guanchaohuiji.com
 H5_PUBLIC_URL=https://m.guanchaohuiji.com
 USER_API_BASE_URL=https://guanchaohuiji.com/api
 BRANCH=main
-API_HEALTH_LOCAL=http://127.0.0.1:3001/api/health
-API_HEALTH_PUBLIC=https://guanchaohuiji.com/api/health
+API_HEALTH_LOCAL=http://127.0.0.1:3001/api/health/ready
+API_HEALTH_PUBLIC=https://guanchaohuiji.com/api/health/ready
 BACKUP_ROOT=/www/backup
 PM2_PROCESS=conference-api
 ```
@@ -133,6 +141,8 @@ PM2_PROCESS=conference-api
 ```text
 /www/backup/conference-system-auto-deploy-YYYYMMDD-HHMMSS
 ```
+
+备份目录权限为 `700`，其中 `.env.production` 与数据库转储文件权限为 `600`，仅服务器 root 用户可读取。
 
 包含：
 
@@ -176,8 +186,8 @@ nginx -t && nginx -s reload
 部署后应能通过：
 
 ```bash
-curl -fsS http://127.0.0.1:3001/api/health
-curl -fsS https://guanchaohuiji.com/api/health
+curl -fsS http://127.0.0.1:3001/api/health/ready
+curl -fsS https://guanchaohuiji.com/api/health/ready
 grep -R -E "ReservedPage|功能建设中|预留页面" -n /www/wwwroot/conference-system/apps/admin/dist || true
 pm2 status conference-api
 ```

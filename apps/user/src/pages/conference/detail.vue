@@ -124,6 +124,7 @@ import {
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
+import { remainingRegistrationStock } from "@/utils/registration-stock";
 
 const conferenceId = ref("");
 const couponCode = ref("");
@@ -321,7 +322,7 @@ function showMissingAction(title: string) {
 }
 
 function remainingStock(sku: RegistrationSku): number {
-  return Math.max(sku.stock - sku.soldCount, 0);
+  return remainingRegistrationStock(sku);
 }
 
 function firstAvailableSku(skus: RegistrationSku[]): RegistrationSku | null {

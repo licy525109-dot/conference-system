@@ -308,7 +308,8 @@ export class GuestScheduleService {
     const runtime = await this.notifications.getChannelRuntime(
       NotificationChannelType.WECHAT_SUBSCRIBE,
       template?.templateKey,
-      template?.contentJson
+      template?.contentJson,
+      GUEST_SCHEDULE_TEMPLATE_CODE
     );
     const templateId = template?.templateKey || runtime.templateKey || null;
     const enabled = Boolean(templateId && template?.status === NotificationTemplateStatus.ACTIVE && runtime.canSend);

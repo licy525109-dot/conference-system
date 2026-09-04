@@ -14,9 +14,8 @@ export class AdminAccessService {
       permission?: unknown;
       role?: unknown;
       rolePermission?: unknown;
-      adminUserRole?: unknown;
     };
-    if (!prismaAny.permission || !prismaAny.role || !prismaAny.rolePermission || !prismaAny.adminUserRole) {
+    if (!prismaAny.permission || !prismaAny.role || !prismaAny.rolePermission) {
       return;
     }
 
@@ -68,22 +67,6 @@ export class AdminAccessService {
       });
     }
 
-    const admins = await this.prisma.adminUser.findMany({ select: { id: true } });
-    for (const admin of admins) {
-      await this.prisma.adminUserRole.upsert({
-        where: {
-          adminUserId_roleId: {
-            adminUserId: admin.id,
-            roleId: role.id
-          }
-        },
-        update: {},
-        create: {
-          adminUserId: admin.id,
-          roleId: role.id
-        }
-      });
-    }
   }
 
   async getAdminPermissions(adminUserId: string): Promise<string[]> {
@@ -130,7 +113,9 @@ export class AdminAccessService {
         new Set(admin.roles.flatMap((item) => item.role.permissions.map((entry) => entry.permission.code)))
       );
     } catch {
-      return [...ADMIN_PERMISSION_CODES];
+      // Authorization data must fail closed. A database or migration problem
+      // must never turn into an implicit super-admin session.
+      return [];
     }
   }
 

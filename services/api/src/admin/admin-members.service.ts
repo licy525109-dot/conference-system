@@ -404,6 +404,19 @@ export class AdminMembersService {
     return ok({ items: items.map(formatUser), total, page, pageSize });
   }
 
+  async revealUserPhone(id: string, admin: CurrentAdmin) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, phone: true }
+    });
+    if (!user) throw new NotFoundException("User not found");
+    await this.writeAudit(admin, AuditAction.SYSTEM, "User", id, "View full mini program user phone", {
+      field: "phone",
+      hasValue: Boolean(user.phone)
+    });
+    return ok({ userId: user.id, phone: user.phone });
+  }
+
   async updateUser(id: string, input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
     if (!Object.hasOwn(body, "nickname") && !Object.hasOwn(body, "phone")) {

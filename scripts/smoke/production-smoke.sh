@@ -107,6 +107,17 @@ check_database_tables() {
   echo "database tables: ok (${#DATABASE_TABLES[@]})"
 }
 
+check_migration_history() {
+  local state
+  state="$(run_sql "SELECT CASE WHEN to_regclass('_prisma_migrations') IS NOT NULL THEN 'TRACKED' ELSE 'MISSING' END;")"
+  [[ "$state" == "TRACKED" ]] || fail "Prisma migration history table is missing"
+
+  local unfinished
+  unfinished="$(run_sql "SELECT COUNT(*) FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL;")"
+  [[ "$unfinished" == "0" ]] || fail "Prisma migration history contains ${unfinished} unfinished migration(s)"
+  echo "Prisma migration history: tracked, no unfinished migrations"
+}
+
 check_enum_value() {
   local enum_name="$1"
   local enum_value="$2"
@@ -158,7 +169,8 @@ require_cmd find
 load_production_env
 
 log "1. API health"
-curl_expect_200 "api health" "${API_BASE}/health"
+curl_expect_200 "api liveness" "${API_BASE}/health"
+curl_expect_200 "api readiness" "${API_BASE}/health/ready"
 
 log "2. Public API endpoints"
 curl_expect_200 "public conferences" "${API_BASE}/conferences?page=1&pageSize=1"
@@ -168,6 +180,7 @@ curl_expect_existing_endpoint "admin login endpoint" "${API_BASE}/admin/auth/log
 check_uploads_static_path
 
 log "3. Database schema"
+check_migration_history
 check_database_tables
 check_enum_value "NotificationTaskStatus" "SKIPPED"
 check_enum_value "CustomerGroupMessageStatus" "WAITING_CONFIRM"

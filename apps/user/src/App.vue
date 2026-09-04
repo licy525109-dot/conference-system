@@ -9,13 +9,11 @@ let startupFallbackTimer: ReturnType<typeof setTimeout> | undefined;
 let startupFallbackAttempts = 0;
 let startupFallbackResolved = false;
 
-onLaunch((options) => {
-  console.log("[APP_LAUNCH]", options);
+onLaunch(() => {
   scheduleStartupRouteFallback();
 });
 
-onShow((options) => {
-  console.log("[APP_SHOW]", options);
+onShow(() => {
   scheduleStartupRouteFallback();
 });
 

@@ -191,6 +191,7 @@ import { ApiRequestError } from "@/services/request";
 import { formatCent } from "@/utils/money";
 import { formatDateTime } from "@/utils/date";
 import { goHome } from "@/utils/navigation";
+import { remainingRegistrationStock } from "@/utils/registration-stock";
 
 const conferenceId = ref("");
 const selectedSkuId = ref("");
@@ -342,7 +343,7 @@ function syncAttendeeForms(fields: FormField[]) {
 async function changeSkuQuantity(skuId: string, delta: number) {
   const current = skuQuantity(skuId);
   const sku = conference.value?.skus.find((item) => item.id === skuId);
-  const max = Math.max(0, (sku?.stock ?? 0) - (sku?.soldCount ?? 0));
+  const max = remainingRegistrationStock(sku ?? {});
   quantities.value = {
     ...quantities.value,
     [skuId]: Math.min(max, Math.max(0, current + delta))
@@ -356,7 +357,7 @@ function skuQuantity(skuId: string): number {
 }
 
 function stockLabel(sku: RegistrationSku): string {
-  const remaining = Math.max(0, sku.stock - sku.soldCount);
+  const remaining = remainingRegistrationStock(sku);
   if (remaining <= 0) return "已售罄";
   if (stockDisplayMode.value === "EXACT") return `剩余 ${remaining} / ${sku.stock}`;
   return remaining <= displaySettings.value.lowStockThreshold ? "库存紧张" : "名额充足";

@@ -22,6 +22,32 @@ export class WechatPayNotifyVerifier {
     headers: WechatPayHeaders;
     rawBody: Buffer;
   }): void {
+    const timestamp = input.headers.timestamp.trim();
+    const nonce = input.headers.nonce.trim();
+    const signature = input.headers.signature.trim();
+    const serial = input.headers.serial.trim();
+    if (!timestamp || !nonce || !signature || !serial) {
+      throw new UnauthorizedException("Missing WeChat Pay notify signature headers");
+    }
+
+    const timestampSeconds = Number(timestamp);
+    if (!Number.isInteger(timestampSeconds)) {
+      throw new UnauthorizedException("Invalid WeChat Pay notify timestamp");
+    }
+    const toleranceSeconds = readTimestampToleranceSeconds();
+    const nowSeconds = Math.floor(this.getCurrentTime().getTime() / 1000);
+    if (Math.abs(nowSeconds - timestampSeconds) > toleranceSeconds) {
+      throw new UnauthorizedException("Expired WeChat Pay notify timestamp");
+    }
+
+    const configuredKeyId = readWechatPayVerificationKeyId();
+    if (!configuredKeyId) {
+      throw new InternalServerErrorException("WECHAT_PAY_PLATFORM_PUBLIC_KEY_ID or WECHAT_PAY_PLATFORM_CERT_SERIAL_NO is not configured");
+    }
+    if (serial !== configuredKeyId) {
+      throw new UnauthorizedException("Wechatpay-Serial does not match the configured verification key");
+    }
+
     const publicKeyPath = process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH?.trim();
     if (!publicKeyPath) {
       throw new InternalServerErrorException("WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH is not configured for notify signature verification");
@@ -34,17 +60,26 @@ export class WechatPayNotifyVerifier {
       throw new InternalServerErrorException("WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH cannot be read");
     }
 
-    const message = `${input.headers.timestamp}\n${input.headers.nonce}\n${input.rawBody.toString("utf8")}\n`;
-    const valid = verifyCrypto(
-      "RSA-SHA256",
-      Buffer.from(message, "utf8"),
-      publicKey,
-      Buffer.from(input.headers.signature, "base64")
-    );
+    const message = `${timestamp}\n${nonce}\n${input.rawBody.toString("utf8")}\n`;
+    let valid = false;
+    try {
+      valid = verifyCrypto(
+        "RSA-SHA256",
+        Buffer.from(message, "utf8"),
+        publicKey,
+        Buffer.from(signature, "base64")
+      );
+    } catch {
+      throw new UnauthorizedException("Invalid WeChat Pay notify signature");
+    }
 
     if (!valid) {
       throw new UnauthorizedException("Invalid WeChat Pay notify signature");
     }
+  }
+
+  protected getCurrentTime(): Date {
+    return new Date();
   }
 
   decryptResource(resource: WechatPayEncryptedResource, apiV3Key: string): Record<string, unknown> {
@@ -74,6 +109,17 @@ export class WechatPayNotifyVerifier {
       throw new BadRequestException("WeChat Pay resource decrypt failed");
     }
   }
+}
+
+function readWechatPayVerificationKeyId(): string | null {
+  return process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY_ID?.trim()
+    || process.env.WECHAT_PAY_PLATFORM_CERT_SERIAL_NO?.trim()
+    || null;
+}
+
+function readTimestampToleranceSeconds(): number {
+  const configured = Number(process.env.WECHAT_PAY_NOTIFY_TIMESTAMP_TOLERANCE_SECONDS ?? "300");
+  return Number.isInteger(configured) && configured >= 60 && configured <= 900 ? configured : 300;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

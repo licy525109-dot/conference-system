@@ -1,5 +1,6 @@
 import { pbkdf2Sync, randomBytes } from "node:crypto";
 import { PrismaClient, Prisma } from "@prisma/client";
+import { ADMIN_PERMISSIONS, SUPER_ADMIN_ROLE_CODE } from "../services/api/src/admin/admin-permissions";
 
 const prisma = new PrismaClient();
 
@@ -12,18 +13,51 @@ function hashPassword(password: string): string {
 }
 
 async function main() {
-  await prisma.adminUser.upsert({
+  const existingAdmin = await prisma.adminUser.findUnique({ where: { username: "admin" }, select: { id: true } });
+  const bootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD?.trim();
+  if (!existingAdmin && !bootstrapPassword) {
+    throw new Error("ADMIN_BOOTSTRAP_PASSWORD is required when creating the initial admin account");
+  }
+
+  const admin = await prisma.adminUser.upsert({
     where: { username: "admin" },
     update: {
       displayName: "系统管理员",
-      enabled: true
+      enabled: true,
+      ...(bootstrapPassword ? { passwordHash: hashPassword(bootstrapPassword) } : {})
     },
     create: {
       username: "admin",
-      passwordHash: hashPassword("Admin@123456"),
+      passwordHash: hashPassword(bootstrapPassword!),
       displayName: "系统管理员",
       enabled: true
     }
+  });
+
+  for (const permission of ADMIN_PERMISSIONS) {
+    await prisma.permission.upsert({
+      where: { code: permission.code },
+      update: { name: permission.name, group: permission.group },
+      create: permission
+    });
+  }
+  const superAdminRole = await prisma.role.upsert({
+    where: { code: SUPER_ADMIN_ROLE_CODE },
+    update: { name: "超级管理员", description: "拥有后台全部权限", system: true, enabled: true },
+    create: { code: SUPER_ADMIN_ROLE_CODE, name: "超级管理员", description: "拥有后台全部权限", system: true, enabled: true }
+  });
+  const permissions = await prisma.permission.findMany({ where: { code: { in: [...ADMIN_PERMISSIONS.map((item) => item.code)] } }, select: { id: true } });
+  for (const permission of permissions) {
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: superAdminRole.id, permissionId: permission.id } },
+      update: {},
+      create: { roleId: superAdminRole.id, permissionId: permission.id }
+    });
+  }
+  await prisma.adminUserRole.upsert({
+    where: { adminUserId_roleId: { adminUserId: admin.id, roleId: superAdminRole.id } },
+    update: {},
+    create: { adminUserId: admin.id, roleId: superAdminRole.id }
   });
 
   const conference = await prisma.conference.upsert({

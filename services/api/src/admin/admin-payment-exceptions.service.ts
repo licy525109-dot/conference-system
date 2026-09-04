@@ -163,7 +163,11 @@ export function detectPaymentExceptions(
     });
   }
 
-  if (successfulPayments.length > 0 && order.status !== OrderStatus.PAID) {
+  if (
+    successfulPayments.length > 0 &&
+    order.status !== OrderStatus.PAID &&
+    order.status !== OrderStatus.REFUNDED
+  ) {
     exceptions.push({
       code: "PAYMENT_SUCCESS_ORDER_NOT_PAID",
       level: "danger",
@@ -187,7 +191,7 @@ export function detectPaymentExceptions(
     });
   }
 
-  if (order.registration && order.status !== OrderStatus.PAID) {
+  if (order.registration?.status === "CONFIRMED" && order.status !== OrderStatus.PAID) {
     exceptions.push({
       code: "REGISTRATION_WITH_UNPAID_ORDER",
       level: "danger",

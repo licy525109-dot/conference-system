@@ -26,6 +26,10 @@ Baota deploy workflow:
 - `BAOTA_USER`
 - `BAOTA_SSH_KEY`
 
+Optional Baota deploy repository variable:
+
+- `BAOTA_HOST_FINGERPRINT`: overrides the code-reviewed production ED25519 fingerprint used to verify `ssh-keyscan` before connecting. Configure it when the production host key changes.
+
 Mini Program workflow:
 
 - `MP_APPID`
@@ -37,7 +41,7 @@ Do not put real secret values in workflow YAML files.
 
 Before enabling automatic deployment from `main`:
 
-1. Confirm GitHub Secrets are configured.
+1. Confirm the GitHub Secrets are configured. If the production host key changed, also update `BAOTA_HOST_FINGERPRINT`.
 2. Confirm the server project path exists:
 
    ```bash
@@ -61,7 +65,7 @@ Before enabling automatic deployment from `main`:
 5. Confirm API health before deployment:
 
    ```bash
-   curl http://127.0.0.1:3001/api/health
+   curl http://127.0.0.1:3001/api/health/ready
    ```
 
 6. Push to `main` or trigger `Deploy Baota Production` manually.

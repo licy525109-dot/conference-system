@@ -40,9 +40,22 @@
               <span v-else class="avatar-fallback">{{ userInitial(row) }}</span>
               <div>
                 <strong>{{ userName(row) }}</strong>
-                <div class="muted-text">{{ row.phone || "未绑定手机号" }}</div>
+                <div class="muted-text">{{ row.openid || "无 openid" }}</div>
               </div>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="手机号" min-width="190">
+          <template #default="{ row }">
+            <span>{{ visiblePhone(row) }}</span>
+            <el-button
+              v-if="row.phone && hasPermission('member:phone:view') && !hasRevealedPhone(row.id)"
+              class="phone-reveal"
+              link
+              type="primary"
+              :loading="phoneLoadingUserId === row.id"
+              @click="loadFullPhoneFor(row)"
+            >查看完整</el-button>
           </template>
         </el-table-column>
         <el-table-column label="会员" width="150">
@@ -146,7 +159,17 @@
     <el-dialog v-model="userDetailVisible" title="用户详情" width="680px">
       <el-descriptions v-if="selectedUser" :column="2" border>
         <el-descriptions-item label="微信昵称">{{ userName(selectedUser) }}</el-descriptions-item>
-        <el-descriptions-item label="手机号">{{ selectedUser.phone || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="手机号">
+          <span>{{ revealedPhone ?? selectedUser.phone ?? "-" }}</span>
+          <el-button
+            v-if="hasPermission('member:phone:view') && revealedPhone === null"
+            class="phone-reveal"
+            link
+            type="primary"
+            :loading="phoneLoading"
+            @click="loadFullPhone"
+          >查看完整号码</el-button>
+        </el-descriptions-item>
         <el-descriptions-item label="是否会员">{{ selectedUser.memberships?.length ? "是" : "否" }}</el-descriptions-item>
         <el-descriptions-item label="当前等级">{{ selectedUser.memberships?.[0]?.level.name || "-" }}</el-descriptions-item>
         <el-descriptions-item label="openid">{{ selectedUser.openid || "-" }}</el-descriptions-item>
@@ -162,7 +185,16 @@
         <el-form-item label="昵称"><el-input v-model="userEditForm.nickname" maxlength="80" /></el-form-item>
         <el-form-item label="手机号">
           <el-input v-model="userEditForm.phone" maxlength="30" :disabled="userEditForm.clearPhone" placeholder="留空则保持原手机号" />
-          <div class="muted-text">当前：{{ selectedUser?.phone || "未绑定" }}</div>
+          <div class="muted-text">
+            当前：{{ revealedPhone ?? selectedUser?.phone ?? "未绑定" }}
+            <el-button
+              v-if="hasPermission('member:phone:view') && revealedPhone === null"
+              link
+              type="primary"
+              :loading="phoneLoading"
+              @click="loadFullPhone"
+            >查看完整号码</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="清除手机号"><el-switch v-model="userEditForm.clearPhone" /></el-form-item>
       </el-form>
@@ -250,8 +282,9 @@ import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
 import { currentRoute } from "../../router";
-import { changeMembershipLevel, deleteUser, disableMembership, grantMembership, listMemberLevels, listMemberships, listUsers, renewMembership, updateUser } from "../../services/admin";
+import { changeMembershipLevel, deleteUser, disableMembership, grantMembership, listMemberLevels, listMemberships, listUsers, revealUserPhone, renewMembership, updateUser } from "../../services/admin";
 import type { AdminAppUser, MemberLevel, UserMembership } from "../../services/types";
+import { useAdminSession } from "../../stores/admin-session";
 
 const users = ref<AdminAppUser[]>([]);
 const levels = ref<MemberLevel[]>([]);
@@ -269,6 +302,10 @@ const selectedMembership = ref<UserMembership | null>(null);
 const selectedUser = ref<AdminAppUser | null>(null);
 const userDetailVisible = ref(false);
 const userEditVisible = ref(false);
+const revealedPhone = ref<string | null>(null);
+const phoneLoading = ref(false);
+const phoneLoadingUserId = ref<string | null>(null);
+const revealedPhones = reactive<Record<string, string | null>>({});
 const actionMode = ref<"renew" | "disable" | "changeLevel">("renew");
 const grantForm = reactive({ userId: "", levelId: "", durationDays: undefined as number | undefined, source: "ADMIN_GRANT", remark: "" });
 const actionForm = reactive({ durationDays: 365, levelId: "", reason: "", remark: "" });
@@ -276,6 +313,7 @@ const userEditForm = reactive({ nickname: "", phone: "", clearPhone: false });
 const enabledLevels = computed(() => levels.value.filter((item) => item.enabled));
 const isUserList = computed(() => currentRoute.value.path === "/users");
 const actionTitle = computed(() => (actionMode.value === "renew" ? "续期会员" : actionMode.value === "disable" ? "停用会员" : "调整会员等级"));
+const { hasPermission } = useAdminSession();
 
 onMounted(async () => {
   await Promise.all([loadLevels(), loadMemberships(), loadUsers()]);
@@ -349,13 +387,51 @@ function openGrantLog(row: UserMembership) {
 
 function openUserDetail(row: AdminAppUser) {
   selectedUser.value = row;
+  revealedPhone.value = null;
   userDetailVisible.value = true;
 }
 
 function openEditUser(row: AdminAppUser) {
   selectedUser.value = row;
+  revealedPhone.value = null;
   Object.assign(userEditForm, { nickname: row.nickname ?? row.wechatNickname ?? "", phone: "", clearPhone: false });
   userEditVisible.value = true;
+}
+
+async function loadFullPhone() {
+  if (!selectedUser.value || phoneLoading.value) return;
+  phoneLoading.value = true;
+  try {
+    const result = await revealUserPhone(selectedUser.value.id);
+    revealedPhone.value = result.phone ?? "";
+    revealedPhones[selectedUser.value.id] = result.phone;
+  } catch {
+    ElMessage.error("完整手机号读取失败，请检查账号权限");
+  } finally {
+    phoneLoading.value = false;
+  }
+}
+
+async function loadFullPhoneFor(row: AdminAppUser) {
+  if (phoneLoadingUserId.value) return;
+  phoneLoadingUserId.value = row.id;
+  try {
+    const result = await revealUserPhone(row.id);
+    revealedPhones[row.id] = result.phone;
+  } catch {
+    ElMessage.error("完整手机号读取失败，请检查账号权限");
+  } finally {
+    phoneLoadingUserId.value = null;
+  }
+}
+
+function hasRevealedPhone(userId: string) {
+  return Object.prototype.hasOwnProperty.call(revealedPhones, userId);
+}
+
+function visiblePhone(user: AdminAppUser) {
+  if (!user.phone) return "未绑定";
+  return hasRevealedPhone(user.id) ? (revealedPhones[user.id] || "未绑定") : user.phone;
 }
 
 async function saveUser() {
@@ -445,5 +521,9 @@ function formatDate(value: string | null | undefined) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.phone-reveal {
+  margin-left: 8px;
 }
 </style>

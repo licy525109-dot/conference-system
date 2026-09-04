@@ -54,6 +54,7 @@ export const ADMIN_PERMISSIONS = [
   { code: "platform:view", name: "查看 SaaS 平台控制面", group: "平台运营" },
   { code: "platform:write", name: "管理租户、套餐与平台接入", group: "平台运营" },
   { code: "member:view", name: "查看会员", group: "会员" },
+  { code: "member:phone:view", name: "查看用户完整手机号", group: "会员" },
   { code: "member:write", name: "编辑会员等级和会员状态", group: "会员" },
   { code: "member:benefit", name: "编辑会员权益和发放记录", group: "会员" },
   { code: "member:pricing", name: "编辑会员价规则", group: "会员" },

@@ -5,6 +5,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { CurrentAdmin } from "./current-admin";
+import { fetchPublicUrl } from "../security/public-outbound-fetch";
 
 export interface UploadedMaterialFile {
   buffer: Buffer;
@@ -444,13 +445,7 @@ async function diagnoseMaterialUrl(url: string) {
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchPublicUrl(url, init, { timeoutMs, maxRedirects: 3 });
 }
 
 function normalizePublicOrigin(value: string) {

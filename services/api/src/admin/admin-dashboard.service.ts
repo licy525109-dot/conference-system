@@ -74,6 +74,7 @@ export class AdminDashboardService {
           id: true,
           name: true,
           stock: true,
+          lockedStock: true,
           soldCount: true,
           conference: {
             select: {
@@ -145,16 +146,17 @@ export class AdminDashboardService {
         name: sku.name,
         conferenceTitle: sku.conference.title,
         stock: sku.stock,
+        lockedStock: sku.lockedStock,
         soldCount: sku.soldCount,
-        remainingStock: Math.max(0, sku.stock - sku.soldCount)
+        remainingStock: Math.max(0, sku.stock - sku.lockedStock - sku.soldCount)
       })),
       inventoryAlerts: skuRows
-        .filter((sku) => sku.stock - sku.soldCount <= 10)
+        .filter((sku) => sku.stock - sku.lockedStock - sku.soldCount <= 10)
         .map((sku) => ({
           id: sku.id,
           name: sku.name,
           conferenceTitle: sku.conference.title,
-          remainingStock: Math.max(0, sku.stock - sku.soldCount)
+          remainingStock: Math.max(0, sku.stock - sku.lockedStock - sku.soldCount)
         })),
       recentOrders: recentOrders.map((order) => ({
         ...order,
@@ -223,6 +225,7 @@ export class AdminDashboardService {
         id: true,
         name: true,
         stock: true,
+        lockedStock: true,
         soldCount: true,
         conference: { select: { title: true } },
         orderItems: {
@@ -239,7 +242,7 @@ export class AdminDashboardService {
         stock: sku.stock,
         soldCount: range ? sku.orderItems.reduce((sum, item) => sum + item.quantity, 0) : sku.soldCount,
         revenueCent: sku.orderItems.reduce((sum, item) => sum + item.totalAmountCent, 0),
-        remainingStock: Math.max(0, sku.stock - sku.soldCount)
+        remainingStock: Math.max(0, sku.stock - sku.lockedStock - sku.soldCount)
       }))
     });
   }

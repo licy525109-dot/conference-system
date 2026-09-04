@@ -8,7 +8,7 @@
 2. 打开 `订单支付`，筛选 `只看异常`，处理新增异常订单。
 3. 打开 `报名名单`，确认新增报名记录、核销进度和后台备注。
 4. 打开 `操作日志`，查看导出、核销、备注修改和异常处理是否符合预期。
-5. 如有线上活动当天，额外检查 API 健康：`curl http://127.0.0.1:3001/api/health`。
+5. 如有线上活动当天，额外检查 API readiness：`curl http://127.0.0.1:3001/api/health/ready`。
 
 ## 2. 如何查看报名
 
@@ -158,7 +158,7 @@
 
 1. 刷新后台并重新登录。
 2. 缩小筛选范围，例如按会议或状态导出。
-3. 检查 API 健康：`curl http://127.0.0.1:3001/api/health`。
+3. 检查 API readiness：`curl http://127.0.0.1:3001/api/health/ready`。
 4. 查看 PM2 日志：`pm2 logs conference-api --lines 100`。
 5. 若仍失败，联系开发并提供筛选条件、时间点和错误提示。
 
@@ -167,7 +167,7 @@
 服务器检查命令：
 
 ```bash
-curl http://127.0.0.1:3001/api/health
+curl http://127.0.0.1:3001/api/health/ready
 pm2 status conference-api
 pm2 logs conference-api --lines 100
 ```

@@ -1,5 +1,6 @@
 import { BadGatewayException, GatewayTimeoutException, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { WechatPayConfig } from "./wechat-pay.config";
+import { WechatPayNotifyVerifier } from "./wechat-pay.notify-verifier";
 import { WechatPaySigner } from "./wechat-pay.signer";
 
 const REFUND_URL = "https://api.mch.weixin.qq.com/v3/refund/domestic/refunds";
@@ -20,7 +21,10 @@ export interface WechatPayRefundQueryResult extends WechatPayRefundResult {
 
 @Injectable()
 export class WechatPayRefundClient {
-  constructor(private readonly signer: WechatPaySigner) {}
+  constructor(
+    private readonly signer: WechatPaySigner,
+    private readonly responseVerifier: WechatPayNotifyVerifier = new WechatPayNotifyVerifier()
+  ) {}
 
   async createRefund(input: {
     config: WechatPayConfig;
@@ -54,10 +58,11 @@ export class WechatPayRefundClient {
 
     try {
       const response = await this.postRefund(serialized, authorization, controller.signal);
-      const payload = await safeJson(response);
+      const { payload, rawBody } = await readJsonResponse(response);
       if (!response.ok) {
         throw new WechatRefundHttpError(response.status, payload, response.headers.get("request-id"));
       }
+      this.verifyResponse(response, rawBody);
       const refundId = readString(payload.refund_id);
       const outRefundNo = readString(payload.out_refund_no);
       const status = readString(payload.status);
@@ -98,10 +103,11 @@ export class WechatPayRefundClient {
 
     try {
       const response = await this.getRefund(`${REFUND_URL}/${encodedRefundNo}`, authorization, controller.signal);
-      const payload = await safeJson(response);
+      const { payload, rawBody } = await readJsonResponse(response);
       if (!response.ok) {
         throw new WechatRefundHttpError(response.status, payload, response.headers.get("request-id"));
       }
+      this.verifyResponse(response, rawBody);
       const refundId = readString(payload.refund_id);
       const outRefundNo = readString(payload.out_refund_no);
       const status = readString(payload.status);
@@ -155,6 +161,18 @@ export class WechatPayRefundClient {
       signal
     });
   }
+
+  private verifyResponse(response: Response, rawBody: Buffer): void {
+    this.responseVerifier.verifySignature({
+      headers: {
+        timestamp: response.headers.get("wechatpay-timestamp") ?? "",
+        nonce: response.headers.get("wechatpay-nonce") ?? "",
+        signature: response.headers.get("wechatpay-signature") ?? "",
+        serial: response.headers.get("wechatpay-serial") ?? ""
+      },
+      rawBody
+    });
+  }
 }
 
 function readRefundNotifyUrl(): string {
@@ -174,12 +192,13 @@ function normalizeReason(value: string | null): string {
   return Array.from(reason).slice(0, 80).join("");
 }
 
-async function safeJson(response: Response): Promise<Record<string, unknown>> {
+async function readJsonResponse(response: Response): Promise<{ payload: Record<string, unknown>; rawBody: Buffer }> {
+  const rawBody = Buffer.from(await response.arrayBuffer());
   try {
-    const value = await response.json();
-    return isRecord(value) ? value : {};
+    const value = JSON.parse(rawBody.toString("utf8")) as unknown;
+    return { payload: isRecord(value) ? value : {}, rawBody };
   } catch {
-    return {};
+    return { payload: {}, rawBody };
   }
 }
 

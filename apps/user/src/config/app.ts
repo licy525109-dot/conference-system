@@ -34,6 +34,15 @@ if (!apiBaseUrl && isDevelopment) {
 if (!apiBaseUrl) {
   throw new Error(missingApiBaseUrlMessage);
 }
+if (isProduction && !isHttpsUrl(apiBaseUrl)) {
+  throw new Error("Production VITE_API_BASE_URL / VITE_MP_WEIXIN_API_BASE_URL must use HTTPS.");
+}
+if (isProduction && paymentMode !== "real") {
+  throw new Error("Production VITE_PAYMENT_MODE must be real.");
+}
+if (isProduction && env?.VITE_ENABLE_VCONSOLE === "true") {
+  throw new Error("VITE_ENABLE_VCONSOLE must be disabled in production.");
+}
 
 export const API_BASE_URL = apiBaseUrl;
 export const PAYMENT_MODE: PaymentMode = paymentMode;
@@ -57,4 +66,12 @@ function readPaymentMode(envValue: AppEnv | undefined, fallback: PaymentMode): P
 function readOptionalEnv(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
+}
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
 }

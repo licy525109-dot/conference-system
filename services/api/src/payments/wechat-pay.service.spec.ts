@@ -265,7 +265,7 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
     : [];
   const registrations: RegistrationRecord[] = [];
   const registrationAttendees: RegistrationAttendeeRecord[] = [];
-  const skus: SkuRecord[] = [{ id: "sku-1", soldCount: 0 }];
+  const skus: SkuRecord[] = [{ id: "sku-1", lockedStock: 1, soldCount: 0 }];
 
   const mock: PrismaMockShape = {
     orders,
@@ -286,6 +286,12 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
         const order = orders.find((item) => item.id === args.where.id);
         assert.ok(order);
         Object.assign(order, args.data);
+      },
+      updateMany: async (args) => {
+        const order = orders.find((item) => item.id === args.where.id && item.status === args.where.status);
+        if (!order) return { count: 0 };
+        Object.assign(order, args.data);
+        return { count: 1 };
       }
     },
     payment: {
@@ -345,6 +351,13 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
       }
     },
     registrationSku: {
+      updateMany: async (args) => {
+        const sku = skus.find((item) => item.id === args.where.id);
+        if (!sku || sku.lockedStock < args.where.lockedStock.gte) return { count: 0 };
+        sku.lockedStock -= args.data.lockedStock.decrement;
+        sku.soldCount += args.data.soldCount.increment;
+        return { count: 1 };
+      },
       update: async (args) => {
         const sku = skus.find((item) => item.id === args.where.id);
         assert.ok(sku);
@@ -370,6 +383,7 @@ function createOrder(orderNo: string, userId: string, openid: string): OrderReco
     paidAmountCent: null,
     status: OrderStatus.PENDING,
     expiredAt: new Date("2026-06-06T16:00:00.000Z"),
+    inventoryReservedAt: new Date("2026-06-06T15:00:00.000Z"),
     paidAt: null,
     registrationSnapshotJson: {
       conferenceId: "conf-1",
@@ -400,6 +414,7 @@ function toOrderRead(
     payableAmountCent: order.payableAmountCent,
     status: order.status,
     expiredAt: order.expiredAt,
+    inventoryReservedAt: order.inventoryReservedAt,
     registrationSnapshotJson: order.registrationSnapshotJson,
     paidAt: order.paidAt,
     conference: {
@@ -410,6 +425,7 @@ function toOrderRead(
       openid: order.openid
     },
     payments: payments.filter((payment) => payment.orderId === order.id).map((payment) => ({ provider: payment.provider, status: payment.status })),
+    items: [{ skuId: order.skuId, quantity: 1 }],
     registration: registration
       ? {
           id: registration.id,
@@ -508,6 +524,7 @@ interface PrismaMockShape {
     findFirst(args: OrderFindFirstArgs): Promise<ReturnType<typeof toOrderRead> | null>;
     findUnique(args: OrderFindUniqueArgs): Promise<ReturnType<typeof toOrderRead> | null>;
     update(args: OrderUpdateArgs): Promise<void>;
+    updateMany(args: OrderUpdateManyArgs): Promise<{ count: number }>;
   };
   payment: {
     findUnique(args: PaymentFindUniqueArgs): Promise<PaymentFindUniqueResult | null>;
@@ -521,6 +538,7 @@ interface PrismaMockShape {
     create(args: RegistrationAttendeeCreateArgs): Promise<void>;
   };
   registrationSku: {
+    updateMany(args: SkuUpdateManyArgs): Promise<{ count: number }>;
     update(args: SkuUpdateArgs): Promise<void>;
   };
   $transaction<TResult>(operation: (tx: PrismaMockShape) => Promise<TResult>): Promise<TResult>;
@@ -538,6 +556,7 @@ interface OrderRecord {
   paidAmountCent: number | null;
   status: OrderStatus;
   expiredAt: Date | null;
+  inventoryReservedAt: Date | null;
   paidAt: Date | null;
   registrationSnapshotJson: unknown;
 }
@@ -584,6 +603,7 @@ interface RegistrationAttendeeRecord {
 
 interface SkuRecord {
   id: string;
+  lockedStock: number;
   soldCount: number;
 }
 
@@ -605,6 +625,13 @@ interface OrderUpdateArgs {
     id: string;
   };
   data: Partial<Pick<OrderRecord, "status" | "paidAmountCent" | "paidAt">>;
+}
+
+interface OrderUpdateManyArgs extends OrderUpdateArgs {
+  where: {
+    id: string;
+    status: OrderStatus;
+  };
 }
 
 interface PaymentFindUniqueArgs {
@@ -651,5 +678,16 @@ interface SkuUpdateArgs {
     soldCount: {
       increment: number;
     };
+  };
+}
+
+interface SkuUpdateManyArgs {
+  where: {
+    id: string;
+    lockedStock: { gte: number };
+  };
+  data: {
+    lockedStock: { decrement: number };
+    soldCount: { increment: number };
   };
 }

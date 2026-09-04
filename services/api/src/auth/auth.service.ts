@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, InternalServerErrorException, UnauthorizedException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { PrismaService } from "../prisma.service";
 import { CurrentUser } from "./current-user";
 import { signJwt, verifyJwt } from "./jwt";
@@ -32,7 +32,7 @@ const ALLOWED_AVATAR_MIME_TYPES = new Map([
   ["image/png", ".png"],
   ["image/webp", ".webp"]
 ]);
-const UPLOADS_ROOT = join(process.cwd(), "uploads");
+const UPLOADS_ROOT = resolve(process.env.UPLOADS_DIR || join(inferProjectRoot(process.cwd()), "uploads"));
 const WECHAT_AVATAR_UPLOAD_DIR = join(UPLOADS_ROOT, "wechat-avatars");
 
 @Injectable()
@@ -230,12 +230,14 @@ export class AuthService {
   }
 
   private signUserToken(user: CurrentUser): string {
+    const now = Math.floor(Date.now() / 1000);
     return signJwt(
       {
         sub: user.id,
         openid: user.openid,
         type: "user",
-        iat: Math.floor(Date.now() / 1000)
+        iat: now,
+        exp: now + readTokenTtlSeconds(process.env.USER_JWT_TTL_SECONDS, 30 * 24 * 60 * 60, 60 * 60, 90 * 24 * 60 * 60)
       },
       this.getJwtSecret()
     );
@@ -253,6 +255,11 @@ export class AuthService {
 
     return secret;
   }
+}
+
+function readTokenTtlSeconds(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
 const userProfileSelect = {
@@ -406,4 +413,9 @@ function detectImageExtension(buffer: Buffer): string | null {
   }
 
   return null;
+}
+
+function inferProjectRoot(cwd: string): string {
+  if (cwd.endsWith("/services/api")) return resolve(cwd, "../..");
+  return cwd;
 }

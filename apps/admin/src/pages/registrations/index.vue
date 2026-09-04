@@ -114,7 +114,7 @@
         </el-form-item>
         <el-form-item label="票种" required>
           <el-select v-model="complimentaryForm.skuId" filterable style="width: 100%">
-            <el-option v-for="item in complimentarySkus" :key="item.id" :label="`${item.name}（剩余 ${Math.max(0, item.stock - item.soldCount)}）`" :value="item.id" />
+            <el-option v-for="item in complimentarySkus" :key="item.id" :label="`${item.name}（剩余 ${Math.max(0, item.stock - item.lockedStock - item.soldCount)}）`" :value="item.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="关联小程序用户">

@@ -127,6 +127,38 @@ describe("AdminOperationsService AI knowledge workflows", () => {
     }
   });
 
+  it("never sends an environment-managed AI key to a request-supplied Base URL", async () => {
+    const restoreEnv = withEnv({
+      AI_API_KEY: "sk-environment-secret",
+      AI_PROVIDER: "OPENAI_COMPATIBLE",
+      AI_BASE_URL: "https://trusted-provider.example/v1"
+    });
+    const originalFetch = globalThis.fetch;
+    let requestedUrl = "";
+    let authorization = "";
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      requestedUrl = String(input);
+      authorization = String((init?.headers as Record<string, string> | undefined)?.authorization ?? "");
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    const { prisma } = createAdminAiPrismaMock();
+    const service = new AdminOperationsService(prisma);
+
+    try {
+      const response = await service.testAiConfig(
+        { provider: "CUSTOM", baseUrl: "https://attacker.example/v1", apiKey: "sk-request-secret" },
+        currentAdmin
+      );
+
+      assert.equal(response.data.success, true);
+      assert.equal(requestedUrl, "https://trusted-provider.example/v1/models");
+      assert.equal(authorization, "Bearer sk-environment-secret");
+    } finally {
+      globalThis.fetch = originalFetch;
+      restoreEnv();
+    }
+  });
+
   it("exposes AI knowledge permission codes for RBAC", () => {
     assert.equal(ADMIN_PERMISSION_CODES.includes("ai-kb:view"), true);
     assert.equal(ADMIN_PERMISSION_CODES.includes("ai-kb:write"), true);

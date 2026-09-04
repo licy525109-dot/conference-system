@@ -108,7 +108,7 @@ describe("PaymentsService mock confirm", () => {
     assert.equal(prisma.couponRedemptions[0]?.usedAt?.toISOString(), now.toISOString());
   });
 
-  it("does not increment soldCount when registration creation hits an orderId unique conflict", async () => {
+  it("converts the claimed order reservation once when registration already exists", async () => {
     withMockPaymentMode();
     const prisma = createPrismaMock({
       initialSoldCount: 1,
@@ -120,7 +120,8 @@ describe("PaymentsService mock confirm", () => {
 
     assert.equal(response.data.registrationId, "registration-race");
     assert.equal(prisma.registrations.length, 1);
-    assert.equal(prisma.skus[0]?.soldCount, 1);
+    assert.equal(prisma.skus[0]?.soldCount, 2);
+    assert.equal(prisma.skus[0]?.lockedStock, 0);
   });
 
   it("hides orders that do not belong to current user", async () => {
@@ -214,6 +215,31 @@ describe("PaymentsService payment status", () => {
 
     await assert.rejects(() => service.getPaymentStatus("REG001", undefined), UnauthorizedException);
   });
+
+  it("reconciles a successful WeChat payment before returning pending status", async () => {
+    process.env.WECHAT_PAY_MODE = "real";
+    process.env.WECHAT_PAY_ENABLED = "true";
+    const prisma = createPrismaMock({ withWechatPayment: true });
+    const transactionClient = {
+      queryByOutTradeNo: async () => ({
+        outTradeNo: "WECHAT_REG001",
+        transactionId: "wx-transaction-query-1",
+        tradeState: "SUCCESS",
+        amountTotal: 100000,
+        successTime: now
+      })
+    };
+    const service = createService(prisma, transactionClient);
+
+    const response = await service.getPaymentStatus("REG001", currentUser);
+
+    assert.equal(response.data.status, OrderStatus.PAID);
+    assert.equal(response.data.paymentProvider, PaymentProvider.WECHAT);
+    assert.equal(response.data.paymentStatus, PaymentStatus.SUCCESS);
+    assert.equal(response.data.registrationId, "registration-1");
+    assert.equal(prisma.skus[0]?.lockedStock, 0);
+    assert.equal(prisma.skus[0]?.soldCount, 1);
+  });
 });
 
 describe("PaymentsService WeChat refund notify", () => {
@@ -230,6 +256,10 @@ describe("PaymentsService WeChat refund notify", () => {
     assert.equal(prisma.refundRecord.status, RefundStatus.SUCCESS);
     assert.equal(prisma.orderRecord.status, OrderStatus.REFUNDED);
     assert.equal(prisma.registrationUpdates[0]?.data.status, RegistrationStatus.REFUNDED);
+    assert.equal(prisma.skuRecord.soldCount, 0);
+    assert.equal(prisma.attendeeRecord.checkInStatus, CheckInStatus.CANCELLED);
+    assert.equal(prisma.couponRedemptionRecord.status, CouponRedemptionStatus.CANCELLED);
+    assert.equal(prisma.couponRedemptionRecord.usedAt, null);
   });
 
   it("does not downgrade a successful refund when a later failure notification arrives", async () => {
@@ -243,6 +273,7 @@ describe("PaymentsService WeChat refund notify", () => {
     assert.equal(prisma.refundRecord.status, RefundStatus.SUCCESS);
     assert.equal(prisma.refundUpdates.length, 0);
     assert.equal(prisma.orderRecord.status, OrderStatus.REFUNDED);
+    assert.equal(prisma.couponRedemptionRecord.status, CouponRedemptionStatus.CANCELLED);
   });
 
   it("keeps a processing refund notification non-terminal", async () => {
@@ -257,6 +288,83 @@ describe("PaymentsService WeChat refund notify", () => {
     assert.equal(prisma.refundUpdates[0]?.processedAt, null);
     assert.equal(prisma.refundUpdates[0]?.failedReason, null);
     assert.equal(prisma.orderRecord.status, OrderStatus.PAID);
+  });
+
+  it("routes a verified mall refund callback to mall finalization", async () => {
+    withWechatRefundNotifyConfig();
+    const order = { id: "mall-order-1", orderNo: "MALL001", userId: "user-1", paidAmountCent: 10000, payableAmountCent: 10000 };
+    const refund = {
+      id: "mall-refund-1",
+      outRefundNo: "MALL_REFUND_ORDER001",
+      refundNo: "MRF001",
+      mallOrderId: order.id,
+      afterSaleId: null,
+      amountCent: 10000,
+      status: RefundStatus.PROCESSING,
+      order
+    };
+    const finalizeCalls: string[] = [];
+    const prisma: any = {
+      refund: { findFirst: async () => null },
+      mallRefund: {
+        findFirst: async () => refund,
+        update: async ({ data }: any) => Object.assign(refund, data)
+      },
+      mallAfterSale: { update: async () => undefined },
+      $transaction: async (operation: (tx: any) => Promise<unknown>) => operation(prisma)
+    };
+    const verifier = new FakeRefundNotifyVerifier(refundNotifyPayload("SUCCESS", 10000, 10000, refund.outRefundNo));
+    const mallFinalization = {
+      finalizeIfFullyRefunded: async (mallOrderId: string) => {
+        finalizeCalls.push(mallOrderId);
+        return { fullyRefunded: true, finalizedNow: true, refundedAmountCent: 10000, paidAmountCent: 10000 };
+      }
+    };
+    const service = new PaymentsService(prisma as PrismaService, undefined, verifier, undefined, undefined, mallFinalization as never);
+
+    const response = await service.handleRefundNotify(refundNotifyRequest());
+
+    assert.deepEqual(response, { code: "SUCCESS", message: "OK" });
+    assert.equal(refund.status, RefundStatus.SUCCESS);
+    assert.deepEqual(finalizeCalls, [order.id]);
+  });
+
+  it("restores a mall order when WeChat closes the refund", async () => {
+    withWechatRefundNotifyConfig();
+    const order = { id: "mall-order-1", orderNo: "MALL001", userId: "user-1", status: "REFUNDING", paidAmountCent: 10000, payableAmountCent: 10000 };
+    const refund = {
+      id: "mall-refund-1",
+      outRefundNo: "MALL_REFUND_ORDER001",
+      refundNo: "MRF001",
+      mallOrderId: order.id,
+      afterSaleId: null,
+      previousOrderStatus: "SHIPPED",
+      amountCent: 10000,
+      status: RefundStatus.PROCESSING,
+      order
+    };
+    const prisma: any = {
+      refund: { findFirst: async () => null },
+      mallRefund: {
+        findFirst: async () => refund,
+        update: async ({ data }: any) => Object.assign(refund, data)
+      },
+      mallAfterSale: { update: async () => undefined },
+      mallOrder: {
+        updateMany: async ({ data }: any) => {
+          Object.assign(order, data);
+          return { count: 1 };
+        }
+      },
+      $transaction: async (operation: (tx: any) => Promise<unknown>) => operation(prisma)
+    };
+    const verifier = new FakeRefundNotifyVerifier(refundNotifyPayload("CLOSED", 10000, 10000, refund.outRefundNo));
+    const service = new PaymentsService(prisma as PrismaService, undefined, verifier);
+
+    await service.handleRefundNotify(refundNotifyRequest());
+
+    assert.equal(refund.status, RefundStatus.FAILED);
+    assert.equal(order.status, "SHIPPED");
   });
 
   it("rejects an unsupported WeChat refund status without changing local state", async () => {
@@ -325,9 +433,9 @@ function refundNotifyRequest() {
   };
 }
 
-function refundNotifyPayload(status: string, amountCent: number, totalAmountCent = 10000): Record<string, unknown> {
+function refundNotifyPayload(status: string, amountCent: number, totalAmountCent = 10000, outRefundNo = "REG_REFUND_ORDER001"): Record<string, unknown> {
   return {
-    out_refund_no: "REG_REFUND_ORDER001",
+    out_refund_no: outRefundNo,
     refund_id: "5030000708202609010000000001",
     refund_status: status,
     success_time: status === "SUCCESS" ? "2026-09-03T15:00:00+08:00" : undefined,
@@ -336,42 +444,93 @@ function refundNotifyPayload(status: string, amountCent: number, totalAmountCent
 }
 
 function createRefundNotifyPrismaMock(options: { refundStatus?: RefundStatus; orderStatus?: OrderStatus } = {}) {
-  const orderRecord = { id: "order-1", paidAmountCent: 10000, payableAmountCent: 10000, status: options.orderStatus ?? OrderStatus.PAID };
+  const orderRecord = { id: "order-1", orderNo: "ORDER001", paidAmountCent: 10000, payableAmountCent: 10000, status: options.orderStatus ?? OrderStatus.PAID };
   const refundRecord = {
     id: "refund-1",
     outRefundNo: "REG_REFUND_ORDER001",
     refundNo: "RF001",
+    orderId: orderRecord.id,
+    orderNo: orderRecord.orderNo,
+    userId: "user-1",
     amountCent: 10000,
     status: options.refundStatus ?? RefundStatus.PROCESSING,
     order: orderRecord
+  };
+  const skuRecord = { id: "sku-1", soldCount: 1 };
+  const registrationRecord = { id: "registration-1", orderId: orderRecord.id, status: RegistrationStatus.CONFIRMED };
+  const attendeeRecord = { id: "attendee-1", registrationId: registrationRecord.id, checkInStatus: CheckInStatus.PENDING };
+  const couponRedemptionRecord = {
+    id: "coupon-redemption-1",
+    orderId: orderRecord.id,
+    status: CouponRedemptionStatus.USED,
+    usedAt: now
   };
   const refundUpdates: Array<Record<string, any>> = [];
   const registrationUpdates: Array<Record<string, any>> = [];
   const prisma: any = {
     refundRecord,
     orderRecord,
+    skuRecord,
+    attendeeRecord,
+    couponRedemptionRecord,
     refundUpdates,
     registrationUpdates,
+    mallRefund: { findFirst: async () => null },
+    order: {
+      update: async ({ data }: any) => {
+        Object.assign(orderRecord, data);
+        return orderRecord;
+      },
+      findUnique: async () => orderRecord,
+      updateMany: async ({ where, data }: any) => {
+        if (orderRecord.id !== where.id || orderRecord.status !== where.status) return { count: 0 };
+        Object.assign(orderRecord, data);
+        return { count: 1 };
+      }
+    },
+    orderItem: {
+      findMany: async () => [{ skuId: skuRecord.id, quantity: 1 }]
+    },
+    registrationSku: {
+      updateMany: async ({ where, data }: any) => {
+        if (where.id !== skuRecord.id || skuRecord.soldCount < where.soldCount.gte) return { count: 0 };
+        skuRecord.soldCount -= data.soldCount.decrement;
+        return { count: 1 };
+      }
+    },
+    registration: {
+      findUnique: async () => registrationRecord,
+      update: async (args: any) => {
+        registrationUpdates.push(args);
+        Object.assign(registrationRecord, args.data);
+        return registrationRecord;
+      }
+    },
+    registrationAttendee: {
+      updateMany: async ({ data }: any) => {
+        Object.assign(attendeeRecord, data);
+        return { count: 1 };
+      }
+    },
+    couponRedemption: {
+      updateMany: async ({ where, data }: any) => {
+        if (couponRedemptionRecord.orderId !== where.orderId || couponRedemptionRecord.status !== where.status) return { count: 0 };
+        Object.assign(couponRedemptionRecord, data);
+        return { count: 1 };
+      }
+    },
     refund: {
       findFirst: async () => refundRecord,
       update: async ({ data }: any) => {
         refundUpdates.push(data);
         Object.assign(refundRecord, data);
         return refundRecord;
-      }
-    },
-    mallRefund: { findFirst: async () => null },
-    order: {
-      update: async ({ data }: any) => {
-        Object.assign(orderRecord, data);
-        return orderRecord;
-      }
-    },
-    registration: {
-      updateMany: async (args: any) => {
-        registrationUpdates.push(args);
-        return { count: 1 };
-      }
+      },
+      aggregate: async ({ where }: any) => ({
+        _sum: {
+          amountCent: refundRecord.orderId === where.orderId && refundRecord.status === where.status ? refundRecord.amountCent : 0
+        }
+      })
     },
     $transaction: async (operation: (tx: any) => Promise<unknown>) => operation(prisma)
   };
@@ -399,14 +558,14 @@ function withMockPaymentMode(): void {
   process.env.WECHAT_PAY_MOCK = "true";
 }
 
-function createService(prisma: PrismaService): PaymentsService {
+function createService(prisma: PrismaService, transactionClient?: { queryByOutTradeNo(outTradeNo: string): Promise<unknown> }): PaymentsService {
   class TestPaymentsService extends PaymentsService {
     protected override getCurrentTime(): Date {
       return now;
     }
   }
 
-  return new TestPaymentsService(prisma);
+  return new TestPaymentsService(prisma, undefined, undefined, undefined, undefined, undefined, transactionClient as never);
 }
 
 function createPrismaMock(options: PrismaMockOptions = {}) {
@@ -423,11 +582,21 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
       registrationSnapshotJson: null
     })
   ];
-  const payments: PaymentRecord[] = [];
+  const payments: PaymentRecord[] = options.withWechatPayment
+    ? [{
+        id: "payment-wechat-1",
+        orderId: "order-REG001",
+        provider: PaymentProvider.WECHAT,
+        status: PaymentStatus.PENDING,
+        outTradeNo: "WECHAT_REG001",
+        amountCent: 100000,
+        paidAt: null
+      }]
+    : [];
   const registrations: RegistrationRecord[] = [];
   const registrationAttendees: RegistrationAttendeeRecord[] = [];
   const couponRedemptions: CouponRedemptionRecord[] = [...(options.couponRedemptions ?? [])];
-  const skus: SkuRecord[] = [{ id: "sku-1", soldCount: options.initialSoldCount ?? 0 }];
+  const skus: SkuRecord[] = [{ id: "sku-1", lockedStock: 1, soldCount: options.initialSoldCount ?? 0 }];
 
   const mock: PrismaMockShape = {
     orders,
@@ -449,6 +618,12 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
         const order = orders.find((item) => item.id === args.where.id);
         assert.ok(order);
         Object.assign(order, args.data);
+      },
+      updateMany: async (args: OrderUpdateManyArgs) => {
+        const order = orders.find((item) => item.id === args.where.id && item.status === args.where.status);
+        if (!order) return { count: 0 };
+        Object.assign(order, args.data);
+        return { count: 1 };
       }
     },
     payment: {
@@ -506,6 +681,13 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
         const sku = skus.find((item) => item.id === args.where.id);
         assert.ok(sku);
         sku.soldCount += args.data.soldCount.increment;
+      },
+      updateMany: async (args: SkuUpdateManyArgs) => {
+        const sku = skus.find((item) => item.id === args.where.id);
+        if (!sku || sku.lockedStock < args.where.lockedStock.gte) return { count: 0 };
+        sku.lockedStock -= args.data.lockedStock.decrement;
+        sku.soldCount += args.data.soldCount.increment;
+        return { count: 1 };
       }
     },
     couponRedemption: {
@@ -535,6 +717,7 @@ function createOrder(orderNo: string, userId: string, status: OrderStatus, overr
     paidAmountCent: null,
     status,
     expiredAt: new Date("2026-06-06T15:00:00.000Z"),
+    inventoryReservedAt: new Date("2026-06-06T14:49:00.000Z"),
     paidAt: null,
     registrationSnapshotJson: {
       conferenceId: "conf-1",
@@ -547,6 +730,7 @@ function createOrder(orderNo: string, userId: string, status: OrderStatus, overr
         phone: "13900000000"
       }
     },
+    items: [{ skuId: "sku-1", quantity: 1 }],
     ...overrides
   };
 }
@@ -572,12 +756,17 @@ function toOrderRead(
     payableAmountCent: order.payableAmountCent,
     status: order.status,
     expiredAt: order.expiredAt,
+    inventoryReservedAt: order.inventoryReservedAt,
     registrationSnapshotJson: order.registrationSnapshotJson,
     paidAt: order.paidAt,
     conference: {
-      checkInEnabled
+      checkInEnabled,
+      title: "测试会议"
     },
-    payments: payments.filter((payment) => payment.orderId === order.id).map((payment) => ({ provider: payment.provider, status: payment.status })),
+    items: order.items,
+    payments: payments
+      .filter((payment) => payment.orderId === order.id)
+      .map((payment) => ({ provider: payment.provider, status: payment.status, outTradeNo: payment.outTradeNo })),
     registration: registration
       ? {
           id: registration.id,
@@ -598,6 +787,7 @@ interface PrismaMockOptions {
   simulateRegistrationCreateConflict?: boolean;
   checkInEnabled?: boolean;
   couponRedemptions?: CouponRedemptionRecord[];
+  withWechatPayment?: boolean;
 }
 
 interface PrismaMockShape {
@@ -611,6 +801,7 @@ interface PrismaMockShape {
     findFirst(args: OrderFindFirstArgs): Promise<ReturnType<typeof toOrderRead> | null>;
     findUnique(args: OrderFindUniqueArgs): Promise<ReturnType<typeof toOrderRead> | null>;
     update(args: OrderUpdateArgs): Promise<void>;
+    updateMany(args: OrderUpdateManyArgs): Promise<{ count: number }>;
   };
   payment: {
     upsert(args: PaymentUpsertArgs): Promise<PaymentRecord>;
@@ -624,6 +815,7 @@ interface PrismaMockShape {
   };
   registrationSku: {
     update(args: SkuUpdateArgs): Promise<void>;
+    updateMany(args: SkuUpdateManyArgs): Promise<{ count: number }>;
   };
   couponRedemption: {
     updateMany(args: CouponRedemptionUpdateManyArgs): Promise<void>;
@@ -641,8 +833,10 @@ interface OrderRecord {
   paidAmountCent: number | null;
   status: OrderStatus;
   expiredAt: Date | null;
+  inventoryReservedAt: Date | null;
   paidAt: Date | null;
   registrationSnapshotJson: unknown;
+  items: Array<{ skuId: string; quantity: number }>;
 }
 
 interface PaymentRecord {
@@ -685,6 +879,7 @@ interface RegistrationAttendeeRecord {
 
 interface SkuRecord {
   id: string;
+  lockedStock: number;
   soldCount: number;
 }
 
@@ -712,6 +907,14 @@ interface OrderFindUniqueArgs {
 interface OrderUpdateArgs {
   where: {
     id: string;
+  };
+  data: Partial<Pick<OrderRecord, "status" | "paidAmountCent" | "paidAt">>;
+}
+
+interface OrderUpdateManyArgs {
+  where: {
+    id: string;
+    status: OrderStatus;
   };
   data: Partial<Pick<OrderRecord, "status" | "paidAmountCent" | "paidAt">>;
 }
@@ -746,6 +949,17 @@ interface SkuUpdateArgs {
     soldCount: {
       increment: number;
     };
+  };
+}
+
+interface SkuUpdateManyArgs {
+  where: {
+    id: string;
+    lockedStock: { gte: number };
+  };
+  data: {
+    lockedStock: { decrement: number };
+    soldCount: { increment: number };
   };
 }
 

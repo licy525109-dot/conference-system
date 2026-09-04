@@ -48,6 +48,7 @@ export interface Sku {
   description: string | null;
   priceCent: number;
   stock: number;
+  lockedStock: number;
   soldCount: number;
   status: "ACTIVE" | "INACTIVE";
   saleStartAt: string | null;

@@ -77,6 +77,7 @@
 import { computed } from "vue";
 import type { ConferenceDetail, RegistrationSku } from "@/services/conference";
 import { formatDateTime } from "@/utils/date";
+import { remainingRegistrationStock } from "@/utils/registration-stock";
 
 const props = defineProps<{
   conference: ConferenceDetail;
@@ -103,7 +104,7 @@ const ticketSummary = computed(() => {
 });
 
 function remainingStock(sku: RegistrationSku): number {
-  return Math.max(sku.stock - sku.soldCount, 0);
+  return remainingRegistrationStock(sku);
 }
 </script>
 

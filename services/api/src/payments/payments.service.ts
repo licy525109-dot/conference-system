@@ -1,10 +1,14 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
 import { OrderStatus, PaymentProvider, PaymentStatus, RefundStatus } from "@prisma/client";
+import { AdminNotificationsService } from "../admin/admin-notifications.service";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { PaymentSuccessService } from "./payment-success.service";
-import { readWechatPayConfig } from "./wechat-pay.config";
+import { MallRefundFinalizationService } from "./mall-refund-finalization.service";
+import { RegistrationRefundFinalizationService } from "./registration-refund-finalization.service";
+import { isWechatPayEnabled, readWechatPayConfig } from "./wechat-pay.config";
 import { WechatPayEncryptedResource, WechatPayHeaders, WechatPayNotifyVerifier } from "./wechat-pay.notify-verifier";
+import { WechatPayTransactionClient } from "./wechat-pay.transaction-client";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -38,7 +42,11 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentSuccessService: PaymentSuccessService = new PaymentSuccessService(prisma),
-    private readonly refundNotifyVerifier: WechatPayNotifyVerifier = new WechatPayNotifyVerifier()
+    private readonly refundNotifyVerifier: WechatPayNotifyVerifier = new WechatPayNotifyVerifier(),
+    @Optional() private readonly notificationsService?: AdminNotificationsService,
+    @Optional() private readonly registrationRefundFinalization: RegistrationRefundFinalizationService = new RegistrationRefundFinalizationService(prisma),
+    @Optional() private readonly mallRefundFinalization: MallRefundFinalizationService = new MallRefundFinalizationService(prisma),
+    @Optional() private readonly wechatPayTransactionClient?: WechatPayTransactionClient
   ) {}
 
   async confirmMockPayment(input: unknown, currentUser: CurrentUser | undefined): Promise<ApiResponse<MockPaymentConfirmResponse>> {
@@ -72,7 +80,7 @@ export class PaymentsService {
       throw new ConflictException("Only pending or paid orders can be confirmed");
     }
 
-    if (order.status === OrderStatus.PENDING && order.expiredAt && order.expiredAt < this.getCurrentTime()) {
+    if (order.status === OrderStatus.PENDING && order.expiredAt && order.expiredAt <= this.getCurrentTime()) {
       throw new ConflictException("Order has expired");
     }
 
@@ -92,30 +100,44 @@ export class PaymentsService {
       throw new UnauthorizedException("Bearer token is required");
     }
 
-    const order = await this.prisma.order.findFirst({
-      where: {
-        orderNo,
-        userId: currentUser.id
-      },
-      select: {
-        orderNo: true,
-        status: true,
-        paidAt: true,
-        payments: {
-          orderBy: [{ createdAt: "desc" }],
-          take: 1,
-          select: {
-            provider: true,
-            status: true
-          }
-        },
-        registration: {
-          select: {
-            id: true
-          }
+    let order = await this.findOwnedPaymentStatusOrder(orderNo, currentUser.id);
+
+    if (!order) {
+      throw new NotFoundException("Order not found");
+    }
+
+    const pendingWechatPayment = order.status === OrderStatus.PENDING
+      ? order.payments.find((payment) => payment.provider === PaymentProvider.WECHAT && payment.outTradeNo)
+      : null;
+    if (pendingWechatPayment && this.wechatPayTransactionClient && isWechatPayEnabled()) {
+      try {
+        const transaction = await this.wechatPayTransactionClient.queryByOutTradeNo(pendingWechatPayment.outTradeNo);
+        if (
+          transaction.tradeState === "SUCCESS" &&
+          transaction.transactionId &&
+          Number.isInteger(transaction.amountTotal) &&
+          (transaction.amountTotal ?? -1) >= 0
+        ) {
+          await this.paymentSuccessService.processPaymentSuccess({
+            provider: PaymentProvider.WECHAT,
+            orderNo,
+            outTradeNo: pendingWechatPayment.outTradeNo,
+            transactionId: transaction.transactionId,
+            paidAmountCent: transaction.amountTotal!,
+            paidAt: transaction.successTime ?? this.getCurrentTime(),
+            rawSummary: { source: "USER_PAYMENT_STATUS_QUERY" }
+          });
+          order = await this.findOwnedPaymentStatusOrder(orderNo, currentUser.id);
         }
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: "WECHAT_PAY_USER_STATUS_RECONCILIATION_FAILED",
+          orderNo,
+          outTradeNo: pendingWechatPayment.outTradeNo,
+          message: error instanceof Error ? error.message : "unknown error"
+        }));
       }
-    });
+    }
 
     if (!order) {
       throw new NotFoundException("Order not found");
@@ -129,6 +151,34 @@ export class PaymentsService {
       paymentProvider: latestPayment?.provider ?? null,
       paymentStatus: latestPayment?.status ?? null,
       registrationId: order.registration?.id ?? null
+    });
+  }
+
+  private findOwnedPaymentStatusOrder(orderNo: string, userId: string) {
+    return this.prisma.order.findFirst({
+      where: {
+        orderNo,
+        userId
+      },
+      select: {
+        orderNo: true,
+        status: true,
+        paidAt: true,
+        payments: {
+          orderBy: [{ createdAt: "desc" }],
+          take: 1,
+          select: {
+            provider: true,
+            status: true,
+            outTradeNo: true
+          }
+        },
+        registration: {
+          select: {
+            id: true
+          }
+        }
+      }
     });
   }
 
@@ -157,7 +207,10 @@ export class PaymentsService {
       if (registrationRefund.order && input.totalAmountCent !== (registrationRefund.order.paidAmountCent ?? registrationRefund.order.payableAmountCent)) {
         throw new ConflictException("WeChat refund total does not match registration order paid amount");
       }
-      if (registrationRefund.status === "SUCCESS") return;
+      if (registrationRefund.status === "SUCCESS") {
+        if (registrationRefund.orderId) await this.registrationRefundFinalization.finalizeIfFullyRefunded(registrationRefund.orderId);
+        return;
+      }
       if (registrationRefund.status === resultStatus) return;
       await this.prisma.$transaction(async (tx) => {
         await tx.refund.update({
@@ -170,10 +223,19 @@ export class PaymentsService {
             failedReason: resultStatus === "FAILED" ? input.status : null
           }
         });
-        if (resultStatus === "SUCCESS" && registrationRefund.order && registrationRefund.amountCent >= (registrationRefund.order.paidAmountCent ?? registrationRefund.order.payableAmountCent)) {
-          await tx.order.update({ where: { id: registrationRefund.order.id }, data: { status: OrderStatus.REFUNDED } });
-          await tx.registration.updateMany({ where: { orderId: registrationRefund.order.id }, data: { status: "REFUNDED" } });
-        }
+      });
+      if (resultStatus === RefundStatus.SUCCESS && registrationRefund.orderId) {
+        await this.registrationRefundFinalization.finalizeIfFullyRefunded(registrationRefund.orderId);
+      }
+      await this.notificationsService?.dispatchRefundStatus({
+        userId: registrationRefund.userId,
+        refundId: registrationRefund.id,
+        refundNo: registrationRefund.refundNo,
+        orderNo: registrationRefund.orderNo,
+        sourceType: "REGISTRATION",
+        amountCent: registrationRefund.amountCent,
+        status: resultStatus,
+        reason: resultStatus === RefundStatus.FAILED ? input.status : null
       });
       return;
     }
@@ -187,7 +249,10 @@ export class PaymentsService {
     if (input.totalAmountCent !== (mallRefund.order.paidAmountCent ?? mallRefund.order.payableAmountCent)) {
       throw new ConflictException("WeChat refund total does not match mall order paid amount");
     }
-    if (mallRefund.status === "SUCCESS") return;
+    if (mallRefund.status === "SUCCESS") {
+      await this.mallRefundFinalization.finalizeIfFullyRefunded(mallRefund.mallOrderId);
+      return;
+    }
     if (mallRefund.status === resultStatus) return;
     await this.prisma.$transaction(async (tx) => {
       await tx.mallRefund.update({
@@ -200,10 +265,26 @@ export class PaymentsService {
           failedReason: resultStatus === "FAILED" ? input.status : null
         }
       });
-      if (resultStatus === "SUCCESS" && mallRefund.amountCent >= (mallRefund.order.paidAmountCent ?? mallRefund.order.payableAmountCent)) {
-        await tx.mallOrder.update({ where: { id: mallRefund.mallOrderId }, data: { status: "REFUNDED" } });
-        if (mallRefund.afterSaleId) await tx.mallAfterSale.update({ where: { id: mallRefund.afterSaleId }, data: { status: "COMPLETED", handledAt: input.successTime ?? new Date() } });
+      if (resultStatus === "SUCCESS" && mallRefund.afterSaleId) await tx.mallAfterSale.update({ where: { id: mallRefund.afterSaleId }, data: { status: "COMPLETED", handledAt: input.successTime ?? new Date() } });
+      if (input.status === "CLOSED") {
+        await tx.mallOrder.updateMany({
+          where: { id: mallRefund.mallOrderId, status: "REFUNDING" },
+          data: { status: restoreMallOrderStatus(mallRefund.previousOrderStatus) }
+        });
       }
+    });
+    if (resultStatus === RefundStatus.SUCCESS) {
+      await this.mallRefundFinalization.finalizeIfFullyRefunded(mallRefund.mallOrderId);
+    }
+    await this.notificationsService?.dispatchRefundStatus({
+      userId: mallRefund.order.userId,
+      refundId: mallRefund.id,
+      refundNo: mallRefund.refundNo,
+      orderNo: mallRefund.order.orderNo,
+      sourceType: "MALL",
+      amountCent: mallRefund.amountCent,
+      status: resultStatus,
+      reason: resultStatus === RefundStatus.FAILED ? input.status : null
     });
   }
 }
@@ -217,6 +298,7 @@ function ok<TData>(data: TData): ApiResponse<TData> {
 }
 
 function isMockPaymentEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
   return process.env.PAYMENT_MODE === "mock" || process.env.WECHAT_PAY_MOCK === "true" || process.env.WECHAT_PAY_MODE === "mock";
 }
 
@@ -290,6 +372,11 @@ function mapWechatRefundStatus(status: string): RefundStatus {
   if (status === "PROCESSING") return RefundStatus.PROCESSING;
   if (status === "CLOSED" || status === "ABNORMAL") return RefundStatus.FAILED;
   throw new BadRequestException("WeChat refund notify contains an unsupported status");
+}
+
+function restoreMallOrderStatus(status: string | null | undefined): "PAID" | "SHIPPED" | "COMPLETED" {
+  if (status === "SHIPPED" || status === "COMPLETED") return status;
+  return "PAID";
 }
 
 function readRequiredString(input: Record<string, unknown>, field: string): string {

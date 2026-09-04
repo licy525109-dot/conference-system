@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
 import {
   AuditAction,
   NotificationChannelType,
@@ -14,11 +14,26 @@ import { CurrentAdmin } from "./current-admin";
 import { WechatSubscribeClient } from "./wechat-subscribe-client";
 
 @Injectable()
-export class AdminNotificationsService {
+export class AdminNotificationsService implements OnModuleInit, OnModuleDestroy {
+  private static readonly staleSendingTaskMs = 10 * 60 * 1000;
+  private taskTimer?: ReturnType<typeof setInterval>;
+  private processingDueTasks = false;
+
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly wechatSubscribeClient?: WechatSubscribeClient
   ) {}
+
+  onModuleInit(): void {
+    if (process.env.NODE_ENV === "test" || process.env.NOTIFICATION_TASK_WORKER_ENABLED === "false") return;
+    this.taskTimer = setInterval(() => void this.processDueTasks(), 15_000);
+    this.taskTimer.unref?.();
+    void this.processDueTasks();
+  }
+
+  onModuleDestroy(): void {
+    if (this.taskTimer) clearInterval(this.taskTimer);
+  }
 
   async subscribe(input: unknown, currentUser: CurrentUser) {
     const body = readObject(input);
@@ -26,6 +41,11 @@ export class AdminNotificationsService {
     const channel = readChannel(body.channel ?? NotificationChannelType.WECHAT_SUBSCRIBE);
     const enabled = readOptionalBoolean(body.enabled) ?? true;
     const phone = readOptionalString(body.phone);
+
+    const template = await this.prisma.notificationTemplate.findUnique({ where: { code: templateCode } });
+    if (!template || template.channel !== channel || template.status !== NotificationTemplateStatus.ACTIVE) {
+      throw new BadRequestException("通知模板不存在、未启用或通道不匹配");
+    }
 
     const item = await this.prisma.notificationSubscription.upsert({
       where: {
@@ -51,6 +71,129 @@ export class AdminNotificationsService {
     });
 
     return ok(formatSubscription(item));
+  }
+
+  async getSubscriptionConfig(query: Record<string, unknown>) {
+    const codes = splitLines(readOptionalString(query.codes)).slice(0, 10);
+    const templates = await this.prisma.notificationTemplate.findMany({
+      where: {
+        channel: NotificationChannelType.WECHAT_SUBSCRIBE,
+        ...(codes.length ? { code: { in: codes } } : {})
+      },
+      orderBy: [{ updatedAt: "desc" }]
+    });
+    const items = await Promise.all(templates.map(async (template) => {
+      const runtime = await this.resolveChannelRuntime(template.channel, template.templateKey, template.contentJson, template.code);
+      const content = isRecord(template.contentJson) ? template.contentJson : {};
+      const templateId = template.templateKey || runtime.templateKey || null;
+      const enabled = template.status === NotificationTemplateStatus.ACTIVE && Boolean(templateId) && runtime.canSend;
+      return {
+        templateCode: template.code,
+        templateId,
+        name: template.name,
+        purpose: readOptionalString(content.purpose) ?? template.code,
+        page: readPagePath({}, template.contentJson),
+        enabled,
+        message: enabled
+          ? "可申请接收下一次微信服务通知"
+          : template.status !== NotificationTemplateStatus.ACTIVE
+            ? "管理员尚未启用该订阅消息模板"
+            : runtime.unavailableReason || "微信订阅消息通道尚未就绪"
+      };
+    }));
+    return ok({ items });
+  }
+
+  async dispatchBusinessNotification(input: BusinessNotificationInput) {
+    const userId = input.userId;
+    if (!userId) return { created: false, taskId: null, delivery: "NO_USER" as const };
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.userNotification.findUnique({ where: { sourceKey: input.sourceKey }, select: { id: true } });
+        if (existing) return { created: false, taskId: null };
+
+        await tx.userNotification.create({
+          data: {
+            userId,
+            type: input.type,
+            title: input.title,
+            summary: input.summary ?? null,
+            route: input.route ?? null,
+            sourceKey: input.sourceKey,
+            payloadJson: input.payloadJson
+          }
+        });
+
+        if (!input.templateCode) return { created: true, taskId: null };
+        const template = await tx.notificationTemplate.findUnique({ where: { code: input.templateCode } });
+        if (!template || template.status !== NotificationTemplateStatus.ACTIVE || template.channel !== NotificationChannelType.WECHAT_SUBSCRIBE) {
+          return { created: true, taskId: null };
+        }
+        const task = await tx.notificationTask.create({
+          data: {
+            name: input.taskName ?? input.title,
+            templateId: template.id,
+            channel: template.channel,
+            targetType: "BUSINESS_EVENT",
+            status: NotificationTaskStatus.PENDING,
+            payloadJson: {
+              userIds: [userId],
+              variables: input.variables ?? {},
+              ...(input.route ? { page: normalizeMiniProgramPage(input.route) } : {})
+            } satisfies Prisma.InputJsonObject
+          }
+        });
+        return { created: true, taskId: task.id };
+      });
+
+      if (!created.taskId) {
+        return { ...created, delivery: created.created ? "IN_APP_ONLY" as const : "DUPLICATE" as const };
+      }
+      try {
+        const sent = await this.sendNow(created.taskId);
+        return { ...created, delivery: "WECHAT_ATTEMPTED" as const, result: sent.data.result };
+      } catch (error) {
+        logBusinessNotificationError(error, input, created.taskId);
+        return { ...created, delivery: "WECHAT_FAILED" as const };
+      }
+    } catch (error) {
+      if (isUniqueConstraintError(error)) return { created: false, taskId: null, delivery: "DUPLICATE" as const };
+      logBusinessNotificationError(error, input, null);
+      return { created: false, taskId: null, delivery: "FAILED" as const };
+    }
+  }
+
+  dispatchRefundStatus(input: RefundStatusNotificationInput) {
+    const statusLabel = refundStatusLabel(input.status);
+    const sourceLabel = input.sourceType === "MALL" ? "商城" : "报名";
+    const terminal = ["SUCCESS", "FAILED", "REJECTED"].includes(input.status);
+    const reason = input.reason?.trim() || null;
+    return this.dispatchBusinessNotification({
+      userId: input.userId,
+      sourceKey: `refund-status:${input.sourceType}:${input.refundId}:${input.status}`,
+      type: "REFUND_STATUS_UPDATED",
+      title: refundNotificationTitle(input.status),
+      summary: `${sourceLabel}订单 ${input.orderNo}，退款 ¥${formatCent(input.amountCent)}，${statusLabel}`,
+      route: "/pages/refund/index",
+      payloadJson: {
+        refundId: input.refundId,
+        refundNo: input.refundNo,
+        orderNo: input.orderNo,
+        sourceType: input.sourceType,
+        amountCent: input.amountCent,
+        status: input.status,
+        statusLabel,
+        ...(reason ? { reason } : {})
+      },
+      templateCode: terminal ? "REFUND_STATUS_UPDATED" : undefined,
+      variables: {
+        退款单号: input.refundNo,
+        订单号: input.orderNo,
+        退款金额: `¥${formatCent(input.amountCent)}`,
+        退款状态: statusLabel,
+        处理说明: reason || statusLabel
+      }
+    });
   }
 
   async listTemplates(query: Record<string, unknown>) {
@@ -160,6 +303,7 @@ export class AdminNotificationsService {
       throw new BadRequestException("通知模板未启用，不能创建发送任务");
     }
 
+    const scheduledAt = readOptionalDate(body.scheduledAt);
     const item = await this.prisma.notificationTask.create({
       data: {
         name: readRequiredString(body, "name"),
@@ -167,8 +311,12 @@ export class AdminNotificationsService {
         channel: template.channel,
         targetType: readOptionalString(body.recipientType) ?? readOptionalString(body.targetType) ?? "MANUAL",
         payloadJson: buildTaskPayload(body),
-        status: body.status ? readTaskStatus(body.status) : NotificationTaskStatus.DRAFT,
-        scheduledAt: readOptionalDate(body.scheduledAt),
+        status: body.status
+          ? readTaskStatus(body.status)
+          : scheduledAt
+            ? NotificationTaskStatus.PENDING
+            : NotificationTaskStatus.DRAFT,
+        scheduledAt,
         createdById: admin.id
       },
       include: { template: true, _count: { select: { logs: true } } }
@@ -237,7 +385,51 @@ export class AdminNotificationsService {
     return this.sendNow(id, admin);
   }
 
-  async sendNow(id: string, admin: CurrentAdmin) {
+  async processDueTasks(now = new Date()): Promise<{ found: number; processed: number; failed: number }> {
+    if (this.processingDueTasks) return { found: 0, processed: 0, failed: 0 };
+    this.processingDueTasks = true;
+    try {
+      await this.prisma.notificationTask.updateMany({
+        where: {
+          status: NotificationTaskStatus.SENDING,
+          updatedAt: { lte: new Date(now.getTime() - AdminNotificationsService.staleSendingTaskMs) }
+        },
+        data: { status: NotificationTaskStatus.PENDING }
+      });
+      const tasks = await this.prisma.notificationTask.findMany({
+        where: {
+          status: NotificationTaskStatus.PENDING,
+          OR: [
+            { scheduledAt: null },
+            { scheduledAt: { lte: now } }
+          ]
+        },
+        orderBy: { scheduledAt: "asc" },
+        take: 20,
+        select: { id: true }
+      });
+      let processed = 0;
+      let failed = 0;
+      for (const task of tasks) {
+        try {
+          await this.sendNow(task.id);
+          processed += 1;
+        } catch (error) {
+          failed += 1;
+          console.error(JSON.stringify({
+            event: "NOTIFICATION_TASK_SEND_FAILED",
+            taskId: task.id,
+            message: error instanceof Error ? error.message : "unknown error"
+          }));
+        }
+      }
+      return { found: tasks.length, processed, failed };
+    } finally {
+      this.processingDueTasks = false;
+    }
+  }
+
+  async sendNow(id: string, admin?: CurrentAdmin) {
     const task = await this.prisma.notificationTask.findUnique({
       where: { id },
       include: { template: true }
@@ -253,17 +445,46 @@ export class AdminNotificationsService {
       throw new BadRequestException("当前任务状态不允许再次发送");
     }
 
-    await this.prisma.notificationTask.update({ where: { id }, data: { status: NotificationTaskStatus.SENDING } });
-    const recipients = await this.resolveRecipients(task.payloadJson, task.channel);
-    const runtime = await this.resolveChannelRuntime(task.channel, task.template.templateKey, task.template.contentJson);
-    const results = recipients.length
-      ? await Promise.all(recipients.map((recipient) => this.sendOne(task, recipient, runtime)))
-      : [await this.sendOne(task, { userId: null, recipient: null }, runtime)];
+    const claimed = await this.prisma.notificationTask.updateMany({
+      where: {
+        id,
+        status: {
+          in: [
+            NotificationTaskStatus.DRAFT,
+            NotificationTaskStatus.PENDING,
+            NotificationTaskStatus.PARTIAL_FAILED,
+            NotificationTaskStatus.FAILED,
+            NotificationTaskStatus.SKIPPED
+          ]
+        }
+      },
+      data: { status: NotificationTaskStatus.SENDING }
+    });
+    if (claimed.count !== 1) throw new BadRequestException("当前任务已被其他请求处理，请刷新状态");
 
-    const sentAt = new Date();
-    await Promise.all(
-      results.map((result) =>
-        this.prisma.notificationLog.create({
+    let results: NotificationSendResult[];
+    try {
+      const resolvedRecipients = await this.resolveRecipients(task.payloadJson, task.channel);
+      const recipients = dedupeRecipients(
+        resolvedRecipients.length ? resolvedRecipients : [{ userId: null, recipient: null }]
+      );
+      const successfulLogs = await this.prisma.notificationLog.findMany({
+        where: {
+          taskId: task.id,
+          status: NotificationLogStatus.SUCCESS
+        },
+        select: { userId: true, recipient: true }
+      });
+      const successfulRecipientKeys = new Set(successfulLogs.map(recipientKey));
+      const runtime = await this.resolveChannelRuntime(task.channel, task.template.templateKey, task.template.contentJson, task.template.code);
+      results = recipients
+        .filter((recipient) => successfulRecipientKeys.has(recipientKey(recipient)))
+        .map((recipient) => ({ ...recipient, status: NotificationLogStatus.SUCCESS }));
+
+      for (const recipient of recipients) {
+        if (successfulRecipientKeys.has(recipientKey(recipient))) continue;
+        const result = await this.sendOne(task, recipient, runtime);
+        await this.prisma.notificationLog.create({
           data: {
             taskId: task.id,
             templateId: task.templateId,
@@ -275,31 +496,76 @@ export class AdminNotificationsService {
             errorCode: result.errorCode,
             errorMessage: result.errorMessage,
             payloadJson: task.payloadJson === null ? undefined : task.payloadJson,
-            sentAt: result.status === NotificationLogStatus.SUCCESS ? sentAt : undefined
+            sentAt: result.status === NotificationLogStatus.SUCCESS ? new Date() : undefined
           }
-        })
-      )
-    );
+        });
+        results.push(result);
+      }
+    } catch (error) {
+      await this.prisma.notificationTask.updateMany({
+        where: { id, status: NotificationTaskStatus.SENDING },
+        data: { status: NotificationTaskStatus.FAILED }
+      });
+      throw error;
+    }
 
+    const sentAt = new Date();
     const successCount = results.filter((item) => item.status === NotificationLogStatus.SUCCESS).length;
     const failedCount = results.filter((item) => item.status === NotificationLogStatus.FAILED).length;
     const skippedCount = results.filter((item) => item.status === NotificationLogStatus.SKIPPED).length;
     const status = taskStatusFromResultCounts(results.length, successCount, failedCount, skippedCount);
+    const retryPolicy = await this.getRetryPolicy(task.channel);
+    const retryScheduledAt = failedCount > 0
+      ? await this.getRetrySchedule(task.id, results, retryPolicy, sentAt)
+      : null;
+    const persistedStatus = retryScheduledAt ? NotificationTaskStatus.PENDING : status;
 
     const updated = await this.prisma.notificationTask.update({
       where: { id },
       data: {
-        status,
-        sentAt
+        status: persistedStatus,
+        scheduledAt: retryScheduledAt ?? (persistedStatus === NotificationTaskStatus.PENDING ? task.scheduledAt : null),
+        sentAt: retryScheduledAt ? null : sentAt
       },
       include: { template: true, _count: { select: { logs: true } } }
     });
-    await this.writeAudit(admin, AuditAction.SYSTEM, "NotificationTask", task.id, "Send notification task now", {
+    await this.writeAudit(admin ?? null, AuditAction.SYSTEM, "NotificationTask", task.id, "Send notification task now", {
       successCount,
       failedCount,
-      skippedCount
+      skippedCount,
+      retryScheduledAt: retryScheduledAt?.toISOString() ?? null
     });
     return ok({ task: await this.formatTaskWithRuntime(updated), result: { total: results.length, successCount, failedCount, skippedCount } });
+  }
+
+  private async getRetryPolicy(channel: NotificationChannelType): Promise<{ maxAttempts: number; intervalSeconds: number }> {
+    const config = await this.getStoredChannelConfig(channel);
+    return {
+      maxAttempts: Math.max(0, config?.retryMaxAttempts ?? 0),
+      intervalSeconds: Math.max(0, config?.retryIntervalSeconds ?? 60)
+    };
+  }
+
+  private async getRetrySchedule(
+    taskId: string,
+    results: NotificationSendResult[],
+    policy: { maxAttempts: number; intervalSeconds: number },
+    now: Date
+  ): Promise<Date | null> {
+    if (policy.maxAttempts === 0) return null;
+    const currentFailures = results.filter((item) => item.status === NotificationLogStatus.FAILED);
+    if (currentFailures.length === 0) return null;
+    const failedLogs = await this.prisma.notificationLog.findMany({
+      where: { taskId, status: NotificationLogStatus.FAILED },
+      select: { userId: true, recipient: true }
+    });
+    const attemptsByRecipient = new Map<string, number>();
+    for (const log of failedLogs) {
+      const key = recipientKey(log);
+      attemptsByRecipient.set(key, (attemptsByRecipient.get(key) ?? 0) + 1);
+    }
+    const canRetryAll = currentFailures.every((item) => (attemptsByRecipient.get(recipientKey(item)) ?? 0) <= policy.maxAttempts);
+    return canRetryAll ? new Date(now.getTime() + policy.intervalSeconds * 1000) : null;
   }
 
   async listLogs(query: Record<string, unknown>) {
@@ -367,9 +633,10 @@ export class AdminNotificationsService {
   getChannelRuntime(
     channel: NotificationChannelType,
     templateKey?: string | null,
-    templateContent?: Prisma.JsonValue
+    templateContent?: Prisma.JsonValue,
+    templateCode?: string | null
   ) {
-    return this.resolveChannelRuntime(channel, templateKey, templateContent);
+    return this.resolveChannelRuntime(channel, templateKey, templateContent, templateCode);
   }
 
   async updateChannelConfig(channel: "WECHAT_SUBSCRIBE" | "SMS", input: unknown, admin: CurrentAdmin) {
@@ -448,7 +715,8 @@ export class AdminNotificationsService {
   private async resolveChannelRuntime(
     channel: NotificationChannelType,
     templateKeyOverride?: string | null,
-    templateContent?: Prisma.JsonValue
+    templateContent?: Prisma.JsonValue,
+    templateCode?: string | null
   ): Promise<NotificationRuntime> {
     const center = await this.getCenterRuntime();
     if (!center.enabled) {
@@ -471,6 +739,7 @@ export class AdminNotificationsService {
     const providerSource = config ? "DB" : envEnabled ? "ENV" : "disabled";
     const provider = config?.provider || envProvider;
     const templateKey = templateKeyOverride
+      || readWechatTemplateId(templateCode)
       || config?.templateKey
       || (channel === NotificationChannelType.WECHAT_SUBSCRIBE ? process.env.WECHAT_SUBSCRIBE_TEMPLATE_ID || "" : "");
     const apiKeyConfigured = Boolean(
@@ -547,7 +816,8 @@ export class AdminNotificationsService {
       providerStatus: await this.resolveChannelRuntime(
         item.channel,
         item.template?.templateKey,
-        item.template?.contentJson
+        item.template?.contentJson,
+        item.template?.code
       )
     };
   }
@@ -677,10 +947,10 @@ export class AdminNotificationsService {
     return { ...recipient, status: NotificationLogStatus.SKIPPED, errorCode: "ADAPTER_RESERVED", errorMessage: "短信真实发送适配器待接入" };
   }
 
-  private writeAudit(admin: CurrentAdmin, action: AuditAction, entityType: string, entityId: string, summary: string, metadataJson?: Prisma.InputJsonValue) {
+  private writeAudit(admin: CurrentAdmin | null, action: AuditAction, entityType: string, entityId: string, summary: string, metadataJson?: Prisma.InputJsonValue) {
     return this.prisma.auditLog.create({
       data: {
-        adminUserId: admin.id,
+        adminUserId: admin?.id,
         action,
         entityType,
         entityId,
@@ -700,6 +970,24 @@ interface NotificationSendResult {
   errorMessage?: string;
 }
 
+function recipientKey(recipient: { userId: string | null; recipient: string | null }): string {
+  if (recipient.userId) return `user:${recipient.userId}`;
+  if (recipient.recipient) return `recipient:${recipient.recipient}`;
+  return "none";
+}
+
+function dedupeRecipients(
+  recipients: Array<{ userId: string | null; recipient: string | null }>
+): Array<{ userId: string | null; recipient: string | null }> {
+  const seen = new Set<string>();
+  return recipients.filter((recipient) => {
+    const key = recipientKey(recipient);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export interface NotificationRuntime {
   centerEnabled: boolean;
   enabled: boolean;
@@ -710,6 +998,30 @@ export interface NotificationRuntime {
   canSend: boolean;
   unavailableReason?: string;
   statusText: string;
+}
+
+export interface BusinessNotificationInput {
+  userId: string | null | undefined;
+  sourceKey: string;
+  type: string;
+  title: string;
+  summary?: string | null;
+  route?: string | null;
+  payloadJson?: Prisma.InputJsonObject;
+  templateCode?: string;
+  taskName?: string;
+  variables?: Prisma.InputJsonObject;
+}
+
+export interface RefundStatusNotificationInput {
+  userId: string | null | undefined;
+  refundId: string;
+  refundNo: string;
+  orderNo: string;
+  sourceType: "REGISTRATION" | "MALL";
+  amountCent: number;
+  status: string;
+  reason?: string | null;
 }
 
 function buildWechatTemplateData(
@@ -754,17 +1066,27 @@ function notificationEnvGuide(channel: "WECHAT_SUBSCRIBE" | "SMS", enabledEnvKey
   const items =
     channel === "SMS"
       ? [
-          { name: "SMS_PROVIDER", location: "services/api/.env.production", restartRequired: true },
-          { name: "SMS_API_KEY / SMS_API_SECRET", location: "services/api/.env.production 或后台加密配置", restartRequired: true },
-          { name: enabledEnvKey, location: "services/api/.env.production 或后台开关", restartRequired: true }
+          { name: "SMS_PROVIDER", location: ".env.production", restartRequired: true },
+          { name: "SMS_API_KEY / SMS_API_SECRET", location: ".env.production 或后台加密配置", restartRequired: true },
+          { name: enabledEnvKey, location: ".env.production 或后台开关", restartRequired: true }
         ]
       : [
-          { name: "WECHAT_APP_ID / WECHAT_APP_SECRET", location: "services/api/.env.production", restartRequired: true },
-          { name: "WECHAT_SUBSCRIBE_TEMPLATE_ID", location: "后台模板配置或 services/api/.env.production", restartRequired: false },
-          { name: "WECHAT_MINIPROGRAM_STATE", location: "services/api/.env.production（正式环境填 formal）", restartRequired: true },
-          { name: enabledEnvKey, location: "services/api/.env.production 或后台开关", restartRequired: true }
+          { name: "WECHAT_APP_ID / WECHAT_APP_SECRET", location: ".env.production", restartRequired: true },
+          { name: "每个通知模板的模板 ID", location: "后台通知模板（推荐）或对应 WECHAT_SUBSCRIBE_TEMPLATE_* 环境变量", restartRequired: false },
+          { name: "WECHAT_MINIPROGRAM_STATE", location: ".env.production（正式环境填 formal）", restartRequired: true },
+          { name: enabledEnvKey, location: ".env.production 或后台开关", restartRequired: true }
         ];
   return items;
+}
+
+function readWechatTemplateId(templateCode: string | null | undefined): string {
+  const envName = ({
+    REGISTRATION_SUCCESS: "WECHAT_SUBSCRIBE_TEMPLATE_REGISTRATION_SUCCESS",
+    PAYMENT_SUCCESS: "WECHAT_SUBSCRIBE_TEMPLATE_PAYMENT_SUCCESS",
+    GUEST_SCHEDULE_UPDATED: "WECHAT_SUBSCRIBE_TEMPLATE_GUEST_SCHEDULE_UPDATED",
+    REFUND_STATUS_UPDATED: "WECHAT_SUBSCRIBE_TEMPLATE_REFUND_STATUS_UPDATED"
+  } as Record<string, string>)[templateCode?.trim().toUpperCase() ?? ""];
+  return envName ? process.env[envName]?.trim() ?? "" : "";
 }
 
 function formatSubscription(item: {
@@ -1028,6 +1350,50 @@ function readLogStatus(value: unknown): NotificationLogStatus {
 
 function isEnabled(envName: string): boolean {
   return process.env[envName] === "true";
+}
+
+function normalizeMiniProgramPage(route: string): string {
+  return route.replace(/^\//, "");
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return isRecord(error) && error.code === "P2002";
+}
+
+function logBusinessNotificationError(error: unknown, input: BusinessNotificationInput, taskId: string | null) {
+  console.error(JSON.stringify({
+    event: "BUSINESS_NOTIFICATION_ERROR",
+    type: input.type,
+    sourceKey: input.sourceKey,
+    taskId,
+    error: error instanceof Error ? error.message : "unknown error"
+  }));
+}
+
+function refundStatusLabel(status: string): string {
+  return ({
+    REQUESTED: "等待审核",
+    APPROVED: "审核通过",
+    PROCESSING: "退款处理中",
+    SUCCESS: "退款成功",
+    FAILED: "退款失败",
+    REJECTED: "审核未通过"
+  } as Record<string, string>)[status] || status;
+}
+
+function refundNotificationTitle(status: string): string {
+  return ({
+    REQUESTED: "退款申请已提交",
+    APPROVED: "退款申请已审核",
+    PROCESSING: "退款正在处理",
+    SUCCESS: "退款已完成",
+    FAILED: "退款处理失败",
+    REJECTED: "退款申请未通过"
+  } as Record<string, string>)[status] || "退款状态已更新";
+}
+
+function formatCent(value: number): string {
+  return (value / 100).toFixed(2);
 }
 
 function taskStatusFromResultCounts(total: number, successCount: number, failedCount: number, skippedCount: number): NotificationTaskStatus {

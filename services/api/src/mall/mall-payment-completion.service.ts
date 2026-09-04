@@ -23,8 +23,12 @@ export class MallPaymentCompletionService {
       });
       if (!payment) throw new NotFoundException("Mall payment out_trade_no not found");
       if (input.paidAmountCent !== payment.order.payableAmountCent) throw new ConflictException("Mall payment amount does not match order payable amount");
+      if (payment.amountCent !== payment.order.payableAmountCent) throw new ConflictException("Mall payment record amount does not match order payable amount");
 
       if (payment.status === PaymentStatus.SUCCESS) {
+        if (!["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "REFUNDED"].includes(payment.order.status)) {
+          throw new ConflictException("Successful mall payment is inconsistent with order status");
+        }
         await tx.mallPayment.update({
           where: { id: payment.id },
           data: buildPaymentCompletionData(input)
@@ -35,34 +39,35 @@ export class MallPaymentCompletionService {
 
       if (payment.order.status !== "PENDING_PAYMENT") throw new ConflictException("Only pending mall orders can be marked paid");
 
+      const claimedOrder = await tx.mallOrder.updateMany({
+        where: { id: payment.mallOrderId, status: "PENDING_PAYMENT" },
+        data: {
+          status: "PAID",
+          paidAmountCent: input.paidAmountCent,
+          paidAt: input.paidAt
+        }
+      });
+      if (claimedOrder.count !== 1) throw new ConflictException("Mall order payment is already being processed");
+
       await tx.mallPayment.update({
         where: { id: payment.id },
         data: buildPaymentCompletionData(input)
       });
 
-      const paidOrder = await tx.mallOrder.update({
-        where: { id: payment.mallOrderId },
-        data: {
-          status: "PAID",
-          paidAmountCent: input.paidAmountCent,
-          paidAt: input.paidAt
-        },
-        include: { items: true }
-      });
-      await markMallCouponUsed(tx, paidOrder.id, input.paidAt);
+      await markMallCouponUsed(tx, payment.order.id, input.paidAt);
 
-      for (const item of paidOrder.items) {
-        await convertLockedStockToSold(tx, item.skuId, item.quantity, paidOrder.id);
+      for (const item of payment.order.items) {
+        await convertLockedStockToSold(tx, item.skuId, item.quantity, payment.order.id);
       }
 
       await tx.auditLog.create({
         data: {
           action: AuditAction.SYSTEM,
           entityType: "MallOrder",
-          entityId: paidOrder.id,
+          entityId: payment.order.id,
           summary: "Mall payment success",
           metadataJson: {
-            orderNo: paidOrder.orderNo,
+            orderNo: payment.order.orderNo,
             outTradeNo: input.outTradeNo,
             provider: input.provider,
             paidAmountCent: input.paidAmountCent
@@ -70,7 +75,12 @@ export class MallPaymentCompletionService {
         }
       });
 
-      return paidOrder;
+      return {
+        ...payment.order,
+        status: "PAID",
+        paidAmountCent: input.paidAmountCent,
+        paidAt: input.paidAt
+      };
     });
 
     return {

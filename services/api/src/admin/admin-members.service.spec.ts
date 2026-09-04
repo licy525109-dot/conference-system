@@ -94,6 +94,18 @@ describe("AdminMembersService production workflows", () => {
     assert.equal(prisma.auditLogs.some((item: any) => item.entityType === "User" && item.action === AuditAction.UPDATE), true);
   });
 
+  it("reveals a full phone only through the audited sensitive-data operation", async () => {
+    const prisma = createMemberPrismaMock();
+    const service = new AdminMembersService(prisma);
+
+    const response = await service.revealUserPhone("user-1", admin);
+
+    assert.equal(response.data.phone, "13800000000");
+    const audit = prisma.auditLogs.find((item: any) => item.summary === "View full mini program user phone");
+    assert.equal(audit?.metadataJson?.field, "phone");
+    assert.equal(JSON.stringify(audit).includes("13800000000"), false);
+  });
+
   it("deletes a mini program identity while recording retained historical rows", async () => {
     const prisma = createMemberPrismaMock();
     const service = new AdminMembersService(prisma);

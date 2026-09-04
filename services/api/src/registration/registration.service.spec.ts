@@ -828,6 +828,20 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
 
         const { conferenceId, ...response } = sku;
         return response;
+      },
+      updateMany: async (args: SkuUpdateManyArgs) => {
+        const sku = localSkus.find((item) => item.id === args.where.id);
+        if (
+          !sku ||
+          sku.status !== args.where.status ||
+          sku.lockedStock !== args.where.lockedStock ||
+          sku.soldCount !== args.where.soldCount ||
+          sku.stock < args.where.stock.gte
+        ) {
+          return { count: 0 };
+        }
+        sku.lockedStock += args.data.lockedStock.increment;
+        return { count: 1 };
       }
     },
     formDefinition: {
@@ -894,10 +908,16 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
     },
     coupon: {
       findUnique: async (args: CouponFindUniqueArgs) => {
+        if (args.where.id) {
+          return (options.coupons ?? []).find((item) => item.id === args.where.id) ?? null;
+        }
         const code = String(args.where.code).trim().toUpperCase();
         return (options.coupons ?? []).find((item) => item.code === code) ?? null;
       }
     },
+	    mallCouponRedemption: {
+	      count: async () => 0
+	    },
 	    couponRedemption: {
       count: async (args: CouponRedemptionCountArgs) =>
         couponRedemptions.filter((item) => {
@@ -963,6 +983,7 @@ const skus = [
     name: "Active SKU",
     priceCent: 100000,
     stock: 100,
+    lockedStock: 0,
     soldCount: 0,
     status: RegistrationSkuStatus.ACTIVE,
     saleStartAt: null,
@@ -974,6 +995,7 @@ const skus = [
     name: "Active SKU B",
     priceCent: 70000,
     stock: 100,
+    lockedStock: 0,
     soldCount: 0,
     status: RegistrationSkuStatus.ACTIVE,
     saleStartAt: null,
@@ -985,6 +1007,7 @@ const skus = [
     name: "Inactive SKU",
     priceCent: 100000,
     stock: 100,
+    lockedStock: 0,
     soldCount: 0,
     status: RegistrationSkuStatus.INACTIVE,
     saleStartAt: null,
@@ -996,6 +1019,7 @@ const skus = [
     name: "Other Conference SKU",
     priceCent: 70000,
     stock: 100,
+    lockedStock: 0,
     soldCount: 0,
     status: RegistrationSkuStatus.ACTIVE,
     saleStartAt: null,
@@ -1007,6 +1031,7 @@ const skus = [
     name: "Sold Out SKU",
     priceCent: 70000,
     stock: 10,
+    lockedStock: 0,
     soldCount: 10,
     status: RegistrationSkuStatus.ACTIVE,
     saleStartAt: null,
@@ -1018,6 +1043,7 @@ const skus = [
     name: "Future Sale SKU",
     priceCent: 70000,
     stock: 100,
+    lockedStock: 0,
     soldCount: 0,
     status: RegistrationSkuStatus.ACTIVE,
     saleStartAt: new Date("2026-06-07T00:00:00.000Z"),
@@ -1029,6 +1055,7 @@ const skus = [
     name: "Ended Sale SKU",
     priceCent: 70000,
     stock: 100,
+    lockedStock: 0,
     soldCount: 0,
     status: RegistrationSkuStatus.ACTIVE,
     saleStartAt: null,
@@ -1241,6 +1268,7 @@ interface PrismaMockShape {
   };
   registrationSku: {
     findFirst(args: SkuFindFirstArgs): Promise<Omit<(typeof skus)[number], "conferenceId"> | null>;
+    updateMany(args: SkuUpdateManyArgs): Promise<{ count: number }>;
   };
   formDefinition: {
     findFirst(args: FormDefinitionFindFirstArgs): Promise<{ fields: FormFieldRecord[] } | null>;
@@ -1263,6 +1291,9 @@ interface PrismaMockShape {
 	  couponRedemption: {
 	    count(args: CouponRedemptionCountArgs): Promise<number>;
 	    create(args: CouponRedemptionCreateArgs): Promise<void>;
+	  };
+	  mallCouponRedemption: {
+	    count(): Promise<number>;
 	  };
 	  userMembership: {
 	    findMany(args: UserMembershipFindManyArgs): Promise<UserMembershipRecord[]>;
@@ -1290,6 +1321,19 @@ interface SkuFindFirstArgs {
   where: {
     id: string;
     conferenceId: string;
+  };
+}
+
+interface SkuUpdateManyArgs {
+  where: {
+    id: string;
+    status: RegistrationSkuStatus;
+    lockedStock: number;
+    soldCount: number;
+    stock: { gte: number };
+  };
+  data: {
+    lockedStock: { increment: number };
   };
 }
 
@@ -1339,7 +1383,8 @@ interface OrderDiscountCreateArgs {
 
 interface CouponFindUniqueArgs {
   where: {
-    code: string;
+    code?: string;
+    id?: string;
   };
 }
 
@@ -1393,6 +1438,7 @@ interface OrderRecordData {
   attendeeName: string;
   phone: string;
   expiredAt: Date;
+  inventoryReservedAt: Date;
 }
 
 interface OrderItemRecord {

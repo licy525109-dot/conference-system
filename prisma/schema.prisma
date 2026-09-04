@@ -1478,6 +1478,8 @@ model MallOrder {
   remark             String?
   couponId           String?
   couponCode         String?
+  expiredAt          DateTime?
+  closedAt           DateTime?
   paidAt             DateTime?
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
@@ -1495,6 +1497,7 @@ model MallOrder {
   @@index([status])
   @@index([fulfillmentType])
   @@index([couponId])
+  @@index([status, expiredAt])
   @@index([createdAt])
   @@map("mall_orders")
 }
@@ -1539,18 +1542,19 @@ model MallShipment {
 }
 
 model MallAfterSale {
-  id              String       @id @default(cuid())
-  orderId         String
-  type            String
-  status          String       @default("REQUESTED")
-  reason          String?
-  note            String?
-  attachmentsJson Json?
-  handledAt       DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  order           MallOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  refunds         MallRefund[]
+  id                  String       @id @default(cuid())
+  orderId             String
+  type                String
+  status              String       @default("REQUESTED")
+  previousOrderStatus String?
+  reason              String?
+  note                String?
+  attachmentsJson     Json?
+  handledAt           DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  order               MallOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds             MallRefund[]
 
   @@index([orderId])
   @@index([status])
@@ -1580,25 +1584,26 @@ model MallPayment {
 }
 
 model MallRefund {
-  id               String           @id @default(cuid())
-  refundNo         String           @unique
-  outRefundNo      String           @unique
-  mallOrderId      String
-  afterSaleId      String?
-  provider         PaymentProvider?
-  providerRefundId String?          @unique
-  amountCent       Int
-  status           RefundStatus     @default(REQUESTED)
-  reason           String?
-  rejectReason     String?
-  failedReason     String?
-  requestedAt      DateTime         @default(now())
-  approvedAt       DateTime?
-  processedAt      DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  order            MallOrder        @relation(fields: [mallOrderId], references: [id], onDelete: Cascade)
-  afterSale        MallAfterSale?   @relation(fields: [afterSaleId], references: [id], onDelete: SetNull)
+  id                  String           @id @default(cuid())
+  refundNo            String           @unique
+  outRefundNo         String           @unique
+  mallOrderId         String
+  afterSaleId         String?
+  previousOrderStatus String?
+  provider            PaymentProvider?
+  providerRefundId    String?          @unique
+  amountCent          Int
+  status              RefundStatus     @default(REQUESTED)
+  reason              String?
+  rejectReason        String?
+  failedReason        String?
+  requestedAt         DateTime         @default(now())
+  approvedAt          DateTime?
+  processedAt         DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  order               MallOrder        @relation(fields: [mallOrderId], references: [id], onDelete: Cascade)
+  afterSale           MallAfterSale?   @relation(fields: [afterSaleId], references: [id], onDelete: SetNull)
 
   @@index([mallOrderId])
   @@index([afterSaleId])
@@ -1651,6 +1656,7 @@ model RegistrationSku {
   description   String?
   priceCent     Int
   stock         Int                    @default(0)
+  lockedStock   Int                    @default(0)
   soldCount     Int                    @default(0)
   status        RegistrationSkuStatus  @default(ACTIVE)
   saleStartAt   DateTime?
@@ -1728,6 +1734,7 @@ model Order {
   attendeeName             String?
   phone                    String?
   expiredAt                DateTime?
+  inventoryReservedAt      DateTime?
   paidAt                   DateTime?
   closedAt                 DateTime?
   createdAt                DateTime             @default(now())
@@ -1751,6 +1758,7 @@ model Order {
   @@index([createdAt])
   @@index([userId, createdAt])
   @@index([conferenceId, status])
+  @@index([status, expiredAt])
   @@map("orders")
 }
 
@@ -2022,18 +2030,18 @@ model NotificationSubscription {
 }
 
 model UserNotification {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   userId      String
   type        String
   title       String
   summary     String?
   route       String?
   payloadJson Json?
-  sourceKey   String?  @unique
+  sourceKey   String?   @unique
   readAt      DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([userId, readAt])

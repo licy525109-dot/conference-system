@@ -8,7 +8,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/www/wwwroot/conference-system}"
 H5_TARGET="${H5_TARGET:-/www/wwwroot/m.guanchaohuiji.com/}"
 ADMIN_TARGET="${ADMIN_TARGET:-/www/wwwroot/admin.guanchaohuiji.com/}"
-API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:3001/api/health}"
+API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:3001/api/health/ready}"
 REMOTE="${REMOTE:-origin}"
 BRANCH="${BRANCH:-main}"
 

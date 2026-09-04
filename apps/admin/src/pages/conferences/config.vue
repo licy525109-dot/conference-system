@@ -106,7 +106,9 @@
           <el-table-column prop="name" label="名称" min-width="160" />
           <el-table-column label="价格" width="120"><template #default="{ row }">¥{{ formatCent(row.priceCent) }}</template></el-table-column>
           <el-table-column prop="stock" label="库存" width="100" />
+          <el-table-column prop="lockedStock" label="待支付占用" width="110" />
           <el-table-column prop="soldCount" label="已售" width="100" />
+          <el-table-column label="可售" width="100"><template #default="{ row }">{{ Math.max(0, row.stock - row.lockedStock - row.soldCount) }}</template></el-table-column>
           <el-table-column label="状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
           <el-table-column label="操作" width="100"><template #default="{ row }"><el-button size="small" @click="openSku(row)">编辑</el-button></template></el-table-column>
         </el-table>

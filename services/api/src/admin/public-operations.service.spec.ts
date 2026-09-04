@@ -1,8 +1,8 @@
 import "reflect-metadata";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { ConflictException } from "@nestjs/common";
-import { CouponClaimStatus, CouponType } from "@prisma/client";
+import { BadRequestException, ConflictException } from "@nestjs/common";
+import { CouponClaimStatus, CouponScope, CouponType } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { PublicOperationsService } from "./public-operations.service";
@@ -28,24 +28,59 @@ describe("PublicOperationsService coupon campaigns", () => {
 
     await assert.rejects(() => service.claimCoupon({ claimCode: "CP2026" }, currentUser), ConflictException);
   });
+
+  it("does not expose or issue disabled campaign coupons", async () => {
+    const prisma = createPublicOperationsPrismaMock({ couponEnabled: false });
+    const service = new PublicOperationsService(prisma);
+
+    await assert.rejects(
+      () => service.claimCoupon({ claimCode: "CP2026" }, currentUser),
+      (error: unknown) => error instanceof ConflictException && /暂无可领取优惠券/.test(error.message)
+    );
+    const campaign = await service.couponCampaignPublic("campaign-1");
+
+    assert.equal(campaign.data.claimable, false);
+    assert.equal(campaign.data.statusText, "暂无可领取优惠券");
+    assert.equal(campaign.data.coupons.length, 0);
+    assert.equal(prisma.campaign.claimedCount, 0);
+  });
 });
 
-function createPublicOperationsPrismaMock(options: { claimedCount?: number; totalLimit?: number | null } = {}) {
+describe("PublicOperationsService uploads", () => {
+  it("rejects an after-sale attachment whose bytes do not match its image MIME type", async () => {
+    const service = new PublicOperationsService(createPublicOperationsPrismaMock());
+
+    await assert.rejects(
+      () => service.uploadAfterSaleAttachment(
+        { buffer: Buffer.from("<script>alert(1)</script>"), mimetype: "image/png", size: 25 },
+        "https://api.example.com"
+      ),
+      BadRequestException
+    );
+  });
+});
+
+function createPublicOperationsPrismaMock(options: { claimedCount?: number; totalLimit?: number | null; couponEnabled?: boolean } = {}) {
   const now = new Date("2026-06-18T00:00:00.000Z");
   const coupon = {
     id: "coupon-1",
     code: "SAVE100",
     name: "立减 100",
     type: CouponType.AMOUNT,
+    scope: CouponScope.CONFERENCE,
     discountAmountCent: 10000,
     discountPercent: null,
     minAmountCent: 0,
+    enabled: options.couponEnabled ?? true,
+    deletedAt: null,
+    startAt: null,
     endAt: null
   };
   const campaign = {
     id: "campaign-1",
     name: "夏季领券",
     claimCode: "CP2026",
+    qrScene: "CP2026",
     enabled: true,
     claimedCount: options.claimedCount ?? 0,
     totalLimit: options.totalLimit ?? 10,
@@ -58,10 +93,14 @@ function createPublicOperationsPrismaMock(options: { claimedCount?: number; tota
     campaign,
     claims,
     couponCampaign: {
-      findUnique: async ({ where }: { where: { claimCode: string } }) => (where.claimCode === campaign.claimCode ? campaign : null),
-      update: async ({ data }: { data: { claimedCount: { increment: number } } }) => {
+      findUnique: async ({ where }: { where: { claimCode?: string; id?: string } }) =>
+        (where.claimCode === campaign.claimCode || where.id === campaign.id ? campaign : null),
+      updateMany: async ({ where, data }: { where: { id: string; enabled: boolean; claimedCount?: { lt: number } }; data: { claimedCount: { increment: number } } }) => {
+        if (where.id !== campaign.id || !campaign.enabled || (where.claimedCount && campaign.claimedCount >= where.claimedCount.lt)) {
+          return { count: 0 };
+        }
         campaign.claimedCount += data.claimedCount.increment;
-        return campaign;
+        return { count: 1 };
       }
     },
     couponClaim: {

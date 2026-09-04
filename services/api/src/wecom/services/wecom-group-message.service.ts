@@ -4,6 +4,8 @@ import { AuditAction, CustomerGroupMessageStatus, Prisma } from "@prisma/client"
 import { CurrentAdmin } from "../../admin/current-admin";
 import { PrismaService } from "../../prisma.service";
 import { decryptSecret } from "../wecom.crypto";
+import { validateWecomGroupRobotWebhookUrl } from "../wecom-group-robot-url";
+import { fetchPublicUrl } from "../../security/public-outbound-fetch";
 import { WecomClientAdapter } from "../adapters/wecom-client.adapter";
 import { formatDateFields, readPage } from "./wecom-customer-group.service";
 import { WecomConfigService } from "./wecom-config.service";
@@ -165,6 +167,7 @@ export class WecomGroupMessageService {
       await this.writeAudit(admin, AuditAction.SYSTEM, "CustomerGroupMessageTask", task.id, "Skip WeCom group robot task", { reason: "GROUP_ROBOT_DISABLED", groupCount: groups.length });
       return ok({ task: formatDateFields(updated), result: { created: false, status: "SKIPPED", reason: "企微群机器人未启用或未配置 Webhook", groupCount: groups.length } });
     }
+    validateWecomGroupRobotWebhookUrl(webhookUrl);
 
     try {
       const payload = await buildRobotPayload(task.contentJson as Record<string, unknown>, webhookUrl);
@@ -374,7 +377,7 @@ async function buildRobotPayload(contentJson: Record<string, unknown>, webhookUr
   const msgtype = String(attachment?.msgtype ?? contentJson.msgtype ?? "text").toLowerCase();
   if (msgtype === "image" && isRecord(attachment?.image)) {
     const url = requiredString(attachment.image.pic_url ?? attachment.image.url, "图片素材 URL");
-    const file = await downloadBinary(url);
+    const file = await downloadBinary(url, 2 * 1024 * 1024);
     return {
       msgtype: "image",
       image: {
@@ -431,7 +434,7 @@ async function postGroupRobotWebhook(webhookUrl: string, payload: Record<string,
 async function uploadRobotFile(webhookUrl: string, fileUrl: string, filename: string): Promise<string> {
   const key = new URL(webhookUrl).searchParams.get("key");
   if (!key) throw new BadRequestException("企微群机器人 Webhook 缺少 key，无法上传文件素材。");
-  const file = await downloadBinary(fileUrl);
+    const file = await downloadBinary(fileUrl, 20 * 1024 * 1024);
   const form = new FormData();
   const arrayBuffer = new Uint8Array(file.buffer).buffer;
   form.append("media", new Blob([arrayBuffer], { type: file.contentType || "application/octet-stream" }), filename);
@@ -446,12 +449,14 @@ async function uploadRobotFile(webhookUrl: string, fileUrl: string, filename: st
   return raw.media_id;
 }
 
-async function downloadBinary(url: string): Promise<{ buffer: Buffer; contentType: string | null }> {
-  const parsed = new URL(url);
-  if (!["http:", "https:"].includes(parsed.protocol)) throw new BadRequestException("素材 URL 必须是 http/https 地址");
-  const response = await fetch(url);
+async function downloadBinary(url: string, maxBytes: number): Promise<{ buffer: Buffer; contentType: string | null }> {
+  const response = await fetchPublicUrl(url, {}, { timeoutMs: 8000, maxRedirects: 3 });
   if (!response.ok) throw new BadRequestException(`素材下载失败：${response.status}`);
-  return { buffer: Buffer.from(await response.arrayBuffer()), contentType: response.headers.get("content-type") };
+  const contentLength = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) throw new BadRequestException("素材文件过大");
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > maxBytes) throw new BadRequestException("素材文件过大");
+  return { buffer, contentType: response.headers.get("content-type") };
 }
 
 async function safeJson(response: Response): Promise<unknown> {

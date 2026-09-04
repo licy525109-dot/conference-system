@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { CouponClaimStatus, CouponRedemptionStatus, CouponScope, InvoiceStatus, Prisma } from "@prisma/client";
+import { ConferenceStatus, CouponClaimStatus, CouponRedemptionStatus, CouponScope, InvoiceStatus, Prisma, RefundStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { decryptSecret } from "../wecom/wecom.crypto";
@@ -24,40 +24,59 @@ export class PublicOperationsService {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
     const body = readObject(input);
     const claimCode = readRequiredString(body, "claimCode");
-    const campaign = await this.prisma.couponCampaign.findUnique({
-      where: { claimCode },
-      include: { coupons: { include: { coupon: true } } }
-    });
-    if (!campaign || !campaign.enabled) throw new NotFoundException("优惠活动不存在或已停用");
-    const now = new Date();
-    if (campaign.startAt && campaign.startAt > now) throw new ConflictException("优惠活动尚未开始");
-    if (campaign.endAt && campaign.endAt < now) throw new ConflictException("优惠活动已结束");
-    if (campaign.totalLimit !== null && campaign.claimedCount >= campaign.totalLimit) throw new ConflictException("优惠活动已领完");
-    if (campaign.coupons.length === 0) throw new ConflictException("优惠活动未绑定优惠券");
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const outcome = await this.prisma.$transaction(async (tx) => {
+          const campaign = await tx.couponCampaign.findUnique({
+            where: { claimCode },
+            include: { coupons: { include: { coupon: true } } }
+          });
+          if (!campaign || !campaign.enabled) throw new NotFoundException("优惠活动不存在或已停用");
+          const now = new Date();
+          if (campaign.startAt && campaign.startAt > now) throw new ConflictException("优惠活动尚未开始");
+          if (campaign.endAt && campaign.endAt < now) throw new ConflictException("优惠活动已结束");
 
-    const claims = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.couponClaim.findMany({ where: { campaignId: campaign.id, userId: currentUser.id } });
-      if (existing.length > 0) return existing;
-      const created = [];
-      for (const item of campaign.coupons) {
-        created.push(
-          await tx.couponClaim.create({
-            data: { campaignId: campaign.id, couponId: item.couponId, userId: currentUser.id, status: CouponClaimStatus.CLAIMED }
-          })
-        );
+          const existing = await tx.couponClaim.findMany({ where: { campaignId: campaign.id, userId: currentUser.id } });
+          if (existing.length > 0) return { campaign, claims: existing };
+
+          const eligibleCoupons = campaign.coupons.filter((item) => isCouponClaimEligible(item.coupon, now));
+          if (eligibleCoupons.length === 0) throw new ConflictException("优惠活动暂无可领取优惠券");
+
+          const reserved = await tx.couponCampaign.updateMany({
+            where: {
+              id: campaign.id,
+              enabled: true,
+              ...(campaign.totalLimit === null ? {} : { claimedCount: { lt: campaign.totalLimit } })
+            },
+            data: { claimedCount: { increment: 1 } }
+          });
+          if (reserved.count !== 1) throw new ConflictException("优惠活动已领完");
+
+          const claims = [];
+          for (const item of eligibleCoupons) {
+            claims.push(
+              await tx.couponClaim.create({
+                data: { campaignId: campaign.id, couponId: item.couponId, userId: currentUser.id, status: CouponClaimStatus.CLAIMED }
+              })
+            );
+          }
+          return { campaign, claims };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+        return ok({
+          campaign: {
+            id: outcome.campaign.id,
+            name: outcome.campaign.name,
+            claimCode: outcome.campaign.claimCode
+          },
+          claims: outcome.claims.map(formatDateFields)
+        });
+      } catch (error) {
+        if (attempt < 2 && isSerializableTransactionConflict(error)) continue;
+        throw error;
       }
-      await tx.couponCampaign.update({ where: { id: campaign.id }, data: { claimedCount: { increment: 1 } } });
-      return created;
-    });
-
-    return ok({
-      campaign: {
-        id: campaign.id,
-        name: campaign.name,
-        claimCode: campaign.claimCode
-      },
-      claims: claims.map(formatDateFields)
-    });
+    }
+    throw new ConflictException("领券请求冲突，请重试");
   }
 
   async myCoupons(currentUser: CurrentUser | undefined, query: Record<string, unknown> = {}) {
@@ -136,6 +155,8 @@ export class PublicOperationsService {
     const started = !campaign.startAt || campaign.startAt <= now;
     const ended = Boolean(campaign.endAt && campaign.endAt < now);
     const stockExhausted = campaign.totalLimit !== null && campaign.claimedCount >= campaign.totalLimit;
+    const eligibleCoupons = campaign.coupons.filter((item) => isCouponClaimEligible(item.coupon, now));
+    const hasEligibleCoupons = eligibleCoupons.length > 0;
     return ok({
       id: campaign.id,
       name: campaign.name,
@@ -146,9 +167,9 @@ export class PublicOperationsService {
       endAt: campaign.endAt?.toISOString() ?? null,
       totalLimit: campaign.totalLimit,
       claimedCount: campaign.claimedCount,
-      claimable: started && !ended && !stockExhausted,
-      statusText: !started ? "优惠活动尚未开始" : ended ? "优惠活动已结束" : stockExhausted ? "优惠活动已领完" : "可领取",
-      coupons: campaign.coupons.map((item) => ({
+      claimable: started && !ended && !stockExhausted && hasEligibleCoupons,
+      statusText: !started ? "优惠活动尚未开始" : ended ? "优惠活动已结束" : stockExhausted ? "优惠活动已领完" : !hasEligibleCoupons ? "暂无可领取优惠券" : "可领取",
+      coupons: eligibleCoupons.map((item) => ({
         id: item.coupon.id,
         name: item.coupon.name,
         type: item.coupon.type,
@@ -164,6 +185,7 @@ export class PublicOperationsService {
 
   async askAi(conferenceId: string, input: unknown, currentUser: CurrentUser | undefined) {
     if (!currentUser) throw new UnauthorizedException("Bearer token is required");
+    await this.requirePublishedConference(conferenceId);
     const question = readRequiredString(readObject(input), "question");
     const config = await this.getAiRuntimeConfig();
     const runtime = resolveAiRuntime(config);
@@ -222,6 +244,7 @@ export class PublicOperationsService {
   }
 
   async aiSuggestions(conferenceId: string) {
+    await this.requirePublishedConference(conferenceId);
     const config = await this.getAiRuntimeConfig();
     if (!resolveAiRuntime(config).enabled) return ok({ items: [], status: "DISABLED", message: "会议助手未启用" });
     const manual = await this.prisma.aiSuggestion.findMany({ where: { conferenceId, enabled: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], take: 8 });
@@ -238,26 +261,37 @@ export class PublicOperationsService {
     const body = readObject(input);
     const sourceType = normalizeFinanceSourceType(body.sourceType);
     const orderNo = readRequiredString(body, "orderNo");
-    const order =
-      sourceType === "MALL"
-        ? await this.prisma.mallOrder.findFirst({ where: { orderNo, userId: currentUser.id }, include: { refunds: true } })
-        : await this.prisma.order.findFirst({ where: { orderNo, userId: currentUser.id }, include: { refunds: true } });
-    if (!order || (sourceType === "MALL" ? !["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "REFUNDED"].includes(order.status) : order.status !== "PAID")) {
-      throw new ConflictException("仅已支付订单可申请发票");
-    }
-    const paidAmountCent = order.paidAmountCent ?? order.payableAmountCent;
-    const existing = await this.prisma.invoiceApplication.findMany({
-      where: {
-        userId: currentUser.id,
-        orderNo,
-        sourceType,
-        status: { in: [InvoiceStatus.REQUESTED, InvoiceStatus.APPROVED, InvoiceStatus.ISSUED] }
-      }
-    });
-    const issuedOrPendingAmountCent = existing.reduce((sum, item) => sum + item.amountCent, 0);
-    if (issuedOrPendingAmountCent >= paidAmountCent) throw new ConflictException("该订单已存在发票申请或已完成开票");
     const profileData = readInvoiceProfileData(body);
-    const item = await this.prisma.$transaction(async (tx) => {
+    const item = await runSerializableTransactionWithRetry(this.prisma, "发票申请请求冲突，请重试", async (tx) => {
+      const order =
+        sourceType === "MALL"
+          ? await tx.mallOrder.findFirst({ where: { orderNo, userId: currentUser.id }, include: { refunds: true } })
+          : await tx.order.findFirst({ where: { orderNo, userId: currentUser.id }, include: { refunds: true } });
+      if (!order || (sourceType === "MALL" ? !["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "REFUNDED"].includes(order.status) : order.status !== "PAID")) {
+        throw new ConflictException("仅已支付订单可申请发票");
+      }
+      if (order.refunds.some((refund) => isActiveRefundStatus(refund.status))) {
+        throw new ConflictException("订单退款处理中，退款完成后再申请发票");
+      }
+      const paidAmountCent = order.paidAmountCent ?? order.payableAmountCent;
+      const refundedAmountCent = order.refunds
+        .filter((refund) => refund.status === RefundStatus.SUCCESS)
+        .reduce((sum, refund) => sum + refund.amountCent, 0);
+      const netInvoiceableAmountCent = Math.max(0, paidAmountCent - refundedAmountCent);
+      if (netInvoiceableAmountCent <= 0) throw new ConflictException("该订单已全额退款，不可申请发票");
+
+      const existing = await tx.invoiceApplication.findMany({
+        where: {
+          userId: currentUser.id,
+          orderNo,
+          sourceType,
+          status: { in: [InvoiceStatus.REQUESTED, InvoiceStatus.APPROVED, InvoiceStatus.ISSUED] }
+        }
+      });
+      const issuedOrPendingAmountCent = existing.reduce((sum, invoice) => sum + invoice.amountCent, 0);
+      if (issuedOrPendingAmountCent >= netInvoiceableAmountCent) {
+        throw new ConflictException("该订单已存在发票申请或已完成开票");
+      }
       const created = await tx.invoiceApplication.create({
         data: {
           invoiceNo: generateCode("INV"),
@@ -273,7 +307,7 @@ export class PublicOperationsService {
           address: profileData.address,
           bankName: profileData.bankName,
           bankAccount: profileData.bankAccount,
-          amountCent: paidAmountCent - issuedOrPendingAmountCent,
+          amountCent: netInvoiceableAmountCent - issuedOrPendingAmountCent,
           remark: readNullableString(body.remark),
           status: InvoiceStatus.REQUESTED
         }
@@ -312,13 +346,13 @@ export class PublicOperationsService {
         where: { userId: currentUser.id, status: "PAID" },
         orderBy: { paidAt: "desc" },
         take: 100,
-        include: { conference: { select: { title: true } } }
+        include: { conference: { select: { title: true } }, refunds: true }
       }),
       this.prisma.mallOrder.findMany({
         where: { userId: currentUser.id, status: { in: ["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "REFUNDED"] } },
         orderBy: { paidAt: "desc" },
         take: 100,
-        include: { items: { take: 2 } }
+        include: { items: { take: 2 }, refunds: true }
       }),
       this.prisma.invoiceApplication.findMany({
         where: { userId: currentUser.id, status: { in: [InvoiceStatus.REQUESTED, InvoiceStatus.APPROVED, InvoiceStatus.ISSUED] } }
@@ -330,24 +364,28 @@ export class PublicOperationsService {
       invoiceAmountByKey.set(key, (invoiceAmountByKey.get(key) ?? 0) + item.amountCent);
     }
     const items = [
-      ...registrationOrders.map((order) => formatInvoiceableOrder({
-        sourceType: "REGISTRATION",
-        orderNo: order.orderNo,
-        title: order.conference.title,
-        paidAmountCent: order.paidAmountCent ?? order.payableAmountCent,
-        paidAt: order.paidAt,
-        status: order.status,
-        invoiceAppliedAmountCent: invoiceAmountByKey.get(`REGISTRATION:${order.orderNo}`) ?? 0
-      })),
-      ...mallOrders.map((order) => formatInvoiceableOrder({
-        sourceType: "MALL",
-        orderNo: order.orderNo,
-        title: order.items.map((item) => item.productTitle).join("、") || "商城订单",
-        paidAmountCent: order.paidAmountCent ?? order.payableAmountCent,
-        paidAt: order.paidAt,
-        status: order.status,
-        invoiceAppliedAmountCent: invoiceAmountByKey.get(`MALL:${order.orderNo}`) ?? 0
-      }))
+      ...registrationOrders
+        .filter((order) => !order.refunds.some((refund) => isActiveRefundStatus(refund.status)))
+        .map((order) => formatInvoiceableOrder({
+          sourceType: "REGISTRATION",
+          orderNo: order.orderNo,
+          title: order.conference.title,
+          paidAmountCent: netPaidAmountCent(order),
+          paidAt: order.paidAt,
+          status: order.status,
+          invoiceAppliedAmountCent: invoiceAmountByKey.get(`REGISTRATION:${order.orderNo}`) ?? 0
+        })),
+      ...mallOrders
+        .filter((order) => !order.refunds.some((refund) => isActiveRefundStatus(refund.status)))
+        .map((order) => formatInvoiceableOrder({
+          sourceType: "MALL",
+          orderNo: order.orderNo,
+          title: order.items.map((item) => item.productTitle).join("、") || "商城订单",
+          paidAmountCent: netPaidAmountCent(order),
+          paidAt: order.paidAt,
+          status: order.status,
+          invoiceAppliedAmountCent: invoiceAmountByKey.get(`MALL:${order.orderNo}`) ?? 0
+        }))
     ].filter((item) => item.availableAmountCent > 0);
     items.sort((a, b) => Date.parse(b.paidAt || "1970-01-01") - Date.parse(a.paidAt || "1970-01-01"));
     return ok({ items });
@@ -381,6 +419,9 @@ export class PublicOperationsService {
     const extension = AFTERSALE_IMAGE_TYPES[file.mimetype || ""];
     if (!extension) throw new BadRequestException("售后凭证仅支持 JPG/PNG/WebP 图片");
     if (file.size > 2 * 1024 * 1024) throw new BadRequestException("售后凭证图片单张不能超过 2MB");
+    if (detectImageExtension(file.buffer) !== extension) {
+      throw new BadRequestException("售后凭证图片内容与文件类型不一致");
+    }
     mkdirSync(AFTERSALE_UPLOAD_DIR, { recursive: true });
     const fileName = `${Date.now()}-${randomBytes(8).toString("hex")}${extension}`;
     writeFileSync(join(AFTERSALE_UPLOAD_DIR, fileName), file.buffer, { flag: "wx" });
@@ -418,30 +459,37 @@ export class PublicOperationsService {
     const type = readMallAfterSaleType(body.type);
     const reason = readRequiredString(body, "reason");
     const attachments = readAttachmentUrls(body.attachments ?? body.attachmentUrls);
-    const order = await this.prisma.mallOrder.findFirst({
-      where: { id: orderId, userId: currentUser.id },
-      include: { afterSales: true }
-    });
-    if (!order) throw new NotFoundException("商城订单不存在");
-    if (!["PAID", "SHIPPED", "COMPLETED"].includes(order.status)) throw new ConflictException("仅已支付、已发货或已完成商城订单可申请售后");
-    if (order.afterSales.some((item) => !["REJECTED", "CANCELLED", "COMPLETED"].includes(item.status))) throw new ConflictException("该订单已有处理中售后申请");
-    const item = await this.prisma.$transaction(async (tx) => {
+    const item = await runSerializableTransactionWithRetry(this.prisma, "售后申请请求冲突，请重试", async (tx) => {
+      const order = await tx.mallOrder.findFirst({
+        where: { id: orderId, userId: currentUser.id },
+        include: { afterSales: true }
+      });
+      if (!order) throw new NotFoundException("商城订单不存在");
+      if (!["PAID", "SHIPPED", "COMPLETED"].includes(order.status)) throw new ConflictException("仅已支付、已发货或已完成商城订单可申请售后");
+      if (order.afterSales.some((existing) => !["REJECTED", "CANCELLED", "COMPLETED"].includes(existing.status))) {
+        throw new ConflictException("该订单已有处理中售后申请");
+      }
+      const claimed = await tx.mallOrder.updateMany({
+        where: { id: orderId, userId: currentUser.id, status: { in: ["PAID", "SHIPPED", "COMPLETED"] } },
+        data: { status: "REFUNDING" }
+      });
+      if (claimed.count !== 1) throw new ConflictException("订单状态已变化，请刷新后重试");
       const created = await tx.mallAfterSale.create({
         data: {
           orderId,
           type,
           status: "REQUESTED",
+          previousOrderStatus: order.status,
           reason,
           note: readNullableString(body.note),
           attachmentsJson: attachments
         }
       });
-      await tx.mallOrder.update({ where: { id: orderId }, data: { status: "REFUNDING" } });
       return created;
     });
     return ok({
       ...formatDateFields(item),
-      refundNotice: ["REFUND", "RETURN_REFUND"].includes(type) ? "真实退款暂未开放，提交后需后台审批并走后续退款流程。" : null
+      refundNotice: ["REFUND", "RETURN_REFUND"].includes(type) ? "申请已提交，后台审核后将按微信支付退款状态更新结果。" : null
     });
   }
 
@@ -451,6 +499,14 @@ export class PublicOperationsService {
       update: {},
       create: { name: "default", enabled: isEnabled("AI_KB_ENABLED"), provider: process.env.AI_PROVIDER || "LOCAL_FALLBACK", model: process.env.AI_MODEL || "local-keyword" }
     });
+  }
+
+  private async requirePublishedConference(conferenceId: string): Promise<void> {
+    const conference = await this.prisma.conference.findFirst({
+      where: { id: conferenceId, status: ConferenceStatus.PUBLISHED },
+      select: { id: true }
+    });
+    if (!conference) throw new NotFoundException("会议不存在或尚未发布");
   }
 
   private async getMallPaymentConfig(): Promise<MallPaymentRuntimeConfig | null> {
@@ -494,6 +550,17 @@ export class PublicOperationsService {
       }
     });
   }
+}
+
+function detectImageExtension(buffer: Buffer): string | null {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return ".jpg";
+  if (buffer.length >= 4 && buffer.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) return ".png";
+  if (
+    buffer.length >= 12
+    && buffer.subarray(0, 4).toString("ascii") === "RIFF"
+    && buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  ) return ".webp";
+  return null;
 }
 
 function ok<T>(data: T) {
@@ -631,7 +698,7 @@ function formatAiSource(source: { id: string; documentId: string; documentTitle:
 }
 
 function generateCode(prefix: string): string {
-  return `${prefix}${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  return `${prefix}${Date.now()}${randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
 function formatDateFields(item: Record<string, unknown>): Record<string, unknown> {
@@ -651,6 +718,15 @@ function readOptionalCouponScope(value: unknown): CouponScope | null {
 
 function couponMatchesScope(couponScope: CouponScope, requestedScope: CouponScope): boolean {
   return couponScope === requestedScope || couponScope === CouponScope.BOTH;
+}
+
+function isCouponClaimEligible(coupon: {
+  enabled: boolean;
+  deletedAt: Date | null;
+  startAt: Date | null;
+  endAt: Date | null;
+}, now: Date): boolean {
+  return coupon.enabled && !coupon.deletedAt && (!coupon.startAt || coupon.startAt <= now) && (!coupon.endAt || coupon.endAt >= now);
 }
 
 function couponBusinessType(scope: CouponScope): "CONFERENCE" | "MALL" | "BOTH" {
@@ -709,6 +785,44 @@ function buildMallPaymentNotice(status: string, runtime: ReturnType<typeof resol
   if (runtime.wechatEnabled) return "商城订单可发起微信支付，支付金额以服务端订单应付金额为准。";
   if (runtime.mockEnabled) return "当前为 mock 支付模式，可使用测试支付完成商城订单。";
   return "商城支付未启用，订单保持待支付状态，不会伪造支付成功。";
+}
+
+function isSerializableTransactionConflict(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2034";
+}
+
+function isActiveRefundStatus(status: RefundStatus): boolean {
+  return status === RefundStatus.REQUESTED || status === RefundStatus.APPROVED || status === RefundStatus.PROCESSING;
+}
+
+function netPaidAmountCent(order: {
+  paidAmountCent: number | null;
+  payableAmountCent: number;
+  refunds: Array<{ status: RefundStatus; amountCent: number }>;
+}): number {
+  const paidAmountCent = order.paidAmountCent ?? order.payableAmountCent;
+  const refundedAmountCent = order.refunds
+    .filter((refund) => refund.status === RefundStatus.SUCCESS)
+    .reduce((sum, refund) => sum + refund.amountCent, 0);
+  return Math.max(0, paidAmountCent - refundedAmountCent);
+}
+
+async function runSerializableTransactionWithRetry<T>(
+  prisma: PrismaService,
+  conflictMessage: string,
+  operation: (tx: Prisma.TransactionClient) => Promise<T>
+): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable
+      });
+    } catch (error) {
+      if (attempt < 2 && isSerializableTransactionConflict(error)) continue;
+      throw error;
+    }
+  }
+  throw new ConflictException(conflictMessage);
 }
 
 function formatInvoiceableOrder(input: {

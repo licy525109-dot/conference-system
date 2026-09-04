@@ -508,7 +508,7 @@ describe("Admin management", () => {
         findUnique: async () => ({ id: "conference-1", title: "示例会议", checkInEnabled: false })
       },
       registrationSku: {
-        findFirst: async () => ({ id: "sku-1", name: "嘉宾票", priceCent: 88000, stock: 10, soldCount: 1 })
+        findFirst: async () => ({ id: "sku-1", name: "嘉宾票", priceCent: 88000, stock: 10, lockedStock: 0, soldCount: 1 })
       },
       $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)
     } as unknown as PrismaService;
@@ -825,6 +825,7 @@ function createPrismaMock() {
       description: null,
       priceCent: 70000,
       stock: 10,
+      lockedStock: 0,
       soldCount: 0,
       status: RegistrationSkuStatus.ACTIVE,
       saleStartAt: null,
@@ -845,8 +846,10 @@ function createPrismaMock() {
       payableAmountCent: 70000,
       paidAmountCent: null,
       expiredAt: null,
+      inventoryReservedAt: null,
       paidAt: null,
       createdAt: new Date("2026-06-06T00:00:00.000Z"),
+      items: [],
       registration: null,
       payments: [{ id: "payment-pending", status: PaymentStatus.PENDING, amountCent: 70000, failedReason: null, createdAt: new Date("2026-06-06T00:01:00.000Z"), paidAt: null }]
     },
@@ -857,8 +860,10 @@ function createPrismaMock() {
       payableAmountCent: 70000,
       paidAmountCent: 70000,
       expiredAt: null,
+      inventoryReservedAt: null,
       paidAt: new Date("2026-06-06T02:00:00.000Z"),
       createdAt: new Date("2026-06-06T00:00:00.000Z"),
+      items: [],
       registration: { id: registration.id, registrationNo: registration.registrationNo, status: registration.status },
       payments: [{ id: "payment-success", status: PaymentStatus.SUCCESS, amountCent: 70000, failedReason: null, createdAt: new Date("2026-06-06T00:01:00.000Z"), paidAt: new Date("2026-06-06T02:00:00.000Z") }]
     }
@@ -983,6 +988,7 @@ function createPrismaMock() {
         description: args.data.description,
         priceCent: args.data.priceCent,
         stock: args.data.stock,
+        lockedStock: 0,
         soldCount: 0,
         status: args.data.status ?? RegistrationSkuStatus.ACTIVE,
         saleStartAt: null,
@@ -1036,8 +1042,9 @@ function createPrismaMock() {
         Object.assign(order, args.data);
         return order;
       },
-      updateMany: async (args: { where: { id: { in: string[] }; status?: OrderStatus }; data: { status?: OrderStatus } }) => {
-        const matched = orders.filter((order) => args.where.id.in.includes(order.id) && (!args.where.status || order.status === args.where.status));
+      updateMany: async (args: { where: { id: string | { in: string[] }; status?: OrderStatus }; data: { status?: OrderStatus } }) => {
+        const orderIds = typeof args.where.id === "string" ? [args.where.id] : args.where.id.in;
+        const matched = orders.filter((order) => orderIds.includes(order.id) && (!args.where.status || order.status === args.where.status));
         matched.forEach((order) => Object.assign(order, args.data));
         return { count: matched.length };
       }
@@ -1049,6 +1056,9 @@ function createPrismaMock() {
         matched.forEach(({ payment }) => Object.assign(payment, args.data));
         return { count: matched.length };
       }
+    },
+    couponRedemption: {
+      updateMany: async () => ({ count: 0 })
     },
     registrationAttendee: {
       findUnique: async (args: { where: { id: string } }) => {

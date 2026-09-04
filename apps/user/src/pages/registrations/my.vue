@@ -111,6 +111,7 @@ import type { MyRegistrationItem } from "@/services/registration-types";
 import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
+import { getWechatSubscriptionOptions, subscribeWechatNotifications, type WechatSubscriptionOption } from "@/services/wechat-subscription";
 
 const items = ref<MyRegistrationItem[]>([]);
 const loading = ref(false);
@@ -118,14 +119,22 @@ const error = ref("");
 const refundTarget = ref<MyRegistrationItem | null>(null);
 const refundReason = ref("");
 const refunding = ref(false);
+const refundReminder = ref<WechatSubscriptionOption | null>(null);
+const refundReminderAccepted = ref(false);
 const cmsPage = ref<PublishedPage | null>(null);
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("my-registrations");
 
 onMounted(() => {
   void refreshTheme();
   void loadCmsPage();
+  void loadRefundReminder();
   void loadRegistrations();
 });
+
+async function loadRefundReminder() {
+  const options = await getWechatSubscriptionOptions(["REFUND_STATUS_UPDATED"]).catch(() => []);
+  refundReminder.value = options.find((item) => item.templateCode === "REFUND_STATUS_UPDATED" && item.enabled) ?? null;
+}
 
 async function loadCmsPage() {
   cmsPage.value = await getPublishedPage("my-registrations").catch(() => null);
@@ -204,6 +213,14 @@ async function submitRefund() {
   }
   refunding.value = true;
   try {
+    if (refundReminder.value && !refundReminderAccepted.value) {
+      try {
+        const subscription = await subscribeWechatNotifications([refundReminder.value]);
+        refundReminderAccepted.value = subscription.accepted;
+      } catch (subscriptionError) {
+        console.error("[REFUND_REMINDER_SUBSCRIBE_ERROR]", subscriptionError);
+      }
+    }
     await requestRegistrationRefund(refundTarget.value.order.orderNo, refundReason.value.trim());
     closeRefundAfterSubmit();
     await loadRegistrations();

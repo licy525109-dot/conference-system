@@ -21,6 +21,12 @@ export class NotificationsController {
     return this.notificationsService.subscribe(body, request.currentUser!);
   }
 
+  @Get("subscription-config")
+  @UseGuards(JwtAuthGuard)
+  subscriptionConfig(@Query() query: Record<string, unknown>) {
+    return this.notificationsService.getSubscriptionConfig(query);
+  }
+
   @Get("my")
   @UseGuards(JwtAuthGuard)
   my(@Query() query: Record<string, unknown>, @Req() request: RequestWithCurrentUser) {

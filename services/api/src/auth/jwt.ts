@@ -44,7 +44,14 @@ export function verifyJwt(token: string, secret: string): JwtPayload | null {
     if (typeof payload.sub !== "string" || typeof payload.iat !== "number") {
       return null;
     }
-    if (typeof payload.exp === "number" && payload.exp < Math.floor(Date.now() / 1000)) {
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.iat > now + 60) {
+      return null;
+    }
+    if (process.env.NODE_ENV === "production" && typeof payload.exp !== "number") {
+      return null;
+    }
+    if (typeof payload.exp === "number" && payload.exp <= now) {
       return null;
     }
 

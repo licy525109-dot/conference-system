@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { randomBytes } from "node:crypto";
 import { CurrentUser } from "../auth/current-user";
 import { applyMallCoupon, type MallCouponPricedItem } from "../mall/mall-coupon-pricing";
 import { resolveMallPaymentRuntime } from "../mall/mall-payment.config";
@@ -7,6 +8,7 @@ import { PrismaService } from "../prisma.service";
 import { RegistrationService } from "../registration/registration.service";
 
 const FORBIDDEN_AMOUNT_FIELDS = new Set(["originAmountCent", "discountAmountCent", "payableAmountCent", "paidAmountCent", "amountCent", "totalAmountCent", "priceCent"]);
+const MALL_ORDER_EXPIRES_IN_MS = 15 * 60 * 1000;
 
 @Injectable()
 export class CartService {
@@ -22,7 +24,7 @@ export class CartService {
         orderBy: { updatedAt: "desc" },
         include: {
           conference: { select: { id: true, title: true, startsAt: true, location: true, status: true } },
-          sku: { select: { id: true, name: true, priceCent: true, stock: true, soldCount: true, status: true } }
+          sku: { select: { id: true, name: true, priceCent: true, stock: true, lockedStock: true, soldCount: true, status: true } }
         }
       }),
       this.prisma.cartItem.findMany({
@@ -88,6 +90,7 @@ export class CartService {
     });
     if (!sku) throw new NotFoundException("报名规格不存在");
     if (sku.status !== "ACTIVE" || sku.conference.status !== "PUBLISHED") throw new ForbiddenException("当前报名规格暂不可加入购物车");
+    if (sku.stock - sku.lockedStock - sku.soldCount < quantity) throw new BadRequestException("报名名额不足");
     if (attendees && attendees.length !== quantity) throw new BadRequestException("参会人数量必须等于票数");
 
     const item = await this.prisma.registrationCartItem.create({
@@ -108,8 +111,14 @@ export class CartService {
     const quantity = typeof body.quantity === "undefined" ? undefined : readQuantity(body.quantity);
     const attendees = readOptionalArray(body.attendees);
     if (quantity && attendees && attendees.length !== quantity) throw new BadRequestException("参会人数量必须等于票数");
-    const existing = await this.prisma.registrationCartItem.findFirst({ where: { id, userId: currentUser.id }, select: { id: true } });
+    const existing = await this.prisma.registrationCartItem.findFirst({
+      where: { id, userId: currentUser.id },
+      select: { id: true, sku: { select: { stock: true, lockedStock: true, soldCount: true, status: true } } }
+    });
     if (!existing) throw new NotFoundException("购物车报名项不存在");
+    if (quantity && (existing.sku.status !== "ACTIVE" || existing.sku.stock - existing.sku.lockedStock - existing.sku.soldCount < quantity)) {
+      throw new BadRequestException("报名名额不足或票种已停用");
+    }
     const item = await this.prisma.registrationCartItem.update({
       where: { id },
       data: {
@@ -244,9 +253,10 @@ export class CartService {
       const coupon = await applyMallCoupon(tx, { couponCode, userId: currentUser.id, items: pricedItems, originAmountCent });
       const discountAmountCent = coupon?.discountAmountCent ?? 0;
       const payableAmountCent = Math.max(0, originAmountCent - discountAmountCent);
+      if (payableAmountCent <= 0) throw new BadRequestException("商城公开订单应付金额必须大于 0");
       const created = await tx.mallOrder.create({
         data: {
-          orderNo: `MALL${Date.now()}${Math.floor(Math.random() * 1000)}`,
+          orderNo: `MALL${Date.now()}${randomBytes(4).toString("hex").toUpperCase()}`,
           userId: currentUser.id,
           originAmountCent,
           discountAmountCent,
@@ -254,6 +264,7 @@ export class CartService {
           status: "PENDING_PAYMENT",
           couponId: coupon?.couponId ?? null,
           couponCode: coupon?.couponCode ?? null,
+          expiredAt: new Date(Date.now() + MALL_ORDER_EXPIRES_IN_MS),
           receiverName,
           receiverPhone,
           receiverAddress,
@@ -291,6 +302,7 @@ export class CartService {
       orderNo: order.orderNo,
       status: order.status,
       payableAmountCent: order.payableAmountCent,
+      expiredAt: order.expiredAt?.toISOString() ?? null,
       paymentEnabled: paymentRuntime.paymentEnabled,
       paymentNotice: buildMallPaymentNotice(paymentRuntime)
     });

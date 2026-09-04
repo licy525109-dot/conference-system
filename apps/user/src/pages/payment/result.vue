@@ -51,6 +51,7 @@ import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getPaymentActionLabel, getPaymentStatus, startOrderPayment, type PaymentStatusResponse } from "@/services/payment";
 import { buildPaymentErrorMessage } from "@/services/paymentError";
+import { getWechatSubscriptionOptions, subscribeWechatNotifications, type WechatSubscriptionOption } from "@/services/wechat-subscription";
 import { formatDateTime } from "@/utils/date";
 import { goHome } from "@/utils/navigation";
 
@@ -58,6 +59,8 @@ const orderNo = ref("");
 const paymentStatus = ref<PaymentStatusResponse | null>(null);
 const loading = ref(false);
 const confirming = ref(false);
+const paymentReminder = ref<WechatSubscriptionOption | null>(null);
+const paymentReminderAccepted = ref(false);
 const error = ref("");
 const errorContext = ref<"status" | "payment">("status");
 const paymentActionLabel = getPaymentActionLabel();
@@ -102,8 +105,14 @@ const errorTitle = computed(() => errorContext.value === "payment" ? "支付未�
 onLoad((query) => {
   orderNo.value = String(query?.orderNo || "");
   void refreshTheme();
+  void loadPaymentReminder();
   void loadStatus();
 });
+
+async function loadPaymentReminder() {
+  const options = await getWechatSubscriptionOptions(["PAYMENT_SUCCESS"]).catch(() => []);
+  paymentReminder.value = options.find((item) => item.templateCode === "PAYMENT_SUCCESS" && item.enabled) ?? null;
+}
 
 async function loadStatus() {
   errorContext.value = "status";
@@ -139,6 +148,14 @@ async function confirmPay() {
 
   try {
     await ensureLogin();
+    if (paymentReminder.value && !paymentReminderAccepted.value) {
+      try {
+        const subscription = await subscribeWechatNotifications([paymentReminder.value]);
+        paymentReminderAccepted.value = subscription.accepted;
+      } catch (subscriptionError) {
+        console.error("[PAYMENT_REMINDER_SUBSCRIBE_ERROR]", subscriptionError);
+      }
+    }
     paymentStatus.value = await startOrderPayment(orderNo.value);
     await loadStatus();
     uni.showToast({ title: "支付已确认", icon: "success" });

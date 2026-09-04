@@ -18,6 +18,7 @@ import {
   Prisma,
   RegistrationSkuStatus
 } from "@prisma/client";
+import { randomBytes } from "node:crypto";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 
@@ -161,6 +162,9 @@ export class RegistrationService {
       couponCode: readOptionalCouponCode(input),
       userId: currentUser.id
     });
+    if (pricing.payableAmountCent <= 0) {
+      throw new ConflictException("0 元嘉宾报名请由后台使用“添加免支付嘉宾”，公开报名订单必须有应付金额");
+    }
     const expiredAt = new Date(this.getCurrentTime().getTime() + ORDER_EXPIRES_IN_MS);
     const snapshotItems = pricing.items.map((item) => ({ ...item })) as Prisma.InputJsonArray;
     const snapshotAttendees = attendees.map((attendee) => ({ ...attendee })) as Prisma.InputJsonArray;
@@ -224,7 +228,7 @@ export class RegistrationService {
 
   protected generateOrderNo(): string {
     const date = this.getCurrentTime().toISOString().slice(0, 10).replaceAll("-", "");
-    const randomPart = Math.random().toString(36).slice(2, 10).toUpperCase().padEnd(8, "0");
+    const randomPart = randomBytes(4).toString("hex").toUpperCase();
     return `REG${date}${randomPart}`;
   }
 
@@ -275,6 +279,7 @@ export class RegistrationService {
         name: true,
         priceCent: true,
         stock: true,
+        lockedStock: true,
         soldCount: true,
         status: true,
         saleStartAt: true,
@@ -290,7 +295,7 @@ export class RegistrationService {
       throw new ConflictException("Registration SKU is not active");
     }
 
-    if (sku.stock - sku.soldCount < quantity) {
+    if (sku.stock - sku.lockedStock - sku.soldCount < quantity) {
       throw new ConflictException("Registration SKU is out of stock");
     }
 
@@ -597,6 +602,8 @@ export class RegistrationService {
       try {
         const orderNo = this.generateOrderNo();
         return await this.prisma.$transaction(async (tx) => {
+          const inventoryReservedAt = this.getCurrentTime();
+          await validateRegistrationCouponReservation(tx, input, inventoryReservedAt);
           const order = await tx.order.create({
             data: {
               orderNo,
@@ -611,7 +618,8 @@ export class RegistrationService {
               registrationSnapshotJson: input.registrationSnapshotJson,
               attendeeName: input.attendeeName,
               phone: input.phone,
-              expiredAt: input.expiredAt
+              expiredAt: input.expiredAt,
+              inventoryReservedAt
             },
             select: {
               id: true,
@@ -619,6 +627,8 @@ export class RegistrationService {
               expiredAt: true
             }
           });
+
+          await reserveRegistrationInventory(tx, input.conferenceId, input.items, inventoryReservedAt);
 
           for (const item of input.items) {
             await tx.orderItem.create({
@@ -661,9 +671,9 @@ export class RegistrationService {
             orderNo: order.orderNo,
             expiredAt: order.expiredAt ?? input.expiredAt
           };
-        });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       } catch (error) {
-        if (!isUniqueConstraintError(error)) {
+        if (!isUniqueConstraintError(error) && !isSerializableTransactionConflict(error)) {
           throw error;
         }
 
@@ -673,6 +683,105 @@ export class RegistrationService {
 
     throw new ConflictException("Unable to generate unique order number", { cause: lastError });
   }
+}
+
+async function reserveRegistrationInventory(
+  tx: Prisma.TransactionClient,
+  conferenceId: string,
+  items: PricedRegistrationItem[],
+  now: Date
+): Promise<void> {
+  for (const item of items) {
+    const sku = await tx.registrationSku.findFirst({
+      where: { id: item.skuId, conferenceId },
+      select: {
+        id: true,
+        name: true,
+        stock: true,
+        lockedStock: true,
+        soldCount: true,
+        status: true,
+        saleStartAt: true,
+        saleEndAt: true
+      }
+    });
+    if (!sku) throw new NotFoundException("Registration SKU not found");
+    if (sku.status !== RegistrationSkuStatus.ACTIVE) {
+      throw new ConflictException(`${sku.name} 已停止销售`);
+    }
+    if (sku.saleStartAt && sku.saleStartAt > now) {
+      throw new ConflictException(`${sku.name} 尚未开售`);
+    }
+    if (sku.saleEndAt && sku.saleEndAt < now) {
+      throw new ConflictException(`${sku.name} 已结束销售`);
+    }
+    if (sku.stock - sku.lockedStock - sku.soldCount < item.quantity) {
+      throw new ConflictException(`${sku.name} 库存不足`);
+    }
+
+    const reserved = await tx.registrationSku.updateMany({
+      where: {
+        id: sku.id,
+        status: RegistrationSkuStatus.ACTIVE,
+        lockedStock: sku.lockedStock,
+        soldCount: sku.soldCount,
+        stock: { gte: sku.lockedStock + sku.soldCount + item.quantity }
+      },
+      data: { lockedStock: { increment: item.quantity } }
+    });
+    if (reserved.count !== 1) {
+      throw new ConflictException(`${sku.name} 库存正在变化，请刷新后重试`);
+    }
+  }
+}
+
+async function validateRegistrationCouponReservation(
+  tx: Prisma.TransactionClient,
+  input: CreatePendingOrderInput,
+  now: Date
+): Promise<void> {
+  if (!input.couponId) return;
+
+  const coupon = await tx.coupon.findUnique({ where: { id: input.couponId } });
+  if (!coupon) throw new BadRequestException("优惠券不存在");
+
+  const discountBaseAmountCent = calculateEffectiveAmount(input.items);
+  const totalQuantity = input.items.reduce((sum, item) => sum + item.quantity, 0);
+  validateCoupon(coupon, now, input.conferenceId, input.items, discountBaseAmountCent, totalQuantity);
+  await ensureCouponClaimedForUse(tx, coupon.id, input.userId);
+
+  const [registrationUsed, mallUsed, userRegistrationUsed, userMallUsed] = await Promise.all([
+    tx.couponRedemption.count({
+      where: { couponId: coupon.id, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
+    }),
+    tx.mallCouponRedemption.count({
+      where: { couponId: coupon.id, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
+    }),
+    tx.couponRedemption.count({
+      where: { couponId: coupon.id, userId: input.userId, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
+    }),
+    tx.mallCouponRedemption.count({
+      where: { couponId: coupon.id, userId: input.userId, status: { in: [CouponRedemptionStatus.PENDING, CouponRedemptionStatus.USED] } }
+    })
+  ]);
+  if (typeof coupon.totalLimit === "number" && registrationUsed + mallUsed >= coupon.totalLimit) {
+    throw new BadRequestException("优惠券已被领完或使用完");
+  }
+  if (typeof coupon.perUserLimit === "number" && userRegistrationUsed + userMallUsed >= coupon.perUserLimit) {
+    throw new BadRequestException("你已使用过该优惠券");
+  }
+
+  const scopedAmountCent = filterAllowedItems(input.items, coupon.allowedSkuIds)
+    .reduce((sum, item) => sum + effectiveSubtotalCent(item), 0);
+  const currentDiscountAmountCent = calculateCouponAmount(coupon, scopedAmountCent);
+  const reservedDiscount = input.discounts.find((discount) => discount.couponId === coupon.id);
+  if (!reservedDiscount || reservedDiscount.amountCent !== currentDiscountAmountCent) {
+    throw new ConflictException("优惠券配置已变化，请刷新金额后重试");
+  }
+}
+
+function isSerializableTransactionConflict(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2034";
 }
 
 function ensureOrderUserCanCreateOrder(currentUser: CurrentUser): void {
