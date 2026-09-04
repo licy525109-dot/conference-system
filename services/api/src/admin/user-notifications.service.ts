@@ -12,6 +12,7 @@ export class UserNotificationsService {
     const unreadOnly = query.unreadOnly === "true" || query.unreadOnly === true;
     const where = {
       userId: currentUser.id,
+      dismissedAt: null,
       ...(unreadOnly ? { readAt: null } : {})
     };
     const [items, total, unreadCount] = await this.prisma.$transaction([
@@ -22,7 +23,7 @@ export class UserNotificationsService {
         take: pageSize
       }),
       this.prisma.userNotification.count({ where }),
-      this.prisma.userNotification.count({ where: { userId: currentUser.id, readAt: null } })
+      this.prisma.userNotification.count({ where: { userId: currentUser.id, readAt: null, dismissedAt: null } })
     ]);
 
     return ok({
@@ -41,14 +42,14 @@ export class UserNotificationsService {
 
   async unreadCount(currentUser: CurrentUser) {
     const count = await this.prisma.userNotification.count({
-      where: { userId: currentUser.id, readAt: null }
+      where: { userId: currentUser.id, readAt: null, dismissedAt: null }
     });
     return ok({ count });
   }
 
   async markRead(id: string, currentUser: CurrentUser) {
     const notification = await this.prisma.userNotification.findFirst({
-      where: { id, userId: currentUser.id },
+      where: { id, userId: currentUser.id, dismissedAt: null },
       select: { id: true, readAt: true }
     });
     if (!notification) throw new NotFoundException("消息不存在");
@@ -60,10 +61,23 @@ export class UserNotificationsService {
   async markAllRead(currentUser: CurrentUser) {
     const readAt = new Date();
     const result = await this.prisma.userNotification.updateMany({
-      where: { userId: currentUser.id, readAt: null },
+      where: { userId: currentUser.id, readAt: null, dismissedAt: null },
       data: { readAt }
     });
     return ok({ count: result.count, readAt: readAt.toISOString() });
+  }
+
+  async dismiss(id: string, currentUser: CurrentUser) {
+    const notification = await this.prisma.userNotification.findFirst({
+      where: { id, userId: currentUser.id },
+      select: { id: true, dismissedAt: true }
+    });
+    if (!notification) throw new NotFoundException("消息不存在");
+    const dismissedAt = notification.dismissedAt ?? new Date();
+    if (!notification.dismissedAt) {
+      await this.prisma.userNotification.update({ where: { id }, data: { dismissedAt } });
+    }
+    return ok({ id, dismissedAt: dismissedAt.toISOString() });
   }
 }
 

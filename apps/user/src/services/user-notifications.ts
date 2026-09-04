@@ -80,3 +80,10 @@ export function markAllNotificationsRead(): Promise<{ count: number; readAt: str
     auth: true
   });
 }
+
+export function dismissNotification(id: string): Promise<{ id: string; dismissedAt: string }> {
+  return request<{ id: string; dismissedAt: string }>(`/notifications/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    auth: true
+  });
+}

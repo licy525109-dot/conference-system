@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequestWithCurrentUser } from "../auth/current-user";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
@@ -49,6 +49,12 @@ export class NotificationsController {
   @UseGuards(JwtAuthGuard)
   markRead(@Param("id") id: string, @Req() request: RequestWithCurrentUser) {
     return this.userNotificationsService.markRead(id, request.currentUser!);
+  }
+
+  @Delete(":id")
+  @UseGuards(JwtAuthGuard)
+  dismiss(@Param("id") id: string, @Req() request: RequestWithCurrentUser) {
+    return this.userNotificationsService.dismiss(id, request.currentUser!);
   }
 }
 

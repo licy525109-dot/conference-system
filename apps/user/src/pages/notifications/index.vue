@@ -38,38 +38,52 @@
       mark="讯"
     />
     <view v-else class="message-list">
-      <view v-for="item in items" :key="item.id" class="message-item" :class="{ unread: !item.readAt }" @click="openNotification(item)">
-        <view class="message-marker"><view class="message-dot" /></view>
-        <view class="message-body">
-          <view class="message-meta">
-            <text>{{ typeText(item.type) }}</text>
-            <text>{{ formatMessageTime(item.createdAt) }}</text>
-          </view>
-          <text class="message-title">{{ item.title }}</text>
-          <text v-if="item.summary" class="message-summary">{{ item.summary }}</text>
-          <view v-if="schedulePreview(item).length" class="schedule-preview">
-            <view v-for="schedule in schedulePreview(item)" :key="schedule.id" class="preview-row">
-              <view class="preview-time">
-                <text>{{ dayOnly(schedule.startsAt) }}</text>
-                <text>{{ timeOnly(schedule.startsAt) }}</text>
-              </view>
-              <view class="preview-copy">
-                <text class="preview-name">{{ schedule.name }}</text>
-                <view
-                  v-for="field in scheduleFields(schedule)"
-                  :key="field.key"
-                  class="preview-field"
-                  :class="{ 'preview-field--strong': field.emphasis }"
-                >
-                  <text class="preview-field__label">{{ field.label }}：</text>
-                  <text class="preview-field__value">{{ field.value }}</text>
+      <view v-for="item in items" :key="item.id" class="message-swipe">
+        <button
+          class="message-clear"
+          :disabled="dismissingId === item.id"
+          @click.stop="confirmDismiss(item)"
+        >{{ dismissingId === item.id ? "处理中" : "清除" }}</button>
+        <view
+          class="message-item"
+          :class="{ unread: !item.readAt, 'message-item--revealed': revealedId === item.id }"
+          @click="handleNotificationClick(item)"
+          @touchstart="onSwipeStart(item.id, $event)"
+          @touchend="onSwipeEnd(item.id, $event)"
+          @touchcancel="cancelSwipe"
+        >
+          <view class="message-marker"><view class="message-dot" /></view>
+          <view class="message-body">
+            <view class="message-meta">
+              <text>{{ typeText(item.type) }}</text>
+              <text>{{ formatMessageTime(item.createdAt) }}</text>
+            </view>
+            <text class="message-title">{{ item.title }}</text>
+            <text v-if="item.summary" class="message-summary">{{ item.summary }}</text>
+            <view v-if="schedulePreview(item).length" class="schedule-preview">
+              <view v-for="schedule in schedulePreview(item)" :key="schedule.id" class="preview-row">
+                <view class="preview-time">
+                  <text>{{ dayOnly(schedule.startsAt) }}</text>
+                  <text>{{ timeOnly(schedule.startsAt) }}</text>
+                </view>
+                <view class="preview-copy">
+                  <text class="preview-name">{{ schedule.name }}</text>
+                  <view
+                    v-for="field in scheduleFields(schedule)"
+                    :key="field.key"
+                    class="preview-field"
+                    :class="{ 'preview-field--strong': field.emphasis }"
+                  >
+                    <text class="preview-field__label">{{ field.label }}：</text>
+                    <text class="preview-field__value">{{ field.value }}</text>
+                  </view>
                 </view>
               </view>
             </view>
-          </view>
-          <view class="message-footer">
-            <text>{{ item.readAt ? "已读" : "新消息" }}</text>
-            <text>{{ notificationActionText(item) }} ›</text>
+            <view class="message-footer">
+              <text>{{ item.readAt ? "已读" : "新消息" }}</text>
+              <text>{{ notificationActionText(item) }} ›</text>
+            </view>
           </view>
         </view>
       </view>
@@ -143,7 +157,7 @@ import LoadingState from "@/components/ui/LoadingState.vue";
 import { clearExpiredAuthSession, ensureAuthenticatedUser, isAuthSessionExpiredError } from "@/services/auth";
 import { getGuestScheduleSubscriptionConfig, subscribeGuestScheduleUpdates, type GuestScheduleSubscriptionConfig } from "@/services/guest-schedule";
 import { getMyGuestSchedules, type MyGuestScheduleItem } from "@/services/guest-schedule";
-import { getMyNotifications, markAllNotificationsRead, markNotificationRead, type UserNotification, type UserNotificationScheduleItem } from "@/services/user-notifications";
+import { dismissNotification, getMyNotifications, markAllNotificationsRead, markNotificationRead, type UserNotification, type UserNotificationScheduleItem } from "@/services/user-notifications";
 import { buildGuestScheduleFields } from "@/utils/guestSchedulePresentation";
 
 const items = ref<UserNotification[]>([]);
@@ -159,6 +173,11 @@ const selectedNotification = ref<UserNotification | null>(null);
 const detailSchedules = ref<Array<UserNotificationScheduleItem | MyGuestScheduleItem>>([]);
 const detailLoading = ref(false);
 const selectedConferenceId = ref("");
+const revealedId = ref("");
+const dismissingId = ref("");
+const ignoredClickId = ref("");
+let swipeStart: { id: string; x: number; y: number } | null = null;
+let ignoredClickTimer: ReturnType<typeof setTimeout> | null = null;
 
 onShow(() => {
   void load();
@@ -197,8 +216,79 @@ function retryLoad() {
 }
 
 function setFilter(value: "all" | "unread") {
+  revealedId.value = "";
   filter.value = value;
   void load();
+}
+
+function onSwipeStart(id: string, event: TouchEvent) {
+  const touch = event.touches[0];
+  if (!touch) return;
+  if (revealedId.value && revealedId.value !== id) revealedId.value = "";
+  swipeStart = { id, x: touch.clientX, y: touch.clientY };
+}
+
+function onSwipeEnd(id: string, event: TouchEvent) {
+  const touch = event.changedTouches[0];
+  const start = swipeStart;
+  swipeStart = null;
+  if (!touch || !start || start.id !== id) return;
+  const deltaX = touch.clientX - start.x;
+  const deltaY = touch.clientY - start.y;
+  if (Math.abs(deltaX) < 36 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+  revealedId.value = deltaX < 0 ? id : "";
+  ignoredClickId.value = id;
+  if (ignoredClickTimer) clearTimeout(ignoredClickTimer);
+  ignoredClickTimer = setTimeout(() => {
+    if (ignoredClickId.value === id) ignoredClickId.value = "";
+  }, 350);
+}
+
+function cancelSwipe() {
+  swipeStart = null;
+}
+
+function handleNotificationClick(item: UserNotification) {
+  if (ignoredClickId.value === item.id) return;
+  if (revealedId.value) {
+    revealedId.value = "";
+    return;
+  }
+  void openNotification(item);
+}
+
+function confirmDismiss(item: UserNotification) {
+  if (dismissingId.value) return;
+  uni.showModal({
+    title: "清除这条消息？",
+    content: "清除后，这条消息将不再出现在你的消息列表中。",
+    confirmText: "清除",
+    confirmColor: "#b83232",
+    success: (result) => {
+      if (result.confirm) {
+        void performDismiss(item);
+      } else {
+        revealedId.value = "";
+      }
+    }
+  });
+}
+
+async function performDismiss(item: UserNotification) {
+  dismissingId.value = item.id;
+  try {
+    await dismissNotification(item.id);
+    items.value = items.value.filter((candidate) => candidate.id !== item.id);
+    if (!item.readAt) unreadCount.value = Math.max(0, unreadCount.value - 1);
+    revealedId.value = "";
+    uni.$emit("notifications:changed");
+    uni.showToast({ title: "消息已清除", icon: "none" });
+  } catch (err) {
+    console.error("[USER_NOTIFICATION_DISMISS_ERROR]", err);
+    uni.showToast({ title: "清除失败，请稍后重试", icon: "none" });
+  } finally {
+    dismissingId.value = "";
+  }
 }
 
 async function readAll() {
@@ -396,7 +486,12 @@ function formatMessageTime(value: string) {
 .filter-bar button.active { background: #fff; color: #16283b; box-shadow: 0 2rpx 8rpx rgba(20, 32, 51, 0.08); }
 
 .message-list { display: flex; flex-direction: column; gap: 16rpx; }
-.message-item { display: grid; grid-template-columns: 24rpx minmax(0, 1fr); padding: 26rpx 26rpx 24rpx 18rpx; border: 1px solid #e0e5e8; border-radius: 12rpx; background: #fff; }
+.message-swipe { position: relative; overflow: hidden; border-radius: 12rpx; background: #b83232; }
+.message-clear { position: absolute; z-index: 0; top: 0; right: 0; display: flex; width: 160rpx; height: 100%; margin: 0; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 0; background: #b83232; color: #fff; font-size: 30rpx; font-weight: 900; line-height: 1; }
+.message-clear::after { border: 0; }
+.message-clear[disabled] { background: #965555; color: rgba(255, 255, 255, 0.82); }
+.message-item { position: relative; z-index: 1; display: grid; width: 100%; grid-template-columns: 24rpx minmax(0, 1fr); padding: 26rpx 26rpx 24rpx 18rpx; border: 1px solid #e0e5e8; border-radius: 12rpx; background: #fff; box-sizing: border-box; transform: translateX(0); transition: transform 180ms ease; }
+.message-item--revealed { transform: translateX(-160rpx); }
 .message-item.unread { border-color: #c9dce8; box-shadow: inset 5rpx 0 #2e6689; }
 .message-marker { display: flex; justify-content: center; padding-top: 7rpx; }
 .message-dot { width: 10rpx; height: 10rpx; border-radius: 50%; background: #c5cbd1; }
