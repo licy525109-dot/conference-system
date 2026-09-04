@@ -3,13 +3,13 @@ import uniPlugin from "@dcloudio/vite-plugin-uni";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { findForbiddenProductionArtifact } from "./scripts/production-artifact-scan";
 
 const uni = "default" in uniPlugin ? uniPlugin.default : uniPlugin;
 const configDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(configDir, "../..");
 const miniProgramDistDir = resolve(configDir, "dist/build/mp-weixin");
 const productionApiBaseUrl = "https://guanchaohuiji.com/api";
-const forbiddenProductionBuildPatterns = [/localhost/i, /127\.0\.0\.1/, /192\.168/, /:3000/, /vConsole/i];
 const textFileExtensions = new Set([".js", ".json", ".wxml", ".wxss", ".map", ".txt"]);
 
 export default defineConfig(({ mode }) => {
@@ -67,9 +67,13 @@ function verifyMiniProgramProductionBuild(enableVConsole: boolean): void {
     throw new Error(`mp-weixin build must include ${productionApiBaseUrl}`);
   }
 
-  const forbiddenHit = contents.find((file) => forbiddenProductionBuildPatterns.some((pattern) => pattern.test(file.content)));
+  const forbiddenHit = contents
+    .map((file) => ({ ...file, violation: findForbiddenProductionArtifact(file.content) }))
+    .find((file) => file.violation);
   if (forbiddenHit) {
-    throw new Error(`mp-weixin production build contains a forbidden local URL in ${forbiddenHit.filePath}`);
+    throw new Error(
+      `mp-weixin production build contains ${forbiddenHit.violation?.label ?? "forbidden debug content"} in ${forbiddenHit.filePath}`
+    );
   }
 
   if (!enableVConsole && readAppJsonDebug() !== false) {
