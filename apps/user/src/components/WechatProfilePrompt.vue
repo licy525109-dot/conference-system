@@ -54,9 +54,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { ensureLogin, isAuthSessionExpiredError, refreshLogin } from "@/services/auth";
+import { ensureLogin, getToken, isAuthSessionExpiredError, refreshLogin } from "@/services/auth";
 import { bindWechatPhone, getWechatProfile, updateWechatProfile, uploadWechatAvatar } from "@/services/profile";
 import { ApiRequestError } from "@/services/request";
+import { isProfilePromptOwnerActive, shouldAutoCheckWechatProfile } from "@/utils/wechatProfilePrompt";
 
 const miniProgramEnabled = ref(false);
 const visible = ref(false);
@@ -68,6 +69,7 @@ const wechatNickname = ref("");
 const wechatAvatarUrl = ref("");
 const pendingAvatarPath = ref("");
 const avatarLoadFailed = ref(false);
+let ownerPage: unknown = null;
 
 const displayAvatarUrl = computed(() => (avatarLoadFailed.value ? "" : pendingAvatarPath.value || wechatAvatarUrl.value));
 const previewName = computed(() => wechatNickname.value.trim() || "请选择头像并填写昵称");
@@ -75,19 +77,24 @@ const dialogTitle = computed(() => phone.value ? "完善微信资料" : "绑定�
 const dialogSummary = computed(() => phone.value ? "头像和昵称用于报名凭证展示" : "授权后自动读取微信绑定手机号，无需手动输入");
 
 onMounted(() => {
+  ownerPage = currentTopPage();
   uni.$on("wechat-profile:open", openProfilePrompt);
   // #ifdef MP-WEIXIN
   miniProgramEnabled.value = true;
-  void checkProfile();
+  if (shouldAutoCheckWechatProfile(getToken())) {
+    void checkProfile();
+  }
   // #endif
 });
 
 onUnmounted(() => {
   uni.$off("wechat-profile:open", openProfilePrompt);
+  ownerPage = null;
 });
 
 async function openProfilePrompt() {
   // #ifdef MP-WEIXIN
+  if (!isOwnerPageActive()) return;
   miniProgramEnabled.value = true;
   await checkProfile({ forceOpen: true });
   // #endif
@@ -103,6 +110,7 @@ async function checkProfile(options?: { forceOpen?: boolean }) {
     phone.value = profile.phone || "";
     wechatNickname.value = profile.wechatNickname || "";
     wechatAvatarUrl.value = profile.wechatAvatarUrl || "";
+    if (!isOwnerPageActive()) return;
     visible.value = options?.forceOpen ? true : !phone.value || !wechatNickname.value || !wechatAvatarUrl.value;
   } catch (err) {
     console.error("[WECHAT_PROFILE_PROMPT_LOAD_ERROR]", err);
@@ -228,6 +236,15 @@ async function saveProfile() {
 
 function dismiss() {
   visible.value = false;
+}
+
+function currentTopPage(): unknown {
+  const pages = getCurrentPages();
+  return pages[pages.length - 1] ?? null;
+}
+
+function isOwnerPageActive(): boolean {
+  return isProfilePromptOwnerActive(ownerPage, getCurrentPages());
 }
 
 function readEventAvatarUrl(event: unknown): string {

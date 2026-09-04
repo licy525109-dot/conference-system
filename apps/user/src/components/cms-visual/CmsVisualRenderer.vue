@@ -1461,9 +1461,10 @@ function goPath(path: string) {
 
 async function goLoginPath(path: string): Promise<void> {
   try {
+    const wasLoggedOut = !getToken();
     await ensureLogin();
     refreshStoredUser();
-    if (!storedUser.value?.wechatNickname || !storedUser.value?.wechatAvatarUrl) {
+    if (wasLoggedOut && (!storedUser.value?.wechatNickname || !storedUser.value?.wechatAvatarUrl)) {
       setTimeout(() => uni.$emit("wechat-profile:open"), 120);
     }
     goPath(path);
@@ -1975,9 +1976,10 @@ async function handleConferenceAction(item: ConferenceListItem, component: CmsCo
   }
 
   try {
+    const wasLoggedOut = !getToken();
     await ensureLogin();
     refreshStoredUser();
-    if (!storedUser.value?.wechatNickname || !storedUser.value?.wechatAvatarUrl) {
+    if (wasLoggedOut && (!storedUser.value?.wechatNickname || !storedUser.value?.wechatAvatarUrl)) {
       setTimeout(() => uni.$emit("wechat-profile:open"), 120);
     }
     const result = await reserveConferenceAppointment(item.id);
