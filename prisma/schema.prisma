@@ -649,6 +649,7 @@ model Conference {
   checkInFieldBindings     Json?
   groupRegistrationEnabled Boolean                    @default(true)
   maxTicketsPerOrder       Int?
+  showRegistrationCount    Boolean                    @default(false)
   status                   ConferenceStatus           @default(DRAFT)
   sortOrder                Int                        @default(0)
   createdAt                DateTime                   @default(now())

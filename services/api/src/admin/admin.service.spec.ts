@@ -120,6 +120,20 @@ describe("Admin management", () => {
     assert.equal(prisma.conferences[0]?.status, ConferenceStatus.PUBLISHED);
   });
 
+  it("updates whether registration count is exposed on the conference detail page", async () => {
+    const prisma = createPrismaMock();
+    const service = new AdminManagementService(prisma);
+
+    const response = await service.updateConference(
+      "conference-1",
+      { showRegistrationCount: true },
+      currentAdmin
+    );
+
+    assert.equal((response.data as { showRegistrationCount: boolean }).showRegistrationCount, true);
+    assert.equal(prisma.conferences[0]?.showRegistrationCount, true);
+  });
+
   it("rejects non-integer or negative SKU price", async () => {
     const service = new AdminManagementService(createPrismaMock());
 
@@ -801,6 +815,7 @@ function createPrismaMock() {
       checkInFieldBindings: null,
       groupRegistrationEnabled: true,
       maxTicketsPerOrder: null,
+      showRegistrationCount: false,
       status: ConferenceStatus.DRAFT,
       sortOrder: 0,
       createdAt: new Date("2026-06-06T00:00:00.000Z"),
@@ -934,6 +949,7 @@ function createPrismaMock() {
           checkInFieldBindings: null,
           groupRegistrationEnabled: Boolean(args.data.groupRegistrationEnabled ?? true),
           maxTicketsPerOrder: typeof args.data.maxTicketsPerOrder === "number" ? args.data.maxTicketsPerOrder : null,
+          showRegistrationCount: Boolean(args.data.showRegistrationCount ?? false),
           status: (args.data.status as ConferenceStatus) ?? ConferenceStatus.DRAFT,
           sortOrder: Number(args.data.sortOrder ?? 0),
           createdAt: new Date("2026-06-06T00:00:00.000Z"),
@@ -975,6 +991,9 @@ function createPrismaMock() {
         }
         if ("maxTicketsPerOrder" in args.data) {
           conference.maxTicketsPerOrder = (args.data as { maxTicketsPerOrder?: number | null }).maxTicketsPerOrder ?? null;
+        }
+        if (typeof (args.data as { showRegistrationCount?: boolean }).showRegistrationCount === "boolean") {
+          conference.showRegistrationCount = (args.data as { showRegistrationCount: boolean }).showRegistrationCount;
         }
         return conference;
       }
@@ -1180,6 +1199,7 @@ interface ConferenceRecord {
   checkInFieldBindings: unknown;
   groupRegistrationEnabled: boolean;
   maxTicketsPerOrder: number | null;
+  showRegistrationCount: boolean;
   status: ConferenceStatus;
   sortOrder: number;
   createdAt: Date;

@@ -94,6 +94,7 @@ export class ConferencesService {
         endsAt: true,
         registrationStartsAt: true,
         registrationEndsAt: true,
+        showRegistrationCount: true,
         page: {
           select: {
             contentJson: true
@@ -136,7 +137,9 @@ export class ConferencesService {
       endsAt: conference.endsAt.toISOString(),
       registrationStartsAt: conference.registrationStartsAt?.toISOString() ?? null,
       registrationEndsAt: conference.registrationEndsAt?.toISOString() ?? null,
-      registrationCount: conference._count?.registrations ?? 0,
+      ...(conference.showRegistrationCount
+        ? { registrationCount: conference._count?.registrations ?? 0 }
+        : {}),
       appointmentCount: conference._count?.appointments ?? 0,
       contentJson: conference.page?.contentJson ?? null,
       skus: conference.skus
@@ -353,7 +356,7 @@ export interface ConferenceDetailResponse {
   endsAt: string;
   registrationStartsAt: string | null;
   registrationEndsAt: string | null;
-  registrationCount: number;
+  registrationCount?: number;
   appointmentCount: number;
   contentJson: Prisma.JsonValue | null;
   skus: Array<{

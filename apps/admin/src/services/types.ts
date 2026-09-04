@@ -32,6 +32,7 @@ export interface Conference {
   checkInFieldBindings: Record<string, unknown>;
   groupRegistrationEnabled: boolean;
   maxTicketsPerOrder: number | null;
+  showRegistrationCount?: boolean;
   contentJson?: Record<string, unknown>;
   styleJson?: Record<string, unknown> | null;
   counts?: {

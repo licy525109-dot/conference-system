@@ -231,6 +231,14 @@ describe("ConferencesService", () => {
     assert.equal(response.data.skus[0]?.priceCent, 70000);
   });
 
+  it("does not expose registration count in detail unless the conference enables it", async () => {
+    const hiddenResponse = await new ConferencesService(createPrismaMock()).detail("published-conf");
+    const visibleResponse = await new ConferencesService(createPrismaMock(true)).detail("published-conf");
+
+    assert.equal("registrationCount" in hiddenResponse.data, false);
+    assert.equal(visibleResponse.data.registrationCount, 2);
+  });
+
   it("returns form fields by sortOrder and hides disabled fields", async () => {
     const service = new ConferencesService(createPrismaMock());
 
@@ -261,7 +269,7 @@ describe("ConferencesService", () => {
   });
 });
 
-function createPrismaMock() {
+function createPrismaMock(showRegistrationCount = false) {
   const mock = {
     lastConferenceFindManyArgs: undefined as FindManyArgs | undefined,
     lastConferenceCountArgs: undefined as CountArgs | undefined,
@@ -304,8 +312,13 @@ function createPrismaMock() {
           endsAt: conference.endsAt,
           registrationStartsAt: conference.registrationStartsAt,
           registrationEndsAt: conference.registrationEndsAt,
+          showRegistrationCount,
           page: conference.page,
-          skus
+          skus,
+          _count: {
+            registrations: 2,
+            appointments: 1
+          }
         };
       }
     },

@@ -94,6 +94,10 @@
           </template>
           <el-form-item label="团体报名"><el-switch v-model="conferenceForm.groupRegistrationEnabled" /></el-form-item>
           <el-form-item label="单单最大票数"><el-input-number v-model="conferenceForm.maxTicketsPerOrder" :min="0" /></el-form-item>
+          <el-form-item label="详情页显示报名人数">
+            <el-switch v-model="conferenceForm.showRegistrationCount" />
+            <p class="form-help">关闭后用户端会议详情不显示实际报名人数，后台报名统计不受影响。</p>
+          </el-form-item>
           <el-form-item><el-button type="primary" @click="saveConference">保存基础配置</el-button></el-form-item>
         </el-form>
       </el-tab-pane>
@@ -368,7 +372,8 @@ const conferenceForm = reactive({
     customFieldKeys: [] as string[]
   },
   groupRegistrationEnabled: true,
-  maxTicketsPerOrder: 0
+  maxTicketsPerOrder: 0,
+  showRegistrationCount: false
 });
 const detailImage = reactive(createEmptyDetailImage());
 const detailSections = ref<DetailSectionDraft[]>([]);
@@ -456,7 +461,8 @@ function syncConferenceForm() {
       customFieldKeys: readStringArray(conference.value.checkInFieldBindings?.customFieldKeys)
     },
     groupRegistrationEnabled: conference.value.groupRegistrationEnabled,
-    maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0
+    maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0,
+    showRegistrationCount: conference.value.showRegistrationCount ?? false
   });
   Object.assign(detailImage, normalizeDetailImage(contentJson));
   if (hasConferenceDetailSectionsContract(contentJson)) {
@@ -489,7 +495,8 @@ async function saveConference() {
     registrationStartsAt: conferenceForm.registrationStartsAt || null,
     registrationEndsAt: conferenceForm.registrationEndsAt || null,
     groupRegistrationEnabled: conferenceForm.groupRegistrationEnabled,
-    maxTicketsPerOrder: conferenceForm.maxTicketsPerOrder > 0 ? conferenceForm.maxTicketsPerOrder : null
+    maxTicketsPerOrder: conferenceForm.maxTicketsPerOrder > 0 ? conferenceForm.maxTicketsPerOrder : null,
+    showRegistrationCount: conferenceForm.showRegistrationCount
   });
   await updateConferenceCheckInConfig(conferenceId.value, {
     checkInEnabled: conferenceForm.checkInEnabled,
