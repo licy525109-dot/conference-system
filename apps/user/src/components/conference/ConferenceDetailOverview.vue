@@ -117,7 +117,7 @@ function remainingStock(sku: RegistrationSku): number {
 .detail-overview__hero {
   position: relative;
   width: 100%;
-  height: 520rpx;
+  height: 420rpx;
   overflow: hidden;
   background: #ebeae5;
 }
@@ -168,7 +168,7 @@ function remainingStock(sku: RegistrationSku): number {
   display: flex;
   flex-direction: column;
   gap: 18rpx;
-  margin: -66rpx 30rpx 28rpx;
+  margin: 24rpx 30rpx 28rpx;
   padding: 34rpx 30rpx 30rpx;
   border-radius: 26rpx;
   background: #fbfcfa;
