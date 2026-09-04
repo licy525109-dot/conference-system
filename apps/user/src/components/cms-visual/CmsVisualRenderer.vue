@@ -543,6 +543,7 @@ import { getCmsComponentSupport, isCmsRegistrationCta } from "@/utils/cmsCompone
 import { formatDateTime } from "@/utils/date";
 import { productCategoriesFromProducts, resolveMallCategoryOptions, type MallCategoryOption } from "@/utils/mallCatalog";
 import { stringifyQuery } from "@/utils/query";
+import { isWechatProfileComplete } from "@/utils/wechatProfilePrompt";
 
 const emit = defineEmits<{
   openConference: [id: string];
@@ -1464,7 +1465,7 @@ async function goLoginPath(path: string): Promise<void> {
     const wasLoggedOut = !getToken();
     await ensureLogin();
     refreshStoredUser();
-    if (wasLoggedOut && (!storedUser.value?.wechatNickname || !storedUser.value?.wechatAvatarUrl)) {
+    if (wasLoggedOut && !isWechatProfileComplete(storedUser.value)) {
       setTimeout(() => uni.$emit("wechat-profile:open"), 120);
     }
     goPath(path);
@@ -1475,10 +1476,13 @@ async function goLoginPath(path: string): Promise<void> {
 
 async function promptWechatLogin(): Promise<void> {
   try {
+    const wasLoggedOut = !getToken();
     await ensureLogin();
     refreshStoredUser();
     uni.$emit("auth:changed", storedUser.value);
-    uni.$emit("wechat-profile:open");
+    if (wasLoggedOut && !isWechatProfileComplete(storedUser.value)) {
+      uni.$emit("wechat-profile:open");
+    }
   } catch (error) {
     uni.showToast({ title: readErrorText(error, "登录失败，请稍后重试"), icon: "none" });
   }
@@ -1979,7 +1983,7 @@ async function handleConferenceAction(item: ConferenceListItem, component: CmsCo
     const wasLoggedOut = !getToken();
     await ensureLogin();
     refreshStoredUser();
-    if (wasLoggedOut && (!storedUser.value?.wechatNickname || !storedUser.value?.wechatAvatarUrl)) {
+    if (wasLoggedOut && !isWechatProfileComplete(storedUser.value)) {
       setTimeout(() => uni.$emit("wechat-profile:open"), 120);
     }
     const result = await reserveConferenceAppointment(item.id);

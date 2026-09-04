@@ -36,12 +36,13 @@ import CmsVisualRenderer from "@/components/cms-visual/CmsVisualRenderer.vue";
 import { runtimeCmsVisualComponentsFromDsl } from "@/components/cms-visual/useCmsVisualContext";
 import DslRenderTree from "@/components/design-system/DslRenderTree.vue";
 import { useCurrentUserContext } from "@/composables/useCurrentUserContext";
-import { ensureLogin } from "@/services/auth";
+import { ensureLogin, getStoredUser, getToken } from "@/services/auth";
 import type { ThemeConfig } from "@/services/cms";
 import type { ConferenceDetail, ConferenceListItem } from "@/services/conference";
 import type { Product, ProductCategory } from "@/services/mall";
 import { createCmsThemeVars } from "@/theme/cmsTheme";
 import { stringifyQuery } from "@/utils/query";
+import { isWechatProfileComplete } from "@/utils/wechatProfilePrompt";
 
 const emit = defineEmits<{
   openConference: [id: string];
@@ -203,9 +204,12 @@ function navigateToPage(pageKey: string, action: Record<string, unknown>): void 
 
 async function ensureLoginAndPrompt(): Promise<void> {
   try {
+    const wasLoggedOut = !getToken();
     await ensureLogin();
     await refreshCurrentUserContext({ force: true });
-    uni.$emit("wechat-profile:open");
+    if (wasLoggedOut && !isWechatProfileComplete(getStoredUser())) {
+      uni.$emit("wechat-profile:open");
+    }
   } catch {
     uni.showToast({ title: "登录失败，请稍后重试", icon: "none" });
   }

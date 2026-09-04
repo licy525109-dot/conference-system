@@ -15,6 +15,7 @@ import { getAppTabbar, type AppTabbar, type TabbarItem } from "@/services/cms";
 import { ensureAuthenticatedUser } from "@/services/auth";
 import { getToken } from "@/services/session";
 import { stringifyQuery } from "@/utils/query";
+import { isWechatProfileComplete } from "@/utils/wechatProfilePrompt";
 import { getUnreadNotificationCount } from "@/services/user-notifications";
 
 const props = defineProps<{
@@ -98,8 +99,8 @@ async function go(item: TabbarItem) {
   if (item.requireLogin) {
     try {
       const wasLoggedOut = !getToken();
-      await ensureAuthenticatedUser();
-      openProfileAfterNavigate = wasLoggedOut;
+      const user = await ensureAuthenticatedUser();
+      openProfileAfterNavigate = wasLoggedOut && !isWechatProfileComplete(user);
     } catch {
       uni.showModal({
         title: "需要微信登录",

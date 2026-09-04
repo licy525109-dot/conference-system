@@ -175,6 +175,7 @@ import { getMyCoupons, getMyInvoiceProfile, getMyMallOrders, saveMyInvoiceProfil
 import { getMyRegistrations } from "@/services/registration";
 import { getToken } from "@/services/session";
 import { goHome } from "@/utils/navigation";
+import { isWechatProfileComplete } from "@/utils/wechatProfilePrompt";
 
 const COMMON_PROFILE_STORAGE_KEY = "conference_user_common_profile";
 
@@ -339,10 +340,13 @@ function logout() {
 
 async function loginAgain() {
   try {
+    const wasLoggedOut = !getToken();
     await ensureLogin();
     user.value = getStoredUser();
     await refreshPrivateMemberData();
-    uni.$emit("wechat-profile:open");
+    if (wasLoggedOut && !isWechatProfileComplete(user.value)) {
+      uni.$emit("wechat-profile:open");
+    }
   } catch (err) {
     console.error("[MEMBER_LOGIN_ERROR]", err);
     uni.showToast({ title: "登录失败，请稍后重试", icon: "none" });
@@ -377,7 +381,7 @@ async function openProfileEditor() {
 }
 
 function openWechatProfilePrompt() {
-  uni.$emit("wechat-profile:open");
+  uni.$emit("wechat-profile:open", { force: true });
 }
 
 function loadCommonProfile() {

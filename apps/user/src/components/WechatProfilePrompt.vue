@@ -57,7 +57,12 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ensureLogin, getToken, isAuthSessionExpiredError, refreshLogin } from "@/services/auth";
 import { bindWechatPhone, getWechatProfile, updateWechatProfile, uploadWechatAvatar } from "@/services/profile";
 import { ApiRequestError } from "@/services/request";
-import { isProfilePromptOwnerActive, shouldAutoCheckWechatProfile } from "@/utils/wechatProfilePrompt";
+import {
+  isProfilePromptOwnerActive,
+  shouldAutoCheckWechatProfile,
+  shouldOpenWechatProfilePrompt,
+  type WechatProfilePromptOptions
+} from "@/utils/wechatProfilePrompt";
 
 const miniProgramEnabled = ref(false);
 const visible = ref(false);
@@ -92,11 +97,11 @@ onUnmounted(() => {
   ownerPage = null;
 });
 
-async function openProfilePrompt() {
+async function openProfilePrompt(options?: WechatProfilePromptOptions) {
   // #ifdef MP-WEIXIN
   if (!isOwnerPageActive()) return;
   miniProgramEnabled.value = true;
-  await checkProfile({ forceOpen: true });
+  await checkProfile({ forceOpen: options?.force === true });
   // #endif
   // #ifndef MP-WEIXIN
   uni.showToast({ title: "请在微信小程序内完善头像昵称", icon: "none" });
@@ -111,7 +116,7 @@ async function checkProfile(options?: { forceOpen?: boolean }) {
     wechatNickname.value = profile.wechatNickname || "";
     wechatAvatarUrl.value = profile.wechatAvatarUrl || "";
     if (!isOwnerPageActive()) return;
-    visible.value = options?.forceOpen ? true : !phone.value || !wechatNickname.value || !wechatAvatarUrl.value;
+    visible.value = shouldOpenWechatProfilePrompt(profile, { force: options?.forceOpen === true });
   } catch (err) {
     console.error("[WECHAT_PROFILE_PROMPT_LOAD_ERROR]", err);
   }
