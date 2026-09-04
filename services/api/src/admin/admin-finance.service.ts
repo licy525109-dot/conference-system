@@ -1,6 +1,6 @@
 import { accessSync, constants } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { AuditAction, InvoiceStatus, OrderStatus, PaymentProvider, PaymentStatus, Prisma, RefundStatus } from "@prisma/client";
 import { isMallMockRefundEnabled, isMallWechatRefundConfigured, readMallRefundMode } from "../mall/mall-payment.config";
 import { readWechatPayConfig } from "../payments/wechat-pay.config";
@@ -1634,6 +1634,18 @@ function hasWechatRefundRuntimeConfig(modeEnabled: boolean): boolean {
 }
 
 function readableRefundFailure(error: unknown): string {
+  if (error instanceof HttpException) {
+    const response = error.getResponse();
+    if (isRecord(response)) {
+      const message = typeof response.message === "string" ? response.message.trim() : "";
+      const detail = typeof response.detail === "string" ? response.detail.trim() : "";
+      const requestId = typeof response.requestId === "string" ? response.requestId.trim() : "";
+      const reason = [message, detail && detail !== message ? detail : ""].filter(Boolean).join("：");
+      if (reason) {
+        return `${reason}${requestId ? `（微信请求号：${requestId}）` : ""}`.slice(0, 500);
+      }
+    }
+  }
   if (error instanceof Error && error.message.trim()) return error.message.trim().slice(0, 500);
   return "微信退款申请失败，请核对商户退款配置";
 }

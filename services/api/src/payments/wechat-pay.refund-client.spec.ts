@@ -63,6 +63,7 @@ describe("WechatPayRefundClient", () => {
         assert.ok(error instanceof BadGatewayException);
         const response = error.getResponse() as Record<string, unknown>;
         assert.equal(response.code, "WECHAT_PAY_REFUND_FAILED");
+        assert.equal(response.detail, "退款金额参数错误");
         assert.equal(response.requestId, "request-001");
         assert.equal(JSON.stringify(response).includes(config.apiV3Key), false);
         return true;

@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
-import { BadRequestException, ConflictException } from "@nestjs/common";
+import { BadGatewayException, BadRequestException, ConflictException } from "@nestjs/common";
 import { CouponRedemptionStatus, InvoiceStatus, OrderStatus, PaymentProvider, PaymentStatus, RefundStatus } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
@@ -232,6 +232,30 @@ describe("AdminFinanceService production workflows", () => {
     assert.equal((retried.data as any).status, RefundStatus.PROCESSING);
     assert.equal(refundClient.calls.length, 2);
     assert.equal(refundClient.calls[0]?.outRefundNo, refundClient.calls[1]?.outRefundNo);
+  });
+
+  it("stores the actionable WeChat failure detail and request id", async () => {
+    withRegistrationWechatRefundConfig();
+    const prisma = createFinancePrismaMock({ seededRefunds: false, wechatPayment: true });
+    const refundClient = {
+      async createRefund() {
+        throw new BadGatewayException({
+          code: "WECHAT_PAY_REFUND_FAILED",
+          message: "微信退款申请失败",
+          detail: "基本账户余额不足，请充值后重新发起",
+          requestId: "request-001"
+        });
+      }
+    };
+    const service = new AdminFinanceService(prisma, refundClient as unknown as WechatPayRefundClient);
+    const created = await service.requestRegistrationRefund({ orderNo: "ORDER001", reason: "临时无法参会" }, user);
+    const refundId = (created.data as any).id;
+
+    await assert.rejects(() => service.approveRefund(refundId, admin), BadGatewayException);
+    const retryable = await prisma.refund.findUnique({ where: { id: refundId } });
+
+    assert.match(String(retryable?.failedReason), /基本账户余额不足/);
+    assert.match(String(retryable?.failedReason), /request-001/);
   });
 
   it("waits for a provider query before marking an accepted WeChat refund successful", async () => {

@@ -3,6 +3,8 @@ import { API_BASE_URL } from "../config";
 interface ApiEnvelope<T> {
   code?: string;
   message?: string;
+  detail?: string;
+  requestId?: string;
   data?: T;
 }
 
@@ -40,7 +42,10 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     return body.data as T;
   }
 
-  throw new Error(body.message || `请求失败 (${response.status})`);
+  const message = body.message || `请求失败 (${response.status})`;
+  const detail = body.detail && body.detail !== message ? `：${body.detail}` : "";
+  const requestId = body.requestId ? `（微信请求号：${body.requestId}）` : "";
+  throw new Error(`${message}${detail}${requestId}`);
 }
 
 export function toQuery(params: Record<string, string | number | boolean | undefined | null>): string {
