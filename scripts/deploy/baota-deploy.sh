@@ -75,6 +75,13 @@ clear_static_root() {
   find "$target" -mindepth 1 -maxdepth 1 ! -name ".user.ini" -exec rm -rf {} +
 }
 
+set_static_permissions() {
+  local target="$1"
+  chmod 755 "$target"
+  find "$target" -type d -exec chmod 755 {} +
+  find "$target" -type f ! -name ".user.ini" -exec chmod 644 {} +
+}
+
 check_migration_baseline() {
   local state
   state="$(docker compose -f docker-compose.prod.yml exec -T "$POSTGRES_SERVICE" \
@@ -249,10 +256,12 @@ log "12. 发布用户端 H5 和后台静态文件"
 H5_STATIC_PUBLISHED=1
 clear_static_root "$H5_ROOT"
 cp -a "$PROJECT_DIR/apps/user/dist/build/h5"/. "$H5_ROOT"/
+set_static_permissions "$H5_ROOT"
 
 ADMIN_STATIC_PUBLISHED=1
 clear_static_root "$ADMIN_ROOT"
 cp -a "$PROJECT_DIR/apps/admin/dist"/. "$ADMIN_ROOT"/
+set_static_permissions "$ADMIN_ROOT"
 
 if ! grep -R -F "pages/cms-preview/index" -n "$H5_ROOT/assets" >/dev/null; then
   echo "ERROR: published user H5 files are missing the CMS runtime preview route" >&2
