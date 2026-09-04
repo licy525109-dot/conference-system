@@ -1,6 +1,6 @@
 <template>
   <view class="splash-page">
-    <image v-if="posterUrl" class="splash-media" :src="posterUrl" mode="aspectFill" />
+    <image v-if="posterUrl && !posterFailed" class="splash-media" :src="posterUrl" mode="aspectFill" @error="handlePosterError" />
     <video
       v-if="videoUrl && !videoFailed"
       class="splash-media"
@@ -15,6 +15,11 @@
       @ended="finish"
       @error="handleVideoError"
     />
+    <view class="splash-fallback">
+      <image class="splash-logo" src="/static/fixed-templates/brand/logo_gc_mark.png" mode="aspectFit" />
+      <text class="splash-brand">观潮会集</text>
+      <text class="splash-loading">正在进入会场</text>
+    </view>
     <view class="splash-shade" />
     <view class="splash-top">
       <view />
@@ -37,8 +42,11 @@ const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const redirectUrl = ref("/pages/index/index");
 const countdown = ref(5);
 const videoFailed = ref(false);
+const posterFailed = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
+let startupSafetyTimer: ReturnType<typeof setTimeout> | undefined;
 let finished = false;
+const STARTUP_SAFETY_TIMEOUT_MS = 3500;
 
 const videoUrl = computed(() => String(theme.value.splashVideoUrl || ""));
 const posterUrl = computed(() => String(theme.value.splashPosterUrl || ""));
@@ -53,11 +61,13 @@ const bottomTextStyle = computed(() => {
 
 onLoad((query) => {
   redirectUrl.value = normalizeRedirect(query?.redirect);
+  startupSafetyTimer = setTimeout(finish, STARTUP_SAFETY_TIMEOUT_MS);
   void loadSplash();
 });
 
 onUnmounted(() => {
   clearTimer();
+  clearStartupSafetyTimer();
 });
 
 async function loadSplash(): Promise<void> {
@@ -66,6 +76,8 @@ async function loadSplash(): Promise<void> {
   } catch {
     theme.value = { ...DEFAULT_THEME };
   }
+  if (finished) return;
+  clearStartupSafetyTimer();
   if (!shouldShowSplash(theme.value)) {
     finish();
     return;
@@ -93,10 +105,15 @@ function handleVideoError(): void {
   }
 }
 
+function handlePosterError(): void {
+  posterFailed.value = true;
+}
+
 function finish(): void {
   if (finished) return;
   finished = true;
   clearTimer();
+  clearStartupSafetyTimer();
   if (getCurrentPages().length > 1) {
     uni.navigateBack({
       delta: 1,
@@ -105,6 +122,13 @@ function finish(): void {
     return;
   }
   redirectHome();
+}
+
+function clearStartupSafetyTimer(): void {
+  if (startupSafetyTimer) {
+    clearTimeout(startupSafetyTimer);
+    startupSafetyTimer = undefined;
+  }
 }
 
 function redirectHome(): void {
@@ -187,16 +211,49 @@ function hashStorageSeed(value: string): string {
 }
 
 .splash-media {
+  z-index: 1;
   object-fit: cover;
 }
 
+.splash-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18rpx;
+  z-index: 0;
+  background: #f4f5f3;
+  color: #142033;
+}
+
+.splash-logo {
+  width: 168rpx;
+  height: 168rpx;
+}
+
+.splash-brand {
+  font-size: 38rpx;
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.splash-loading {
+  color: #687585;
+  font-size: 27rpx;
+  line-height: 1.5;
+}
+
 .splash-shade {
+  z-index: 2;
+  pointer-events: none;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.16), rgba(15, 23, 42, 0.44));
 }
 
 .splash-top {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -227,7 +284,7 @@ function hashStorageSeed(value: string): string {
   right: 32rpx;
   bottom: calc(64rpx + env(safe-area-inset-bottom));
   left: 32rpx;
-  z-index: 1;
+  z-index: 3;
   text-align: center;
   font-size: 28rpx;
   font-weight: 700;

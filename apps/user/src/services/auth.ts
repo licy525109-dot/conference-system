@@ -1,7 +1,12 @@
 import { MOCK_LOGIN_CODE, MOCK_LOGIN_NICKNAME, PAYMENT_MODE } from "@/config/app";
 import { readUniErrMsg } from "@/utils/uniErrors";
-import { ApiRequestError, request } from "./request";
-import { clearAuthSession, getStoredUser, getToken, setAuthSession } from "./session";
+import { ApiRequestError, request, setAuthRecoveryHandler } from "./request";
+import {
+  clearAuthSession as clearStoredAuthSession,
+  getStoredUser,
+  getToken,
+  setAuthSession as setStoredAuthSession
+} from "./session";
 
 export interface CurrentUser {
   id: string;
@@ -19,11 +24,25 @@ export interface LoginResponse {
   user: CurrentUser;
 }
 
-export { clearAuthSession, getStoredUser, getToken, setAuthSession } from "./session";
+const LOGIN_VALIDATION_TTL_MS = 60 * 1000;
+let loginInFlight: Promise<LoginResponse> | null = null;
+let validationInFlight: Promise<CurrentUser> | null = null;
+let lastValidatedAt = 0;
 
-export const EXPIRED_LOGIN_REENTRY_MESSAGE = "登录状态已过期，请返回首页重新进入小程序下单。";
+export { getStoredUser, getToken } from "./session";
+
+export const EXPIRED_LOGIN_REENTRY_MESSAGE = "微信登录未完成，请重新登录后继续。";
 
 export async function loginWithWechat(): Promise<LoginResponse> {
+  if (loginInFlight) return loginInFlight;
+
+  loginInFlight = performWechatLogin().finally(() => {
+    loginInFlight = null;
+  });
+  return loginInFlight;
+}
+
+async function performWechatLogin(): Promise<LoginResponse> {
   const code = await getPlatformLoginCode();
   const payload: { code: string; nickname?: string } = { code };
 
@@ -57,6 +76,28 @@ export async function ensureLogin(): Promise<string> {
   return login.token;
 }
 
+export async function ensureAuthenticatedUser(options: { force?: boolean } = {}): Promise<CurrentUser> {
+  await ensureLogin();
+  const storedUser = getStoredUser();
+  if (!options.force && storedUser && Date.now() - lastValidatedAt < LOGIN_VALIDATION_TTL_MS) {
+    return storedUser;
+  }
+  if (validationInFlight) return validationInFlight;
+
+  validationInFlight = getMe()
+    .then((user) => {
+      const currentToken = getToken();
+      if (currentToken) {
+        setAuthSession(currentToken, user);
+      }
+      return user;
+    })
+    .finally(() => {
+      validationInFlight = null;
+    });
+  return validationInFlight;
+}
+
 function hasRealOpenid(user: CurrentUser | null): boolean {
   if (!user?.openid) {
     return false;
@@ -71,10 +112,22 @@ export async function refreshLogin(): Promise<string> {
   return login.token;
 }
 
+export function setAuthSession(token: string, user: CurrentUser): void {
+  setStoredAuthSession(token, user);
+  lastValidatedAt = Date.now();
+}
+
+export function clearAuthSession(): void {
+  clearStoredAuthSession();
+  lastValidatedAt = 0;
+}
+
 export function isAuthSessionExpiredError(err: unknown): boolean {
-  if (!(err instanceof ApiRequestError) || (err.statusCode !== 401 && err.statusCode !== 403)) {
+  if (!(err instanceof ApiRequestError)) {
     return false;
   }
+  if (err.statusCode === 401) return true;
+  if (err.statusCode !== 403) return false;
 
   const message = `${err.responseMessage || ""} ${err.message || ""}`;
   return (
@@ -123,3 +176,7 @@ function getMiniProgramLoginCode(): Promise<string> {
     });
   });
 }
+
+setAuthRecoveryHandler(async () => {
+  await refreshLogin();
+});

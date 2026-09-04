@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "@/config/app";
 import { readUniErrMsg } from "@/utils/uniErrors";
+import { shouldRecoverAuthentication } from "./auth-recovery";
 import { getToken } from "./session";
 
 interface ApiEnvelope<T> {
@@ -16,6 +17,9 @@ export interface RequestOptions {
 }
 
 const REQUEST_TIMEOUT_MS = 15000;
+type AuthRecoveryHandler = () => Promise<void>;
+let authRecoveryHandler: AuthRecoveryHandler | null = null;
+let authRecoveryInFlight: Promise<void> | null = null;
 
 export class ApiRequestError extends Error {
   readonly apiBaseUrl: string;
@@ -54,7 +58,38 @@ export class ApiRequestError extends Error {
   }
 }
 
-export function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export function setAuthRecoveryHandler(handler: AuthRecoveryHandler): void {
+  authRecoveryHandler = handler;
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return requestWithAuthRecovery<T>(path, options, false);
+}
+
+async function requestWithAuthRecovery<T>(path: string, options: RequestOptions, alreadyRetried: boolean): Promise<T> {
+  try {
+    return await dispatchRequest<T>(path, options);
+  } catch (error) {
+    const shouldRecover = error instanceof ApiRequestError
+      && Boolean(authRecoveryHandler)
+      && shouldRecoverAuthentication({
+        statusCode: error.statusCode,
+        authEnabled: options.auth !== false,
+        alreadyRetried,
+        path
+      });
+    if (!shouldRecover) throw error;
+
+    try {
+      await recoverAuthentication();
+    } catch {
+      throw error;
+    }
+    return requestWithAuthRecovery<T>(path, options, true);
+  }
+}
+
+function dispatchRequest<T>(path: string, options: RequestOptions): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   const method = options.method ?? "GET";
   const headers: Record<string, string> = {
@@ -113,4 +148,16 @@ export function request<T>(path: string, options: RequestOptions = {}): Promise<
       }
     });
   });
+}
+
+function recoverAuthentication(): Promise<void> {
+  if (!authRecoveryHandler) {
+    return Promise.reject(new Error("Authentication recovery is not configured"));
+  }
+  if (!authRecoveryInFlight) {
+    authRecoveryInFlight = authRecoveryHandler().finally(() => {
+      authRecoveryInFlight = null;
+    });
+  }
+  return authRecoveryInFlight;
 }

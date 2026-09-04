@@ -12,7 +12,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { getAppTabbar, type AppTabbar, type TabbarItem } from "@/services/cms";
-import { ensureLogin } from "@/services/auth";
+import { ensureAuthenticatedUser } from "@/services/auth";
 import { getToken } from "@/services/session";
 import { stringifyQuery } from "@/utils/query";
 import { getUnreadNotificationCount } from "@/services/user-notifications";
@@ -95,12 +95,21 @@ function fallbackGlyph(item: TabbarItem): string {
 
 async function go(item: TabbarItem) {
   let openProfileAfterNavigate = false;
-  if (item.requireLogin && !getToken()) {
+  if (item.requireLogin) {
     try {
-      await ensureLogin();
-      openProfileAfterNavigate = true;
+      const wasLoggedOut = !getToken();
+      await ensureAuthenticatedUser();
+      openProfileAfterNavigate = wasLoggedOut;
     } catch {
-      uni.showToast({ title: "登录失败，请稍后重试", icon: "none" });
+      uni.showModal({
+        title: "需要微信登录",
+        content: "登录后才能查看与你有关的报名、消息和会务安排。",
+        confirmText: "重新登录",
+        cancelText: "取消",
+        success: (result) => {
+          if (result.confirm) void go(item);
+        }
+      });
       return;
     }
   }

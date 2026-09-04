@@ -6,10 +6,11 @@
     <LoadingState v-if="loading" title="加载报名信息中" description="正在读取票种、价格和报名字段。" />
     <ErrorState
       v-else-if="error"
+      :title="authRequired ? '需要微信登录' : '报名信息加载失败'"
       :message="error"
-      primary-text="重新加载"
+      :primary-text="authRequired ? '微信登录' : '重新加载'"
       secondary-text="返回首页"
-      @retry="loadPage"
+      @retry="retryLoadPage"
       @secondary="goHome"
     />
 
@@ -183,7 +184,7 @@ import {
   type FormOption,
   type RegistrationSku
 } from "@/services/conference";
-import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
+import { clearExpiredAuthSession, ensureAuthenticatedUser, isAuthSessionExpiredError } from "@/services/auth";
 import { addRegistrationCartItem } from "@/services/cart";
 import { createRegistrationOrder, quoteRegistration, type QuoteResponse, type RegistrationOrderItem } from "@/services/registration";
 import { getMyCoupons, type MyCouponItem } from "@/services/operations";
@@ -206,6 +207,7 @@ const quoteLoading = ref(false);
 const submitting = ref(false);
 const addingToCart = ref(false);
 const error = ref("");
+const authRequired = ref(false);
 const quoteError = ref("");
 const couponCode = ref("");
 const couponSelectorLoading = ref(false);
@@ -265,9 +267,10 @@ async function loadPage() {
 
   loading.value = true;
   error.value = "";
+  authRequired.value = false;
 
   try {
-    await ensureLogin();
+    await ensureAuthenticatedUser();
     const [detail, formResponse, page] = await Promise.all([
       getConferenceDetail(conferenceId.value),
       getConferenceForm(conferenceId.value),
@@ -299,13 +302,18 @@ async function loadPage() {
     console.error("[REGISTRATION_FORM_LOAD_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
       clearExpiredAuthSession();
-      error.value = EXPIRED_LOGIN_REENTRY_MESSAGE;
+      authRequired.value = true;
+      error.value = "登录后才能填写和提交报名信息。";
     } else {
       error.value = "报名信息加载失败，请稍后重试";
     }
   } finally {
     loading.value = false;
   }
+}
+
+function retryLoadPage() {
+  void loadPage();
 }
 
 function createEmptyFormData(fields: FormField[]) {
@@ -407,7 +415,7 @@ async function submitOrder() {
 
   submitting.value = true;
   try {
-    await ensureLogin();
+    await ensureAuthenticatedUser();
     const order = await createRegistrationOrder({
       conferenceId: conferenceId.value,
       items: selectedItems.value,
@@ -425,11 +433,7 @@ async function submitOrder() {
     console.error("[REGISTRATION_CREATE_ORDER_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
       clearExpiredAuthSession();
-      error.value = EXPIRED_LOGIN_REENTRY_MESSAGE;
-      uni.showToast({
-        title: EXPIRED_LOGIN_REENTRY_MESSAGE,
-        icon: "none"
-      });
+      promptLoginRetry("重新登录后可继续提交，已填写的内容会保留。", () => void submitOrder());
       return;
     }
 
@@ -462,7 +466,7 @@ async function addSelectedToCart() {
 
   addingToCart.value = true;
   try {
-    await ensureLogin();
+    await ensureAuthenticatedUser();
     for (const item of selectedItems.value) {
       await addRegistrationCartItem({
         conferenceId: conferenceId.value,
@@ -480,8 +484,7 @@ async function addSelectedToCart() {
     console.error("[REGISTRATION_ADD_CART_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
       clearExpiredAuthSession();
-      error.value = EXPIRED_LOGIN_REENTRY_MESSAGE;
-      uni.showToast({ title: EXPIRED_LOGIN_REENTRY_MESSAGE, icon: "none" });
+      promptLoginRetry("重新登录后可继续加入购物车，已填写的内容会保留。", () => void addSelectedToCart());
       return;
     }
     uni.showToast({ title: buildCreateOrderErrorMessage(err), icon: "none" });
@@ -497,7 +500,7 @@ function setCouponCode(event: unknown) {
 async function selectMyCoupon() {
   couponSelectorLoading.value = true;
   try {
-    await ensureLogin();
+    await ensureAuthenticatedUser();
     const response = await getMyCoupons({ scope: "CONFERENCE" });
     const usable = response.items.filter((item) => item.usable && couponFitsSelectedSku(item)).slice(0, 6);
     if (usable.length === 0) {
@@ -519,6 +522,18 @@ async function selectMyCoupon() {
   } finally {
     couponSelectorLoading.value = false;
   }
+}
+
+function promptLoginRetry(content: string, retry: () => void) {
+  uni.showModal({
+    title: "需要微信登录",
+    content,
+    confirmText: "重新登录",
+    cancelText: "稍后再试",
+    success: (result) => {
+      if (result.confirm) retry();
+    }
+  });
 }
 
 function couponFitsSelectedSku(item: MyCouponItem) {

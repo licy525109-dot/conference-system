@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onHide, onLaunch, onShow } from "@dcloudio/uni-app";
+import { ensureAuthenticatedUser } from "@/services/auth";
 import { goHome } from "@/utils/navigation";
 import { shouldRelaunchHome } from "@/utils/startupRoute";
 
@@ -10,10 +11,14 @@ let startupFallbackAttempts = 0;
 let startupFallbackResolved = false;
 
 onLaunch(() => {
+  void warmUpLogin();
   scheduleStartupRouteFallback();
 });
 
 onShow(() => {
+  startupFallbackResolved = false;
+  startupFallbackAttempts = 0;
+  void warmUpLogin();
   scheduleStartupRouteFallback();
 });
 
@@ -33,6 +38,16 @@ function scheduleStartupRouteFallback(): void {
     startupFallbackTimer = undefined;
     relaunchHomeIfStartupRouteIsInvalid();
   }, STARTUP_FALLBACK_DELAY_MS);
+}
+
+async function warmUpLogin(): Promise<void> {
+  // #ifdef MP-WEIXIN
+  try {
+    await ensureAuthenticatedUser();
+  } catch (error) {
+    console.error("[APP_LOGIN_WARMUP_ERROR]", error);
+  }
+  // #endif
 }
 
 function relaunchHomeIfStartupRouteIsInvalid(): void {

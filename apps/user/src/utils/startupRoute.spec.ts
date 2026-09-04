@@ -9,10 +9,15 @@ test("keeps registered parameterless business and CMS preview routes", () => {
     "pages/member/center",
     "pages/mall/orders",
     "pages/invoice/index",
-    "pages/refund/index"
+    "pages/refund/index",
+    "pages/notifications/index"
   ]) {
     assert.equal(shouldRelaunchHome(route, {}), false, route);
   }
+});
+
+test("recovers a blank startup route by relaunching home", () => {
+  assert.equal(shouldRelaunchHome("", {}), true);
 });
 
 test("rejects only parameterized routes that are missing required context", () => {

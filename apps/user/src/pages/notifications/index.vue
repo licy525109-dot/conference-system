@@ -24,11 +24,17 @@
     </view>
 
     <LoadingState v-if="loading" title="正在加载消息" description="请稍候" />
-    <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="load" />
+    <ErrorState
+      v-else-if="error"
+      :title="authRequired ? '需要微信登录' : '加载失败'"
+      :message="error"
+      :primary-text="authRequired ? '微信登录' : '重新加载'"
+      @retry="retryLoad"
+    />
     <EmptyState
       v-else-if="items.length === 0"
-      :title="filter === 'unread' ? '没有未读消息' : '暂无消息'"
-      :description="filter === 'unread' ? '新发布的会务安排会显示在这里。' : '主办方发布安排后，你会在这里直接看到详情。'"
+      :title="filter === 'unread' ? '暂时没有未读通知' : '暂未收到任何通知'"
+      :description="filter === 'unread' ? '收到的新通知会显示在这里。' : '报名结果、支付状态和主办方发布的会务安排都会保留在这里。'"
       mark="讯"
     />
     <view v-else class="message-list">
@@ -134,7 +140,7 @@ import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
-import { clearExpiredAuthSession, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
+import { clearExpiredAuthSession, ensureAuthenticatedUser, isAuthSessionExpiredError } from "@/services/auth";
 import { getGuestScheduleSubscriptionConfig, subscribeGuestScheduleUpdates, type GuestScheduleSubscriptionConfig } from "@/services/guest-schedule";
 import { getMyGuestSchedules, type MyGuestScheduleItem } from "@/services/guest-schedule";
 import { getMyNotifications, markAllNotificationsRead, markNotificationRead, type UserNotification, type UserNotificationScheduleItem } from "@/services/user-notifications";
@@ -144,6 +150,7 @@ const items = ref<UserNotification[]>([]);
 const unreadCount = ref(0);
 const loading = ref(false);
 const error = ref("");
+const authRequired = ref(false);
 const filter = ref<"all" | "unread">("all");
 const subscriptionConfig = ref<GuestScheduleSubscriptionConfig | null>(null);
 const subscribing = ref(false);
@@ -160,7 +167,9 @@ onShow(() => {
 async function load() {
   loading.value = true;
   error.value = "";
+  authRequired.value = false;
   try {
+    await ensureAuthenticatedUser();
     const [result, config] = await Promise.all([
       getMyNotifications(filter.value === "unread"),
       getGuestScheduleSubscriptionConfig().catch(() => null)
@@ -173,13 +182,18 @@ async function load() {
     console.error("[USER_NOTIFICATIONS_LOAD_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
       clearExpiredAuthSession();
-      error.value = EXPIRED_LOGIN_REENTRY_MESSAGE;
+      authRequired.value = true;
+      error.value = "登录后即可查看你的报名结果、支付状态和会务安排。";
     } else {
       error.value = "消息加载失败，请稍后重试";
     }
   } finally {
     loading.value = false;
   }
+}
+
+function retryLoad() {
+  void load();
 }
 
 function setFilter(value: "all" | "unread") {

@@ -86,7 +86,9 @@
       amount-label="报名费用"
       :amount-value="priceRangeText"
       :primary-text="registrationPrimaryText"
-      :primary-disabled="registrationSkus.length === 0 || registrationAvailability === 'ENDED'"
+      :loading="registrationLoginLoading"
+      loading-text="正在登录..."
+      :primary-disabled="registrationLoginLoading || registrationSkus.length === 0 || registrationAvailability === 'ENDED'"
       tabbar-offset
       @primary="goRegisterFirst"
     />
@@ -108,7 +110,7 @@ import LoadingState from "@/components/ui/LoadingState.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { DEFAULT_THEME, getAppTheme, type ThemeConfig } from "@/services/cms";
 import { getConferenceDetail, reserveConferenceAppointment, type ConferenceDetail, type RegistrationSku } from "@/services/conference";
-import { ensureLogin } from "@/services/auth";
+import { ensureAuthenticatedUser } from "@/services/auth";
 import { createCmsThemeVars } from "@/theme/cmsTheme";
 import { normalizeConferenceDetailLongImage } from "@/utils/conferenceDetail";
 import {
@@ -135,6 +137,7 @@ const error = ref("");
 const ticketSheetVisible = ref(false);
 const selectedSkuId = ref("");
 const activeDetailSectionId = ref("");
+const registrationLoginLoading = ref(false);
 
 const pageStyle = computed(() => createCmsThemeVars(theme.value));
 const detailLongImage = computed(() => normalizeConferenceDetailLongImage(conference.value?.contentJson));
@@ -233,6 +236,7 @@ async function goRegisterFirst() {
     await reserveAppointment();
     return;
   }
+  if (!await requireRegistrationLogin(() => void goRegisterFirst())) return;
   openTicketSelector();
 }
 
@@ -259,12 +263,13 @@ function selectSku(skuId: string) {
   selectedSkuId.value = skuId;
 }
 
-function confirmTicketSelection() {
+async function confirmTicketSelection() {
   const sku = registrationSkus.value.find((item) => item.id === selectedSkuId.value && remainingStock(item) > 0);
   if (!sku) {
     uni.showToast({ title: "暂无可报名规格", icon: "none" });
     return;
   }
+  if (!await requireRegistrationLogin(() => void confirmTicketSelection())) return;
   ticketSheetVisible.value = false;
   const couponQuery = couponCode.value ? `&couponCode=${encodeURIComponent(couponCode.value)}` : "";
   uni.navigateTo({
@@ -275,12 +280,35 @@ function confirmTicketSelection() {
 async function reserveAppointment() {
   if (!conferenceId.value) return;
   try {
-    await ensureLogin();
+    if (!await requireRegistrationLogin(() => void reserveAppointment())) return;
     const result = await reserveConferenceAppointment(conferenceId.value);
     uni.showToast({ title: result.message || "预约成功", icon: "none" });
   } catch (err) {
     console.error("[CONFERENCE_APPOINTMENT_ERROR]", err);
     uni.showToast({ title: "预约失败，请稍后重试", icon: "none" });
+  }
+}
+
+async function requireRegistrationLogin(retry: () => void): Promise<boolean> {
+  if (registrationLoginLoading.value) return false;
+  registrationLoginLoading.value = true;
+  try {
+    await ensureAuthenticatedUser();
+    return true;
+  } catch (error) {
+    console.error("[REGISTRATION_LOGIN_ERROR]", error);
+    uni.showModal({
+      title: "需要微信登录",
+      content: "登录后才能填写并提交报名信息。",
+      confirmText: "重新登录",
+      cancelText: "暂不报名",
+      success: (result) => {
+        if (result.confirm) retry();
+      }
+    });
+    return false;
+  } finally {
+    registrationLoginLoading.value = false;
   }
 }
 
