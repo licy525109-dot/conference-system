@@ -248,7 +248,7 @@
               <template #label>微信分享封面<MaterialSpecHelp spec-key="shareCover" /></template>
               <div class="field-row">
                 <el-input v-model="pageMeta.shareImageUrl" placeholder="建议 500x400 或 5:4，JPG/PNG" />
-                <el-button @click="openPageMetaImagePicker">应用素材库</el-button>
+                <el-button @click="openPageMetaImagePicker('shareImageUrl')">应用素材库</el-button>
               </div>
             </el-form-item>
           </el-form>
@@ -4970,7 +4970,7 @@ async function openMaterialPicker(component: EditableComponent, field: ConfigFie
   await loadMaterials();
 }
 
-async function openPageMetaImagePicker(key: keyof PageMetaForm = "shareImageUrl") {
+async function openPageMetaImagePicker(key: keyof PageMetaForm) {
   materialTarget.value = null;
   materialPageTarget.value = key;
   materialEntryTarget.value = null;
