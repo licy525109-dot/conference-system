@@ -1,3 +1,5 @@
+import { isHttpsUrl } from "@/utils/url";
+
 type AppEnv = {
   MODE?: string;
   PROD?: boolean;
@@ -66,12 +68,4 @@ function readPaymentMode(envValue: AppEnv | undefined, fallback: PaymentMode): P
 function readOptionalEnv(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
-}
-
-function isHttpsUrl(value: string): boolean {
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
 }
