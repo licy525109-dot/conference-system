@@ -41,13 +41,13 @@ BAOTA_USER
 BAOTA_SSH_KEY
 ```
 
-必填 Variables：
+可选安全覆盖 Variable：
 
 ```text
 BAOTA_HOST_FINGERPRINT=SHA256:<服务器控制台核对过的 ED25519 指纹>
 ```
 
-该值用于在临时 GitHub Runner 中固定服务器身份。必须通过服务器控制台或一台已经信任该服务器的运维电脑核对，不能直接信任同一次 `ssh-keyscan` 返回的值。
+工作流已经固定本次通过可信设备复核的生产机 ED25519 指纹，因此本次部署无需创建该 Variable。服务器重装或 SSH 主机密钥变化后，应通过服务器控制台或一台已经信任该服务器的运维电脑复核新指纹，再用该 Variable 覆盖；不能直接信任同一次 `ssh-keyscan` 返回的值。
 
 可选 Variables：
 
