@@ -32,7 +32,7 @@
           <wd-icon name="wallet" size="17px" />
           <text>{{ priceRangeText }}</text>
         </view>
-        <view v-if="remainingSeatText" class="detail-overview__trust-item">
+        <view v-if="conference.showRemainingSeats && remainingSeatText" class="detail-overview__trust-item">
           <wd-icon name="info-circle" size="17px" />
           <text>{{ remainingSeatText }}</text>
         </view>

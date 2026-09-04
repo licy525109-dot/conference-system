@@ -98,6 +98,10 @@
             <el-switch v-model="conferenceForm.showRegistrationCount" />
             <p class="form-help">关闭后用户端会议详情不显示实际报名人数，后台报名统计不受影响。</p>
           </el-form-item>
+          <el-form-item label="详情页显示剩余席位">
+            <el-switch v-model="conferenceForm.showRemainingSeats" />
+            <p class="form-help">关闭后用户端会议详情不显示剩余席位，库存与下单校验仍按真实数据执行。</p>
+          </el-form-item>
           <el-form-item><el-button type="primary" @click="saveConference">保存基础配置</el-button></el-form-item>
         </el-form>
       </el-tab-pane>
@@ -373,7 +377,8 @@ const conferenceForm = reactive({
   },
   groupRegistrationEnabled: true,
   maxTicketsPerOrder: 0,
-  showRegistrationCount: false
+  showRegistrationCount: false,
+  showRemainingSeats: false
 });
 const detailImage = reactive(createEmptyDetailImage());
 const detailSections = ref<DetailSectionDraft[]>([]);
@@ -462,7 +467,8 @@ function syncConferenceForm() {
     },
     groupRegistrationEnabled: conference.value.groupRegistrationEnabled,
     maxTicketsPerOrder: conference.value.maxTicketsPerOrder ?? 0,
-    showRegistrationCount: conference.value.showRegistrationCount ?? false
+    showRegistrationCount: conference.value.showRegistrationCount ?? false,
+    showRemainingSeats: conference.value.showRemainingSeats ?? false
   });
   Object.assign(detailImage, normalizeDetailImage(contentJson));
   if (hasConferenceDetailSectionsContract(contentJson)) {
@@ -496,7 +502,8 @@ async function saveConference() {
     registrationEndsAt: conferenceForm.registrationEndsAt || null,
     groupRegistrationEnabled: conferenceForm.groupRegistrationEnabled,
     maxTicketsPerOrder: conferenceForm.maxTicketsPerOrder > 0 ? conferenceForm.maxTicketsPerOrder : null,
-    showRegistrationCount: conferenceForm.showRegistrationCount
+    showRegistrationCount: conferenceForm.showRegistrationCount,
+    showRemainingSeats: conferenceForm.showRemainingSeats
   });
   await updateConferenceCheckInConfig(conferenceId.value, {
     checkInEnabled: conferenceForm.checkInEnabled,

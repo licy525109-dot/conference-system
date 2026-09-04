@@ -650,6 +650,7 @@ model Conference {
   groupRegistrationEnabled Boolean                    @default(true)
   maxTicketsPerOrder       Int?
   showRegistrationCount    Boolean                    @default(false)
+  showRemainingSeats       Boolean                    @default(false)
   status                   ConferenceStatus           @default(DRAFT)
   sortOrder                Int                        @default(0)
   createdAt                DateTime                   @default(now())

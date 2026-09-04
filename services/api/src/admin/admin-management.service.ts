@@ -97,6 +97,7 @@ export class AdminManagementService {
         groupRegistrationEnabled: request.groupRegistrationEnabled ?? true,
         maxTicketsPerOrder: request.maxTicketsPerOrder,
         showRegistrationCount: request.showRegistrationCount ?? false,
+        showRemainingSeats: request.showRemainingSeats ?? false,
         status: request.status ?? ConferenceStatus.DRAFT,
         sortOrder: request.sortOrder ?? 0,
         page: {
@@ -156,6 +157,9 @@ export class AdminManagementService {
         ...(typeof request.maxTicketsPerOrder !== "undefined" ? { maxTicketsPerOrder: request.maxTicketsPerOrder } : {}),
         ...(typeof request.showRegistrationCount !== "undefined"
           ? { showRegistrationCount: request.showRegistrationCount }
+          : {}),
+        ...(typeof request.showRemainingSeats !== "undefined"
+          ? { showRemainingSeats: request.showRemainingSeats }
           : {}),
         ...(typeof request.status !== "undefined" ? { status: request.status } : {}),
         ...(typeof request.sortOrder !== "undefined" ? { sortOrder: request.sortOrder } : {}),
@@ -1548,6 +1552,7 @@ const conferenceDetailSelect = {
   groupRegistrationEnabled: true,
   maxTicketsPerOrder: true,
   showRegistrationCount: true,
+  showRemainingSeats: true,
   page: {
     select: {
       contentJson: true,
@@ -1927,6 +1932,7 @@ interface ConferenceDetailShape extends ConferenceListShape {
   groupRegistrationEnabled?: boolean;
   maxTicketsPerOrder?: number | null;
   showRegistrationCount?: boolean;
+  showRemainingSeats?: boolean;
   page?: {
     contentJson: Prisma.JsonValue;
     styleJson: Prisma.JsonValue | null;
@@ -1964,6 +1970,7 @@ function formatConferenceDetail(conference: ConferenceDetailShape) {
     groupRegistrationEnabled: conference.groupRegistrationEnabled ?? true,
     maxTicketsPerOrder: conference.maxTicketsPerOrder ?? null,
     showRegistrationCount: conference.showRegistrationCount ?? false,
+    showRemainingSeats: conference.showRemainingSeats ?? false,
     contentJson: conference.page?.contentJson ?? {},
     styleJson: conference.page?.styleJson ?? null
   };
@@ -2244,6 +2251,7 @@ function parseConferenceInput(input: unknown, partial: boolean) {
     groupRegistrationEnabled: readOptionalBoolean(body, "groupRegistrationEnabled"),
     maxTicketsPerOrder: readOptionalNullableNonNegativeInt(body, "maxTicketsPerOrder"),
     showRegistrationCount: readOptionalBoolean(body, "showRegistrationCount"),
+    showRemainingSeats: readOptionalBoolean(body, "showRemainingSeats"),
     sortOrder: readOptionalNonNegativeInt(body, "sortOrder"),
     contentJson: readOptionalJsonObject(body, "contentJson"),
     styleJson: readOptionalJsonObject(body, "styleJson")

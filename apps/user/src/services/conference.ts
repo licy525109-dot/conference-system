@@ -13,6 +13,7 @@ export interface ConferenceListItem {
   registrationStartsAt: string | null;
   registrationEndsAt: string | null;
   registrationCount?: number;
+  showRemainingSeats?: boolean;
   appointmentCount?: number;
 }
 

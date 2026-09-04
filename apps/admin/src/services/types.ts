@@ -33,6 +33,7 @@ export interface Conference {
   groupRegistrationEnabled: boolean;
   maxTicketsPerOrder: number | null;
   showRegistrationCount?: boolean;
+  showRemainingSeats?: boolean;
   contentJson?: Record<string, unknown>;
   styleJson?: Record<string, unknown> | null;
   counts?: {

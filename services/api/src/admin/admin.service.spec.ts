@@ -120,18 +120,21 @@ describe("Admin management", () => {
     assert.equal(prisma.conferences[0]?.status, ConferenceStatus.PUBLISHED);
   });
 
-  it("updates whether registration count is exposed on the conference detail page", async () => {
+  it("updates conference detail capacity visibility", async () => {
     const prisma = createPrismaMock();
     const service = new AdminManagementService(prisma);
 
     const response = await service.updateConference(
       "conference-1",
-      { showRegistrationCount: true },
+      { showRegistrationCount: true, showRemainingSeats: true },
       currentAdmin
     );
 
-    assert.equal((response.data as { showRegistrationCount: boolean }).showRegistrationCount, true);
+    const visibility = response.data as { showRegistrationCount: boolean; showRemainingSeats: boolean };
+    assert.equal(visibility.showRegistrationCount, true);
+    assert.equal(visibility.showRemainingSeats, true);
     assert.equal(prisma.conferences[0]?.showRegistrationCount, true);
+    assert.equal(prisma.conferences[0]?.showRemainingSeats, true);
   });
 
   it("rejects non-integer or negative SKU price", async () => {
@@ -816,6 +819,7 @@ function createPrismaMock() {
       groupRegistrationEnabled: true,
       maxTicketsPerOrder: null,
       showRegistrationCount: false,
+      showRemainingSeats: false,
       status: ConferenceStatus.DRAFT,
       sortOrder: 0,
       createdAt: new Date("2026-06-06T00:00:00.000Z"),
@@ -950,6 +954,7 @@ function createPrismaMock() {
           groupRegistrationEnabled: Boolean(args.data.groupRegistrationEnabled ?? true),
           maxTicketsPerOrder: typeof args.data.maxTicketsPerOrder === "number" ? args.data.maxTicketsPerOrder : null,
           showRegistrationCount: Boolean(args.data.showRegistrationCount ?? false),
+          showRemainingSeats: Boolean(args.data.showRemainingSeats ?? false),
           status: (args.data.status as ConferenceStatus) ?? ConferenceStatus.DRAFT,
           sortOrder: Number(args.data.sortOrder ?? 0),
           createdAt: new Date("2026-06-06T00:00:00.000Z"),
@@ -994,6 +999,9 @@ function createPrismaMock() {
         }
         if (typeof (args.data as { showRegistrationCount?: boolean }).showRegistrationCount === "boolean") {
           conference.showRegistrationCount = (args.data as { showRegistrationCount: boolean }).showRegistrationCount;
+        }
+        if (typeof (args.data as { showRemainingSeats?: boolean }).showRemainingSeats === "boolean") {
+          conference.showRemainingSeats = (args.data as { showRemainingSeats: boolean }).showRemainingSeats;
         }
         return conference;
       }
@@ -1200,6 +1208,7 @@ interface ConferenceRecord {
   groupRegistrationEnabled: boolean;
   maxTicketsPerOrder: number | null;
   showRegistrationCount: boolean;
+  showRemainingSeats: boolean;
   status: ConferenceStatus;
   sortOrder: number;
   createdAt: Date;

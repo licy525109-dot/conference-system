@@ -239,6 +239,12 @@ describe("ConferencesService", () => {
     assert.equal(visibleResponse.data.registrationCount, 2);
   });
 
+  it("keeps remaining-seat visibility disabled by default", async () => {
+    const response = await new ConferencesService(createPrismaMock()).detail("published-conf");
+
+    assert.equal(response.data.showRemainingSeats, false);
+  });
+
   it("returns form fields by sortOrder and hides disabled fields", async () => {
     const service = new ConferencesService(createPrismaMock());
 
@@ -313,6 +319,7 @@ function createPrismaMock(showRegistrationCount = false) {
           registrationStartsAt: conference.registrationStartsAt,
           registrationEndsAt: conference.registrationEndsAt,
           showRegistrationCount,
+          showRemainingSeats: false,
           page: conference.page,
           skus,
           _count: {
