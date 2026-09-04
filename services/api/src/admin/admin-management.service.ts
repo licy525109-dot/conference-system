@@ -19,7 +19,7 @@ import {
 import { PrismaService } from "../prisma.service";
 import { closePendingRegistrationOrder } from "../order-lifecycle/order-reservations";
 import { CurrentAdmin } from "./current-admin";
-import { AdminNotificationsService } from "./admin-notifications.service";
+import { AdminNotificationsService, formatWechatTemplateDateTime } from "./admin-notifications.service";
 import { detectPaymentExceptions } from "./admin-payment-exceptions.service";
 import { type CheckinMethod, formatCheckinConfig } from "../checkin/checkin.service";
 import { createCheckinCredentialPayload } from "../checkin/checkin-credential";
@@ -785,7 +785,7 @@ export class AdminManagementService {
     const [conference, sku, user] = await Promise.all([
       this.prisma.conference.findUnique({
         where: { id: conferenceId },
-        select: { id: true, title: true, checkInEnabled: true }
+        select: { id: true, title: true, startsAt: true, location: true, checkInEnabled: true }
       }),
       this.prisma.registrationSku.findFirst({
         where: { id: skuId, conferenceId },
@@ -913,6 +913,8 @@ export class AdminManagementService {
         registrationId: registration.id,
         orderNo,
         conferenceTitle: conference.title,
+        conferenceStartsAt: conference.startsAt.toISOString(),
+        conferenceLocation: conference.location,
         attendeeName,
         paidAmountCent: 0,
         complimentary: true
@@ -920,9 +922,11 @@ export class AdminManagementService {
       templateCode: "REGISTRATION_SUCCESS",
       variables: {
         会议名称: conference.title,
+        会议时间: formatWechatTemplateDateTime(conference.startsAt),
+        会议地点: conference.location,
         参会人姓名: attendeeName,
         订单号: orderNo,
-        报名状态: "主办方邀请，已确认"
+        报名状态: "报名成功"
       }
     });
     return ok(formatRegistrationDetail(registration));

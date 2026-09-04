@@ -166,8 +166,8 @@ export class AdminNotificationsService implements OnModuleInit, OnModuleDestroy 
   dispatchRefundStatus(input: RefundStatusNotificationInput) {
     const statusLabel = refundStatusLabel(input.status);
     const sourceLabel = input.sourceType === "MALL" ? "商城" : "报名";
-    const terminal = ["SUCCESS", "FAILED", "REJECTED"].includes(input.status);
     const reason = input.reason?.trim() || null;
+    const refundTime = formatWechatTemplateDateTime(new Date());
     return this.dispatchBusinessNotification({
       userId: input.userId,
       sourceKey: `refund-status:${input.sourceType}:${input.refundId}:${input.status}`,
@@ -185,13 +185,17 @@ export class AdminNotificationsService implements OnModuleInit, OnModuleDestroy 
         statusLabel,
         ...(reason ? { reason } : {})
       },
-      templateCode: terminal ? "REFUND_STATUS_UPDATED" : undefined,
+      // The selected WeChat template is a completed-refund notice. Other states
+      // remain visible in the in-app notification center without a misleading push.
+      templateCode: input.status === "SUCCESS" ? "REFUND_STATUS_UPDATED" : undefined,
       variables: {
         退款单号: input.refundNo,
         订单号: input.orderNo,
         退款金额: `¥${formatCent(input.amountCent)}`,
         退款状态: statusLabel,
-        处理说明: reason || statusLabel
+        处理说明: reason || statusLabel,
+        退款方式: "原路退回",
+        退款时间: refundTime
       }
     });
   }
@@ -1040,10 +1044,24 @@ function buildWechatTemplateData(
   const result: Record<string, { value: string }> = {};
   for (const [key, raw] of Object.entries(source)) {
     const value = isRecord(raw) ? raw.value : raw;
-    if (typeof value === "string") result[key] = { value: renderText(value, variables) };
+    if (typeof value === "string") result[key] = { value: normalizeWechatTemplateValue(key, renderText(value, variables)) };
     else if (typeof value === "number" || typeof value === "boolean") result[key] = { value: String(value) };
   }
   return result;
+}
+
+export function normalizeWechatTemplateValue(key: string, value: string): string {
+  const clean = value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
+  const limit = key.startsWith("phrase")
+    ? 5
+    : key.startsWith("name")
+      ? 10
+      : key.startsWith("thing")
+        ? 20
+        : key.startsWith("character_string")
+          ? 32
+          : null;
+  return limit ? Array.from(clean).slice(0, limit).join("") : clean;
 }
 
 function readPagePath(payload: Record<string, unknown>, templateContent: Prisma.JsonValue): string | null {
@@ -1394,6 +1412,20 @@ function refundNotificationTitle(status: string): string {
 
 function formatCent(value: number): string {
   return (value / 100).toFixed(2);
+}
+
+export function formatWechatTemplateDateTime(value: Date): string {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
 }
 
 function taskStatusFromResultCounts(total: number, successCount: number, failedCount: number, skippedCount: number): NotificationTaskStatus {

@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { CheckInStatus, OrderStatus, PaymentProvider, PaymentStatus, Prisma, RegistrationStatus } from "@prisma/client";
-import { AdminNotificationsService } from "../admin/admin-notifications.service";
+import { AdminNotificationsService, formatWechatTemplateDateTime } from "../admin/admin-notifications.service";
 import { PrismaService } from "../prisma.service";
 
 export interface ProcessPaymentSuccessInput {
@@ -45,7 +45,9 @@ export class PaymentSuccessService {
           conference: {
             select: {
               checkInEnabled: true,
-              title: true
+              title: true,
+              startsAt: true,
+              location: true
             }
           },
           items: {
@@ -109,6 +111,8 @@ export class PaymentSuccessService {
           registrationId,
           userId: order.userId,
           conferenceTitle: order.conference.title,
+          conferenceStartsAt: order.conference.startsAt,
+          conferenceLocation: order.conference.location,
           attendeeName: order.registration?.attendeeName || "参会人",
           paidAmountCent: order.payableAmountCent
         };
@@ -186,6 +190,8 @@ export class PaymentSuccessService {
           registrationId: existingRegistration.id,
           userId: order.userId,
           conferenceTitle: order.conference.title,
+          conferenceStartsAt: order.conference.startsAt,
+          conferenceLocation: order.conference.location,
           attendeeName: snapshot.attendeeName,
           paidAmountCent: order.payableAmountCent
         };
@@ -211,6 +217,8 @@ export class PaymentSuccessService {
         registrationId: registration.id,
         userId: order.userId,
         conferenceTitle: order.conference.title,
+        conferenceStartsAt: order.conference.startsAt,
+        conferenceLocation: order.conference.location,
         attendeeName: snapshot.attendeeName,
         paidAmountCent: order.payableAmountCent
       };
@@ -228,6 +236,8 @@ export class PaymentSuccessService {
         registrationId: result.registrationId,
         orderNo: input.orderNo,
         conferenceTitle: result.conferenceTitle,
+        conferenceStartsAt: result.conferenceStartsAt.toISOString(),
+        conferenceLocation: result.conferenceLocation,
         attendeeName: result.attendeeName,
         paidAmountCent: result.paidAmountCent,
         paymentProvider: input.provider
@@ -235,10 +245,13 @@ export class PaymentSuccessService {
       templateCode: isPaid ? "PAYMENT_SUCCESS" : "REGISTRATION_SUCCESS",
       variables: {
         会议名称: result.conferenceTitle,
+        会议时间: formatWechatTemplateDateTime(result.conferenceStartsAt),
+        会议地点: result.conferenceLocation,
         参会人姓名: result.attendeeName,
         订单号: input.orderNo,
-        报名状态: "已确认",
-        支付金额: `¥${(result.paidAmountCent / 100).toFixed(2)}`
+        报名状态: "报名成功",
+        支付金额: `¥${(result.paidAmountCent / 100).toFixed(2)}`,
+        支付方式: input.provider === PaymentProvider.WECHAT ? "微信支付" : "模拟支付"
       }
     });
 

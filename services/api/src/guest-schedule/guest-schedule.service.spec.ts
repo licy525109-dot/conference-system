@@ -165,6 +165,8 @@ describe("GuestScheduleService", () => {
     assert.deepEqual(firstTask?.userIds, ["user-1"]);
     assert.equal(firstTask?.payloadJson.variables["会议名称"], "观潮会集");
     assert.equal(firstTask?.payloadJson.variables["安排名称"], "人工智能工作坊");
+    assert.equal(firstTask?.payloadJson.variables["活动地点"], "三楼 A 厅");
+    assert.equal(firstTask?.payloadJson.variables["活动时间"], "2026-10-20 14:00");
     assert.doesNotMatch(firstTask?.payloadJson.variables["安排名称"] ?? "", /嘉宾晚宴/);
     assert.deepEqual(secondTask?.userIds, ["user-2"]);
     assert.equal(secondTask?.payloadJson.variables["会议名称"], "另一场会议");

@@ -9,7 +9,11 @@ import {
   NotificationTemplateStatus
 } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
-import { AdminNotificationsService } from "./admin-notifications.service";
+import {
+  AdminNotificationsService,
+  formatWechatTemplateDateTime,
+  normalizeWechatTemplateValue
+} from "./admin-notifications.service";
 import { CurrentAdmin } from "./current-admin";
 
 const admin: CurrentAdmin = {
@@ -408,6 +412,56 @@ describe("AdminNotificationsService", () => {
 
     assert.equal(preview.data.title, "观潮会集安排更新");
     assert.equal((preview.data.content as Record<string, unknown>).body, "李嘉宾，请查看工作坊。");
+  });
+
+  it("formats and bounds WeChat template values to provider constraints", () => {
+    assert.equal(formatWechatTemplateDateTime(new Date("2026-10-22T13:00:00.000Z")), "2026-10-22 21:00");
+    assert.equal(normalizeWechatTemplateValue("thing4", "  超过二十个字的会议名称需要被安全截断以免被微信拒收  "), "超过二十个字的会议名称需要被安全截断以免");
+    assert.equal(normalizeWechatTemplateValue("phrase1", "报名成功已确认"), "报名成功已");
+    assert.equal(normalizeWechatTemplateValue("name1", "张三\n先生"), "张三 先生");
+  });
+
+  it("uses the completed-refund WeChat template only after refund success", async () => {
+    process.env.NOTIFICATION_CENTER_ENABLED = "true";
+    process.env.WECHAT_SUBSCRIBE_MESSAGE_ENABLED = "true";
+    const prisma = createNotificationPrismaMock();
+    const service = new AdminNotificationsService(prisma);
+    await service.createTemplate(
+      {
+        code: "REFUND_STATUS_UPDATED",
+        name: "退款通知",
+        channel: "WECHAT_SUBSCRIBE",
+        status: "ACTIVE",
+        templateKey: "refund-template-id",
+        contentJson: { wechatData: { character_string2: "{{订单号}}" } }
+      },
+      admin
+    );
+
+    await service.dispatchRefundStatus({
+      userId: "user-1",
+      refundId: "refund-failed",
+      refundNo: "RF001",
+      orderNo: "ORDER001",
+      sourceType: "REGISTRATION",
+      amountCent: 100,
+      status: "FAILED"
+    });
+    assert.equal(prisma.tasks.length, 0);
+
+    await service.dispatchRefundStatus({
+      userId: "user-1",
+      refundId: "refund-success",
+      refundNo: "RF002",
+      orderNo: "ORDER002",
+      sourceType: "REGISTRATION",
+      amountCent: 100,
+      status: "SUCCESS"
+    });
+    assert.equal(prisma.tasks.length, 1);
+    const variables = (prisma.tasks[0]?.payloadJson as { variables?: Record<string, unknown> })?.variables;
+    assert.equal(variables?.["退款方式"], "原路退回");
+    assert.match(String(variables?.["退款时间"]), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
   });
 });
 

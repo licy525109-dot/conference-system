@@ -10,7 +10,7 @@ import {
   Prisma,
   RegistrationStatus
 } from "@prisma/client";
-import { AdminNotificationsService } from "../admin/admin-notifications.service";
+import { AdminNotificationsService, formatWechatTemplateDateTime } from "../admin/admin-notifications.service";
 import { CurrentAdmin } from "../admin/current-admin";
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
@@ -373,6 +373,7 @@ export class GuestScheduleService {
       try {
         const userIds = [group.userId];
         const assignmentName = buildScheduleNotificationSummary(group.assignments);
+        const primaryAssignment = [...group.assignments].sort((left, right) => left.startsAt.getTime() - right.startsAt.getTime())[0];
         const taskResult = await this.notifications.createTask(
           {
             name: `${group.conferenceTitle} - 嘉宾会务安排更新`,
@@ -389,7 +390,9 @@ export class GuestScheduleService {
                 updateTime,
                 "会议名称": group.conferenceTitle,
                 "安排名称": assignmentName,
-                "更新时间": updateTime
+                "更新时间": updateTime,
+                "活动地点": primaryAssignment?.location || "详见小程序",
+                "活动时间": primaryAssignment ? formatWechatTemplateDateTime(primaryAssignment.startsAt) : formatWechatTemplateDateTime(new Date())
               }
             }
           },
