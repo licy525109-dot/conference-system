@@ -19,6 +19,7 @@ export default defineConfig({
     viewport: { width: 390, height: 844 },
     colorScheme: "light",
     locale: "zh-CN",
+    timezoneId: "Asia/Shanghai",
     trace: "retain-on-failure",
     screenshot: "only-on-failure"
   },
