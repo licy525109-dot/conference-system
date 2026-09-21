@@ -58,13 +58,14 @@ export class AuthService {
           sessionKey: "",
           unionid: null
         },
-        nickname
+        nickname,
+        input.activateAccount === true
       );
     }
 
     if (loginMode === "real") {
       const session = await this.wechatAuthService.code2Session(code);
-      return this.loginWithWechatSession(session, nickname);
+      return this.loginWithWechatSession(session, nickname, input.activateAccount === true);
     }
 
     throw new BadRequestException("WECHAT_LOGIN_MODE must be mock or real");
@@ -72,19 +73,22 @@ export class AuthService {
 
   private async loginWithWechatSession(
     session: WechatSession,
-    nickname: string | null
+    nickname: string | null,
+    activateAccount = false
   ): Promise<ApiResponse<LoginResponse>> {
     const user = await this.prisma.user.upsert({
       where: { openid: session.openid },
       update: {
         ...(nickname !== null ? { nickname } : {}),
         ...(session.unionid ? { unionid: session.unionid } : {}),
+        ...(activateAccount ? { activatedAt: new Date() } : {}),
         lastActiveAt: new Date()
       },
       create: {
         openid: session.openid,
         unionid: session.unionid,
         nickname,
+        ...(activateAccount ? { activatedAt: new Date() } : {}),
         lastActiveAt: new Date()
       },
       select: userProfileSelect
@@ -114,6 +118,9 @@ export class AuthService {
         openid: true,
         nickname: true,
         phone: true,
+        realName: true,
+        phoneVerifiedAt: true,
+        activatedAt: true,
         wechatNickname: true,
         wechatAvatarUrl: true,
         createdAt: true,
@@ -149,6 +156,10 @@ export class AuthService {
     const body = readObject(input);
     const wechatNickname = readOptionalNullableString(body, "wechatNickname");
     const wechatAvatarUrl = readOptionalNullableString(body, "wechatAvatarUrl");
+    const realName = readOptionalNullableString(body, "realName");
+    if (typeof realName !== "undefined" && (!realName?.trim() || realName.trim().length > 80)) {
+      throw new BadRequestException("请填写有效的本人姓名（最多 80 字）");
+    }
 
     if (typeof wechatNickname !== "undefined" && wechatNickname !== null && wechatNickname.length > MAX_WECHAT_NICKNAME_LENGTH) {
       throw new BadRequestException(`wechatNickname must be ${MAX_WECHAT_NICKNAME_LENGTH} characters or fewer`);
@@ -163,6 +174,8 @@ export class AuthService {
       data: {
         ...(typeof wechatNickname !== "undefined" ? { wechatNickname } : {}),
         ...(typeof wechatAvatarUrl !== "undefined" ? { wechatAvatarUrl } : {}),
+        ...(typeof realName === "string" ? { realName: realName.trim() } : {}),
+        activatedAt: new Date(),
         profileUpdatedAt: new Date()
       },
       select: userProfileSelect
@@ -183,14 +196,11 @@ export class AuthService {
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.update({
         where: { id: currentUser.id },
-        data: { phone, lastActiveAt: new Date() },
+        data: { phone, phoneVerifiedAt: new Date(), activatedAt: new Date(), lastActiveAt: new Date() },
         select: userProfileSelect
       });
-      const [orders, registrations] = await Promise.all([
-        tx.order.updateMany({ where: { phone, userId: null }, data: { userId: currentUser.id } }),
-        tx.registration.updateMany({ where: { phone, userId: null }, data: { userId: currentUser.id } })
-      ]);
-      return { user, linkedOrders: orders.count, linkedRegistrations: registrations.count };
+      // A form phone can belong to a delegate. Historical ownership requires an explicit claim.
+      return { user, linkedOrders: 0, linkedRegistrations: 0 };
     });
 
     return ok({
@@ -267,6 +277,9 @@ const userProfileSelect = {
   openid: true,
   nickname: true,
   phone: true,
+  realName: true,
+  phoneVerifiedAt: true,
+  activatedAt: true,
   wechatNickname: true,
   wechatAvatarUrl: true,
   createdAt: true,
@@ -278,6 +291,9 @@ function formatUserProfile(user: {
   openid: string | null;
   nickname: string | null;
   phone: string | null;
+  realName?: string | null;
+  phoneVerifiedAt?: Date | null;
+  activatedAt?: Date | null;
   wechatNickname: string | null;
   wechatAvatarUrl: string | null;
   createdAt: Date;
@@ -288,6 +304,10 @@ function formatUserProfile(user: {
     openid: user.openid,
     nickname: user.nickname,
     phone: user.phone,
+    realName: user.realName ?? null,
+    phoneVerifiedAt: user.phoneVerifiedAt?.toISOString() ?? null,
+    activatedAt: user.activatedAt?.toISOString() ?? null,
+    registrationReady: Boolean(user.realName?.trim() && user.phone && user.phoneVerifiedAt),
     wechatNickname: user.wechatNickname,
     wechatAvatarUrl: user.wechatAvatarUrl,
     registeredAt: user.createdAt.toISOString(),

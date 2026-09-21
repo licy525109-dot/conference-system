@@ -150,6 +150,8 @@
       </view>
     </view>
 
+    <button class="ui-button-secondary" @click="goAttendance">我的参会资格</button>
+    <button class="ui-button-secondary" @click="goClaim">领取参会资格</button>
     <WechatProfilePrompt />
     <CustomTabbar active-page-key="member-center" />
   </view>
@@ -157,6 +159,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
+const goClaim = () => uni.navigateTo({ url: "/pages/account/claim" });
+const goAttendance = () => uni.navigateTo({ url: "/pages/account/attendance" });
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";

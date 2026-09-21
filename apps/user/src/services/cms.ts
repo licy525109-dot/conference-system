@@ -109,10 +109,10 @@ export interface TabbarItem {
 
 export const DEFAULT_THEME: ThemeConfig = {
   visualPreset: "guanchao-premium",
-  primaryColor: "#10233d",
-  secondaryColor: "#2f7868",
-  accentColor: "#a97e38",
-  backgroundColor: "#f5f7f5",
+  primaryColor: "#987627",
+  secondaryColor: "#866a23",
+  accentColor: "#a3842b",
+  backgroundColor: "#f5f6f6",
   cardBackground: "#ffffff",
   radius: 8,
   buttonStyle: "solid",
@@ -162,7 +162,7 @@ function defaultCompositionKind(pageKey: string): CmsCompositionKind {
   return "home";
 }
 
-export async function getPublishedPage(pageKey: string, params: { conferenceId?: string; productId?: string } = {}): Promise<PublishedPage | null> {
+export async function getPublishedPage(pageKey: string, params: { conferenceId?: string; productId?: string } = {}, options: { networkOnly?: boolean } = {}): Promise<PublishedPage | null> {
   try {
     const query = Object.entries(params)
       .filter(([, value]) => typeof value === "string" && value.trim())
@@ -170,9 +170,10 @@ export async function getPublishedPage(pageKey: string, params: { conferenceId?:
       .join("&");
     const cacheKey = query ? `cms-page:${pageKey}:${query}` : `cms-page:${pageKey}`;
     const page = normalizePublishedPage(await request<PublishedPage>(`/pages/${encodeURIComponent(pageKey)}/published${query ? `?${query}` : ""}`, { auth: false }), pageKey);
-    uni.setStorageSync(cacheKey, page);
+    try { uni.setStorageSync(cacheKey, page); } catch { /* Rendering must survive storage quota failures. */ }
     return page;
   } catch (error) {
+    if (options.networkOnly) throw error;
     const query = Object.entries(params)
       .filter(([, value]) => typeof value === "string" && value.trim())
       .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
@@ -225,12 +226,13 @@ export function buildPageShare(page: PublishedPage | null | undefined, path: str
   };
 }
 
-export async function getAppTheme(pageKey?: string): Promise<ThemeConfig> {
+export async function getAppTheme(pageKey?: string, options: { networkOnly?: boolean } = {}): Promise<ThemeConfig> {
   try {
     const theme = await request<AppTheme>("/app/theme", { auth: false });
-    uni.setStorageSync("cms-theme", theme.config);
+    try { uni.setStorageSync("cms-theme", theme.config); } catch { /* Rendering must survive storage quota failures. */ }
     return resolveThemeForPage({ ...DEFAULT_THEME, ...theme.config }, pageKey);
-  } catch {
+  } catch (error) {
+    if (options.networkOnly) throw error;
     const cached = uni.getStorageSync("cms-theme") as Partial<ThemeConfig> | "";
     return resolveThemeForPage({ ...DEFAULT_THEME, ...(cached || {}) }, pageKey);
   }

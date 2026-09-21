@@ -1,6 +1,8 @@
 import { computed, defineAsyncComponent, ref, type Component } from "vue";
 
 const DashboardPage = defineAsyncComponent(() => import("../pages/dashboard/index.vue"));
+const MobileWorkspacePage = defineAsyncComponent(() => import("../pages/mobile/index.vue"));
+const PaidAlertsPage = defineAsyncComponent(() => import("../pages/notifications/paid-alerts.vue"));
 const ConferencesPage = defineAsyncComponent(() => import("../pages/conferences/index.vue"));
 const ConferenceConfigPage = defineAsyncComponent(() => import("../pages/conferences/config.vue"));
 const OrdersPage = defineAsyncComponent(() => import("../pages/orders/index.vue"));
@@ -26,6 +28,7 @@ const MallProductsPage = defineAsyncComponent(() => import("../pages/mall/produc
 const MallWorkflowsPage = defineAsyncComponent(() => import("../pages/mall/workflows.vue"));
 const MemberLevelsPage = defineAsyncComponent(() => import("../pages/members/levels.vue"));
 const MemberUsersPage = defineAsyncComponent(() => import("../pages/members/users.vue"));
+const UserDetailPage = defineAsyncComponent(() => import("../pages/members/detail.vue"));
 const MemberBenefitsPage = defineAsyncComponent(() => import("../pages/members/benefits.vue"));
 const MemberPricingRulesPage = defineAsyncComponent(() => import("../pages/members/pricing-rules.vue"));
 const AuditLogsPage = defineAsyncComponent(() => import("../pages/system/audit-logs.vue"));
@@ -46,7 +49,10 @@ export interface AdminRoute {
 }
 
 export const routes: AdminRoute[] = [
+  { path: "/users/detail", title: "用户详情", menuTitle: "用户详情", group: "用户中心", permission: "member:view", component: UserDetailPage, hidden: true },
   { path: "/dashboard", title: "数据看板", menuTitle: "数据看板", group: "控制台", description: "核心报名、收入和订单指标", permission: "dashboard:view", component: DashboardPage },
+  { path: "/mobile", title: "会务工作台", menuTitle: "手机工作台", group: "控制台", permission: "registration:view", component: MobileWorkspacePage },
+  { path: "/notifications/paid-alerts", title: "管理员缴费提醒", menuTitle: "管理员缴费提醒", group: "通知中心", permission: "system:account", component: PaidAlertsPage },
   { path: "/conferences", title: "会议管理", menuTitle: "会议管理", group: "会议管理", description: "会议基础信息、上下架和配置入口", permission: "conference:view", component: ConferencesPage },
   {
     path: "/conferences/config",

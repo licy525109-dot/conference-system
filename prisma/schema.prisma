@@ -234,6 +234,9 @@ model User {
   openid                    String?                    @unique
   unionid                   String?
   nickname                  String?
+  realName                  String?
+  phoneVerifiedAt           DateTime?
+  activatedAt               DateTime?
   wechatNickname            String?
   wechatAvatarUrl           String?
   profileUpdatedAt          DateTime?
@@ -260,6 +263,8 @@ model User {
   invoiceApplications       InvoiceApplication[]
   invoiceProfiles           InvoiceProfile[]
   memberBenefitGrants       MemberBenefitGrant[]
+  guestProfile              GuestProfile?
+  businessOrders            Order[]                    @relation("OrderBusinessOwner")
 
   @@index([createdAt])
   @@index([lastActiveAt])
@@ -1724,6 +1729,7 @@ model Order {
   id                       String               @id @default(cuid())
   orderNo                  String               @unique
   userId                   String?
+  businessOwnerUserId      String?
   conferenceId             String
   skuId                    String
   originAmountCent         Int
@@ -1742,6 +1748,7 @@ model Order {
   createdAt                DateTime             @default(now())
   updatedAt                DateTime             @updatedAt
   user                     User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  businessOwner            User?                @relation("OrderBusinessOwner", fields: [businessOwnerUserId], references: [id], onDelete: SetNull)
   conference               Conference           @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
   sku                      RegistrationSku      @relation(fields: [skuId], references: [id], onDelete: Restrict)
   items                    OrderItem[]
@@ -1931,6 +1938,7 @@ model Registration {
   id              String                 @id @default(cuid())
   registrationNo  String                 @unique
   userId          String?
+  credentialVersion Int                  @default(0)
   conferenceId    String
   skuId           String
   orderId         String                 @unique
@@ -1966,6 +1974,7 @@ model Registration {
 model RegistrationAttendee {
   id                       String                       @id @default(cuid())
   registrationId           String
+  guestProfileId           String?
   skuId                    String
   name                     String
   phone                    String
@@ -1979,16 +1988,85 @@ model RegistrationAttendee {
   createdAt                DateTime                     @default(now())
   updatedAt                DateTime                     @updatedAt
   registration             Registration                 @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  guestProfile             GuestProfile?                @relation(fields: [guestProfileId], references: [id], onDelete: SetNull)
   sku                      RegistrationSku              @relation(fields: [skuId], references: [id], onDelete: Restrict)
   checkinLogs              CheckinLog[]
   guestScheduleAssignments GuestScheduleAssignment[]
   smartSheetGuestRecords   WecomSmartSheetGuestRecord[]
 
   @@index([registrationId])
+  @@index([guestProfileId])
   @@index([skuId])
   @@index([checkInStatus])
   @@index([createdAt])
   @@map("registration_attendees")
+}
+
+model GuestProfile {
+  id            String   @id @default(cuid())
+  userId        String?  @unique
+  name          String
+  phone         String
+  company       String?
+  title         String?
+  commonFormJson Json?
+  boundAt       DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  attendees     RegistrationAttendee[]
+  claims        GuestClaim[]
+
+  @@index([phone])
+  @@map("guest_profiles")
+}
+
+model GuestClaim {
+  id             String   @id @default(cuid())
+  guestProfileId String
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+  guestProfile   GuestProfile @relation(fields: [guestProfileId], references: [id], onDelete: Cascade)
+
+  @@index([guestProfileId])
+  @@map("guest_claims")
+}
+
+model AdminAlertRecipient {
+  id            String @id @default(cuid())
+  adminUserId   String @unique
+  integrationId String
+  wecomUserId   String
+  enabled       Boolean @default(false)
+  enabledSince  DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deliveries    AdminRegistrationAlert[]
+  @@map("admin_alert_recipients")
+}
+
+model AdminRegistrationAlert {
+  id             String @id @default(cuid())
+  registrationId String
+  recipientId    String
+  status         String @default("PENDING")
+  attempts       Int @default(0)
+  payloadJson    Json
+  nextAttemptAt  DateTime @default(now())
+  firstAttemptAt DateTime?
+  leaseToken     String?
+  leaseUntil     DateTime?
+  sentAt         DateTime?
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  recipient      AdminAlertRecipient @relation(fields: [recipientId], references: [id], onDelete: Restrict)
+  @@unique([registrationId, recipientId])
+  @@index([status, nextAttemptAt])
+  @@index([recipientId, status, leaseUntil])
+  @@map("admin_registration_alerts")
 }
 
 model AuditLog {

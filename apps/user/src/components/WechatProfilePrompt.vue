@@ -4,13 +4,13 @@
       <text class="dialog-title">{{ dialogTitle }}</text>
       <text class="dialog-summary">{{ dialogSummary }}</text>
 
-      <view class="phone-panel" :class="{ 'phone-panel--bound': phone }">
+      <view class="phone-panel" :class="{ 'phone-panel--bound': phoneVerified }">
         <view class="phone-copy">
-          <text class="phone-title">{{ phone ? "手机号已绑定" : "微信手机号" }}</text>
+          <text class="phone-title">{{ phoneVerified ? "手机号已验证" : "验证本人手机号" }}</text>
           <text class="phone-description">{{ phone ? maskPhone(phone) : "用于匹配报名、凭证和会务安排" }}</text>
         </view>
         <button
-          v-if="!phone"
+          v-if="!phoneVerified"
           class="phone-button"
           open-type="getPhoneNumber"
           :disabled="bindingPhone"
@@ -24,13 +24,17 @@
       <view class="profile-preview">
         <button class="avatar-button" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
           <image v-if="displayAvatarUrl" class="avatar-image" :src="displayAvatarUrl" mode="aspectFill" @error="avatarLoadFailed = true" />
-          <text v-else class="avatar-placeholder">头像</text>
+          <text v-else class="avatar-placeholder">{{ realName.trim().slice(0, 1) || '头像' }}</text>
         </button>
         <text class="preview-name">{{ previewName }}</text>
       </view>
 
       <view class="field">
-        <text class="label">微信昵称</text>
+        <text class="label">本人姓名（必填）</text>
+        <input class="nickname-input" v-model="realName" maxlength="80" placeholder="请填写真实姓名，方便会务联系" />
+      </view>
+      <view class="field">
+        <text class="label">微信昵称（选填）</text>
         <input
           class="nickname-input"
           type="nickname"
@@ -43,8 +47,8 @@
       <view v-if="error" class="error-text">{{ error }}</view>
 
       <view class="actions">
-        <button class="ghost-button" @click="dismiss">稍后再说</button>
-        <button class="primary-button" :disabled="saving" @click="saveProfile">
+        <button class="ghost-button" :disabled="saving || bindingPhone" @click="dismiss">稍后再说</button>
+        <button class="primary-button" :disabled="saving || bindingPhone" @click="saveProfile">
           {{ saving ? "保存中..." : "保存资料" }}
         </button>
       </view>
@@ -57,6 +61,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ensureLogin, getToken, isAuthSessionExpiredError, refreshLogin } from "@/services/auth";
 import { bindWechatPhone, getWechatProfile, updateWechatProfile, uploadWechatAvatar } from "@/services/profile";
 import { ApiRequestError } from "@/services/request";
+import { registrationProfileReady } from "@/utils/registration-identity";
 import {
   isProfilePromptOwnerActive,
   shouldAutoCheckWechatProfile,
@@ -70,6 +75,8 @@ const saving = ref(false);
 const bindingPhone = ref(false);
 const error = ref("");
 const phone = ref("");
+const phoneVerified = ref(false);
+const realName = ref("");
 const wechatNickname = ref("");
 const wechatAvatarUrl = ref("");
 const pendingAvatarPath = ref("");
@@ -77,9 +84,9 @@ const avatarLoadFailed = ref(false);
 let ownerPage: unknown = null;
 
 const displayAvatarUrl = computed(() => (avatarLoadFailed.value ? "" : pendingAvatarPath.value || wechatAvatarUrl.value));
-const previewName = computed(() => wechatNickname.value.trim() || "请选择头像并填写昵称");
-const dialogTitle = computed(() => phone.value ? "完善微信资料" : "绑定微信手机号");
-const dialogSummary = computed(() => phone.value ? "头像和昵称用于报名凭证展示" : "授权后自动读取微信绑定手机号，无需手动输入");
+const previewName = computed(() => realName.value.trim() || wechatNickname.value.trim() || "头像可选，不设置将使用姓名头像");
+const dialogTitle = computed(() => "完善本人资料");
+const dialogSummary = computed(() => "请使用真实姓名并验证手机号，方便会务对接。代他人报名时，参会人信息另行填写。");
 
 onMounted(() => {
   ownerPage = currentTopPage();
@@ -104,7 +111,7 @@ async function openProfilePrompt(options?: WechatProfilePromptOptions) {
   await checkProfile({ forceOpen: options?.force === true });
   // #endif
   // #ifndef MP-WEIXIN
-  uni.showToast({ title: "请在微信小程序内完善头像昵称", icon: "none" });
+  if (isOwnerPageActive()) uni.navigateTo({ url: "/pages/account/profile" });
   // #endif
 }
 
@@ -113,16 +120,20 @@ async function checkProfile(options?: { forceOpen?: boolean }) {
     await ensureLogin();
     const profile = await getWechatProfile();
     phone.value = profile.phone || "";
+    phoneVerified.value = Boolean(profile.phoneVerifiedAt);
+    realName.value = profile.realName || "";
     wechatNickname.value = profile.wechatNickname || "";
     wechatAvatarUrl.value = profile.wechatAvatarUrl || "";
     if (!isOwnerPageActive()) return;
     visible.value = shouldOpenWechatProfilePrompt(profile, { force: options?.forceOpen === true });
   } catch (err) {
     console.error("[WECHAT_PROFILE_PROMPT_LOAD_ERROR]", err);
+    if (isOwnerPageActive()) uni.showToast({ title: "资料读取失败，请稍后重试", icon: "none" });
   }
 }
 
 async function onGetPhoneNumber(event: unknown) {
+  if (bindingPhone.value || saving.value) return;
   const detail = readEventDetail(event);
   const code = typeof detail.code === "string" ? detail.code.trim() : "";
   const errMsg = typeof detail.errMsg === "string" ? detail.errMsg : "";
@@ -140,11 +151,11 @@ async function onGetPhoneNumber(event: unknown) {
   try {
     const result = await bindPhoneWithFreshSession(code);
     phone.value = result.user.phone || "";
+    phoneVerified.value = Boolean(result.user.phoneVerifiedAt);
     uni.$emit("auth:changed", result.user);
     uni.$emit("wechat-phone:updated", result.user);
-    const linked = result.linkedRegistrations;
     uni.showToast({
-      title: linked > 0 ? `已绑定，并找回 ${linked} 条报名` : "手机号已绑定",
+      title: "手机号已验证",
       icon: "success",
       duration: 2400
     });
@@ -194,18 +205,14 @@ function onNicknameInput(event: unknown) {
 }
 
 async function saveProfile() {
-  if (!phone.value) {
+  if (saving.value || bindingPhone.value) return;
+  if (!phoneVerified.value) {
     error.value = "请先点击一键绑定，授权读取微信手机号";
     return;
   }
 
-  if (!wechatNickname.value.trim()) {
-    error.value = "请填写微信昵称";
-    return;
-  }
-
-  if (!pendingAvatarPath.value && !wechatAvatarUrl.value) {
-    error.value = "请选择微信头像";
+  if (!realName.value.trim()) {
+    error.value = "请填写本人真实姓名，方便会务对接";
     return;
   }
 
@@ -221,9 +228,14 @@ async function saveProfile() {
     }
 
     const user = await updateWechatProfile({
+      realName: realName.value.trim(),
       wechatNickname: wechatNickname.value.trim(),
       wechatAvatarUrl: avatarUrl
     });
+    if (!registrationProfileReady(user)) {
+      error.value = "资料尚未完整，请重新验证本人手机号并保存姓名";
+      return;
+    }
 
     wechatNickname.value = user.wechatNickname || "";
     wechatAvatarUrl.value = user.wechatAvatarUrl || "";
@@ -241,6 +253,7 @@ async function saveProfile() {
 
 function dismiss() {
   visible.value = false;
+  uni.$emit("wechat-profile:dismissed");
 }
 
 function currentTopPage(): unknown {
@@ -303,6 +316,8 @@ function isRemoteUrl(value: string): boolean {
 .profile-dialog {
   width: 100%;
   max-width: 640rpx;
+  max-height: calc(100vh - 80rpx - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
   padding: 38rpx 36rpx 34rpx;
   border-radius: var(--ui-radius);
   background: var(--ui-color-surface);

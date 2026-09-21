@@ -78,11 +78,11 @@ export async function getConferences(params: ConferenceListParams = {}): Promise
 }
 
 export function getConferenceDetail(id: string): Promise<ConferenceDetail> {
-  return request<ConferenceDetail>(`/conferences/${encodeURIComponent(id)}`);
+  return request<ConferenceDetail>(`/conferences/${encodeURIComponent(id)}`, { auth: false });
 }
 
 export function getConferenceForm(id: string): Promise<ConferenceForm> {
-  return request<ConferenceForm>(`/conferences/${encodeURIComponent(id)}/form`);
+  return request<ConferenceForm>(`/conferences/${encodeURIComponent(id)}/form`, { auth: false });
 }
 
 export async function reserveConferenceAppointment(id: string): Promise<{ id: string; conferenceId: string; status: string; reservedAt: string; registrationOpen: boolean; message: string }> {

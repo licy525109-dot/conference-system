@@ -1,57 +1,58 @@
 :root,
 page {
-  --cms-page-bg: #f5f7f6;
-  --cms-page-bg-soft: #edf3f0;
+  --cms-page-bg: #f5f6f6;
+  --cms-page-bg-soft: #f1f2f2;
   --cms-bg: var(--cms-page-bg);
   --cms-surface: #ffffff;
   --cms-card: var(--cms-surface);
-  --cms-surface-soft: #f8faf8;
-  --cms-surface-muted: #eef4f0;
+  --cms-surface-soft: #fafafa;
+  --cms-surface-muted: #f1f2f2;
   --cms-surface-elevated: #ffffff;
-  --cms-text-primary: #17202f;
-  --cms-text-secondary: #667085;
-  --cms-text-tertiary: #93a0b2;
+  --cms-text-primary: #20252c;
+  --cms-text-secondary: #5e646b;
+  --cms-text-tertiary: #6d7278;
   --cms-text-inverse: #ffffff;
-  --cms-primary: #315d7d;
-  --cms-primary-strong: #244861;
-  --cms-primary-soft: #e7f0f5;
-  --cms-secondary: #3a8f79;
-  --cms-secondary-soft: #e3f2ee;
-  --cms-accent: #b58b47;
-  --cms-accent-soft: #f8efdf;
-  --cms-border: #dde7ee;
-  --cms-divider: #edf2f4;
+  --cms-primary: #987627;
+  --cms-primary-strong: #866a23;
+  --cms-primary-soft: #f7f2e7;
+  --cms-secondary: #866a23;
+  --cms-secondary-soft: #f7f4ec;
+  --cms-accent: #a3842b;
+  --cms-accent-soft: #f7f2e7;
+  --cms-border: #e0e3e5;
+  --cms-divider: #e9ebed;
   --cms-success: #1f7a5b;
   --cms-success-soft: #e6f3ee;
   --cms-warning: #a56b1f;
   --cms-warning-soft: #fbf1df;
   --cms-danger: #b93838;
   --cms-danger-soft: #f9e8e8;
-  --cms-info: #315d7d;
-  --cms-info-soft: #e7f0f5;
+  --cms-info: #5e646b;
+  --cms-info-soft: #f1f2f2;
   --cms-overlay: rgba(23, 32, 47, 0.42);
-  --cms-gradient-page: linear-gradient(180deg, #fbfcfb 0%, #edf3f0 100%);
-  --cms-gradient-hero: linear-gradient(135deg, #244861 0%, #3a8f79 58%, #b58b47 140%);
-  --cms-gradient-card: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 248, 0.97));
-  --cms-gradient-cta: linear-gradient(135deg, #315d7d 0%, #3a8f79 100%);
-  --cms-gradient-soft: linear-gradient(135deg, #e7f0f5 0%, #f8efdf 100%);
-  --cms-radius-sm: 8px;
-  --cms-radius: 10px;
-  --cms-radius-md: 10px;
-  --cms-radius-lg: 12px;
-  --cms-radius-xl: 14px;
-  --cms-radius-xxl: 18px;
+  --cms-gradient-page: #f5f6f6;
+  --cms-gradient-hero: #20252c;
+  --cms-gradient-card: #ffffff;
+  --cms-gradient-cta: #987627;
+  --cms-gradient-soft: #f7f2e7;
+  --cms-radius-sm: 4px;
+  --cms-radius: 6px;
+  --cms-radius-md: 6px;
+  --cms-radius-lg: 8px;
+  --cms-radius-xl: 8px;
+  --cms-radius-xxl: 8px;
   --cms-radius-full: 999px;
   --cms-space-page-x: 28rpx;
   --cms-space-section-y: 24rpx;
   --cms-space-card-gap: 16rpx;
   --cms-space-card-padding: 24rpx;
-  --cms-shadow-sm: 0 6rpx 18rpx rgba(23, 32, 47, 0.05);
-  --cms-shadow-md: 0 14rpx 34rpx rgba(23, 32, 47, 0.07);
-  --cms-shadow-lg: 0 24rpx 56rpx rgba(23, 32, 47, 0.1);
-  --cms-shadow-floating: 0 -10rpx 30rpx rgba(23, 32, 47, 0.12);
+  --cms-shadow-sm: none;
+  --cms-shadow-md: none;
+  --cms-shadow-lg: 0 12rpx 36rpx rgba(32, 37, 44, 0.08);
+  --cms-shadow-floating: 0 -2rpx 12rpx rgba(32, 37, 44, 0.04);
   --cms-shadow-glow: 0 0 0 rgba(0, 0, 0, 0);
   --cms-title-size: 42rpx;
+  --ui-tabbar-height: 68px;
   --ui-color-bg: var(--cms-page-bg);
   --ui-color-bg-soft: var(--cms-page-bg-soft);
   --ui-color-surface: #ffffff;
@@ -138,24 +139,23 @@ page {
   border-radius: var(--cms-radius-lg);
   background: var(--cms-surface-elevated, rgba(255, 255, 255, 0.96));
   box-shadow: var(--ui-shadow-card);
-  backdrop-filter: blur(18rpx);
 }
 
 .ui-button-primary,
 .ui-button-secondary,
 .ui-button-ghost {
-  min-height: 78rpx;
-  padding: 0 26rpx;
-  border-radius: var(--cms-radius-full);
-  font-size: 28rpx;
+  min-height: 48px;
+  padding: 10px 18px;
+  border-radius: var(--cms-radius-md);
+  font-size: 18px;
   font-weight: 700;
-  line-height: 78rpx;
+  line-height: 1.5;
 }
 
 .ui-button-primary {
   background: var(--cms-gradient-cta);
   color: #ffffff;
-  box-shadow: 0 12rpx 26rpx rgba(49, 93, 125, 0.18);
+  box-shadow: none;
 }
 
 .ui-button-secondary {
@@ -172,7 +172,9 @@ page {
 
 .ui-button-compact {
   min-width: 176rpx;
-  min-height: 68rpx;
-  font-size: 26rpx;
-  line-height: 68rpx;
+  min-height: 44px;
+  font-size: 16px;
+  line-height: 1.5;
 }
+
+button:focus-visible { outline: 2px solid var(--cms-primary-strong); outline-offset: 3px; }

@@ -3,7 +3,7 @@ import { AuditAction, CheckInStatus, CheckinActionType, OrderStatus, Prisma, Reg
 import { CurrentUser } from "../auth/current-user";
 import { CurrentAdmin } from "../admin/current-admin";
 import { PrismaService } from "../prisma.service";
-import { parseCheckinCredentialPayload } from "./checkin-credential";
+import { parseCheckinCredentialPayload, assertCredentialVersion } from "./checkin-credential";
 
 export type CheckinMethod = "QR_SCAN" | "SELF_PHONE_NAME" | "SELF_CUSTOM_FIELDS" | "ADMIN_MANUAL";
 
@@ -61,25 +61,23 @@ export class CheckinService {
     const registration = await this.findUserRegistration(conferenceId, readOptionalString(body.registrationId), currentUser);
     assertPaidRegistration(registration);
     const attendee = pickPrimaryAttendee(registration.attendees);
-    if (attendee.checkInStatus === CheckInStatus.CHECKED_IN) {
-      return ok(alreadyCheckedInResponse(attendee, registration, "已签到，无需重复核销"));
-    }
     if (attendee.checkInStatus === CheckInStatus.CANCELLED) {
       throw new ConflictException("报名已取消，不能签到");
     }
 
-    const matchedFields = method === "SELF_CUSTOM_FIELDS"
+    const matchedFields = attendee.checkInStatus === CheckInStatus.CHECKED_IN ? undefined : method === "SELF_CUSTOM_FIELDS"
       ? this.matchCustomFields(config, registration, attendee, values)
       : this.matchPhoneAndName(config, registration, attendee, values);
 
     const updated = await this.completeCheckin({
       attendee,
+      registration,
       action: CheckinActionType.SELF_INPUT,
       method: "SELF_INPUT",
       operatorUserId: currentUser.id,
       matchedFields
     });
-    return ok(successCheckinResponse(updated, registration, "签到完成"));
+    return ok(successCheckinResponse(updated, registration, updated.alreadyCheckedIn ? "已签到，无需重复核销" : "签到完成"));
   }
 
   async scanCheckin(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
@@ -94,28 +92,28 @@ export class CheckinService {
       include: registrationCheckinInclude
     });
     if (!registration) throw new NotFoundException("未找到报名");
+    assertCredentialVersion(parsed, registration.credentialVersion);
     const config = formatCheckinConfig(await this.findConferenceWithFields(registration.conferenceId));
     assertCheckinAvailable(config);
     if (!config.methods.includes("QR_SCAN")) {
       throw new ConflictException("当前会议未启用二维码扫码核销");
     }
     assertPaidRegistration(registration);
-    const attendee = pickPrimaryAttendee(registration.attendees);
-    if (attendee.checkInStatus === CheckInStatus.CHECKED_IN) {
-      return ok(alreadyCheckedInResponse(attendee, registration, "已签到，无需重复核销"));
-    }
+    const attendee = parsed.attendeeId ? registration.attendees.find(a => a.id === parsed.attendeeId) : pickPrimaryAttendee(registration.attendees);
+    if (!attendee) throw new NotFoundException("参会资格不存在");
     if (attendee.checkInStatus === CheckInStatus.CANCELLED) {
       throw new ConflictException("报名已取消，不能签到");
     }
 
     const updated = await this.completeCheckin({
       attendee,
+      registration,
       action: CheckinActionType.QR_SCAN,
       method: "QR_SCAN",
       operatorId: admin.id,
       remark: readOptionalString(body.remark)
     });
-    return ok(successCheckinResponse(updated, registration, "签到成功"));
+    return ok(successCheckinResponse(updated, registration, updated.alreadyCheckedIn ? "已签到，无需重复核销" : "签到成功"));
   }
 
   async getStaffMe(currentUser: CurrentUser): Promise<ApiResponse<unknown>> {
@@ -137,31 +135,34 @@ export class CheckinService {
       include: registrationCheckinInclude
     });
     if (!registration) throw new NotFoundException("未找到报名");
+    assertCredentialVersion(parsed, registration.credentialVersion);
     await this.assertStaffCanScan(currentUser.id, registration.conferenceId);
     const config = formatCheckinConfig(await this.findConferenceWithFields(registration.conferenceId));
     assertCheckinAvailable(config);
     if (!config.methods.includes("QR_SCAN")) throw new ConflictException("当前会议未启用二维码扫码核销");
     assertPaidRegistration(registration);
-    const attendee = pickPrimaryAttendee(registration.attendees);
-    if (attendee.checkInStatus === CheckInStatus.CHECKED_IN) {
-      return ok(alreadyCheckedInResponse(attendee, registration, "已签到，无需重复核销"));
-    }
+    const attendee = parsed.attendeeId ? registration.attendees.find(a => a.id === parsed.attendeeId) : pickPrimaryAttendee(registration.attendees);
+    if (!attendee) throw new NotFoundException("参会资格不存在");
     if (attendee.checkInStatus === CheckInStatus.CANCELLED) throw new ConflictException("报名已取消，不能签到");
 
     const updated = await this.completeCheckin({
       attendee,
+      registration,
       action: CheckinActionType.QR_SCAN,
       method: "QR_SCAN",
       operatorUserId: currentUser.id,
       remark: readOptionalString(body.remark)
     });
-    return ok(successCheckinResponse(updated, registration, "签到成功"));
+    return ok(successCheckinResponse(updated, registration, updated.alreadyCheckedIn ? "已签到，无需重复核销" : "签到成功"));
   }
 
   async adminManualCheckin(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const body = readObject(input);
     const attendeeId = readOptionalString(body.attendeeId);
-    const attendee = attendeeId
+    const credentialCode = readOptionalString(body.credentialCode);
+    const attendee = credentialCode
+      ? await this.findAttendeeByCredential(credentialCode, attendeeId)
+      : attendeeId
       ? await this.prisma.registrationAttendee.findUnique({
           where: { id: attendeeId },
           include: { registration: { include: registrationCheckinInclude } }
@@ -175,26 +176,19 @@ export class CheckinService {
       throw new ConflictException("当前会议未启用后台应急补签");
     }
     assertPaidRegistration(registration);
-    if (attendee.checkInStatus === CheckInStatus.CHECKED_IN) {
-      return ok(alreadyCheckedInResponse(attendee, registration, "已签到，无需重复核销"));
-    }
     if (attendee.checkInStatus === CheckInStatus.CANCELLED) {
       throw new ConflictException("报名已取消，不能补签");
     }
 
     const updated = await this.completeCheckin({
       attendee,
+      registration,
       action: CheckinActionType.ADMIN_MANUAL,
       method: "ADMIN_MANUAL",
       operatorId: admin.id,
       remark: readOptionalString(body.remark)
     });
-    await this.writeAudit(admin, AuditAction.SYSTEM, "CheckinLog", updated.logId ?? null, "Admin emergency check-in", {
-      attendeeId: attendee.id,
-      registrationId: registration.id,
-      registrationNo: registration.registrationNo
-    });
-    return ok(successCheckinResponse(updated, registration, "签到成功"));
+    return ok(successCheckinResponse(updated, registration, updated.alreadyCheckedIn ? "已签到，无需重复核销" : "签到成功"));
   }
 
   async revoke(attendeeId: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
@@ -493,6 +487,7 @@ export class CheckinService {
 
   private async completeCheckin(input: {
     attendee: RegistrationForCheckin["attendees"][number] | AdminAttendeeForCheckin;
+    registration: RegistrationForCheckin;
     action: CheckinActionType;
     method: string;
     operatorId?: string;
@@ -500,32 +495,74 @@ export class CheckinService {
     matchedFields?: Prisma.InputJsonValue;
     remark?: string | null;
   }) {
-    return this.prisma.$transaction(async (tx) => {
-      const next = await tx.registrationAttendee.update({
-        where: { id: input.attendee.id },
-        data: {
-          checkInStatus: CheckInStatus.CHECKED_IN,
-          checkedInAt: new Date(),
-          checkedInBy: input.operatorId ?? input.operatorUserId ?? null
-        }
-      });
-      const log = await tx.checkinLog.create({
-        data: {
-          attendeeId: input.attendee.id,
-          registrationId: input.attendee.registrationId,
-          action: input.action,
-          method: input.method,
-          result: "SUCCESS",
-          beforeStatus: input.attendee.checkInStatus,
-          afterStatus: CheckInStatus.CHECKED_IN,
-          operatorId: input.operatorId,
-          operatorUserId: input.operatorUserId,
-          matchedFields: input.matchedFields,
-          remark: input.remark ?? null
-        }
-      });
-      return { ...next, logId: log.id };
-    });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const current = await tx.registrationAttendee.findUnique({
+            where: { id: input.attendee.id },
+            include: { registration: { include: registrationCheckinInclude } }
+          });
+          if (!current || current.registrationId !== input.registration.id) {
+            throw new NotFoundException("参会资格不存在");
+          }
+          assertCredentialVersion({ registrationId: input.registration.id, registrationNo: input.registration.registrationNo,
+            version: input.registration.credentialVersion }, current.registration.credentialVersion);
+          assertPaidRegistration(current.registration);
+          if (current.checkInStatus === CheckInStatus.CANCELLED) throw new ConflictException("报名已取消，不能签到");
+          if (current.checkInStatus === CheckInStatus.CHECKED_IN) {
+            return { ...current, alreadyCheckedIn: true, logId: undefined };
+          }
+          if (current.updatedAt.getTime() !== input.attendee.updatedAt.getTime()
+            || current.guestProfileId !== input.attendee.guestProfileId) {
+            throw new ConflictException("参会人信息已更新，请刷新后重新核销");
+          }
+          // Serializable plus CAS protects both the registration version and attendee identity.
+          const checkedInAt = new Date();
+          const changed = await tx.registrationAttendee.updateMany({
+            where: {
+              id: current.id,
+              registrationId: input.registration.id,
+              updatedAt: input.attendee.updatedAt,
+              checkInStatus: current.checkInStatus,
+              guestProfileId: input.attendee.guestProfileId,
+              registration: { credentialVersion: input.registration.credentialVersion, status: RegistrationStatus.CONFIRMED,
+                order: { status: OrderStatus.PAID } }
+            },
+            data: { checkInStatus: CheckInStatus.CHECKED_IN, checkedInAt,
+              checkedInBy: input.operatorId ?? input.operatorUserId ?? null }
+          });
+          if (changed.count !== 1) throw new CheckinWriteConflict();
+          const log = await tx.checkinLog.create({
+            data: {
+              attendeeId: current.id,
+              registrationId: current.registrationId,
+              action: input.action,
+              method: input.method,
+              result: "SUCCESS",
+              beforeStatus: current.checkInStatus,
+              afterStatus: CheckInStatus.CHECKED_IN,
+              operatorId: input.operatorId,
+              operatorUserId: input.operatorUserId,
+              matchedFields: input.matchedFields,
+              remark: input.remark ?? null
+            }
+          });
+          if (input.action === CheckinActionType.ADMIN_MANUAL) {
+            await tx.auditLog.create({ data: { adminUserId: input.operatorId, action: AuditAction.SYSTEM,
+              entityType: "CheckinLog", entityId: log.id, summary: "Admin emergency check-in",
+              metadataJson: { attendeeId: current.id, registrationId: current.registrationId,
+                registrationNo: current.registration.registrationNo } } });
+          }
+          return { ...current, checkInStatus: CheckInStatus.CHECKED_IN, checkedInAt, alreadyCheckedIn: false, logId: log.id };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      } catch (error) {
+        const retryable = error instanceof CheckinWriteConflict
+          || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034");
+        if (!retryable) throw error;
+        if (attempt === 2) throw new ConflictException("核销记录正在更新，请刷新后重试");
+      }
+    }
+    throw new ConflictException("核销记录正在更新，请刷新后重试");
   }
 
   private async findConferenceWithFields(conferenceId: string) {
@@ -559,15 +596,20 @@ export class CheckinService {
     return registration;
   }
 
-  private async findAttendeeByCredential(credentialCode: string): Promise<AdminAttendeeForCheckin | null> {
+  private async findAttendeeByCredential(credentialCode: string, attendeeId?: string): Promise<AdminAttendeeForCheckin | null> {
     const parsed = parseCheckinCredentialPayload(credentialCode);
+    if (parsed.attendeeId && attendeeId && parsed.attendeeId !== attendeeId) {
+      throw new BadRequestException("核销凭证与参会人不一致");
+    }
     const registration = await this.prisma.registration.findFirst({
       where: parsed.registrationId
         ? { id: parsed.registrationId, registrationNo: parsed.registrationNo }
         : { registrationNo: parsed.registrationNo },
       include: registrationCheckinInclude
     });
-    const attendee = registration?.attendees.find((item) => item.checkInStatus !== CheckInStatus.CHECKED_IN) ?? registration?.attendees[0] ?? null;
+    if (registration) assertCredentialVersion(parsed, registration.credentialVersion);
+    const targetId = parsed.attendeeId ?? attendeeId;
+    const attendee = targetId ? registration?.attendees.find(a => a.id === targetId) : registration?.attendees.find((item) => item.checkInStatus !== CheckInStatus.CHECKED_IN) ?? registration?.attendees[0] ?? null;
     return attendee ? ({ ...attendee, registration } as AdminAttendeeForCheckin) : null;
   }
 
@@ -644,28 +686,18 @@ function pickPrimaryAttendee(attendees: RegistrationForCheckin["attendees"]): Re
   return attendee;
 }
 
-function successCheckinResponse(attendee: { id: string; checkInStatus: CheckInStatus; checkedInAt: Date | null; logId?: string }, registration: RegistrationForCheckin, message: string) {
+class CheckinWriteConflict extends Error {}
+
+function successCheckinResponse(attendee: { id: string; name: string; checkInStatus: CheckInStatus; checkedInAt: Date | null; logId?: string }, registration: RegistrationForCheckin, message: string) {
   return {
     status: attendee.checkInStatus,
     message,
     registrationId: registration.id,
     registrationNo: registration.registrationNo,
     attendeeId: attendee.id,
-    attendeeName: registration.attendeeName,
+    attendeeName: attendee.name,
     checkedInAt: attendee.checkedInAt?.toISOString() ?? null,
     logId: attendee.logId ?? null
-  };
-}
-
-function alreadyCheckedInResponse(attendee: { id: string; checkInStatus: CheckInStatus; checkedInAt: Date | null }, registration: RegistrationForCheckin, message: string) {
-  return {
-    status: attendee.checkInStatus,
-    message,
-    registrationId: registration.id,
-    registrationNo: registration.registrationNo,
-    attendeeId: attendee.id,
-    attendeeName: registration.attendeeName,
-    checkedInAt: attendee.checkedInAt?.toISOString() ?? null
   };
 }
 

@@ -13,6 +13,12 @@
       @retry="retryLoadPage"
       @secondary="goHome"
     />
+    <view v-else-if="profileRequired" class="profile-required">
+      <text class="title">请先完善本人资料</text>
+      <text>报名账号需要本人姓名和已验证手机号。已填写的信息仍保留在当前页面。</text>
+      <button class="ui-button-primary" @click="retryLoadPage">完善资料并继续</button>
+      <button class="ui-button-secondary" @click="goHome">返回首页</button>
+    </view>
 
     <view v-else-if="conference && form" class="content">
       <view class="registration-brief">
@@ -58,6 +64,11 @@
         <EmptyState v-if="attendeeForms.length === 0" title="请先选择报名票数" description="选择票数后，这里会自动生成参会人表单。" mark="人" />
         <view v-for="attendee in attendeeForms" :key="attendee.key" class="attendee-card">
           <text class="attendee-title">{{ attendee.skuName }} 第 {{ attendee.index + 1 }} 位参会人</text>
+          <button class="ui-button-secondary ui-button-compact" @click="fillPreviousGuest(attendee.key)">填写本人 / 使用历史参会人资料</button>
+          <checkbox-group v-if="canDeclareSelf" :key="`${attendee.key}-${selfChoiceRevision}`" @change="setSelfAttendee(attendee.key, $event)">
+            <label class="self-choice"><checkbox value="self" :checked="attendee.isSelf" /><text>这是我本人参会</text></label>
+          </checkbox-group>
+          <text class="identity-hint">{{ attendee.isSelf ? '本人参会：资格将关联当前账号' : '代填资料：不会自动绑定为当前账号本人' }}</text>
           <view v-for="field in form.fields" :key="`${attendee.key}-${field.id}`" class="field">
             <text class="label">{{ field.label }}<text v-if="field.required" class="required">*</text></text>
 
@@ -129,11 +140,10 @@
         </view>
       </FormSection>
 
-      <FormSection v-if="isRegistrationModuleVisible('couponFee')" :title="registrationModuleTitle('couponFee', '优惠码')" step="3">
+      <FormSection v-if="isRegistrationModuleVisible('couponFee') && (usableCoupons.length > 0 || couponCode)" title="本次优惠" step="3">
         <view class="coupon-row">
-          <input class="coupon-input" placeholder="填写优惠码（选填）" :value="couponCode" @input="setCouponCode" />
-          <button class="ui-button-secondary ui-button-compact coupon-button" :disabled="quoteLoading" @click="loadQuote">验证</button>
-          <button class="ui-button-secondary ui-button-compact coupon-button coupon-button--wide" :disabled="couponSelectorLoading" @click="selectMyCoupon">选择优惠券</button>
+          <button v-if="usableCoupons.length" class="ui-button-secondary ui-button-compact coupon-button coupon-button--wide" :disabled="couponSelectorLoading" @click="selectMyCoupon">{{ couponCode ? '更换已领取优惠' : '使用已领取优惠' }}</button>
+          <button v-if="couponCode" class="ui-button-secondary ui-button-compact" @click="couponCode = ''; loadQuote()">不使用优惠</button>
         </view>
         <view v-if="quoteError" class="coupon-feedback is-error">
           <wd-icon name="warning" size="16px" />
@@ -141,21 +151,21 @@
         </view>
         <view v-else-if="couponCode.trim() && (quote?.discountAmountCent ?? 0) > 0" class="coupon-feedback is-success">
           <wd-icon name="check" size="16px" />
-          <text>优惠码已生效，已减 ¥{{ formatCent(quote?.discountAmountCent ?? 0) }}</text>
+          <text>本次已优惠 ¥{{ formatCent(quote?.discountAmountCent ?? 0) }}</text>
         </view>
       </FormSection>
     </view>
     <WechatProfilePrompt />
     <FixedBottomActionBar
-      v-if="conference && form && isRegistrationModuleVisible('submitOrder')"
+      v-if="conference && form && !profileRequired && !error && isRegistrationModuleVisible('submitOrder')"
       amount-label="合计"
       :amount-value="`¥${formatCent(payableAmountCent)}`"
       :primary-text="registrationModuleContent('submitOrder', '提交订单')"
       :secondary-text="isRegistrationModuleVisible('addCartButton') ? (addingToCart ? '加入中...' : registrationModuleContent('addCartButton', '加入购物车')) : ''"
       :loading="submitting"
       loading-text="提交中..."
-      :primary-disabled="submitting || totalTickets === 0"
-      :secondary-disabled="submitting || addingToCart || totalTickets === 0"
+      :primary-disabled="submitting || addingToCart || quoteLoading || totalTickets === 0"
+      :secondary-disabled="submitting || addingToCart || quoteLoading || totalTickets === 0"
       @primary="submitOrder"
       @secondary="addSelectedToCart"
     />
@@ -164,7 +174,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { onLoad } from "@dcloudio/uni-app";
+import { onLoad, onShow } from "@dcloudio/uni-app";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import FixedBottomActionBar from "@/components/ui/FixedBottomActionBar.vue";
@@ -184,7 +194,8 @@ import {
   type FormOption,
   type RegistrationSku
 } from "@/services/conference";
-import { clearExpiredAuthSession, ensureAuthenticatedUser, isAuthSessionExpiredError } from "@/services/auth";
+import { clearExpiredAuthSession, ensureAuthenticatedUser, getStoredUser, isAuthSessionExpiredError } from "@/services/auth";
+import { ensureRegistrationProfile } from "@/services/registration-profile";
 import { addRegistrationCartItem } from "@/services/cart";
 import { createRegistrationOrder, quoteRegistration, type QuoteResponse, type RegistrationOrderItem } from "@/services/registration";
 import { getMyCoupons, type MyCouponItem } from "@/services/operations";
@@ -193,6 +204,9 @@ import { formatCent } from "@/utils/money";
 import { formatDateTime } from "@/utils/date";
 import { goHome } from "@/utils/navigation";
 import { remainingRegistrationStock } from "@/utils/registration-stock";
+import { getReusableProfiles } from "@/services/guest-profiles";
+import { attendeeMatchesSelf, preserveQuantities, registrationProfileReady, reuseAttendeeAnswers } from "@/utils/registration-identity";
+import { couponFitsRegistration, readPendingRegistrationCoupon } from "@/utils/registration-coupons";
 
 const conferenceId = ref("");
 const selectedSkuId = ref("");
@@ -208,9 +222,17 @@ const submitting = ref(false);
 const addingToCart = ref(false);
 const error = ref("");
 const authRequired = ref(false);
+const profileRequired = ref(false);
+const selfChoiceRevision = ref(0);
 const quoteError = ref("");
 const couponCode = ref("");
 const couponSelectorLoading = ref(false);
+const claimedCoupons = ref<MyCouponItem[]>([]);
+const usableCoupons = computed(() => claimedCoupons.value.filter(item => item.usable && couponFitsSelectedSku(item)));
+let awaitingProfile = false;
+let initialized = false;
+let quoteRequest = 0;
+const canDeclareSelf = computed(() => form.value?.fields.some(field => field.key === "name") && form.value?.fields.some(field => field.key === "phone"));
 const { theme, pageStyle, showBodyVideo, showBodyDynamicBackground, refreshTheme } = useCmsPageTheme("registration-form");
 
 const selectedItems = computed<RegistrationOrderItem[]>(() =>
@@ -239,27 +261,30 @@ onLoad((query) => {
   void refreshTheme();
   void loadPage();
 });
+onShow(() => {
+  if (awaitingProfile && !loading.value) {
+    awaitingProfile = false;
+    // Cancelling or navigating back is not permission to reopen the profile prompt.
+    if (registrationProfileReady(getStoredUser())) void loadPage();
+  } else if (initialized && !loading.value) {
+    void refreshCoupons();
+  }
+});
 
 function readInitialCouponCode(query: Record<string, unknown> | undefined, scope: "CONFERENCE" | "MALL"): string {
   const direct = typeof query?.couponCode === "string" ? query.couponCode.trim() : "";
   if (direct) return direct;
-  const pending = readPendingCoupon(scope);
-  return pending?.code ?? "";
+  return takePendingCoupon();
 }
 
-function readPendingCoupon(scope: "CONFERENCE" | "MALL"): { code: string } | null {
-  const value = uni.getStorageSync("pendingCouponForUse");
-  if (!value || typeof value !== "object") return null;
-  const record = value as { code?: unknown; scope?: unknown; savedAt?: unknown };
-  const code = typeof record.code === "string" ? record.code.trim() : "";
-  const couponScope = typeof record.scope === "string" ? record.scope : "";
-  const savedAt = typeof record.savedAt === "number" ? record.savedAt : 0;
-  const fresh = Date.now() - savedAt < 30 * 60 * 1000;
-  if (!code || !fresh || (couponScope !== scope && couponScope !== "BOTH")) return null;
-  return { code };
+function takePendingCoupon(): string {
+  const code = readPendingRegistrationCoupon(uni.getStorageSync("pendingCouponForUse"), conferenceId.value, getStoredUser()?.id || "");
+  if (code) uni.removeStorageSync("pendingCouponForUse");
+  return code;
 }
 
 async function loadPage() {
+  if (loading.value) return;
   if (!conferenceId.value) {
     error.value = "页面信息不完整，请返回首页重新进入";
     return;
@@ -270,11 +295,11 @@ async function loadPage() {
   authRequired.value = false;
 
   try {
-    await ensureAuthenticatedUser();
+    if (!(await requireProfile())) return;
     const [detail, formResponse, page] = await Promise.all([
       getConferenceDetail(conferenceId.value),
       getConferenceForm(conferenceId.value),
-      getPublishedPage("registration-form", { conferenceId: conferenceId.value })
+      getPublishedPage("registration-form", { conferenceId: conferenceId.value }).catch(() => null)
     ]);
     conference.value = detail;
     form.value = formResponse;
@@ -296,8 +321,10 @@ async function loadPage() {
     }
 
     initializeQuantities(detail);
+    initialized = true;
     syncAttendeeForms(formResponse.fields);
     await loadQuote();
+    void refreshCoupons();
   } catch (err) {
     console.error("[REGISTRATION_FORM_LOAD_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
@@ -312,6 +339,21 @@ async function loadPage() {
   }
 }
 
+async function refreshCoupons() {
+  try {
+    claimedCoupons.value = (await getMyCoupons({ scope: "CONFERENCE" })).items;
+    const pending = takePendingCoupon();
+    if (pending && !couponCode.value) { couponCode.value = pending; await loadQuote(); }
+  } catch { claimedCoupons.value = []; }
+}
+
+async function requireProfile() {
+  const ready = await ensureRegistrationProfile();
+  profileRequired.value = !ready;
+  awaitingProfile = !ready;
+  return ready;
+}
+
 function retryLoadPage() {
   void loadPage();
 }
@@ -324,15 +366,25 @@ function createEmptyFormData(fields: FormField[]) {
   return nextData;
 }
 
+async function fillPreviousGuest(key: string) {
+  try {
+    const result = await getReusableProfiles();
+    const options = [{ label: `本人：${result.user.realName || '当前账号'}`, isSelf: true, name: result.user.realName || '', phone: result.user.phone || '', company: null, title: null, formDataJson: null, registration: null },
+      ...result.attendees.slice(0, 5).map(item => ({ ...item, isSelf: false, label: `历史代填：${item.name} · ${item.registration.conference.title}` }))];
+    uni.showActionSheet({ itemList: options.map(o => o.label), success: ({ tapIndex }) => {
+      const chosen = options[tapIndex]; const attendee = attendeeForms.value.find(a => a.key === key);
+      if (!chosen || !attendee || !form.value) return;
+      attendee.formData = reuseAttendeeAnswers(form.value.fields, conferenceId.value, chosen);
+      const self = chosen.isSelf && Boolean(canDeclareSelf.value) && attendeeMatchesSelf(attendee.formData, getStoredUser());
+      if (self) attendeeForms.value.forEach(other => { other.isSelf = false; });
+      attendee.isSelf = self;
+      uni.showToast({ title: '已填入，请核对后提交', icon: 'none' });
+    } });
+  } catch { uni.showToast({ title: '历史资料加载失败，可直接填写', icon: 'none' }); }
+}
+
 function initializeQuantities(detail: ConferenceDetail) {
-  const next: Record<string, number> = {};
-  for (const sku of detail.skus) {
-    next[sku.id] = sku.id === selectedSkuId.value ? 1 : 0;
-  }
-  if (!selectedSkuId.value && detail.skus[0]) {
-    next[detail.skus[0].id] = 1;
-  }
-  quantities.value = next;
+  quantities.value = preserveQuantities(detail.skus, selectedSkuId.value, quantities.value, initialized);
 }
 
 function syncAttendeeForms(fields: FormField[]) {
@@ -342,7 +394,7 @@ function syncAttendeeForms(fields: FormField[]) {
     const quantity = skuQuantity(sku.id);
     for (let index = 0; index < quantity; index += 1) {
       const key = `${sku.id}-${index}`;
-      next.push(existing.get(key) ?? { key, skuId: sku.id, skuName: sku.name, index, formData: createEmptyFormData(fields) });
+      next.push(existing.get(key) ?? { key, skuId: sku.id, skuName: sku.name, index, isSelf: false, formData: createEmptyFormData(fields) });
     }
   }
   attendeeForms.value = next;
@@ -372,8 +424,10 @@ function stockLabel(sku: RegistrationSku): string {
 }
 
 async function loadQuote() {
+  const requestId = ++quoteRequest;
   if (!conferenceId.value || selectedItems.value.length === 0) {
     quote.value = null;
+    quoteLoading.value = false;
     return;
   }
 
@@ -381,21 +435,24 @@ async function loadQuote() {
   quoteError.value = "";
 
   try {
-    quote.value = await quoteRegistration({
+    const result = await quoteRegistration({
       conferenceId: conferenceId.value,
       items: selectedItems.value,
       couponCode: normalizedCouponCode()
     });
+    if (requestId === quoteRequest) quote.value = result;
   } catch (err) {
+    if (requestId !== quoteRequest) return;
     console.error("[REGISTRATION_QUOTE_ERROR]", err);
     quote.value = null;
     quoteError.value = buildQuoteErrorMessage(err);
   } finally {
-    quoteLoading.value = false;
+    if (requestId === quoteRequest) quoteLoading.value = false;
   }
 }
 
 async function submitOrder() {
+  if (submitting.value || addingToCart.value) return;
   const availability = getRegistrationAvailability(conference.value);
   if (availability !== "OPEN") {
     uni.showToast({ title: availability === "NOT_STARTED" ? "报名尚未开始" : "报名已截止", icon: "none" });
@@ -415,13 +472,16 @@ async function submitOrder() {
 
   submitting.value = true;
   try {
-    await ensureAuthenticatedUser();
+    if (!(await requireProfile())) return;
+    const identityError = validateSelfDeclarations();
+    if (identityError) { uni.showToast({ title: identityError, icon: "none" }); return; }
     const order = await createRegistrationOrder({
       conferenceId: conferenceId.value,
       items: selectedItems.value,
       couponCode: normalizedCouponCode(),
       attendees: attendeeForms.value.map((attendee) => ({
         skuId: attendee.skuId,
+        isSelf: attendee.isSelf,
         formData: attendee.formData
       }))
     });
@@ -447,6 +507,7 @@ async function submitOrder() {
 }
 
 async function addSelectedToCart() {
+  if (submitting.value || addingToCart.value) return;
   const availability = getRegistrationAvailability(conference.value);
   if (availability !== "OPEN") {
     uni.showToast({ title: availability === "NOT_STARTED" ? "报名尚未开始" : "报名已截止", icon: "none" });
@@ -466,14 +527,14 @@ async function addSelectedToCart() {
 
   addingToCart.value = true;
   try {
-    await ensureAuthenticatedUser();
+    if (!(await requireProfile())) return;
     for (const item of selectedItems.value) {
       await addRegistrationCartItem({
         conferenceId: conferenceId.value,
         skuId: item.skuId,
         quantity: item.quantity,
         couponCode: normalizedCouponCode(),
-        attendees: attendeeForms.value.filter((attendee) => attendee.skuId === item.skuId).map((attendee) => attendee.formData)
+        attendees: attendeeForms.value.filter((attendee) => attendee.skuId === item.skuId).map((attendee) => ({ formData: attendee.formData, isSelf: attendee.isSelf }))
       });
     }
     uni.showToast({ title: "已加入购物车", icon: "success" });
@@ -537,8 +598,7 @@ function promptLoginRetry(content: string, retry: () => void) {
 }
 
 function couponFitsSelectedSku(item: MyCouponItem) {
-  const allowedSkuIds = item.coupon.allowedSkuIds ?? [];
-  return allowedSkuIds.length === 0 || selectedItems.value.some((entry) => allowedSkuIds.includes(entry.skuId));
+  return couponFitsRegistration(item, conferenceId.value, selectedItems.value.map(entry => ({ ...entry, priceCent: conference.value?.skus.find(sku => sku.id === entry.skuId)?.priceCent ?? 0 })));
 }
 
 function formatCouponOption(item: MyCouponItem) {
@@ -623,6 +683,8 @@ function normalizeApiErrorMessage(message: unknown): string {
 }
 
 function validateForm(): string {
+  const identityError = validateSelfDeclarations();
+  if (identityError) return identityError;
   for (const attendee of attendeeForms.value) {
     for (const field of form.value?.fields ?? []) {
       const value = attendee.formData[field.key];
@@ -645,6 +707,27 @@ function validateForm(): string {
   }
 
   return "";
+}
+
+function validateSelfDeclarations(): string {
+  if (attendeeForms.value.some(attendee => attendee.isSelf && !attendeeMatchesSelf(attendee.formData, getStoredUser()))) {
+    return "本人参会的姓名和手机号需与已验证账号一致，请核对或取消本人参会";
+  }
+  return "";
+}
+
+function setSelfAttendee(key: string, event: unknown) {
+  selfChoiceRevision.value += 1;
+  const checked = readEventValue(event);
+  const attendee = attendeeForms.value.find(item => item.key === key);
+  if (!attendee) return;
+  const isSelf = Array.isArray(checked) && checked.includes("self");
+  if (isSelf && !attendeeMatchesSelf(attendee.formData, getStoredUser())) {
+    uni.showToast({ title: "请先填入本人姓名和已验证手机号", icon: "none" });
+    attendee.isSelf = false;
+    return;
+  }
+  attendeeForms.value = attendeeForms.value.map(item => ({ ...item, isSelf: item.key === key ? isSelf : isSelf ? false : item.isSelf }));
 }
 
 function isEmpty(value: string | string[] | undefined): boolean {
@@ -703,10 +786,13 @@ function setPickerEventValue(attendeeKey: string, fieldKey: string, options: For
 }
 
 function updateAttendeeForm(attendeeKey: string, fieldKey: string, value: string | string[]) {
+  const current = attendeeForms.value.find(attendee => attendee.key === attendeeKey);
+  const invalidatesSelf = current?.isSelf && !attendeeMatchesSelf({ ...current.formData, [fieldKey]: value }, getStoredUser());
   attendeeForms.value = attendeeForms.value.map((attendee) =>
     attendee.key === attendeeKey
       ? {
           ...attendee,
+          isSelf: invalidatesSelf ? false : attendee.isSelf,
           formData: {
             ...attendee.formData,
             [fieldKey]: value
@@ -714,6 +800,7 @@ function updateAttendeeForm(attendeeKey: string, fieldKey: string, value: string
         }
       : attendee
   );
+  if (invalidatesSelf) uni.showToast({ title: "参会人信息已变化，已取消本人参会", icon: "none" });
 }
 
 function readEventValue(event: unknown): unknown {
@@ -810,11 +897,15 @@ interface AttendeeFormState {
   skuId: string;
   skuName: string;
   index: number;
+  isSelf: boolean;
   formData: Record<string, string | string[]>;
 }
 </script>
 
 <style scoped>
+.profile-required { padding: 32rpx; display: flex; flex-direction: column; gap: 24rpx; font-size: 32rpx; line-height: 1.7; }
+.self-choice { display: flex; align-items: center; gap: 12rpx; margin-top: 24rpx; font-size: 32rpx; }
+.identity-hint { display: block; margin-top: 12rpx; font-size: 28rpx; color: var(--ui-color-muted); line-height: 1.6; }
 .page {
   padding-bottom: 224rpx;
 }

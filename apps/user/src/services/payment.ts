@@ -1,6 +1,7 @@
 import { PAYMENT_MODE } from "@/config/app";
 import { readUniErrMsg } from "@/utils/uniErrors";
 import { ensureLogin } from "./auth";
+import { ensureRegistrationProfile, RegistrationProfileRequiredError } from "./registration-profile";
 import { request } from "./request";
 
 export interface MockPaymentConfirmResponse {
@@ -54,6 +55,7 @@ export function prepayWechatPayment(orderNo: string): Promise<WechatPrepayRespon
 
 export async function startOrderPayment(orderNo: string): Promise<PaymentStatusResponse> {
   await ensureLogin();
+  if (!(await ensureRegistrationProfile())) throw new RegistrationProfileRequiredError();
 
   // #ifndef MP-WEIXIN
   if (PAYMENT_MODE === "mock") {

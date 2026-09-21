@@ -39,13 +39,14 @@ withDefaults(
 
 .title {
   color: var(--ui-color-text);
-  font-size: 29rpx;
-  font-weight: 800;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .description {
   color: var(--ui-color-muted);
-  font-size: 25rpx;
+  font-size: 16px;
   line-height: 1.5;
 }
 </style>

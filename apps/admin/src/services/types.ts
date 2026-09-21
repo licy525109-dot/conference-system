@@ -892,6 +892,7 @@ export interface TabBarConfig {
 }
 
 export interface AdminAppUser {
+  realName?: string | null;
   id: string;
   openid: string | null;
   nickname: string | null;

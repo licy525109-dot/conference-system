@@ -40,10 +40,14 @@ import { PublicOperationsController } from "./public-operations.controller";
 import { PublicOperationsService } from "./public-operations.service";
 import { WechatSubscribeClient } from "./wechat-subscribe-client";
 import { UserNotificationsService } from "./user-notifications.service";
+import { AdminUserActivityService } from "./admin-user-activity.service";
+import { AdminGuestIdentityController, GuestIdentityController } from "../registration/guest-identity.controller";
+import { GuestIdentityService } from "../registration/guest-identity.service";
 
 @Module({
   imports: [AuthModule],
   controllers: [
+    AdminGuestIdentityController, GuestIdentityController,
     AdminAuthController,
     AdminMobileController,
     NotificationsController,
@@ -64,6 +68,8 @@ import { UserNotificationsService } from "./user-notifications.service";
     AdminAuditLogController
   ],
   providers: [
+    GuestIdentityService,
+    AdminUserActivityService,
     AdminAccessService,
     AdminAuditLogService,
     AdminAuthService,

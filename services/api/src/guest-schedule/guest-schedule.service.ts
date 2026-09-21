@@ -99,6 +99,7 @@ export class GuestScheduleService {
       take: 100,
       include: {
         sku: { select: { id: true, name: true } },
+        guestProfile: { select: { userId: true } },
         registration: { select: { id: true, registrationNo: true, userId: true, status: true } }
       }
     });
@@ -113,7 +114,7 @@ export class GuestScheduleService {
         sku: item.sku,
         registrationId: item.registration.id,
         registrationNo: item.registration.registrationNo,
-        canReceiveMiniProgramMessage: Boolean(item.registration.userId)
+        canReceiveMiniProgramMessage: Boolean(item.guestProfileId ? item.guestProfile?.userId : item.registration.userId)
       }))
     });
   }
@@ -258,10 +259,11 @@ export class GuestScheduleService {
         publishedSnapshotJson: { not: Prisma.DbNull },
         ...(conferenceId ? { conferenceId } : {}),
         attendee: {
-          registration: {
-            userId: currentUser.id,
-            status: RegistrationStatus.CONFIRMED
-          }
+          registration: { status: RegistrationStatus.CONFIRMED },
+          OR: [
+            { guestProfile: { userId: currentUser.id } },
+            { guestProfileId: null, registration: { userId: currentUser.id } }
+          ]
         }
       },
       orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
@@ -474,7 +476,9 @@ function groupAssignmentsByUser(assignments: AssignmentAdminRecord[]) {
     assignments: AssignmentAdminRecord[];
   }>();
   for (const assignment of assignments) {
-    const userId = assignment.attendee.registration.userId;
+    const userId = assignment.attendee.guestProfileId
+      ? assignment.attendee.guestProfile?.userId
+      : assignment.attendee.registration.userId;
     if (!userId) continue;
     const key = `${userId}:${assignment.conferenceId}`;
     const group = groups.get(key) ?? {
@@ -505,6 +509,7 @@ const assignmentAdminInclude = {
   conference: { select: { id: true, title: true } },
   attendee: {
     include: {
+      guestProfile: { select: { userId: true } },
       sku: { select: { id: true, name: true } },
       registration: { select: { id: true, registrationNo: true, userId: true, status: true } }
     }

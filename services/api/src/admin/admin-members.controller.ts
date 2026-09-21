@@ -4,11 +4,19 @@ import { AdminMembersService } from "./admin-members.service";
 import { AdminPermissionGuard } from "./admin-permission.guard";
 import { RequestWithCurrentAdmin } from "./current-admin";
 import { RequireAdminPermissions } from "./require-permissions.decorator";
+import { AdminUserActivityService } from "./admin-user-activity.service";
 
 @Controller("admin")
 @UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
 export class AdminMembersController {
-  constructor(private readonly membersService: AdminMembersService) {}
+  constructor(private readonly membersService: AdminMembersService, private readonly activity: AdminUserActivityService) {}
+
+  @Get("users/:id/activity")
+  @RequireAdminPermissions("member:view")
+  getActivity(@Param("id") id: string, @Query() query: Record<string, unknown>, @Req() request: RequestWithCurrentAdmin) {
+    const permissions = request.currentAdmin!.permissions ?? [];
+    return this.activity.get(id, query, permissions.includes("*") || permissions.includes("registration:view"));
+  }
 
   @Get("users")
   @RequireAdminPermissions("member:view")

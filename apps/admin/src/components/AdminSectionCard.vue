@@ -28,11 +28,9 @@ withDefaults(
 
 <style scoped>
 .admin-section-card {
-  padding: 16px;
-  border: 1px solid var(--admin-color-border);
-  border-radius: var(--admin-radius);
-  background: var(--admin-color-panel);
-  box-shadow: var(--admin-shadow-soft);
+  min-width: 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--admin-color-border);
 }
 
 .admin-section-card__head {
@@ -40,20 +38,24 @@ withDefaults(
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
 }
 
 .admin-section-card h2 {
   margin: 0;
   color: var(--admin-color-text);
-  font-size: 17px;
-  font-weight: 900;
+  font-size: 18px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .admin-section-card p {
   margin: 6px 0 0;
   color: var(--admin-color-muted);
   font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .admin-section-card__actions {
@@ -62,5 +64,9 @@ withDefaults(
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.admin-section-card__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 </style>

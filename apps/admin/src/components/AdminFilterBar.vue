@@ -15,11 +15,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px;
-  border: 1px solid rgb(221 230 242 / 84%);
-  border-radius: var(--admin-radius);
-  background: var(--admin-color-panel);
-  box-shadow: var(--admin-shadow-soft);
+  flex-wrap: wrap;
+  padding: 0;
+  min-width: 0;
 }
 
 @media (max-width: 900px) {
@@ -39,5 +37,29 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+.admin-filter-bar__body {
+  flex: 1;
+}
+
+.admin-filter-bar :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.admin-filter-bar__body :deep(> .el-input),
+.admin-filter-bar__body :deep(> .el-select),
+.admin-filter-bar__body :deep(> .el-date-editor) {
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  .admin-filter-bar__body :deep(> .el-input),
+  .admin-filter-bar__body :deep(> .el-select),
+  .admin-filter-bar__body :deep(> .el-date-editor) {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
 }
 </style>

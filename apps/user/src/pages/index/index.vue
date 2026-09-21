@@ -5,15 +5,20 @@
     <ThemeDynamicBackground v-if="showBodyDynamicBackground" :theme="theme" placement="fixed" />
 
     <view class="page-content">
-      <LoadingState v-if="loading" title="加载会议中" description="正在同步最新可报名会议。" />
-      <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="retryLoadConferences" />
+      <ErrorState v-if="offline && !contentReady" v-bind="networkFeedback" @retry="retryLoadConferences" />
+      <HomeSkeleton v-else-if="loading && !contentReady" />
+      <ErrorState v-else-if="error && !contentReady" v-bind="networkFeedback" @retry="retryLoadConferences" />
+      <NetworkNotice v-if="offline && contentReady" />
+      <HomeMessageNotice ref="homeMessages" />
       <PageRenderer
-        v-else
+        v-if="contentReady"
         :dsl="effectiveHomeDsl"
         :theme="theme"
         :conferences="conferences"
+        :conference-loading="conferenceLoading"
         @open-conference="goDetail"
       />
+      <view v-if="!offline && (error || configurationError) && contentReady" class="refresh-notice"><text>{{ error ? networkFeedback.message : configurationError }}</text><button :disabled="loading" @click="retryLoadConferences">重试</button></view>
       <WechatProfilePrompt />
     </view>
     <CustomTabbar active-page-key="home" />
@@ -25,7 +30,12 @@ import { computed, ref } from "vue";
 import { onLoad, onShareAppMessage, onShow } from "@dcloudio/uni-app";
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
-import LoadingState from "@/components/ui/LoadingState.vue";
+import HomeSkeleton from "@/components/ui/HomeSkeleton.vue";
+import NetworkNotice from "@/components/ui/NetworkNotice.vue";
+import { usePageNetwork } from "@/composables/usePageNetwork";
+import HomeMessageNotice from "@/components/ui/HomeMessageNotice.vue";
+import { readFreshPublicCache } from "@/utils/public-home-cache";
+import { API_BASE_URL } from "@/config/app";
 import PageRenderer from "@/components/PageRenderer.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
@@ -36,7 +46,13 @@ import { createCmsBackgroundStyle, createCmsThemeVars } from "@/theme/cmsTheme";
 
 const HOME_REFRESH_INTERVAL_MS = 30 * 1000;
 
-const loading = ref(false);
+const loading = ref(true);
+const { offline, feedback: networkFeedback, reportFailure, clearFailure, refreshNetwork } = usePageNetwork(loadConferences, loading);
+const homeMessages = ref<InstanceType<typeof HomeMessageNotice> | null>(null);
+const conferenceLoading = ref(true);
+const configurationError = ref("");
+const contentReady = ref(false);
+let inFlight = false;
 const error = ref("");
 const conferences = ref<ConferenceListItem[]>([]);
 const cmsPage = ref<PublishedPage | null>(null);
@@ -52,7 +68,6 @@ const pageStyle = computed(() => ({
 const pageClass = computed(() => ["page", "ui-page"]);
 const showBodyVideo = computed(() => theme.value.backgroundMode === "video" && Boolean(theme.value.backgroundVideoUrl) && theme.value.backgroundApplyTo !== "header");
 const showBodyDynamicBackground = computed(() => theme.value.backgroundMode === "dynamic-gradient" && theme.value.backgroundApplyTo !== "header");
-const hasConferenceFilter = computed(() => Object.values(conferenceFilter.value).some(Boolean));
 const effectiveHomeDsl = computed(() => cmsPage.value?.version.dsl ?? createDefaultPageDsl("home"));
 
 onLoad((query) => {
@@ -62,10 +77,12 @@ onLoad((query) => {
     location: readQueryText(query?.location),
     category: readQueryText(query?.category)
   };
+  restorePublicCache();
   void loadConferences();
 });
 
 onShow(() => {
+  void homeMessages.value?.refresh();
   if (loading.value) {
     return;
   }
@@ -79,23 +96,60 @@ onShow(() => {
 onShareAppMessage(() => buildPageShare(cmsPage.value, "/pages/index/index", "观潮会集"));
 
 async function loadConferences() {
+  if (inFlight) return;
+  inFlight = true;
   loading.value = true;
+  clearFailure();
   error.value = "";
+  configurationError.value = "";
+  conferenceLoading.value = true;
 
   try {
-    const [items, page, themeConfig] = await Promise.all([getConferences(conferenceFilter.value), getPublishedPage("home"), getAppTheme("home")]);
-    conferences.value = items;
-    cmsPage.value = page;
-    theme.value = themeConfig;
-    applyPageTitle(page, "观潮会集");
+    await Promise.allSettled([
+      getConferences(conferenceFilter.value).then(items => {
+        conferences.value = items; contentReady.value = true;
+        savePublicCache("conferences", items);
+      }).catch(err => {
+        logConferenceLoadError(err);
+        error.value = "最新会议暂时无法读取，请重试";
+        reportFailure(err, error.value);
+      }).finally(() => { conferenceLoading.value = false; }),
+      getPublishedPage("home", {}, { networkOnly: true }).then(page => {
+        cmsPage.value = page; if (page) contentReady.value = true;
+        applyPageTitle(page, "观潮会集"); savePublicCache("page", page);
+      }).catch(err => {
+        configurationError.value = "首页内容暂未更新，正在显示已有内容";
+        if (!error.value) reportFailure(err, "首页内容暂时无法读取，请重试");
+      }),
+      getAppTheme("home", { networkOnly: true }).then(config => { theme.value = config; savePublicCache("theme", config); }).catch(() => { /* The default theme remains usable. */ })
+    ]);
   } catch (err) {
     logConferenceLoadError(err);
     error.value = "会议加载失败，请稍后重试";
+    reportFailure(err, error.value);
   } finally {
     hasLoadedOnce = true;
     lastLoadAt = Date.now();
     loading.value = false;
+    inFlight = false;
+    if (!contentReady.value && !error.value) error.value = "首页暂时无法读取，请重试";
+    void homeMessages.value?.refresh();
   }
+}
+
+function cacheKey(part: string) { return `public-home-v1:${API_BASE_URL}:${part}:${part === "conferences" ? JSON.stringify(conferenceFilter.value) : "home"}`; }
+function savePublicCache(part: string, value: unknown) {
+  try { uni.setStorageSync(cacheKey(part), { version: 1, savedAt: Date.now(), value }); } catch { /* Storage pressure must not prevent rendering. */ }
+}
+function restorePublicCache() {
+  try {
+    const items = readFreshPublicCache<ConferenceListItem[]>(uni.getStorageSync(cacheKey("conferences")));
+    const page = readFreshPublicCache<PublishedPage>(uni.getStorageSync(cacheKey("page")));
+    const config = readFreshPublicCache<ThemeConfig>(uni.getStorageSync(cacheKey("theme")));
+    if (Array.isArray(items)) { conferences.value = items; contentReady.value = true; }
+    if (page?.version?.dsl) { cmsPage.value = page; contentReady.value = true; applyPageTitle(page, "观潮会集"); }
+    if (config && typeof config === "object" && !Array.isArray(config)) theme.value = { ...DEFAULT_THEME, ...config };
+  } catch { /* Ignore invalid caches and continue with the network. */ }
 }
 
 function logConferenceLoadError(err: unknown): void {
@@ -120,9 +174,7 @@ function logConferenceLoadError(err: unknown): void {
 }
 
 function retryLoadConferences() {
-  if (hasConferenceFilter.value && conferences.value.length === 0) {
-    conferenceFilter.value = {};
-  }
+  refreshNetwork();
   void loadConferences();
 }
 
@@ -158,5 +210,6 @@ function goDetail(id: string) {
   position: relative;
   z-index: 1;
 }
+.refresh-notice { display: flex; gap: 20rpx; align-items: center; padding: 24rpx; font-size: 30rpx; }
 
 </style>

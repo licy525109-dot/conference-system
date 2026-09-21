@@ -1,5 +1,7 @@
 export interface WechatProfileSummary {
   phone?: string | null;
+  realName?: string | null;
+  phoneVerifiedAt?: string | null;
   wechatNickname?: string | null;
   wechatAvatarUrl?: string | null;
 }
@@ -9,7 +11,8 @@ export interface WechatProfilePromptOptions {
 }
 
 export function shouldAutoCheckWechatProfile(token: string | null | undefined): boolean {
-  return !String(token || "").trim();
+  // A page mount is never a user's request to log in or edit a profile.
+  return false;
 }
 
 export function isProfilePromptOwnerActive(ownerPage: unknown, pages: readonly unknown[]): boolean {
@@ -19,8 +22,8 @@ export function isProfilePromptOwnerActive(ownerPage: unknown, pages: readonly u
 export function isWechatProfileComplete(profile: WechatProfileSummary | null | undefined): boolean {
   return Boolean(
     String(profile?.phone || "").trim()
-    && String(profile?.wechatNickname || "").trim()
-    && String(profile?.wechatAvatarUrl || "").trim()
+    && profile?.phoneVerifiedAt
+    && String(profile?.realName || "").trim()
   );
 }
 

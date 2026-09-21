@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onHide, onLaunch, onShow } from "@dcloudio/uni-app";
-import { ensureAuthenticatedUser } from "@/services/auth";
+import { ensureAuthenticatedUser, getToken } from "@/services/auth";
 import { goHome } from "@/utils/navigation";
 import { shouldRelaunchHome } from "@/utils/startupRoute";
 
@@ -41,6 +41,7 @@ function scheduleStartupRouteFallback(): void {
 }
 
 async function warmUpLogin(): Promise<void> {
+  if (!getToken()) return;
   // #ifdef MP-WEIXIN
   try {
     await ensureAuthenticatedUser();

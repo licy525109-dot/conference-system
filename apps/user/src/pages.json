@@ -25,6 +25,9 @@
         "navigationBarTitleText": "会议详情"
       }
     },
+    { "path": "pages/account/profile", "style": { "navigationBarTitleText": "完善本人资料" } },
+    { "path": "pages/account/claim", "style": { "navigationBarTitleText": "领取参会资格" } },
+    { "path": "pages/account/attendance", "style": { "navigationBarTitleText": "我的参会资格" } },
     {
       "path": "pages/registration/form",
       "style": {

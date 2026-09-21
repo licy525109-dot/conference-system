@@ -31,6 +31,7 @@ export function getWechatProfile(): Promise<CurrentUser> {
 }
 
 export async function updateWechatProfile(input: {
+  realName?: string;
   wechatNickname: string | null;
   wechatAvatarUrl: string | null;
 }): Promise<CurrentUser> {

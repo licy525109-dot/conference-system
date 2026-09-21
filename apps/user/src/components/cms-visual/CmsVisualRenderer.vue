@@ -36,6 +36,7 @@
           class="cms-hero__image"
           :src="stringConfig(component, 'imageUrl')"
           :mode="heroImageMode(component)"
+          :lazy-load="index > 0"
         />
         <view v-else class="cms-hero__image cms-hero__image--generated" />
         <view v-if="showHeroShade(component)" class="cms-hero__shade" />
@@ -54,7 +55,7 @@
 
       <view v-else-if="component.type === 'conference-list'" class="cms-section">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "可报名会议" }}</text>
-        <view v-if="conferences.length === 0" class="cms-empty">暂无可报名会议</view>
+        <view v-if="conferences.length === 0" class="cms-empty">{{ conferenceLoading ? '正在读取会议…' : '暂无可报名会议' }}</view>
         <view v-for="(item, index) in limitedConferences(component)" :key="item.id" :class="conferenceCardClass(component, 'cms-card')" :style="conferenceCardStyle(component)">
           <image
             v-if="showConferenceCover(component, item)"
@@ -62,6 +63,7 @@
             :style="conferenceImageStyle(component)"
             :src="conferenceCoverUrl(item)"
             :mode="conferenceImageMode(component)"
+            :lazy-load="index > 0"
             @error="markConferenceCoverFailed(item.id)"
           />
           <view
@@ -103,7 +105,7 @@
             {{ tab.label }}
           </text>
         </view>
-        <view v-if="limitedConferences(component).length === 0" class="cms-empty">暂无匹配会议，可切换其他分类</view>
+        <view v-if="limitedConferences(component).length === 0" class="cms-empty">{{ conferenceLoading ? '正在读取会议…' : '暂无匹配会议，可切换其他分类' }}</view>
         <view v-for="(item, index) in limitedConferences(component).slice(0, 3)" :key="item.id" :class="conferenceCardClass(component, 'cms-mini-card')" :style="conferenceCardStyle(component)">
           <image
             v-if="showConferenceCover(component, item)"
@@ -111,6 +113,7 @@
             :style="conferenceImageStyle(component)"
             :src="conferenceCoverUrl(item)"
             :mode="conferenceImageMode(component)"
+            :lazy-load="index > 0"
             @error="markConferenceCoverFailed(item.id)"
           />
           <view
@@ -139,9 +142,9 @@
           :circular="booleanConfig(component, 'circular', true)"
           :autoplay="booleanConfig(component, 'autoplay', true)"
         >
-          <swiper-item v-for="image in stringListConfig(component, 'images')" :key="image">
+          <swiper-item v-for="(image, imageIndex) in stringListConfig(component, 'images')" :key="image">
             <view class="cms-swiper__slide">
-              <image class="cms-swiper__image" :src="image" :mode="carouselImageMode(component)" />
+              <image class="cms-swiper__image" :src="image" :mode="carouselImageMode(component)" :lazy-load="index > 0 || imageIndex > 0" />
             </view>
           </swiper-item>
         </swiper>
@@ -151,6 +154,7 @@
       <CmsHeroBannerRenderer
         v-else-if="component.type === 'hero-banner'"
         :component="component"
+        :lazy-load="index > 0"
         @primary="handleComponentAction(component)"
         @secondary="handleSecondaryComponentAction(component)"
       />
@@ -185,7 +189,7 @@
         <scroll-view scroll-x class="cms-event-carousel__rail">
           <view class="cms-event-carousel__track">
             <view v-for="(item, index) in carouselConferences(component)" :key="item.id" :class="eventCardClass(component)" @click="handleConferenceAction(item, component)">
-              <image v-if="showConferenceCover(component, item)" class="cms-event-card__image" :src="conferenceCoverUrl(item)" :mode="conferenceImageMode(component)" @error="markConferenceCoverFailed(item.id)" />
+              <image v-if="showConferenceCover(component, item)" class="cms-event-card__image" :src="conferenceCoverUrl(item)" :mode="conferenceImageMode(component)" :lazy-load="index > 0" @error="markConferenceCoverFailed(item.id)" />
               <view v-else class="cms-event-card__image cms-card__image--empty"><text>{{ conferenceCoverInitial(item) }}</text></view>
               <text class="cms-event-card__title">{{ item.title }}</text>
               <text v-if="booleanConfig(component, 'showSummary', true)" class="cms-event-card__text">{{ item.summary || summaryFallback(component) }}</text>
@@ -212,7 +216,7 @@
       </view>
 
       <view v-else-if="component.type === 'image-promo-card'" class="cms-section cms-image-promo" :style="imagePromoStyle(component)" @click="handleComponentAction(component)">
-        <image v-if="stringConfig(component, 'imageUrl')" class="cms-section__image" :src="stringConfig(component, 'imageUrl')" mode="aspectFill" />
+        <image v-if="stringConfig(component, 'imageUrl')" class="cms-section__image" :src="stringConfig(component, 'imageUrl')" mode="aspectFill" :lazy-load="index > 0" />
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "活动推荐" }}</text>
         <text v-if="stringConfig(component, 'subtitle')" class="cms-section__text" :style="textStyle(component)">{{ stringConfig(component, "subtitle") }}</text>
         <view v-if="stringConfig(component, 'buttonText')" class="cms-card__button"><text>{{ stringConfig(component, "buttonText") }}</text></view>
@@ -232,7 +236,7 @@
             <text>{{ block.text || "请填写重点提示" }}</text>
           </view>
           <view v-else-if="block.type === 'image'" class="cms-rich-content__figure">
-            <image v-if="block.imageUrl" class="cms-rich-content__image" :style="richBlockImageStyle(component)" :src="block.imageUrl" :mode="richBlockImageMode(block)" />
+            <image v-if="block.imageUrl" class="cms-rich-content__image" :style="richBlockImageStyle(component)" :src="block.imageUrl" :mode="richBlockImageMode(block)" :lazy-load="index > 0" />
             <view v-else class="cms-rich-content__image cms-rich-content__image--empty" :style="richBlockImageStyle(component)"><text>图片未配置</text></view>
             <text v-if="block.caption" class="cms-rich-content__caption">{{ block.caption }}</text>
           </view>
@@ -252,7 +256,7 @@
       </button>
 
       <view v-else-if="component.type === 'image-grid'" class="cms-grid">
-        <image v-for="image in arrayConfig(component, 'images')" :key="String(image)" class="cms-grid__image" :src="String(image)" mode="aspectFill" />
+        <image v-for="image in arrayConfig(component, 'images')" :key="String(image)" class="cms-grid__image" :src="String(image)" mode="aspectFill" lazy-load />
         <view v-if="arrayConfig(component, 'images').length === 0" class="cms-empty cms-empty-card">暂无图片</view>
       </view>
 
@@ -558,6 +562,7 @@ const props = defineProps<{
   components: CmsComponent[];
   theme: ThemeConfig;
   conferences?: ConferenceListItem[];
+  conferenceLoading?: boolean;
   conference?: ConferenceDetail | null;
   products?: Product[];
   productCategories?: ProductCategory[];

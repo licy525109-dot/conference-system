@@ -211,7 +211,7 @@ describe("AuthService mock WeChat login", () => {
     );
   });
 
-  it("binds only the phone verified by WeChat and links unclaimed registrations", async () => {
+  it("binds only the verified phone without taking ownership of same-phone registrations", async () => {
     withRealAuthEnv();
     const prisma = createPrismaMock();
     const service = new AuthService(prisma, createWechatAuthMock({
@@ -231,11 +231,11 @@ describe("AuthService mock WeChat login", () => {
     });
 
     assert.equal(response.data.user.phone, "13800138000");
-    assert.equal(response.data.linkedOrders, 1);
-    assert.equal(response.data.linkedRegistrations, 1);
-    assert.equal(prisma.orders[0]?.userId, login.data.user.id);
+    assert.equal(response.data.linkedOrders, 0);
+    assert.equal(response.data.linkedRegistrations, 0);
+    assert.equal(prisma.orders[0]?.userId, null);
     assert.equal(prisma.orders[1]?.userId, null);
-    assert.equal(prisma.registrations[0]?.userId, login.data.user.id);
+    assert.equal(prisma.registrations[0]?.userId, null);
   });
 });
 

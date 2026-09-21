@@ -208,7 +208,8 @@ export class PaymentSuccessService {
           registrationId: registration.id,
           fallbackSkuId: order.skuId,
           checkInEnabled: order.conference.checkInEnabled,
-          attendees: buildAttendeesFromSnapshot(snapshot)
+          attendees: buildAttendeesFromSnapshot(snapshot),
+          orderUserId: order.userId
         });
 
       }
@@ -423,12 +424,23 @@ async function createRegistrationAttendees(
     fallbackSkuId: string;
     checkInEnabled: boolean;
     attendees: AttendeeSnapshot[];
+    orderUserId?: string | null;
   }
 ): Promise<void> {
   const checkInStatus = input.checkInEnabled ? CheckInStatus.PENDING : CheckInStatus.NOT_REQUIRED;
   for (const attendee of input.attendees.length > 0 ? input.attendees : []) {
+    let guestProfileId: string | undefined;
+    if (typeof attendee.isSelf === "boolean") {
+      const userId = attendee.isSelf && attendee.boundUserId === input.orderUserId ? input.orderUserId : null;
+      const common = { name: attendee.name, phone: attendee.phone, company: attendee.company, title: attendee.title };
+      const profile = userId
+        ? await tx.guestProfile.upsert({ where: { userId }, create: { ...common, userId, boundAt: new Date() }, update: { company: attendee.company, title: attendee.title } })
+        : await tx.guestProfile.create({ data: common });
+      guestProfileId = profile.id;
+    }
     await tx.registrationAttendee.create({
       data: {
+        ...(guestProfileId ? { guestProfileId } : {}),
         registrationId: input.registrationId,
         skuId: attendee.skuId || input.fallbackSkuId,
         name: attendee.name,
@@ -565,6 +577,8 @@ function parseSnapshotAttendees(value: Record<string, unknown>, fallback: Attend
       phone: typeof attendee.phone === "string" ? attendee.phone : "",
       company: typeof attendee.company === "string" ? attendee.company : undefined,
       title: typeof attendee.title === "string" ? attendee.title : undefined,
+      ...(typeof attendee.isSelf === "boolean" ? { isSelf: attendee.isSelf } : {}),
+      ...(typeof attendee.boundUserId === "string" ? { boundUserId: attendee.boundUserId } : {}),
       formData: attendee.formData as Prisma.InputJsonObject
     };
   });
@@ -599,6 +613,8 @@ interface RegistrationSnapshotItem {
 }
 
 interface AttendeeSnapshot {
+  isSelf?: boolean;
+  boundUserId?: string;
   skuId: string;
   name: string;
   phone: string;

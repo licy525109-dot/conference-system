@@ -1,17 +1,19 @@
 <template>
   <view class="page ui-page" :style="pageStyle">
     <view class="page-content">
-      <LoadingState v-if="loading" title="加载会议详情中" description="正在读取会议和报名信息。" />
+      <ErrorState v-if="offline && !conference" v-bind="networkFeedback" secondary-text="返回首页" @retry="retryDetail" @secondary="goHome" />
+      <LoadingState v-else-if="loading && !conference" title="加载会议详情中" description="正在读取会议和报名信息。" />
       <ErrorState
-        v-else-if="error"
-        :message="error"
-        primary-text="重新加载"
+        v-else-if="error && !conference"
+        v-bind="networkFeedback"
         secondary-text="返回首页"
-        @retry="loadDetail"
+        @retry="retryDetail"
         @secondary="goHome"
       />
 
       <view v-else-if="conference" class="content">
+        <NetworkNotice v-if="offline" />
+        <ErrorState v-else-if="error" v-bind="networkFeedback" @retry="retryDetail" />
         <ConferenceDetailOverview
           :conference="conference"
           :status-label="registrationStatus.label"
@@ -85,10 +87,10 @@
       v-if="conference"
       amount-label="报名费用"
       :amount-value="priceRangeText"
-      :primary-text="registrationPrimaryText"
+      :primary-text="offline ? '连接网络后报名' : registrationPrimaryText"
       :loading="registrationLoginLoading"
       loading-text="正在登录..."
-      :primary-disabled="registrationLoginLoading || registrationSkus.length === 0 || registrationAvailability === 'ENDED'"
+      :primary-disabled="offline || loading || Boolean(error) || registrationLoginLoading || registrationSkus.length === 0 || registrationAvailability === 'ENDED'"
       tabbar-offset
       @primary="goRegisterFirst"
     />
@@ -107,6 +109,8 @@ import CustomTabbar from "@/components/CustomTabbar.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import FixedBottomActionBar from "@/components/ui/FixedBottomActionBar.vue";
 import LoadingState from "@/components/ui/LoadingState.vue";
+import NetworkNotice from "@/components/ui/NetworkNotice.vue";
+import { usePageNetwork } from "@/composables/usePageNetwork";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
 import { DEFAULT_THEME, getAppTheme, type ThemeConfig } from "@/services/cms";
 import { getConferenceDetail, reserveConferenceAppointment, type ConferenceDetail, type RegistrationSku } from "@/services/conference";
@@ -133,6 +137,7 @@ const couponCode = ref("");
 const conference = ref<ConferenceDetail | null>(null);
 const theme = ref<ThemeConfig>({ ...DEFAULT_THEME });
 const loading = ref(false);
+const { offline, feedback: networkFeedback, reportFailure, clearFailure, refreshNetwork } = usePageNetwork(loadDetail, loading);
 const error = ref("");
 const ticketSheetVisible = ref(false);
 const selectedSkuId = ref("");
@@ -202,12 +207,15 @@ onShareAppMessage(() => ({
 }));
 
 async function loadDetail() {
+  if (loading.value) return;
   if (!conferenceId.value) {
     error.value = "页面信息不完整，请返回首页重新进入";
+    reportFailure(null, error.value);
     return;
   }
 
   loading.value = true;
+  clearFailure();
   error.value = "";
   try {
     const [detail, themeConfig] = await Promise.all([
@@ -222,9 +230,15 @@ async function loadDetail() {
   } catch (err) {
     console.error("[CONFERENCE_DETAIL_LOAD_ERROR]", err);
     error.value = "会议详情加载失败，请稍后重试";
+    reportFailure(err, error.value);
   } finally {
     loading.value = false;
   }
+}
+
+function retryDetail() {
+  refreshNetwork();
+  void loadDetail();
 }
 
 async function goRegisterFirst() {
@@ -241,6 +255,10 @@ async function goRegisterFirst() {
 }
 
 function openTicketSelector() {
+  if (offline.value || loading.value || error.value) {
+    uni.showToast({ title: offline.value ? "请先连接网络" : "请先刷新会议信息", icon: "none" });
+    return;
+  }
   if (registrationAvailability.value === "ENDED") {
     uni.showToast({ title: "报名已截止", icon: "none" });
     return;
@@ -264,6 +282,10 @@ function selectSku(skuId: string) {
 }
 
 async function confirmTicketSelection() {
+  if (offline.value) {
+    uni.showToast({ title: "请先连接网络", icon: "none" });
+    return;
+  }
   const sku = registrationSkus.value.find((item) => item.id === selectedSkuId.value && remainingStock(item) > 0);
   if (!sku) {
     uni.showToast({ title: "暂无可报名规格", icon: "none" });

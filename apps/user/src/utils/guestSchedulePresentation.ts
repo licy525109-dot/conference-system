@@ -37,8 +37,8 @@ export function buildGuestScheduleFields(item: GuestSchedulePresentationSource):
   const fields: GuestScheduleDisplayField[] = [];
   pushField(fields, "location", LOCATION_LABELS[item.type] || "事项地点", item.location);
   pushField(fields, "tableNo", "所在桌号", formatTableNo(item.tableNo), true);
-  if (item.tableNo || item.isTableLeader) {
-    pushField(fields, "tableLeader", "桌长身份", item.isTableLeader ? "本桌桌长" : "非桌长", Boolean(item.isTableLeader));
+  if (item.isTableLeader === true) {
+    pushField(fields, "tableLeader", "桌长身份", "本桌桌长", true);
   }
   pushField(fields, "role", ROLE_LABELS[item.type] || "参与身份", item.role);
   pushField(fields, "shareTopic", item.type === "SPEECH" ? "分享内容" : "参与内容", item.shareTopic);
@@ -50,6 +50,42 @@ export function formatTableNo(value?: string | null): string {
   const normalized = value?.trim() || "";
   if (!normalized || normalized.includes("桌")) return normalized;
   return `${normalized} 桌`;
+}
+
+export function formatGuestScheduleNotificationTitle(item: {
+  type: string;
+  title: string;
+  payloadJson?: { items?: Array<{ name: string }> } | null;
+}): string {
+  if (item.type !== "GUEST_SCHEDULE_PUBLISHED") return item.title;
+  const schedules = item.payloadJson?.items;
+  return schedules?.length === 1 ? schedules[0].name.trim() || "会务安排更新" : "会务安排更新";
+}
+
+export function formatGuestScheduleTime(startsAt?: string | null, endsAt?: string | null) {
+  const start = parseScheduleDate(startsAt);
+  const end = parseScheduleDate(endsAt);
+  const includeYear = Boolean(start && end && start.getFullYear() !== end.getFullYear());
+  const dateText = (date: Date) => `${includeYear ? `${date.getFullYear()}年` : ""}${date.getMonth() + 1}月${date.getDate()}日`;
+  const endDate = end && start?.toDateString() !== end.toDateString() ? `${dateText(end)} ` : "";
+
+  return {
+    date: start ? dateText(start) : "",
+    weekday: start ? ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][start.getDay()] : "",
+    time: start ? formatScheduleClock(start) : "",
+    end: end ? `${endDate}${formatScheduleClock(end)}` : ""
+  };
+}
+
+function parseScheduleDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatScheduleClock(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function pushField(

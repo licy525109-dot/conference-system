@@ -75,6 +75,29 @@ describe("PaymentsService mock confirm", () => {
     assert.equal(prisma.skus[0]?.soldCount, 1);
   });
 
+  it("creates only one guest profile on repeated confirmation and never binds a delegated guest to the payer", async () => {
+    withMockPaymentMode();
+    for (const identity of [{ isSelf: true, boundUserId: currentUser.id }, { isSelf: false }, { isSelf: true, boundUserId: "untrusted-user" }]) {
+      const profiles: Array<{ mode: string; args: any }> = [];
+      const prisma = createPrismaMock();
+      Object.assign(prisma, { guestProfile: {
+        upsert: async (args: any) => { profiles.push({ mode: "bound", args }); return { id: "bound-profile" }; },
+        create: async (args: any) => { profiles.push({ mode: "unbound", args }); return { id: "unbound-profile" }; }
+      } });
+      const order = prisma.orders[0]!;
+      order.registrationSnapshotJson = { ...(order.registrationSnapshotJson as object), attendees: [{
+        skuId: "sku-1", name: "快照姓名", phone: "13900000000", formData: { name: "快照姓名", phone: "13900000000" }, ...identity
+      }] };
+      const service = createService(prisma);
+      await service.confirmMockPayment({ orderNo: "REG001" }, currentUser);
+      await service.confirmMockPayment({ orderNo: "REG001" }, currentUser);
+      assert.equal(profiles.length, 1);
+      assert.equal(profiles[0]!.mode, identity.isSelf && identity.boundUserId === currentUser.id ? "bound" : "unbound");
+      assert.equal(prisma.orders[0]!.userId, currentUser.id);
+      assert.equal(prisma.registrationAttendees.length, 1);
+    }
+  });
+
   it("creates a pending check-in attendee when conference check-in is enabled", async () => {
     withMockPaymentMode();
     const prisma = createPrismaMock({ checkInEnabled: true });

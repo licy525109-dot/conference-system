@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { OrderStatus, PaymentProvider, PaymentStatus, Prisma } from "@prisma/client";
 import { CurrentUser } from "../auth/current-user";
+import { requireRegistrationProfile } from "../auth/registration-profile";
 import { PrismaService } from "../prisma.service";
 import { PaymentSuccessService } from "./payment-success.service";
 import { isWechatPayEnabled, readWechatPayConfig, WechatPayConfig } from "./wechat-pay.config";
@@ -54,6 +55,8 @@ export class WechatPayService {
     if (!isWechatPayEnabled()) {
       throw new ForbiddenException("Real WeChat Pay is disabled. Use /api/payments/mock/confirm in local development.");
     }
+
+    await requireRegistrationProfile(this.prisma, currentUser.id);
 
     const orderNo = readOrderNo(input);
     const order = await this.prisma.order.findFirst({

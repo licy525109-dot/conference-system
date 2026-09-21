@@ -31,6 +31,7 @@ const STATUS_MAP: Record<string, { label: string; tone: StatusTone }> = {
   ACTIVE: { label: "启用", tone: "success" },
   INACTIVE: { label: "停用", tone: "neutral" },
   PAID: { label: "已支付", tone: "success" },
+  CONFIRMED: { label: "报名成功", tone: "success" },
   SUCCESS: { label: "支付成功", tone: "success" },
   PENDING: { label: "待处理", tone: "warning" },
   PENDING_PAYMENT: { label: "待支付", tone: "warning" },

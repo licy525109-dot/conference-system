@@ -178,7 +178,10 @@ function testUser() {
     nickname: "潮起东方",
     wechatNickname: "潮起东方",
     wechatAvatarUrl: "",
-    phone: "138****8888"
+    phone: "13800008888",
+    realName: "测试嘉宾",
+    phoneVerifiedAt: "2026-08-31T10:00:00.000Z",
+    registrationReady: true
   };
 }
 
