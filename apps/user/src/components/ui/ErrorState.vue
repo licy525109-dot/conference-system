@@ -1,6 +1,6 @@
 <template>
-  <view class="state error-state">
-    <view class="mark">!</view>
+  <view class="state error-state" :class="{ 'network-state': tone === 'network' }" role="status">
+    <view class="mark" aria-hidden="true"><wd-icon :name="tone === 'network' ? 'wifi-error' : 'warning'" size="28px" /></view>
     <text class="title">{{ title }}</text>
     <text class="description">{{ message }}</text>
     <view class="actions">
@@ -22,11 +22,13 @@ withDefaults(
     message: string;
     primaryText?: string;
     secondaryText?: string;
+    tone?: "network" | "error";
   }>(),
   {
     title: "加载失败",
     primaryText: "重试",
-    secondaryText: ""
+    secondaryText: "",
+    tone: "error"
   }
 );
 </script>
@@ -36,42 +38,52 @@ withDefaults(
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16rpx;
-  padding: 104rpx 36rpx;
+  gap: 16px;
+  padding: 52px 20px;
   text-align: center;
 }
 
 .mark {
   display: grid;
   place-items: center;
-  width: 92rpx;
-  height: 92rpx;
+  width: 56px;
+  height: 56px;
   border-radius: var(--ui-radius);
   background: #fff1ef;
   color: var(--ui-color-danger);
-  font-size: 42rpx;
-  font-weight: 900;
 }
 
 .title {
   color: var(--ui-color-text);
-  font-size: 32rpx;
-  font-weight: 800;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.network-state .mark {
+  background: #f4f0e5;
+  color: var(--ui-color-primary);
 }
 
 .description {
+  max-width: 440px;
   color: var(--ui-color-muted);
-  font-size: 26rpx;
+  font-size: 18px;
   line-height: 1.55;
 }
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 16rpx;
   margin-top: 10rpx;
 }
 
 .action {
   min-width: 178rpx;
+  max-width: 100%;
+  white-space: normal;
 }
 </style>

@@ -5,7 +5,7 @@
       <text class="topline-price">{{ priceText || "查看票种" }}</text>
     </view>
     <view class="cover">
-      <image v-if="hasCoverImage" class="cover-image" :src="normalizedCoverImageUrl" mode="aspectFill" @error="handleCoverError" />
+      <image v-if="hasCoverImage" class="cover-image" :src="normalizedCoverImageUrl" mode="aspectFill" lazy-load @error="handleCoverError" />
       <view v-else class="cover-placeholder">
         <text class="cover-mark">{{ title.slice(0, 1) || "会" }}</text>
         <text class="cover-label">会议报名</text>

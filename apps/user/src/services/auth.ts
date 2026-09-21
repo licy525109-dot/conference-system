@@ -13,6 +13,9 @@ export interface CurrentUser {
   openid: string | null;
   nickname: string | null;
   phone?: string | null;
+  realName?: string | null;
+  phoneVerifiedAt?: string | null;
+  registrationReady?: boolean;
   wechatNickname?: string | null;
   wechatAvatarUrl?: string | null;
   registeredAt?: string;
@@ -44,7 +47,7 @@ export async function loginWithWechat(): Promise<LoginResponse> {
 
 async function performWechatLogin(): Promise<LoginResponse> {
   const code = await getPlatformLoginCode();
-  const payload: { code: string; nickname?: string } = { code };
+  const payload: { code: string; nickname?: string; activateAccount: boolean } = { code, activateAccount: true };
 
   // #ifndef MP-WEIXIN
   payload.nickname = MOCK_LOGIN_NICKNAME;

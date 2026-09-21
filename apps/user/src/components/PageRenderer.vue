@@ -6,6 +6,7 @@
         :components="visualComponents"
         :theme="theme"
         :conferences="conferences"
+        :conference-loading="conferenceLoading"
         :conference="conference"
         :products="products"
         :product-categories="productCategories"
@@ -57,6 +58,7 @@ const props = defineProps<{
   dsl: PageDsl;
   theme: ThemeConfig;
   conferences?: ConferenceListItem[];
+  conferenceLoading?: boolean;
   conference?: ConferenceDetail | null;
   products?: Product[];
   productCategories?: ProductCategory[];

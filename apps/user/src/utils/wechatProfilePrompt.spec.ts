@@ -7,9 +7,9 @@ import {
   shouldOpenWechatProfilePrompt
 } from "./wechatProfilePrompt";
 
-test("profile prompt only auto-checks without an existing login token", () => {
-  assert.equal(shouldAutoCheckWechatProfile(""), true);
-  assert.equal(shouldAutoCheckWechatProfile(null), true);
+test("page switches never trigger an automatic login or profile prompt", () => {
+  assert.equal(shouldAutoCheckWechatProfile(""), false);
+  assert.equal(shouldAutoCheckWechatProfile(null), false);
   assert.equal(shouldAutoCheckWechatProfile("existing-token"), false);
 });
 
@@ -24,6 +24,8 @@ test("profile prompt events only reach the currently visible page owner", () => 
 
 test("automatic profile prompts stay closed when the profile is complete", () => {
   const completeProfile = {
+    realName: "测试嘉宾",
+    phoneVerifiedAt: "2026-09-21T00:00:00Z",
     phone: "13800138000",
     wechatNickname: "观潮用户",
     wechatAvatarUrl: "https://example.com/avatar.jpg"
@@ -32,6 +34,11 @@ test("automatic profile prompts stay closed when the profile is complete", () =>
   assert.equal(isWechatProfileComplete(completeProfile), true);
   assert.equal(shouldOpenWechatProfilePrompt(completeProfile), false);
   assert.equal(shouldOpenWechatProfilePrompt(completeProfile, { force: true }), true);
+});
+
+test("a default name avatar is enough, but an unverified contact phone is not", () => {
+  assert.equal(isWechatProfileComplete({ realName: "嘉宾", phone: "13800138000", phoneVerifiedAt: "2026-09-21" }), true);
+  assert.equal(isWechatProfileComplete({ realName: "嘉宾", phone: "13800138000" }), false);
 });
 
 test("automatic profile prompts open only for genuinely missing fields", () => {

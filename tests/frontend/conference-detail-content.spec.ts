@@ -6,6 +6,7 @@ const detailImage = "/static/fixed-templates/products/product_gift_box.png";
 const now = "2026-08-31T10:00:00.000Z";
 
 test("conference detail renders polished content, real ticket selection, and clear fixed actions", async ({ page }) => {
+  await page.clock.setFixedTime(new Date(now));
   await page.setViewportSize({ width: 390, height: 844 });
   await installUserFixtures(page);
   await page.goto(`/#/pages/conference/detail?id=${conferenceId}`);
@@ -84,8 +85,14 @@ test("admin detail editor reloads the full conference contract instead of the li
 });
 
 async function installUserFixtures(page: Page): Promise<void> {
+  const user = {
+    id: "user-detail-visual", openid: "mock_detail-visual", nickname: "测试嘉宾",
+    realName: "测试嘉宾", phone: "13800008888", phoneVerifiedAt: now, registrationReady: true
+  };
   await page.route("http://localhost:3001/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/auth/wechat/login") return ok(route, { token: "detail-visual-token", user });
+    if (path === "/api/auth/me") return ok(route, { user });
     if (path === "/api/app/theme") return ok(route, { scope: "conference-detail", config: theme(), publishedAt: null, updatedAt: now });
     if (path === "/api/app/tabbar") return ok(route, tabbar());
     if (path === `/api/conferences/${conferenceId}`) return ok(route, publicConference());

@@ -40,6 +40,7 @@
           <el-table-column label="核销" width="130"><template #default="{ row }"><AdminStatusBadge :status="row.checkInStatus" /></template></el-table-column>
         </el-table>
       </AdminSectionCard>
+      <GuestIdentityPanel v-if="hasPermission('member:view')" :registration-id="registrationId" @changed="load" />
 
       <AdminSectionCard title="订单与支付">
         <el-descriptions :column="3" border>
@@ -60,7 +61,7 @@
         </el-table>
       </AdminSectionCard>
 
-      <AdminSectionCard title="表单快照" subtitle="按字段展示，原始 JSON 保留在下方用于排查">
+      <AdminSectionCard title="当前报名资料" subtitle="原始提交内容可在账号与参会归属中查看">
         <template #actions>
           <el-button type="primary" @click="openFormEditor">修正报名字段</el-button>
         </template>
@@ -101,11 +102,14 @@ import { ElMessage } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import GuestIdentityPanel from "../../components/GuestIdentityPanel.vue";
+import { useAdminSession } from "../../stores/admin-session";
 import { navigateTo, routeQuery } from "../../router";
 import { getRegistrationDetail, updateRegistrationFormValues } from "../../services/admin";
 import type { AdminRegistrationFullDetail } from "../../services/types";
 
 const detail = ref<AdminRegistrationFullDetail | null>(null);
+const { hasPermission } = useAdminSession();
 const loading = ref(false);
 const error = ref("");
 const formDialogVisible = ref(false);
@@ -177,6 +181,7 @@ async function saveFormValues() {
 }
 
 function goBack() {
+  if (routeQuery.value.fromUser) { navigateTo("/users/detail", { id: routeQuery.value.fromUser }); return; }
   navigateTo("/registrations");
 }
 

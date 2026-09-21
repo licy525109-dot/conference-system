@@ -20,6 +20,7 @@ import {
 } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { CurrentUser } from "../auth/current-user";
+import { requireRegistrationProfile } from "../auth/registration-profile";
 import { PrismaService } from "../prisma.service";
 
 export interface ApiResponse<TData> {
@@ -136,6 +137,7 @@ export class RegistrationService {
       throw new UnauthorizedException("Bearer token is required");
     }
     ensureOrderUserCanCreateOrder(currentUser);
+    await requireRegistrationProfile(this.prisma, currentUser.id);
 
     const request = parseBaseRegistrationRequest(input);
     const conference = await this.ensurePublishedConference(request.conferenceId);
@@ -147,6 +149,16 @@ export class RegistrationService {
     const pricedItems = await this.getPricedItems(request.conferenceId, request.items);
     const fields = await this.getEnabledFormFields(request.conferenceId);
     const attendees = validateAttendees(fields, request, currentUser);
+    if (attendees.some(attendee => attendee.isSelf)) {
+      const profile = await this.prisma.user.findUnique({ where: { id: currentUser.id }, select: { realName: true, phone: true, phoneVerifiedAt: true } });
+      for (const attendee of attendees.filter(a => a.isSelf)) {
+        if (!profile?.realName || !profile.phoneVerifiedAt || !profile.phone || profile.realName.trim() !== attendee.name.trim() || profile.phone !== attendee.phone) {
+          throw new BadRequestException("本人参会的姓名、手机必须与已验证的本人资料一致；代他人报名请取消本人参会选项");
+        }
+        attendee.boundUserId = currentUser.id;
+      }
+      if (attendees.filter(a => a.isSelf).length > 1) throw new BadRequestException("同一订单只能指定一张本人参会票");
+    }
     ensureAttendeesMatchItems(request.items, attendees);
     const primaryAttendee = attendees[0];
     const primaryItem = pricedItems[0];
@@ -175,6 +187,7 @@ export class RegistrationService {
       attendeeName,
       phone,
       formData: primaryAttendee.formData,
+      fields: fields.map(field => ({ key: field.fieldKey, label: field.label, type: field.type })),
       pricing: serializePricingSnapshot(pricing),
       memberPricing: pricing.memberPricing ? serializeMemberPricingSnapshot(pricing.memberPricing) : null,
       ...(request.usesItemsShape ? { items: snapshotItems, attendees: snapshotAttendees } : {})
@@ -1104,7 +1117,8 @@ function validateAttendees(
       phone: readOptionalFormString(formData, "phone") ?? "",
       company: readOptionalStringField(formData, "company"),
       title: readOptionalStringField(formData, "title") ?? readOptionalStringField(formData, "position"),
-      formData
+      formData,
+      ...(typeof attendee.isSelf === "boolean" ? { isSelf: attendee.isSelf } : {})
     };
   });
 }
@@ -1119,7 +1133,8 @@ function readRawAttendees(request: BaseRegistrationRequest): RawRegistrationAtte
 
       const skuId = readRequiredString(attendee, "skuId");
       const formData = isRecord(attendee.formData) ? attendee.formData : omitKey(attendee, "skuId");
-      return { skuId, formData };
+      if (attendee.isSelf !== undefined && typeof attendee.isSelf !== "boolean") throw new BadRequestException("isSelf must be boolean");
+      return { skuId, formData, ...(typeof attendee.isSelf === "boolean" ? { isSelf: attendee.isSelf } : {}) };
     });
   }
 
@@ -1332,11 +1347,14 @@ interface RegistrationRequestItem {
 }
 
 interface RawRegistrationAttendee {
+  isSelf?: boolean;
   skuId: string;
   formData: Record<string, unknown>;
 }
 
 interface RegistrationAttendeeInput {
+  isSelf?: boolean;
+  boundUserId?: string;
   skuId: string;
   name: string;
   phone: string;

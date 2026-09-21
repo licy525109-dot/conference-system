@@ -106,8 +106,8 @@
           </view>
         </view>
 
-        <view v-if="cartDisplay.productCoupons.visible || showShippingInfoCard" class="checkout-details">
-          <view v-if="cartDisplay.productCoupons.visible" class="coupon-card ui-card">
+        <view v-if="(cartDisplay.productCoupons.visible && hasProductDiscount) || showShippingInfoCard" class="checkout-details">
+          <view v-if="cartDisplay.productCoupons.visible && hasProductDiscount" class="coupon-card ui-card">
             <view class="checkout-details__copy">
               <text class="section-title compact-title">{{ cartDisplay.productCoupons.title }}</text>
               <text class="muted">{{ productCouponCode ? `已选择 ${productCouponCode}` : cartDisplay.productCoupons.description }}</text>
@@ -139,7 +139,7 @@
       </view>
     </template>
 
-    <view v-if="!loading && !error && cartDisplay.couponNotice.visible" class="coupon-notice" :class="`is-${cartDisplay.couponNotice.style}`">
+    <view v-if="!loading && !error && cartDisplay.couponNotice.visible && hasProductDiscount" class="coupon-notice" :class="`is-${cartDisplay.couponNotice.style}`">
       <view>
         <text class="notice-kicker">优惠说明</text>
         <text class="section-title compact-title">{{ cartDisplay.couponNotice.title }}</text>
@@ -200,6 +200,7 @@ import PageRenderer from "@/components/PageRenderer.vue";
 import StatusTag from "@/components/ui/StatusTag.vue";
 import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import WechatProfilePrompt from "@/components/WechatProfilePrompt.vue";
+import { ensureRegistrationProfile } from "@/services/registration-profile";
 import { expandedCmsVisualComponentsFromDsl } from "@/components/cms-visual/useCmsVisualContext";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { getPublishedPage, type PublishedPage } from "@/services/cms";
@@ -404,6 +405,8 @@ const loading = ref(false);
 const error = ref("");
 const removingId = ref("");
 const checkoutId = ref("");
+const ownedProductCoupons = ref<MyCouponItem[]>([]);
+const hasProductDiscount = computed(() => productItems.value.length > 0 && (Boolean(productCouponCode.value) || ownedProductCoupons.value.some(item => item.usable && couponFitsCart(item))));
 const receiver = ref({ name: "", phone: "", address: "" });
 const productCouponCode = ref("");
 const cmsPage = ref<PublishedPage | null>(null);
@@ -629,11 +632,12 @@ onShow(() => {
 function readPendingProductCoupon(): string {
   const value = uni.getStorageSync("pendingCouponForUse");
   if (!value || typeof value !== "object") return "";
-  const record = value as { code?: unknown; scope?: unknown; savedAt?: unknown };
+  const record = value as { code?: unknown; scope?: unknown; userId?: unknown; savedAt?: unknown };
+  if (record.userId !== uni.getStorageSync("conference_user_profile")?.id) return "";
   const code = typeof record.code === "string" ? record.code.trim() : "";
   const scope = typeof record.scope === "string" ? record.scope : "";
   const savedAt = typeof record.savedAt === "number" ? record.savedAt : 0;
-  const fresh = Date.now() - savedAt < 30 * 60 * 1000;
+  const fresh = Date.now() >= savedAt && Date.now() - savedAt < 30 * 60 * 1000;
   return code && fresh && (scope === "MALL" || scope === "BOTH") ? code : "";
 }
 
@@ -647,6 +651,7 @@ async function loadCart() {
     productItems.value = data.productItems;
     cmsPage.value = page;
     syncSelections();
+    void getMyCoupons({ scope: "MALL" }).then(result => { ownedProductCoupons.value = result.items; }).catch(() => { ownedProductCoupons.value = []; });
   } catch (err) {
     console.error("[CART_LOAD_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
@@ -750,8 +755,10 @@ async function changeProductQuantity(item: CartProductItem, delta: number) {
 }
 
 async function payRegistration(id: string) {
+  if (checkoutId.value) return;
   checkoutId.value = id;
   try {
+    if (!(await ensureRegistrationProfile())) return;
     const order = await checkoutRegistrationCart([id]);
     uni.navigateTo({ url: `/pages/payment/result?orderNo=${encodeURIComponent(order.orderNo)}` });
   } catch (err) {
@@ -795,6 +802,7 @@ async function checkoutProduct(id: string) {
 }
 
 async function checkoutSelected() {
+  if (checkoutId.value) return;
   if (selectedRegistrationIds.value.length > 0 && selectedProductIds.value.length > 0) {
     uni.showToast({ title: "请分别结算报名和商品", icon: "none" });
     return;
@@ -802,6 +810,7 @@ async function checkoutSelected() {
   if (selectedRegistrationIds.value.length > 0) {
     checkoutId.value = "selected-registration";
     try {
+      if (!(await ensureRegistrationProfile())) return;
       const order = await checkoutRegistrationCart(selectedRegistrationIds.value);
       uni.navigateTo({ url: `/pages/payment/result?orderNo=${encodeURIComponent(order.orderNo)}` });
     } catch (err) {

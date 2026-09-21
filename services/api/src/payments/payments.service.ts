@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { OrderStatus, PaymentProvider, PaymentStatus, RefundStatus } from "@prisma/client";
 import { AdminNotificationsService } from "../admin/admin-notifications.service";
 import { CurrentUser } from "../auth/current-user";
+import { requireRegistrationProfile } from "../auth/registration-profile";
 import { PrismaService } from "../prisma.service";
 import { PaymentSuccessService } from "./payment-success.service";
 import { MallRefundFinalizationService } from "./mall-refund-finalization.service";
@@ -79,6 +80,7 @@ export class PaymentsService {
     if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAID) {
       throw new ConflictException("Only pending or paid orders can be confirmed");
     }
+    if (order.status === OrderStatus.PENDING) await requireRegistrationProfile(this.prisma, currentUser.id);
 
     if (order.status === OrderStatus.PENDING && order.expiredAt && order.expiredAt <= this.getCurrentTime()) {
       throw new ConflictException("Order has expired");

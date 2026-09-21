@@ -24,12 +24,12 @@ withDefaults(
 
 <style scoped>
 .admin-stat-card {
-  min-height: 118px;
-  padding: 16px;
-  border: 1px solid rgb(221 230 242 / 86%);
+  min-width: 0;
+  min-height: 96px;
+  padding: 14px 16px;
+  border: 1px solid var(--admin-color-border);
   border-radius: var(--admin-radius);
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%);
-  box-shadow: var(--admin-shadow-soft);
+  background: var(--admin-color-panel);
 }
 
 .admin-stat-card__label,
@@ -37,36 +37,39 @@ withDefaults(
   display: block;
   color: var(--admin-color-muted);
   font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .admin-stat-card__value {
   display: block;
-  margin-top: 9px;
+  margin-top: 8px;
   color: var(--admin-color-text);
-  font-size: 28px;
-  font-weight: 900;
-  line-height: 1.1;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 .admin-stat-card__note {
-  margin-top: 11px;
+  margin-top: 8px;
   font-size: 12px;
 }
 
-.admin-stat-card.is-primary {
-  border-color: rgb(49 93 125 / 18%);
-  background: linear-gradient(180deg, #ffffff 0%, #f3f7fa 100%);
+.admin-stat-card.is-primary .admin-stat-card__value {
+  color: var(--admin-color-primary-strong);
 }
 
-.admin-stat-card.is-success {
-  border-color: rgb(31 122 91 / 18%);
+.admin-stat-card.is-success .admin-stat-card__value {
+  color: var(--admin-color-success);
 }
 
-.admin-stat-card.is-warning {
-  border-color: rgb(165 107 31 / 22%);
+.admin-stat-card.is-warning .admin-stat-card__value {
+  color: var(--admin-color-warning);
 }
 
-.admin-stat-card.is-danger {
-  border-color: rgb(185 56 56 / 20%);
+.admin-stat-card.is-danger .admin-stat-card__value {
+  color: var(--admin-color-danger);
 }
 </style>

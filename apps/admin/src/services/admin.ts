@@ -846,7 +846,7 @@ export function updateTabbar(input: Record<string, unknown>) {
   });
 }
 
-export function listUsers(params: { page?: number; pageSize?: number; keyword?: string }) {
+export function listUsers(params: { page?: number; pageSize?: number; keyword?: string; hasRegistration?: boolean; includeVisitors?: boolean }) {
   return apiRequest<ApiList<AdminAppUser>>(`/admin/users${toQuery(params)}`);
 }
 
@@ -854,7 +854,7 @@ export function revealUserPhone(id: string) {
   return apiRequest<{ userId: string; phone: string | null }>(`/admin/users/${encodeURIComponent(id)}/phone`);
 }
 
-export function updateUser(id: string, input: { nickname?: string | null; phone?: string | null }) {
+export function updateUser(id: string, input: { realName?: string | null; nickname?: string | null; phone?: string | null }) {
   return apiRequest<AdminAppUser>(`/admin/users/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(input)

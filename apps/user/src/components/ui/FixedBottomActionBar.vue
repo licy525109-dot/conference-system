@@ -67,14 +67,13 @@ withDefaults(
   align-items: center;
   padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
   border-top: 1px solid var(--cms-border);
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: var(--ui-shadow-bottom);
-  backdrop-filter: blur(16rpx);
+  background: #ffffff;
+  box-shadow: none;
   box-sizing: border-box;
 }
 
 .with-tabbar {
-  bottom: calc(124rpx + env(safe-area-inset-bottom));
+  bottom: calc(var(--ui-tabbar-height, 68px) + env(safe-area-inset-bottom));
   padding-bottom: 18rpx;
 }
 
@@ -86,15 +85,16 @@ withDefaults(
 .note {
   display: block;
   color: var(--ui-color-muted);
-  font-size: 22rpx;
+  font-size: 14px;
   line-height: 1.35;
 }
 
 .amount {
   display: block;
   color: var(--cms-primary-strong);
-  font-size: 36rpx;
-  font-weight: 900;
+  font-size: 23px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
   line-height: 1.25;
 }
 
@@ -106,7 +106,7 @@ withDefaults(
 
 .button {
   min-width: 188rpx;
-  border-radius: var(--cms-radius-full);
+  border-radius: var(--cms-radius-md);
 }
 
 .secondary {

@@ -1,6 +1,6 @@
 <template>
   <view class="state empty-state">
-    <view class="mark">{{ mark }}</view>
+    <view class="mark" aria-hidden="true"><wd-icon :name="mark === '讯' ? 'notification' : 'info-circle'" size="28px" /></view>
     <text class="title">{{ title }}</text>
     <text v-if="description" class="description">{{ description }}</text>
     <button v-if="actionText" class="ui-button-primary action" @click="$emit('action')">{{ actionText }}</button>
@@ -32,33 +32,33 @@ withDefaults(
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16rpx;
-  padding: 104rpx 36rpx;
+  gap: 16px;
+  padding: 52px 20px;
   text-align: center;
 }
 
 .mark {
   display: grid;
   place-items: center;
-  width: 92rpx;
-  height: 92rpx;
+  width: 56px;
+  height: 56px;
   border-radius: var(--ui-radius);
   background: var(--ui-color-primary-soft);
   color: var(--ui-color-primary);
-  font-size: 26rpx;
-  font-weight: 900;
 }
 
 .title {
   color: var(--ui-color-text);
-  font-size: 32rpx;
-  font-weight: 800;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .description {
-  max-width: 560rpx;
+  max-width: 100%;
   color: var(--ui-color-muted);
-  font-size: 26rpx;
+  font-size: 18px;
   line-height: 1.55;
 }
 

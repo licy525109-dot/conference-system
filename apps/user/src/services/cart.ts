@@ -67,7 +67,7 @@ export interface AddRegistrationCartInput {
   skuId: string;
   quantity: number;
   couponCode?: string;
-  attendees?: Array<Record<string, string | string[]>>;
+  attendees?: Array<{ formData: Record<string, string | string[]>; isSelf: boolean }>;
 }
 
 export interface ProductCheckoutResult {

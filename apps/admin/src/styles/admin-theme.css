@@ -1,7 +1,8 @@
 .admin-page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
+  min-width: 0;
 }
 
 .page-header {
@@ -9,19 +10,23 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .page-title {
   margin: 0;
   color: var(--admin-color-text);
   font-size: 24px;
-  font-weight: 800;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .page-subtitle {
   margin: 6px 0 0;
   color: var(--admin-color-muted);
   font-size: 13px;
+  line-height: 1.6;
 }
 
 .toolbar {
@@ -29,43 +34,42 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  padding: 14px;
-  border: 1px solid rgb(221 230 242 / 84%);
-  border-radius: var(--admin-radius);
-  background: var(--admin-color-panel);
-  box-shadow: var(--admin-shadow-soft);
+  padding: 0;
+  background: transparent;
 }
 
 .table-panel,
 .form-panel,
 .data-panel {
-  border: 1px solid var(--admin-color-border);
-  border-radius: var(--admin-radius);
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
   background: var(--admin-color-panel);
-  box-shadow: var(--admin-shadow-soft);
+  box-shadow: none;
 }
 
 .table-panel {
-  padding: 10px;
+  padding: 0;
 }
 
 .form-panel,
 .data-panel {
-  padding: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--admin-color-border);
 }
 
 .grid-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 12px;
 }
 
 .metric-card {
-  padding: 16px;
-  border: 1px solid rgb(221 230 242 / 86%);
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--admin-color-border);
   border-radius: var(--admin-radius);
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%);
-  box-shadow: var(--admin-shadow-soft);
+  background: var(--admin-color-panel);
 }
 
 .metric-label {
@@ -76,8 +80,10 @@
 .metric-value {
   margin-top: 8px;
   color: var(--admin-color-text);
-  font-size: 26px;
-  font-weight: 800;
+  font-size: 24px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 .muted-text {
@@ -92,13 +98,14 @@
   border: 1px solid var(--admin-color-border);
   border-radius: 6px;
   background: var(--admin-color-panel-soft);
-  color: #24324a;
+  color: var(--admin-color-text);
   font-size: 12px;
   line-height: 1.5;
 }
 
 .inline-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -109,5 +116,17 @@
   object-fit: cover;
   border: 1px solid var(--admin-color-border);
   border-radius: 6px;
-  background: #f8fafc;
+  background: var(--admin-color-panel-soft);
+}
+
+@media (max-width: 760px) {
+  .admin-page {
+    gap: 16px;
+  }
+
+  .toolbar > .el-input,
+  .toolbar > .el-select,
+  .toolbar > .el-date-editor {
+    max-width: 100%;
+  }
 }

@@ -42,24 +42,22 @@ withDefaults(
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 20px;
-  border: 1px solid rgb(221 230 242 / 88%);
-  border-radius: var(--admin-radius-lg);
-  background: var(--admin-color-panel);
-  box-shadow: var(--admin-shadow-soft);
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 0;
 }
 
 .admin-page-header__copy {
   min-width: 0;
+  flex: 1 1 280px;
 }
 
 .admin-page-header__eyebrow {
   display: inline-flex;
-  margin-bottom: 8px;
-  color: var(--admin-color-primary);
+  margin-bottom: 4px;
+  color: var(--admin-color-primary-strong);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -73,17 +71,19 @@ withDefaults(
 .admin-page-header__title {
   margin: 0;
   color: var(--admin-color-text);
-  font-size: 23px;
-  font-weight: 900;
-  line-height: 1.25;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .admin-page-header__subtitle {
   max-width: 780px;
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--admin-color-muted);
   font-size: 13px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .admin-page-header__actions {
@@ -92,5 +92,16 @@ withDefaults(
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.admin-page-header__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+@media (max-width: 760px) {
+  .admin-page-header__actions {
+    justify-content: flex-start;
+  }
 }
 </style>

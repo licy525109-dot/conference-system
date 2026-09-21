@@ -14,10 +14,13 @@ import { WecomCustomerGroupService } from "./services/wecom-customer-group.servi
 import { WecomGroupMessageService } from "./services/wecom-group-message.service";
 import { WecomTokenService } from "./services/wecom-token.service";
 import { WecomWelcomeTemplateService } from "./services/wecom-welcome-template.service";
+import { AdminRegistrationAlertService } from "./services/admin-registration-alert.service";
+import { AdminRegistrationAlertController } from "./admin-registration-alert.controller";
 
 @Module({
   imports: [AdminModule],
   controllers: [
+    AdminRegistrationAlertController,
     AdminWecomConfigController,
     AdminWecomCustomerGroupsController,
     AdminWecomWelcomeTemplateController,
@@ -26,6 +29,7 @@ import { WecomWelcomeTemplateService } from "./services/wecom-welcome-template.s
     WecomCallbackController
   ],
   providers: [
+    AdminRegistrationAlertService,
     WecomClientAdapter,
     WecomSmartBotAdapter,
     WecomCallbackService,

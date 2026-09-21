@@ -43,6 +43,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="conferenceTitle" label="会议" min-width="200" show-overflow-tooltip />
+        <el-table-column label="下单账号" min-width="160">
+          <template #default="{ row }"><el-button v-if="row.user?.id && hasPermission('member:view')" link type="primary" @click="navigateTo('/users/detail', { id: row.user.id })">{{ row.user.realName || row.user.wechatNickname || row.user.nickname || '待完善姓名' }} · 查看账号</el-button><span v-else>未关联</span></template>
+        </el-table-column>
         <el-table-column label="参会人" width="150">
           <template #default="{ row }">
             <strong>{{ row.attendeeName || "-" }}</strong>
@@ -147,7 +150,7 @@ import AdminEmptyState from "../../components/AdminEmptyState.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
-import { navigateTo } from "../../router";
+import { navigateTo, routeQuery } from "../../router";
 import { closeOrder, closeOrdersByFilter, exportOrdersExcel, getOrder, listConferences, listOrders, reviewPaymentException } from "../../services/admin";
 import { useAdminSession } from "../../stores/admin-session";
 import type { AdminOrder, AdminOrderDetail, Conference } from "../../services/types";
@@ -174,7 +177,9 @@ const displayedItems = computed(() => {
 const closeableFilteredCount = computed(() => displayedItems.value.filter(canCloseOrder).length);
 
 onMounted(async () => {
+  if (routeQuery.value.orderNo) keyword.value = routeQuery.value.orderNo;
   await Promise.all([loadConferences(), load()]);
+  if (routeQuery.value.orderNo) await openDetail(routeQuery.value.orderNo);
 });
 
 async function loadConferences() {

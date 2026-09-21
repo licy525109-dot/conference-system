@@ -1,6 +1,6 @@
 <template>
   <view :class="rootClass" :style="rootStyle">
-    <image v-if="imageUrl" class="cms-hero-banner__image" :src="imageUrl" :mode="imageMode" />
+    <image v-if="imageUrl && !imageFailed" class="cms-hero-banner__image" :src="imageUrl" :mode="imageMode" :lazy-load="lazyLoad" @error="imageFailed = true" />
     <view v-else class="cms-hero-banner__image cms-hero-banner__image--empty" />
     <view v-if="showOverlay" class="cms-hero-banner__shade" />
     <view v-if="showCopy" class="cms-hero-banner__copy" :style="copyStyle">
@@ -16,14 +16,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { CmsComponent } from "@/services/cms";
 import { booleanConfig, numberConfig, stringConfig } from "./config";
 
-const props = defineProps<{ component: CmsComponent }>();
+const props = defineProps<{ component: CmsComponent; lazyLoad?: boolean }>();
 const emit = defineEmits<{ primary: []; secondary: [] }>();
 
 const imageUrl = computed(() => stringConfig(props.component, "imageUrl"));
+const imageFailed = ref(false);
+watch(imageUrl, () => { imageFailed.value = false; });
 const title = computed(() => stringConfig(props.component, "title"));
 const subtitle = computed(() => stringConfig(props.component, "subtitle"));
 const description = computed(() => stringConfig(props.component, "description"));
@@ -33,7 +35,7 @@ const imageOnly = computed(() => booleanConfig(props.component, "imageOnly", fal
 const showTitle = computed(() => booleanConfig(props.component, "showTitle", true));
 const showSubtitle = computed(() => booleanConfig(props.component, "showSubtitle", true));
 const showDescription = computed(() => booleanConfig(props.component, "showDescription", Boolean(description.value)));
-const showCopy = computed(() => !imageOnly.value && ((showTitle.value && title.value) || (showSubtitle.value && subtitle.value) || (showDescription.value && description.value) || buttonText.value || secondaryButtonText.value));
+const showCopy = computed(() => (imageFailed.value || !imageOnly.value) && ((showTitle.value && title.value) || (showSubtitle.value && subtitle.value) || (showDescription.value && description.value) || buttonText.value || secondaryButtonText.value));
 const showOverlay = computed(() => showCopy.value && booleanConfig(props.component, "showOverlay", true));
 const contentAlign = computed(() => normalizeAlign(stringConfig(props.component, "contentAlign", "left")));
 const verticalAlign = computed(() => normalizeVertical(stringConfig(props.component, "verticalAlign", "bottom")));

@@ -50,6 +50,7 @@ import ThemeDynamicBackground from "@/components/ThemeDynamicBackground.vue";
 import { useCmsPageTheme } from "@/composables/useCmsPageTheme";
 import { clearExpiredAuthSession, ensureLogin, EXPIRED_LOGIN_REENTRY_MESSAGE, isAuthSessionExpiredError } from "@/services/auth";
 import { getPaymentActionLabel, getPaymentStatus, startOrderPayment, type PaymentStatusResponse } from "@/services/payment";
+import { RegistrationProfileRequiredError } from "@/services/registration-profile";
 import { buildPaymentErrorMessage } from "@/services/paymentError";
 import { getWechatSubscriptionOptions, subscribeWechatNotifications, type WechatSubscriptionOption } from "@/services/wechat-subscription";
 import { formatDateTime } from "@/utils/date";
@@ -160,6 +161,7 @@ async function confirmPay() {
     await loadStatus();
     uni.showToast({ title: "支付已确认", icon: "success" });
   } catch (err) {
+    if (err instanceof RegistrationProfileRequiredError) return;
     console.error("[PAYMENT_CONFIRM_ERROR]", err);
     if (isAuthSessionExpiredError(err)) {
       clearExpiredAuthSession();

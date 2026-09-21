@@ -414,6 +414,7 @@ describe("RegistrationService create order", () => {
 	      skuName: "Active SKU",
 	      attendeeName: "张三",
 	      phone: "13800000000",
+          fields: formDefinitions[0]!.fields.filter(f => f.enabled).map(({ fieldKey, label, type }) => ({ key: fieldKey, label, type })),
 	      formData: {
 	        name: "张三",
 	        phone: "13800000000",
@@ -461,6 +462,7 @@ describe("RegistrationService create order", () => {
 	      skuName: "Active SKU",
 	      attendeeName: "李四",
 	      phone: "",
+          fields: [{ key: "name", label: "姓名", type: "TEXT" }],
 	      formData: {
 	        name: "李四"
 	      },
@@ -518,6 +520,31 @@ describe("RegistrationService create order", () => {
     assert.equal(prisma.orderItems[0]?.quantity, 2);
     assert.equal(prisma.orderItems[1]?.quantity, 1);
     assert.equal((prisma.orders[0]?.registrationSnapshotJson as { attendees?: unknown[] }).attendees?.length, 3);
+  });
+
+  it("binds self attendance only to the verified submitter and ignores client-supplied account ids", async () => {
+    const prisma = Object.assign(createPrismaMock(), { user: { findUnique: async () => ({ realName: "张三", phone: "13800000000", phoneVerifiedAt: now }) } });
+    const service = createService(prisma);
+    await service.createOrder({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity: 1 }],
+      attendees: [{ skuId: "active-sku", formData: validOrderInput().formData, isSelf: true, boundUserId: "someone-else" }]
+    }, currentUser);
+    const snapshot = prisma.orders[0]!.registrationSnapshotJson as { attendees: { isSelf: boolean; boundUserId: string }[] };
+    assert.equal(snapshot.attendees[0]!.boundUserId, currentUser.id);
+    assert.equal(snapshot.attendees[0]!.isSelf, true);
+  });
+
+  it("rejects self attendance with unverified or different profile and duplicate self tickets", async () => {
+    for (const profile of [null, { realName: "张三", phone: "13800000000", phoneVerifiedAt: null }, { realName: "其他人", phone: "13800000000", phoneVerifiedAt: now }]) {
+      const prisma = Object.assign(createPrismaMock(), { user: { findUnique: async () => profile } });
+      await assert.rejects(createService(prisma).createOrder({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity: 1 }],
+        attendees: [{ skuId: "active-sku", formData: validOrderInput().formData, isSelf: true }]
+      }, currentUser), BadRequestException);
+      assert.equal(prisma.orders.length, 0);
+    }
+    const prisma = Object.assign(createPrismaMock(), { user: { findUnique: async () => ({ realName: "张三", phone: "13800000000", phoneVerifiedAt: now }) } });
+    await assert.rejects(createService(prisma).createOrder({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity: 2 }],
+      attendees: Array.from({ length: 2 }, () => ({ skuId: "active-sku", formData: validOrderInput().formData, isSelf: true }))
+    }, currentUser), BadRequestException);
   });
 
   it("uses the better coupon when coupon and promotion are not stackable and writes discount snapshots", async () => {

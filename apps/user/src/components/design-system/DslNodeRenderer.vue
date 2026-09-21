@@ -27,7 +27,7 @@
       <text v-if="title" class="ds-title">{{ title }}</text>
       <view v-if="displayItems.length === 0" class="ds-empty">{{ emptyText }}</view>
       <view v-for="(item, index) in displayItems" :key="itemKey(item, index)" class="ds-list__item" @click="emitItemAction(item)">
-        <image v-if="itemImage(item)" class="ds-list__image" :src="itemImage(item)" mode="aspectFill" />
+        <image v-if="itemImage(item)" class="ds-list__image" :src="itemImage(item)" mode="aspectFill" lazy-load />
         <view class="ds-list__body">
           <text class="ds-list__title">{{ itemTitle(item) }}</text>
           <text v-if="itemSubtitle(item)" class="ds-text">{{ itemSubtitle(item) }}</text>

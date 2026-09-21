@@ -120,52 +120,52 @@ export const CMS_THEME_PRESETS: Record<CmsThemePresetId, CmsResolvedTheme> = {
   },
   "guanchao-premium": {
     id: "guanchao-premium",
-    name: "Guanchao Editorial",
+    name: "Guanchao Gold",
     dark: false,
     colors: {
-      pageBg: "#F5F7F5",
-      pageBgSoft: "#ECF1ED",
+      pageBg: "#F5F6F6",
+      pageBgSoft: "#F1F2F2",
       surface: "#FFFFFF",
-      surfaceSoft: "#F9FAF9",
-      surfaceMuted: "#EEF2EF",
+      surfaceSoft: "#FAFAFA",
+      surfaceMuted: "#F1F2F2",
       surfaceElevated: "#FFFFFF",
-      textPrimary: "#142238",
-      textSecondary: "#657083",
-      textTertiary: "#98A0AA",
+      textPrimary: "#20252C",
+      textSecondary: "#5E646B",
+      textTertiary: "#6D7278",
       textInverse: "#FFFFFF",
-      primary: "#10233D",
-      primaryStrong: "#08172C",
-      primarySoft: "#E8EEF4",
-      secondary: "#2F7868",
-      secondarySoft: "#E5F1ED",
-      accent: "#A97E38",
-      accentSoft: "#F5EEDF",
-      border: "#DFE5E2",
-      divider: "#EDF0EE",
+      primary: "#987627",
+      primaryStrong: "#866A23",
+      primarySoft: "#F7F2E7",
+      secondary: "#866A23",
+      secondarySoft: "#F7F4EC",
+      accent: "#A3842B",
+      accentSoft: "#F7F2E7",
+      border: "#E0E3E5",
+      divider: "#E9EBED",
       success: "#26735B",
       successSoft: "#E4F2ED",
       warning: "#9B6C25",
       warningSoft: "#F8EFDE",
       danger: "#B33B43",
       dangerSoft: "#F8E8E9",
-      info: "#315D7D",
-      infoSoft: "#E8F0F5",
-      overlay: "rgba(8, 23, 44, 0.44)"
+      info: "#5E646B",
+      infoSoft: "#F1F2F2",
+      overlay: "rgba(32, 37, 44, 0.44)"
     },
     gradients: {
-      page: "linear-gradient(180deg, #FAFBFA 0%, #ECF1ED 100%)",
-      hero: "linear-gradient(135deg, #10233D 0%, #315D7D 56%, #2F7868 118%)",
-      card: "linear-gradient(180deg, #FFFFFF 0%, #F9FAF9 100%)",
-      cta: "linear-gradient(135deg, #10233D 0%, #315D7D 100%)",
-      soft: "linear-gradient(135deg, #E8EEF4 0%, #F5EEDF 100%)"
+      page: "#F5F6F6",
+      hero: "#20252C",
+      card: "#FFFFFF",
+      cta: "#987627",
+      soft: "#F7F2E7"
     },
-    radius: { sm: 8, md: 10, lg: 12, xl: 16, xxl: 20, full: 999 },
+    radius: { sm: 4, md: 6, lg: 8, xl: 8, xxl: 8, full: 999 },
     spacing: { pageX: 28, sectionY: 22, cardGap: 16, cardPadding: 24 },
     shadow: {
-      sm: "0 6rpx 18rpx rgba(20, 34, 56, 0.05)",
-      md: "0 14rpx 36rpx rgba(20, 34, 56, 0.08)",
-      lg: "0 24rpx 62rpx rgba(20, 34, 56, 0.12)",
-      floating: "0 -10rpx 30rpx rgba(20, 34, 56, 0.13)",
+      sm: "none",
+      md: "none",
+      lg: "0 12rpx 36rpx rgba(32, 37, 44, 0.08)",
+      floating: "0 -2rpx 12rpx rgba(32, 37, 44, 0.04)",
       glow: "0 0 0 rgba(0,0,0,0)"
     }
   },
@@ -384,6 +384,7 @@ export function resolveCmsTheme(config: ThemeConfig): CmsResolvedTheme {
   const secondary = config.secondaryColor || preset.colors.secondary;
   const accent = config.accentColor || preset.colors.accent;
   const surface = config.cardBackground || preset.colors.surface;
+  const isGold = presetId === "guanchao-premium";
   return {
     ...preset,
     colors: {
@@ -398,11 +399,11 @@ export function resolveCmsTheme(config: ThemeConfig): CmsResolvedTheme {
     },
     gradients: {
       ...preset.gradients,
-      page: `linear-gradient(180deg, ${pageBg} 0%, ${preset.colors.pageBgSoft} 100%)`,
-      hero: `linear-gradient(135deg, ${primary} 0%, ${secondary} 62%, ${accent} 140%)`,
-      cta: `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`
+      page: isGold ? pageBg : `linear-gradient(180deg, ${pageBg} 0%, ${preset.colors.pageBgSoft} 100%)`,
+      hero: isGold ? preset.gradients.hero : `linear-gradient(135deg, ${primary} 0%, ${secondary} 62%, ${accent} 140%)`,
+      cta: isGold ? primary : `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`
     },
-    radius: {
+    radius: isGold ? preset.radius : {
       sm: Math.max(6, radius),
       md: Math.max(8, radius + 4),
       lg: Math.max(12, radius + 10),

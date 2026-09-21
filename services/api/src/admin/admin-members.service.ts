@@ -381,16 +381,33 @@ export class AdminMembersService {
     const page = readOptionalPositiveInt(query, "page") ?? 1;
     const pageSize = Math.min(readOptionalPositiveInt(query, "pageSize") ?? 20, 100);
     const keyword = readOptionalString(query, "keyword");
-    const where: Prisma.UserWhereInput = keyword
-      ? {
+    const criteria: Prisma.UserWhereInput[] = [];
+    if (query.includeVisitors !== "true") criteria.push({ OR: [
+      { activatedAt: { not: null } }, { profileUpdatedAt: { not: null } },
+      { phone: { not: null } }, { nickname: { not: null } }, { wechatNickname: { not: null } },
+      { orders: { some: {} } }, { registrations: { some: {} } }, { memberships: { some: {} } },
+      { guestProfile: { attendees: { some: {} } } }, { businessOrders: { some: {} } }
+    ] });
+    if (query.hasRegistration === "true") criteria.push({ OR: [{ registrations: { some: {} } }, { guestProfile: { attendees: { some: {} } } }, { businessOrders: { some: { registration: { isNot: null } } } }] });
+    if (keyword) criteria.push({
           OR: [
+            { id: keyword },
+            { realName: { contains: keyword, mode: "insensitive" } },
             { nickname: { contains: keyword, mode: "insensitive" } },
             { wechatNickname: { contains: keyword, mode: "insensitive" } },
             { phone: { contains: keyword, mode: "insensitive" } },
-            { openid: { contains: keyword, mode: "insensitive" } }
+            { openid: { contains: keyword, mode: "insensitive" } },
+            { registrations: { some: { OR: [
+              { registrationNo: { contains: keyword, mode: "insensitive" } },
+              { attendeeName: { contains: keyword, mode: "insensitive" } },
+              { phone: { contains: keyword } },
+              { attendees: { some: { OR: [{ name: { contains: keyword, mode: "insensitive" } }, { phone: { contains: keyword } }] } } }
+            ] } } },
+            { orders: { some: { orderNo: { contains: keyword, mode: "insensitive" } } } },
+            { guestProfile: { attendees: { some: { OR: [{ name: { contains: keyword, mode: "insensitive" } }, { phone: { contains: keyword } }, { registration: { registrationNo: { contains: keyword, mode: "insensitive" } } }] } } } }
           ]
-        }
-      : {};
+        });
+    const where: Prisma.UserWhereInput = { AND: criteria };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         where,
@@ -419,23 +436,25 @@ export class AdminMembersService {
 
   async updateUser(id: string, input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
-    if (!Object.hasOwn(body, "nickname") && !Object.hasOwn(body, "phone")) {
+    if (!Object.hasOwn(body, "nickname") && !Object.hasOwn(body, "phone") && !Object.hasOwn(body, "realName")) {
       throw new BadRequestException("请至少修改昵称或手机号");
     }
     const existing = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
     if (!existing) throw new NotFoundException("User not found");
     const nickname = Object.hasOwn(body, "nickname") ? readProfileString(body.nickname, "nickname", 80) : undefined;
     const phone = Object.hasOwn(body, "phone") ? readProfileString(body.phone, "phone", 30) : undefined;
+    const realName = Object.hasOwn(body, "realName") ? readProfileString(body.realName, "realName", 80) : undefined;
     const user = await this.prisma.user.update({
       where: { id },
       data: {
         ...(typeof nickname !== "undefined" ? { nickname } : {}),
-        ...(typeof phone !== "undefined" ? { phone } : {})
+        ...(typeof phone !== "undefined" ? { phone, phoneVerifiedAt: null } : {}),
+        ...(typeof realName !== "undefined" ? { realName } : {})
       },
       include: { memberships: { include: { level: true }, orderBy: { createdAt: "desc" }, take: 3 } }
     });
     await this.writeAudit(admin, AuditAction.UPDATE, "User", id, "Update mini program user profile", {
-      changedFields: [typeof nickname !== "undefined" ? "nickname" : null, typeof phone !== "undefined" ? "phone" : null].filter(Boolean)
+      changedFields: [typeof nickname !== "undefined" ? "nickname" : null, typeof phone !== "undefined" ? "phone" : null, typeof realName !== "undefined" ? "realName" : null].filter(Boolean)
     });
     return ok(formatUser(user));
   }
@@ -632,9 +651,12 @@ function formatUser(user: Prisma.UserGetPayload<{ include: { memberships: { incl
   };
 }
 
-function formatUserBase(user: { id: string; openid: string | null; nickname: string | null; wechatNickname: string | null; wechatAvatarUrl: string | null; phone: string | null; createdAt: Date; lastActiveAt: Date | null }) {
+function formatUserBase(user: { id: string; openid: string | null; nickname: string | null; realName?: string | null; phoneVerifiedAt?: Date | null; activatedAt?: Date | null; wechatNickname: string | null; wechatAvatarUrl: string | null; phone: string | null; createdAt: Date; lastActiveAt: Date | null }) {
   return {
     id: user.id,
+    realName: user.realName ?? null,
+    phoneVerified: Boolean(user.phoneVerifiedAt),
+    activatedAt: user.activatedAt?.toISOString() ?? null,
     openid: maskOpenid(user.openid),
     nickname: user.nickname,
     wechatNickname: user.wechatNickname,

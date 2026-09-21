@@ -179,7 +179,15 @@ export class CartService {
     if (items.length !== itemIds.length) throw new BadRequestException("购物车报名项不存在");
     const conferenceIds = new Set(items.map((item) => item.conferenceId));
     if (conferenceIds.size !== 1) throw new BadRequestException("一次只能结算同一个会议的报名");
-    const attendees = items.flatMap((item) => (Array.isArray(item.attendeesJson) ? item.attendeesJson : []).map((attendee) => ({ skuId: item.skuId, formData: attendee })));
+    const attendees = items.flatMap((item) => (Array.isArray(item.attendeesJson) ? item.attendeesJson : []).map((attendee) => {
+      const stored = readObject(attendee);
+      if (stored.formData && typeof stored.formData === "object" && !Array.isArray(stored.formData)) {
+        if (stored.isSelf !== undefined && typeof stored.isSelf !== "boolean") throw new BadRequestException("本人参会选项无效，请重新填写报名资料");
+        return { skuId: item.skuId, formData: stored.formData, isSelf: stored.isSelf === true };
+      }
+      // Legacy carts contain only answers and do not prove who will attend.
+      return { skuId: item.skuId, formData: attendee, isSelf: false };
+    }));
     const expectedQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
     if (attendees.length !== expectedQuantity) throw new BadRequestException("请先在报名页填写参会人信息后再加入购物车");
     const response = await this.registrationService.createOrder(

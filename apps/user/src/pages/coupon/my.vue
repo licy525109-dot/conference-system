@@ -97,11 +97,7 @@ function copyCode(code: string) {
 function useCoupon(item: MyCouponItem) {
   if (!item.usable) return;
   const path = item.usePath || (item.coupon.scope === "MALL" ? "/pages/mall/index" : "/pages/index/index");
-  uni.setStorageSync("pendingCouponForUse", { code: item.coupon.code, scope: item.coupon.scope, savedAt: Date.now() });
-  if (isTabbarPath(path)) {
-    uni.switchTab({ url: path.split("?")[0] });
-    return;
-  }
+  uni.setStorageSync("pendingCouponForUse", { code: item.coupon.code, scope: item.coupon.scope, userId: String(uni.getStorageSync("conference_user_profile")?.id || ""), conferenceId: item.coupon.conferenceId || null, savedAt: Date.now() });
   uni.navigateTo({ url: appendCouponQuery(path, item.coupon.code, item.coupon.scope) });
 }
 

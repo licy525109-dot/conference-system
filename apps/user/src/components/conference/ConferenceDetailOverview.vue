@@ -1,20 +1,5 @@
 <template>
   <view class="detail-overview">
-    <view class="detail-overview__hero">
-      <view
-        v-if="conference.coverImageUrl"
-        class="detail-overview__cover"
-        :style="{ backgroundImage: `url('${conference.coverImageUrl}')` }"
-        role="img"
-        :aria-label="`${conference.title}会议封面`"
-      />
-      <view v-else class="detail-overview__fallback">
-        <image class="detail-overview__logo" src="/static/fixed-templates/brand/logo_gc_mark.png" mode="aspectFit" />
-        <text class="detail-overview__fallback-title">观潮会集</text>
-        <text class="detail-overview__fallback-subtitle">行业会议与创始人社群平台</text>
-      </view>
-    </view>
-
     <view class="detail-overview__card">
       <view class="detail-overview__topline">
         <text :class="['detail-overview__status', `is-${statusTone}`]">{{ statusLabel }}</text>
@@ -70,11 +55,19 @@
         <wd-icon name="chevron-right" size="19px" />
       </view>
     </view>
+    <image
+      v-if="conference.coverImageUrl && !coverFailed"
+      class="detail-overview__cover"
+      :src="conference.coverImageUrl"
+      mode="widthFix"
+      :aria-label="`${conference.title}会议封面`"
+      @error="coverFailed = true"
+    />
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { ConferenceDetail, RegistrationSku } from "@/services/conference";
 import { formatDateTime } from "@/utils/date";
 import { remainingRegistrationStock } from "@/utils/registration-stock";
@@ -93,6 +86,8 @@ defineEmits<{
 }>();
 
 const availableSkus = computed(() => props.skus.filter((sku) => remainingStock(sku) > 0));
+const coverFailed = ref(false);
+watch(() => props.conference.coverImageUrl, () => { coverFailed.value = false; });
 const remainingSeatText = computed(() => {
   const total = props.skus.reduce((sum, sku) => sum + remainingStock(sku), 0);
   return total > 0 ? `余 ${total} 席` : "";
@@ -111,7 +106,7 @@ function remainingStock(sku: RegistrationSku): number {
 <style scoped>
 .detail-overview {
   position: relative;
-  background: #f3f5f3;
+  background: #ffffff;
 }
 
 .detail-overview__hero {
@@ -125,11 +120,8 @@ function remainingStock(sku: RegistrationSku): number {
 .detail-overview__cover {
   display: block;
   width: 100%;
-  height: 100%;
-  background: #ebeae5;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
+  height: auto;
+  background: #ffffff;
 }
 
 .detail-overview__fallback {
@@ -167,12 +159,10 @@ function remainingStock(sku: RegistrationSku): number {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
-  margin: 24rpx 30rpx 28rpx;
-  padding: 34rpx 30rpx 30rpx;
-  border-radius: 26rpx;
-  background: #fbfcfa;
-  box-shadow: 0 18rpx 46rpx rgba(24, 39, 57, 0.12);
+  gap: 14px;
+  margin: 0;
+  padding: 24px 20px 12px;
+  background: #ffffff;
   box-sizing: border-box;
 }
 
@@ -225,15 +215,16 @@ function remainingStock(sku: RegistrationSku): number {
 }
 
 .detail-overview__title {
-  color: #121d2f;
-  font-size: 42rpx;
-  font-weight: 900;
+  color: var(--cms-text-primary);
+  font-size: 25px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
   line-height: 1.42;
 }
 
 .detail-overview__summary {
-  color: #647087;
-  font-size: 27rpx;
+  color: var(--cms-text-secondary);
+  font-size: 17px;
   line-height: 1.65;
 }
 
@@ -245,17 +236,15 @@ function remainingStock(sku: RegistrationSku): number {
 
 .detail-overview__trust-item {
   gap: 8rpx;
-  color: #7a8494;
-  font-size: 24rpx;
+  color: var(--cms-text-secondary);
+  font-size: 16px;
   line-height: 1.35;
 }
 
 .detail-overview__facts {
-  margin: 0 30rpx 30rpx;
-  padding: 6rpx 30rpx;
-  border-radius: 24rpx;
-  background: #fbfcfa;
-  box-shadow: 0 12rpx 32rpx rgba(24, 39, 57, 0.07);
+  margin: 0 20px 20px;
+  padding: 0;
+  background: #ffffff;
   box-sizing: border-box;
 }
 
@@ -289,19 +278,20 @@ function remainingStock(sku: RegistrationSku): number {
 }
 
 .detail-overview__fact-label {
-  color: #8b93a1;
-  font-size: 23rpx;
+  color: var(--cms-text-secondary);
+  font-size: 16px;
   line-height: 1.25;
 }
 
 .detail-overview__fact-value {
-  color: #202a3a;
-  font-size: 28rpx;
-  font-weight: 700;
+  color: var(--cms-text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
   line-height: 1.45;
 }
 
 .detail-overview__fact-value--link {
-  color: #1d6fe8;
+  color: var(--cms-primary-strong);
 }
 </style>

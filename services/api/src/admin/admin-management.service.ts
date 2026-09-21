@@ -1021,7 +1021,7 @@ export class AdminManagementService {
       credential: {
         registrationNo: registration.registrationNo,
         credentialCode: registration.registrationNo,
-        qrPayload: createCheckinCredentialPayload(registration.id, registration.registrationNo),
+        qrPayload: createCheckinCredentialPayload(registration.id, registration.registrationNo, registration.credentialVersion),
         checkInProgress: summarizeCheckIn(registration.attendees)
       },
       auditLogs: auditLogs.map(formatAuditTimelineItem),
@@ -1843,6 +1843,7 @@ const promotionRuleSelect = {
 } satisfies Prisma.PromotionRuleSelect;
 
 const registrationDetailSelect = {
+  credentialVersion: true,
   ...registrationListSelect,
   formDataJson: true,
   attendees: {

@@ -200,6 +200,7 @@ export class RegistrationsService {
 }
 
 const credentialRegistrationSelect = {
+  credentialVersion: true,
   id: true,
   registrationNo: true,
   attendeeName: true,
@@ -290,7 +291,7 @@ function formatCredential(registration: Prisma.RegistrationGetPayload<{ select: 
     registrationId: registration.id,
     registrationNo: registration.registrationNo,
     credentialCode: registration.registrationNo,
-    qrPayload: createCheckinCredentialPayload(registration.id, registration.registrationNo),
+    qrPayload: createCheckinCredentialPayload(registration.id, registration.registrationNo, registration.credentialVersion),
     status: registration.status,
     source: registration.source,
     complimentary: registration.source === RegistrationSource.ADMIN_COMPLIMENTARY,

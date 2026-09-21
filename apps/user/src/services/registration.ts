@@ -48,6 +48,7 @@ export interface RegistrationOrderItem {
 
 export interface RegistrationOrderAttendee {
   skuId: string;
+  isSelf?: boolean;
   formData: Record<string, string | string[]>;
 }
 

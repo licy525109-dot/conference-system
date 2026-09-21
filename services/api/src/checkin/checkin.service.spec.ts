@@ -189,6 +189,7 @@ function createPrismaMock(options: {
   const attendee = {
     id: "attendee-1",
     registrationId: "registration-1",
+    guestProfileId: null,
     skuId: "sku-1",
     name: options.attendeeName ?? "张三",
     phone: "13800000000",
@@ -205,6 +206,7 @@ function createPrismaMock(options: {
   const registration = {
     id: "registration-1",
     registrationNo: "REG001",
+    credentialVersion: 0,
     userId: "user-1",
     conferenceId: "conference-1",
     skuId: "sku-1",
@@ -239,6 +241,13 @@ function createPrismaMock(options: {
       update: async ({ data }: { data: Partial<typeof attendee> }) => {
         Object.assign(attendee, data);
         return { ...attendee };
+      },
+      updateMany: async ({ where, data }: { where: any; data: Partial<typeof attendee> }) => {
+        if (where.id !== attendee.id || where.updatedAt.getTime() !== attendee.updatedAt.getTime()
+          || where.checkInStatus !== attendee.checkInStatus || where.guestProfileId !== attendee.guestProfileId
+          || where.registration.credentialVersion !== registration.credentialVersion) return { count: 0 };
+        Object.assign(attendee, data, { updatedAt: new Date() });
+        return { count: 1 };
       },
       findMany: async () => [{ ...attendee, sku: { name: "标准票" }, registration }]
     },

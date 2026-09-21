@@ -14,7 +14,9 @@
     </AdminPageHeader>
 
     <AdminFilterBar>
-      <el-input v-if="isUserList" v-model="userKeyword" clearable placeholder="微信昵称 / 手机号 / openid" style="width: 280px" @keyup.enter="loadUsers" />
+      <el-input v-if="isUserList" v-model="userKeyword" clearable placeholder="姓名 / 手机 / 报名号 / 订单号 / openid" style="width: 320px" @keyup.enter="searchUsers" />
+      <el-checkbox v-if="isUserList" v-model="hasRegistration" @change="searchUsers">有报名记录</el-checkbox>
+      <el-checkbox v-if="isUserList" v-model="includeVisitors" @change="searchUsers">包含历史访问账号</el-checkbox>
       <el-input v-else v-model="keyword" clearable placeholder="昵称 / 手机 / 等级" style="width: 240px" @keyup.enter="loadMemberships" />
       <el-select v-if="!isUserList" v-model="levelId" clearable placeholder="会员等级" style="width: 180px">
         <el-option v-for="item in levels" :key="item.id" :label="item.name" :value="item.id" />
@@ -26,7 +28,7 @@
         <el-option label="已取消" value="CANCELLED" />
       </el-select>
       <template #actions>
-        <el-button v-if="isUserList" :loading="userLoading" type="primary" @click="loadUsers">查询用户</el-button>
+        <el-button v-if="isUserList" :loading="userLoading" type="primary" @click="searchUsers">查询用户</el-button>
         <el-button v-else :loading="loading" type="primary" @click="loadMemberships">查询会员</el-button>
       </template>
     </AdminFilterBar>
@@ -82,6 +84,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination v-model:current-page="userPage" :total="userTotal" :page-size="50" layout="total, prev, pager, next" @current-change="loadUsers" />
     </section>
 
     <section v-else class="table-panel">
@@ -182,6 +185,7 @@
 
     <el-dialog v-model="userEditVisible" title="编辑用户" width="540px">
       <el-form :model="userEditForm" label-width="100px">
+        <el-form-item label="本人姓名"><el-input v-model="userEditForm.realName" maxlength="80" /></el-form-item>
         <el-form-item label="昵称"><el-input v-model="userEditForm.nickname" maxlength="80" /></el-form-item>
         <el-form-item label="手机号">
           <el-input v-model="userEditForm.phone" maxlength="30" :disabled="userEditForm.clearPhone" placeholder="留空则保持原手机号" />
@@ -281,7 +285,7 @@ import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
-import { currentRoute } from "../../router";
+import { currentRoute, navigateTo, routeQuery } from "../../router";
 import { changeMembershipLevel, deleteUser, disableMembership, grantMembership, listMemberLevels, listMemberships, listUsers, revealUserPhone, renewMembership, updateUser } from "../../services/admin";
 import type { AdminAppUser, MemberLevel, UserMembership } from "../../services/types";
 import { useAdminSession } from "../../stores/admin-session";
@@ -292,7 +296,8 @@ const memberships = ref<UserMembership[]>([]);
 const keyword = ref("");
 const levelId = ref("");
 const status = ref("");
-const userKeyword = ref("");
+const userKeyword = ref(routeQuery.value.keyword || "");
+const userPage = ref(1), userTotal = ref(0), hasRegistration = ref(false), includeVisitors = ref(false);
 const loading = ref(false);
 const userLoading = ref(false);
 const grantVisible = ref(false);
@@ -309,7 +314,7 @@ const revealedPhones = reactive<Record<string, string | null>>({});
 const actionMode = ref<"renew" | "disable" | "changeLevel">("renew");
 const grantForm = reactive({ userId: "", levelId: "", durationDays: undefined as number | undefined, source: "ADMIN_GRANT", remark: "" });
 const actionForm = reactive({ durationDays: 365, levelId: "", reason: "", remark: "" });
-const userEditForm = reactive({ nickname: "", phone: "", clearPhone: false });
+const userEditForm = reactive({ realName: "", nickname: "", phone: "", clearPhone: false });
 const enabledLevels = computed(() => levels.value.filter((item) => item.enabled));
 const isUserList = computed(() => currentRoute.value.path === "/users");
 const actionTitle = computed(() => (actionMode.value === "renew" ? "续期会员" : actionMode.value === "disable" ? "停用会员" : "调整会员等级"));
@@ -322,11 +327,15 @@ onMounted(async () => {
 async function loadUsers() {
   userLoading.value = true;
   try {
-    users.value = (await listUsers({ page: 1, pageSize: 50, keyword: userKeyword.value })).items;
+    const result = await listUsers({ page: userPage.value, pageSize: 50, keyword: userKeyword.value, hasRegistration: hasRegistration.value, includeVisitors: includeVisitors.value });
+    users.value = result.items;
+    userTotal.value = result.total;
   } finally {
     userLoading.value = false;
   }
 }
+
+function searchUsers() { userPage.value = 1; void loadUsers(); }
 
 async function loadLevels() {
   levels.value = (await listMemberLevels()).items;
@@ -386,15 +395,13 @@ function openGrantLog(row: UserMembership) {
 }
 
 function openUserDetail(row: AdminAppUser) {
-  selectedUser.value = row;
-  revealedPhone.value = null;
-  userDetailVisible.value = true;
+  navigateTo("/users/detail", { id: row.id });
 }
 
 function openEditUser(row: AdminAppUser) {
   selectedUser.value = row;
   revealedPhone.value = null;
-  Object.assign(userEditForm, { nickname: row.nickname ?? row.wechatNickname ?? "", phone: "", clearPhone: false });
+  Object.assign(userEditForm, { realName: row.realName ?? "", nickname: row.nickname ?? row.wechatNickname ?? "", phone: "", clearPhone: false });
   userEditVisible.value = true;
 }
 
@@ -437,6 +444,7 @@ function visiblePhone(user: AdminAppUser) {
 async function saveUser() {
   if (!selectedUser.value) return;
   await updateUser(selectedUser.value.id, {
+    realName: userEditForm.realName.trim() || null,
     nickname: userEditForm.nickname.trim() || null,
     ...(userEditForm.clearPhone ? { phone: null } : userEditForm.phone.trim() ? { phone: userEditForm.phone.trim() } : {})
   });
@@ -471,7 +479,7 @@ async function saveAction() {
 }
 
 function userName(user: AdminAppUser) {
-  return user.wechatNickname || user.nickname || "未命名用户";
+  return user.realName || user.wechatNickname || user.nickname || "未完善资料的账号";
 }
 
 function userInitial(user: AdminAppUser) {

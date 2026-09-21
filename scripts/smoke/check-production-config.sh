@@ -263,6 +263,19 @@ echo "== SMS and notification providers =="
 print_mode NOTIFICATION_CENTER_ENABLED false
 print_mode WECHAT_SUBSCRIBE_MESSAGE_ENABLED false
 print_mode NOTIFICATION_TASK_WORKER_ENABLED true
+print_mode REGISTRATION_PROFILE_REQUIRED false
+print_mode ADMIN_PAID_ALERT_WORKER_ENABLED false
+require_when_enabled "${ADMIN_PAID_ALERT_WORKER_ENABLED:-false}" ADMIN_PUBLIC_URL
+for FEATURE_FLAG in REGISTRATION_PROFILE_REQUIRED ADMIN_PAID_ALERT_WORKER_ENABLED; do
+  if [[ "${!FEATURE_FLAG:-false}" != "true" && "${!FEATURE_FLAG:-false}" != "false" ]]; then
+    echo "${FEATURE_FLAG}: must be true or false"
+    FAILED=1
+  fi
+done
+if [[ "${ADMIN_PAID_ALERT_WORKER_ENABLED:-false}" == "true" && "${ADMIN_PUBLIC_URL:-}" != https://* ]]; then
+  echo "ADMIN_PUBLIC_URL: must use HTTPS while administrator alerts are enabled"
+  FAILED=1
+fi
 if [[ "${WECHAT_SUBSCRIBE_MESSAGE_ENABLED:-false}" == "true" ]] && [[ "${NOTIFICATION_TASK_WORKER_ENABLED:-true}" == "false" ]]; then
   echo "NOTIFICATION_TASK_WORKER_ENABLED: must not be false while WeChat subscription messages are enabled"
   FAILED=1
