@@ -24,6 +24,11 @@ the release outcome must be verified independently from GitHub and production.
 - Real database coupon integration was verified in the isolated local cluster
   during feature development; production is not a test database.
 
+The first native WeChat upload check rejected a compact-list WXSS selector.
+Metadata icons now use an explicit class wrapper, and keyboard focus styling
+is limited to H5. Native compilation/upload must be repeated for this fix;
+ordinary uni-app builds alone do not establish WXSS compatibility.
+
 ## Deployment Order
 
 1. Merge the reviewed batch to main only after Pull Request Quality succeeds.

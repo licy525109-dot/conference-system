@@ -56,3 +56,11 @@ test("each compact row is one accessible action and uses an uncropped thumbnail"
   assert.match(list, /'showSummary', false/);
   assert.doesNotMatch(list, /conference-entry__action/);
 });
+
+test("compact metadata uses a named icon wrapper and keeps keyboard-only CSS on H5", () => {
+  assert.match(descriptor.template.content, /class="conference-entry__meta-icon"><wd-icon/);
+  const inlineStyles = descriptor.styles.filter(style => !style.src).map(style => style.content).join("\n");
+  assert.match(inlineStyles, /\.conference-entry__meta-icon\s*\{[^}]*flex: 0 0 15px/);
+  assert.doesNotMatch(inlineStyles, />\s*:first-child/);
+  assert.match(inlineStyles, /\/\* #ifdef H5 \*\/[\s\S]*?\.conference-entry:focus-visible[\s\S]*?\/\* #endif \*\//);
+});

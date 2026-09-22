@@ -80,7 +80,7 @@
             <text class="conference-entry__title" :style="conferenceListTextStyle(component, 'title')">{{ item.title }}</text>
             <text v-if="booleanConfig(component, 'showSummary', false) && item.summary" class="conference-entry__summary" :style="conferenceListTextStyle(component, 'summary')">{{ item.summary }}</text>
             <view v-for="line in conferenceListMeta(item, component, index)" :key="line.icon" class="conference-entry__meta" :style="conferenceListTextStyle(component, 'meta')">
-              <wd-icon :name="line.icon" size="15px" />
+              <view class="conference-entry__meta-icon"><wd-icon :name="line.icon" size="15px" /></view>
               <text>{{ line.text }}</text>
             </view>
           </view>
@@ -2513,7 +2513,9 @@ function readErrorText(error: unknown, fallback: string): string {
 .conference-entry { display: grid; grid-template-columns: 88px minmax(0, 1fr) 16px; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 96px; box-sizing: border-box; margin: 0; padding: 16px 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; line-height: 1.5; text-align: left; }
 .conference-entry + .conference-entry { border-top: 1px solid var(--cms-border, #e4e5e7); }
 .conference-entry::after { border: 0; }
+/* #ifdef H5 */
 .conference-entry:focus-visible { outline: 2px solid var(--cms-primary, #987627); outline-offset: -2px; }
+/* #endif */
 .conference-entry--no-cover { grid-template-columns: minmax(0, 1fr) 16px; }
 .conference-entry__cover { position: relative; width: 88px; height: 72px; overflow: hidden; border-radius: 4px; background: #f5f6f6; }
 .conference-entry__image { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -2521,7 +2523,7 @@ function readErrorText(error: unknown, fallback: string): string {
 .conference-entry__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-weight: 700; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
 .conference-entry__summary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5; }
 .conference-entry__meta { display: flex; align-items: center; gap: 5px; min-width: 0; line-height: 1.5; }
-.conference-entry__meta > :first-child { flex: 0 0 15px; }
+.conference-entry__meta-icon { display: flex; align-items: center; flex: 0 0 15px; width: 15px; }
 .conference-entry__meta text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conference-entry__arrow { width: 16px; color: var(--cms-primary, #987627); }
 @media (max-width: 359px) {
