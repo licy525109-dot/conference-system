@@ -13,7 +13,7 @@
     </AdminPageHeader>
 
     <AdminFilterBar>
-      <el-input v-model="keyword" clearable placeholder="订单号 / 姓名 / 手机 / 商户单号" style="width: 280px" @keyup.enter="load" />
+      <el-input v-model="keyword" clearable placeholder="订单号 / 姓名 / 手机 / 商户单号" style="width: 280px" @keyup.enter="searchOrders" />
       <el-select v-model="conferenceId" clearable filterable placeholder="会议" style="width: 220px">
         <el-option v-for="item in conferences" :key="item.id" :label="item.title" :value="item.id" />
       </el-select>
@@ -28,14 +28,16 @@
         <el-option label="待支付" value="PENDING" />
         <el-option label="支付失败" value="FAILED" />
       </el-select>
-      <el-checkbox v-model="onlyExceptions">只看异常</el-checkbox>
+      <el-checkbox v-model="onlyExceptions">只看本页异常</el-checkbox>
       <template #actions>
-        <el-button :loading="loading" type="primary" @click="load">查询</el-button>
+        <el-button :loading="loading" type="primary" @click="searchOrders">查询</el-button>
       </template>
     </AdminFilterBar>
 
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
     <section class="table-panel">
       <el-table v-loading="loading" :data="displayedItems" row-key="id" :row-class-name="orderRowClassName">
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column label="订单信息" min-width="230">
           <template #default="{ row }">
             <strong>{{ row.orderNo }}</strong>
@@ -73,9 +75,22 @@
           </template>
         </el-table-column>
         <template #empty>
-          <AdminEmptyState title="暂无订单" description="调整筛选条件，或从用户端完成报名下单后再查看。" action-text="查看会议" @action="goConferences" />
+          <AdminEmptyState :title="listError ? '订单加载失败' : '暂无订单'" :description="listError || '调整筛选条件，或从用户端完成报名下单后再查看。'" :action-text="listError ? '重试' : '查看会议'" @action="listError ? load() : goConferences()" />
         </template>
       </el-table>
+      <footer class="table-footer">
+        <span role="status">{{ listError ? '加载失败' : `本页显示 ${displayedItems.length} 条 / 查询共 ${total} 条` }}</span>
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[20, 50, 100]"
+          :disabled="loading"
+          layout="sizes, prev, pager, next"
+          @current-change="load"
+          @size-change="searchOrders"
+        />
+      </footer>
     </section>
 
     <el-dialog v-model="detailVisible" title="订单详情" width="860px">
@@ -124,12 +139,14 @@
         </section>
         <h3>优惠明细</h3>
         <el-table :data="detail.discounts" empty-text="暂无优惠">
+          <AdminTableIndex />
           <el-table-column prop="type" label="类型" width="130" />
           <el-table-column prop="title" label="名称" min-width="180" />
           <el-table-column label="金额" width="120"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
         </el-table>
         <h3>支付记录</h3>
         <el-table :data="detail.payments" empty-text="暂无支付">
+          <AdminTableIndex />
           <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
           <el-table-column label="状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
           <el-table-column prop="outTradeNo" label="商户单号" min-width="180" />
@@ -144,6 +161,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";
@@ -156,6 +174,9 @@ import { useAdminSession } from "../../stores/admin-session";
 import type { AdminOrder, AdminOrderDetail, Conference } from "../../services/types";
 
 const items = ref<AdminOrder[]>([]);
+const page = ref(1);
+const pageSize = ref(20);
+const total = ref(0);
 const { hasPermission } = useAdminSession();
 const conferences = ref<Conference[]>([]);
 const detail = ref<AdminOrderDetail | null>(null);
@@ -165,6 +186,7 @@ const status = ref("");
 const paymentStatus = ref("");
 const onlyExceptions = ref(false);
 const loading = ref(false);
+const listError = ref("");
 const exporting = ref(false);
 const deleting = ref(false);
 const reviewSaving = ref(false);
@@ -175,6 +197,7 @@ const displayedItems = computed(() => {
   return items.value.filter((item) => !onlyExceptions.value || isOrderAbnormal(item));
 });
 const closeableFilteredCount = computed(() => displayedItems.value.filter(canCloseOrder).length);
+let listRequest = 0;
 
 onMounted(async () => {
   if (routeQuery.value.orderNo) keyword.value = routeQuery.value.orderNo;
@@ -187,12 +210,33 @@ async function loadConferences() {
 }
 
 async function load() {
+  const request = ++listRequest;
   loading.value = true;
+  listError.value = "";
+  items.value = [];
   try {
-    items.value = (await listOrders({ page: 1, pageSize: 100, keyword: keyword.value, conferenceId: conferenceId.value, status: status.value, paymentStatus: paymentStatus.value })).items;
+    const result = await listOrders({ page: page.value, pageSize: pageSize.value, keyword: keyword.value, conferenceId: conferenceId.value, status: status.value, paymentStatus: paymentStatus.value });
+    if (request !== listRequest) return;
+    total.value = result.total;
+    const lastPage = Math.max(1, Math.ceil(result.total / pageSize.value));
+    if (page.value > lastPage) {
+      page.value = lastPage;
+      return await load();
+    }
+    items.value = result.items;
+  } catch {
+    if (request === listRequest) {
+      total.value = 0;
+      listError.value = "订单加载失败，请重试";
+    }
   } finally {
-    loading.value = false;
+    if (request === listRequest) loading.value = false;
   }
+}
+
+function searchOrders() {
+  page.value = 1;
+  return load();
 }
 
 async function openDetail(orderNo: string) {
@@ -263,7 +307,7 @@ async function closeFiltered() {
     `只看异常：${onlyExceptions.value ? "是" : "否"}`
   ].join("\n");
   try {
-    await ElMessageBox.confirm(`当前筛选条件：\n${filters}\n\n预计关闭待支付订单 ${closeableFilteredCount.value} 单；不会影响已支付订单。确认继续？`, "关闭筛选出的待支付订单", {
+    await ElMessageBox.confirm(`当前筛选条件：\n${filters}\n\n本页有 ${closeableFilteredCount.value} 单符合关闭条件。本操作会处理所有页面中符合以上条件的待支付订单，不仅限于本页；实际数量以后台处理结果为准。不会影响已支付订单。确认继续？`, "关闭筛选出的待支付订单", {
       confirmButtonText: "确认关闭",
       cancelButtonText: "取消",
       type: "warning"
@@ -340,6 +384,17 @@ function goConferences() {
 </script>
 
 <style scoped>
+.table-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 0;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+
 .reserved-alert {
   margin-top: 14px;
 }

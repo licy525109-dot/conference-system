@@ -110,6 +110,19 @@
   gap: 8px;
 }
 
+.admin-table-index .cell,
+.admin-record-index {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-record-index {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .image-preview {
   width: 72px;
   height: 48px;

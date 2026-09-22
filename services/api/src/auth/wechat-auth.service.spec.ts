@@ -108,3 +108,63 @@ function restoreEnv(name: string, value: string | undefined) {
   if (typeof value === "undefined") delete process.env[name];
   else process.env[name] = value;
 }
+
+class LinkService extends WechatAuthService {
+  requests: Array<Record<string, unknown>> = [];
+  tokenCalls = 0;
+  responses: Array<{ ok: boolean; payload: Record<string, unknown> }> = [{ ok: true, payload: { errcode: 0, url_link: "https://wxaurl.cn/test-only" } }];
+  protected override async fetchAccessTokenPayload() { this.tokenCalls++; return accessToken("test-only"); }
+  protected override async fetchUrlLinkPayload(url: URL, body: Record<string, unknown>) {
+    assert.equal(url.origin, "https://api.weixin.qq.com");
+    assert.equal(url.pathname, "/wxa/generate_urllink");
+    this.requests.push(body);
+    return this.responses.shift()!;
+  }
+}
+describe("WechatAuthService private invitation links", () => {
+  it("generates a coupon-only released route for a seven-day invitation", async () => {
+    withWechatCredentials(); const service = new LinkService(); const expiry = new Date(Date.now() + 168 * 3600_000 - 1000);
+    await service.generateCouponClaimLink("c".repeat(43), expiry);
+    assert.deepEqual(service.requests[0], { path: "pages/coupon/claim", query: `token=${"c".repeat(43)}`, env_version: "release", expire_type: 0, expire_time: Math.floor(expiry.getTime() / 1000) });
+    await assert.rejects(service.generateGuestClaimLink("c".repeat(43), expiry));
+    await assert.rejects(service.generateCouponClaimLink("c".repeat(43), new Date(Date.now() + 169 * 3600_000)));
+    await assert.rejects(service.generateCouponClaimLink("c".repeat(43) + "&other=1", expiry));
+    await assert.rejects(service.generateCouponClaimLink("c".repeat(43), new Date(NaN)));
+    assert.equal(service.requests.length, 1);
+  });
+  it("retries stale coupon link access tokens once without changing recipient proof", async () => {
+    withWechatCredentials(); const service = new LinkService(); service.responses.unshift(wechatError(42001));
+    await service.generateCouponClaimLink("d".repeat(43), new Date(Date.now() + 3600_000));
+    assert.equal(service.tokenCalls, 2); assert.deepEqual(service.requests[0], service.requests[1]);
+  });
+  it("returns sanitized coupon link timeout and transport errors", async () => {
+    withWechatCredentials();
+    class FailedLinkService extends LinkService {
+      protected override async fetchUrlLinkPayload(): Promise<{ ok: boolean; payload: Record<string, unknown> }> { throw Object.assign(new Error("sensitive-token"), { name: "AbortError" }); }
+    }
+    await assert.rejects(new FailedLinkService().generateCouponClaimLink("d".repeat(43), new Date(Date.now() + 3600_000)), (e: Error) => e.message.includes("超时") && !e.message.includes("sensitive"));
+  });
+  it("uses only the fixed released invitation route and the existing invitation expiry", async () => {
+    withWechatCredentials(); const service = new LinkService(); const expiry = new Date(Date.now() + 3600_000);
+    const result = await service.generateGuestClaimLink("a".repeat(43), expiry);
+    assert.equal(result, "https://wxaurl.cn/test-only");
+    assert.deepEqual(service.requests[0], { path: "pages/account/claim", query: `token=${"a".repeat(43)}`, env_version: "release", expire_type: 0, expire_time: Math.floor(expiry.getTime() / 1000) });
+  });
+  it("refreshes stale access tokens once and never changes the invitation token", async () => {
+    withWechatCredentials(); const service = new LinkService(); service.responses.unshift(wechatError(40014));
+    await service.generateGuestClaimLink("b".repeat(43), new Date(Date.now() + 3600_000));
+    assert.equal(service.tokenCalls, 2); assert.deepEqual(service.requests[0], service.requests[1]);
+  });
+  it("explains unpublished routes without exposing upstream response content", async () => {
+    withWechatCredentials(); const service = new LinkService(); service.responses = [{ ok: true, payload: { errcode: 40165, errmsg: "sensitive-upstream-data" } }];
+    await assert.rejects(service.generateGuestClaimLink("a".repeat(43), new Date(Date.now() + 3600_000)), (e: Error) => e.message.includes("发布") && !e.message.includes("sensitive"));
+  });
+  it("does not accept unsafe URLs or invalid expiry/token input", async () => {
+    withWechatCredentials(); const service = new LinkService();
+    await assert.rejects(service.generateGuestClaimLink("wrong", new Date(Date.now() + 3600_000)));
+    await assert.rejects(service.generateGuestClaimLink("a".repeat(43), new Date(Date.now() + 30_000)));
+    assert.equal(service.tokenCalls, 0);
+    service.responses = [{ ok: true, payload: { url_link: "javascript:alert(1)" } }];
+    await assert.rejects(service.generateGuestClaimLink("a".repeat(43), new Date(Date.now() + 3600_000)));
+  });
+});

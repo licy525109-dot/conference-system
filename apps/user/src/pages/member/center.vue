@@ -150,8 +150,11 @@
       </view>
     </view>
 
-    <button class="ui-button-secondary" @click="goAttendance">我的参会资格</button>
-    <button class="ui-button-secondary" @click="goClaim">领取参会资格</button>
+    <button class="attendance-entry" @click="goAttendance">
+      <wd-icon name="calendar" size="22px" />
+      <text>我的参会</text>
+      <wd-icon name="chevron-right" size="18px" />
+    </button>
     <WechatProfilePrompt />
     <CustomTabbar active-page-key="member-center" />
   </view>
@@ -159,7 +162,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-const goClaim = () => uni.navigateTo({ url: "/pages/account/claim" });
 const goAttendance = () => uni.navigateTo({ url: "/pages/account/attendance" });
 import CustomTabbar from "@/components/CustomTabbar.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
@@ -689,4 +691,7 @@ function grantStatusText(value: string) {
   color: var(--ui-color-text);
   font-size: 26rpx;
 }
+.attendance-entry { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; box-sizing: border-box; margin: 16px 0 0; padding: 14px 18px; border-radius: 6px; background: #fff; color: var(--ui-color-primary, #987627); font-size: 18px; line-height: 1.5; text-align: left; }
+.attendance-entry text { flex: 1; min-width: 0; color: var(--ui-color-text, #20242c); }
+.attendance-entry::after { border: 0; }
 </style>

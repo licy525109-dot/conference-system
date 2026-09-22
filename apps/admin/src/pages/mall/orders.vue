@@ -75,6 +75,7 @@
 
     <section class="table-panel">
       <el-table v-loading="loading" :data="orders" empty-text="暂无商城订单">
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column prop="orderNo" label="订单号" min-width="180" />
         <el-table-column label="商品" min-width="220">
           <template #default="{ row }">
@@ -142,6 +143,7 @@
         <section class="detail-section">
           <h3>支付记录</h3>
           <el-table :data="detail.payments || []" size="small" empty-text="暂无支付记录">
+            <AdminTableIndex />
             <el-table-column prop="status" label="状态" width="100"><template #default="{ row }">{{ paymentStatusText(row.status) }}</template></el-table-column>
             <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
             <el-table-column prop="outTradeNo" label="支付单号" min-width="180" show-overflow-tooltip />
@@ -153,6 +155,7 @@
         <section class="detail-section">
           <h3>商品明细</h3>
           <el-table :data="detail.items" size="small">
+            <AdminTableIndex />
             <el-table-column prop="productTitle" label="商品" min-width="160" />
             <el-table-column prop="skuName" label="SKU" min-width="120" />
             <el-table-column prop="productType" label="类型" width="100"><template #default="{ row }">{{ productTypeText(row.productType) }}</template></el-table-column>
@@ -164,6 +167,7 @@
         <section class="detail-section">
           <h3>发货记录</h3>
           <el-table :data="detail.shipments" size="small" empty-text="暂无发货">
+            <AdminTableIndex />
             <el-table-column prop="status" label="状态" width="110"><template #default="{ row }">{{ shipmentStatusText(row.status) }}</template></el-table-column>
             <el-table-column prop="company" label="物流" width="120" />
             <el-table-column prop="trackingNo" label="单号" min-width="150" />
@@ -173,6 +177,7 @@
         <section class="detail-section">
           <h3>售后记录</h3>
           <el-table :data="detail.afterSales" size="small" empty-text="暂无售后">
+            <AdminTableIndex />
             <el-table-column prop="type" label="类型" width="120"><template #default="{ row }">{{ afterSaleTypeText(row.type) }}</template></el-table-column>
             <el-table-column prop="status" label="状态" width="120"><template #default="{ row }">{{ afterSaleStatusText(row.status) }}</template></el-table-column>
             <el-table-column prop="reason" label="原因" min-width="180" show-overflow-tooltip />
@@ -191,6 +196,7 @@
         <section class="detail-section">
           <h3>退款记录</h3>
           <el-table :data="detail.refunds || []" size="small" empty-text="暂无退款">
+            <AdminTableIndex />
             <el-table-column prop="status" label="状态" width="110"><template #default="{ row }">{{ refundStatusText(row.status) }}</template></el-table-column>
             <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
             <el-table-column prop="refundNo" label="退款单号" min-width="150" show-overflow-tooltip />
@@ -219,6 +225,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";

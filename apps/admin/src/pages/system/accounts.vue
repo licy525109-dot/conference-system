@@ -7,6 +7,7 @@
     </AdminPageHeader>
     <section class="table-panel">
       <el-table :data="accounts" empty-text="暂无账号">
+        <AdminTableIndex />
         <el-table-column prop="username" label="用户名" min-width="160" />
         <el-table-column prop="displayName" label="显示名" min-width="160" />
         <el-table-column label="角色" min-width="220"><template #default="{ row }">{{ rolesText(row) }}</template></el-table-column>
@@ -32,6 +33,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";

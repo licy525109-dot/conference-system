@@ -13,6 +13,7 @@
 
     <section class="table-panel">
       <el-table :data="levels" empty-text="暂无会员等级">
+        <AdminTableIndex />
         <el-table-column label="等级" min-width="180">
           <template #default="{ row }">
             <strong>{{ row.name }}</strong>
@@ -76,6 +77,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";

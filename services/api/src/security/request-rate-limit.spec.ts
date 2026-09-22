@@ -3,6 +3,21 @@ import { describe, it } from "node:test";
 import { createSensitiveEndpointRateLimiter } from "./request-rate-limit";
 
 describe("sensitive endpoint rate limiter", () => {
+  for (const [route, limit] of [["preview", 60], ["claim", 10]] as const) {
+    it(`limits private coupon ${route} attempts independently per caller`, () => {
+      const limiter = createSensitiveEndpointRateLimiter();
+      let nextCalls = 0;
+      let statusCode = 0;
+      const request = { method: "POST", path: `/api/coupon-distributions/${route}`, ip: "203.0.113.11", socket: {} };
+      const response = { setHeader: () => undefined, status: (code: number) => ({ json: () => { statusCode = code; } }) };
+      for (let attempt = 0; attempt <= limit; attempt++) limiter(request, response, () => { nextCalls++; });
+      assert.equal(nextCalls, limit);
+      assert.equal(statusCode, 429);
+      limiter({ ...request, ip: "203.0.113.12" }, response, () => { nextCalls++; });
+      assert.equal(nextCalls, limit + 1);
+    });
+  }
+
   it("limits repeated admin mobile binding attempts", () => {
     const limiter = createSensitiveEndpointRateLimiter();
     let nextCalls = 0;

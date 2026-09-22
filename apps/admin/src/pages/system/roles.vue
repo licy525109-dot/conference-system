@@ -14,6 +14,7 @@
     </AdminPageHeader>
     <section class="table-panel">
       <el-table :data="roles" empty-text="暂无角色">
+        <AdminTableIndex />
         <el-table-column prop="name" label="角色" min-width="160" />
         <el-table-column prop="code" label="编码" min-width="160" />
         <el-table-column label="权限数" width="100"><template #default="{ row }">{{ row.permissions.length }}</template></el-table-column>
@@ -47,6 +48,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";

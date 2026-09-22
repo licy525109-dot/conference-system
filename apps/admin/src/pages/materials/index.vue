@@ -45,6 +45,7 @@
 
     <section class="table-panel">
       <el-table v-loading="loading" :data="assets" empty-text="暂无素材">
+        <AdminTableIndex />
         <el-table-column label="预览" width="100">
           <template #default="{ row }">
             <img v-if="row.fileType.startsWith('image/')" class="image-preview" :src="row.url" alt="" />
@@ -175,6 +176,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";

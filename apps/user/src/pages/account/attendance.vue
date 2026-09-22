@@ -1,9 +1,9 @@
 <template>
   <view class="attendance-page ui-page">
-    <view class="page-heading"><text class="heading">我的参会资格</text><button class="refresh-button" :disabled="loading" :aria-label="loading ? '同步中' : '刷新参会资格'" title="刷新参会资格" @click="load"><wd-icon name="refresh" size="22px" /></button></view>
-    <LoadingState v-if="loading && !items.length" title="正在读取参会资格" />
+    <view class="page-heading"><text class="heading">我的参会</text><button class="refresh-button" :disabled="loading" :aria-label="loading ? '同步中' : '刷新参会记录'" title="刷新参会记录" @click="load"><wd-icon name="refresh" size="22px" /></button></view>
+    <LoadingState v-if="loading && !items.length" title="正在读取参会记录" />
     <ErrorState v-else-if="error" :message="error" primary-text="重新加载" @retry="load" />
-    <EmptyState v-else-if="!items.length" title="暂无已绑定的参会资格" description="收到会务组的领取口令后，可在这里领取。" />
+    <EmptyState v-else-if="!items.length" title="暂无参会记录" description="如已报名但未显示，请联系会务组核对参会信息。" />
     <view v-else class="attendance-list">
       <view v-for="item in items" :key="item.id" class="attendance-item">
         <text class="conference-title">{{ item.registration.conference.title }}</text>
@@ -19,7 +19,6 @@
         <button class="ui-button-primary schedule-action" @click="viewSchedule(item.registration.conference.id)">查看本人会务安排</button>
       </view>
     </view>
-    <button :class="items.length ? 'ui-button-secondary' : 'ui-button-primary'" @click="goClaim">领取参会资格</button>
     <button class="home-action" @click="goHome">返回首页</button>
   </view>
 </template>
@@ -47,10 +46,9 @@ async function load() {
     items.value = (await getMyAttendance()).items;
   } catch {
     items.value = [];
-    error.value = "参会资格暂时无法读取，请重试或联系会务组。";
+    error.value = "参会记录暂时无法读取，请重试或联系会务组。";
   } finally { loading.value = false; }
 }
-function goClaim() { uni.navigateTo({ url: "/pages/account/claim" }); }
 function viewSchedule(conferenceId: string) { uni.navigateTo({ url: `/pages/registrations/schedule?conferenceId=${encodeURIComponent(conferenceId)}` }); }
 </script>
 <style scoped>

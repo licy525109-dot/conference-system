@@ -583,21 +583,31 @@ export class AdminOperationsService {
 
   async createCouponCampaign(input: unknown, admin: CurrentAdmin) {
     const body = readObject(input);
-    const couponIds = readRequiredStringArray(body.couponIds, "couponIds");
+    const couponIds = [...new Set(readRequiredStringArray(body.couponIds, "couponIds"))];
     const claimCode = readOptionalString(body.claimCode) ?? generateCode("CP");
-    const campaign = await this.prisma.couponCampaign.create({
-      data: {
-        conferenceId: readNullableString(body.conferenceId),
-        name: readRequiredString(body, "name"),
-        claimCode,
-        qrScene: readOptionalString(body.qrScene) ?? `coupon:${claimCode}`,
-        enabled: readOptionalBoolean(body.enabled) ?? true,
-        totalLimit: readOptionalNonNegativeInt(body.totalLimit),
-        startAt: readOptionalDate(body.startAt),
-        endAt: readOptionalDate(body.endAt),
-        coupons: { create: couponIds.map((couponId) => ({ couponId })) }
-      },
-      include: { coupons: { include: { coupon: true } } }
+    const campaign = await this.prisma.$transaction(async tx => {
+      // Lock the same coupon rows as targeted issuance so concurrent modes cannot mix.
+      const eligible = await tx.coupon.updateMany({ where: { id: { in: couponIds }, requiresClaim: false, deletedAt: null }, data: { updatedAt: new Date() } });
+      if (eligible.count !== couponIds.length) throw new ConflictException("定向券不能加入公开领券活动，请选择独立的活动优惠券");
+      return tx.couponCampaign.create({
+        data: {
+          conferenceId: readNullableString(body.conferenceId),
+          name: readRequiredString(body, "name"),
+          claimCode,
+          qrScene: readOptionalString(body.qrScene) ?? `coupon:${claimCode}`,
+          enabled: readOptionalBoolean(body.enabled) ?? true,
+          totalLimit: readOptionalNonNegativeInt(body.totalLimit),
+          startAt: readOptionalDate(body.startAt),
+          endAt: readOptionalDate(body.endAt),
+          coupons: { create: couponIds.map((couponId) => ({ couponId })) }
+        },
+        include: { coupons: { include: { coupon: true } } }
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "P2034") {
+        throw new ConflictException("优惠券配置已变化，请刷新后重试");
+      }
+      throw error;
     });
     await this.writeAudit(admin, AuditAction.CREATE, "CouponCampaign", campaign.id, "Create coupon campaign");
     return ok(formatCouponCampaign(campaign));

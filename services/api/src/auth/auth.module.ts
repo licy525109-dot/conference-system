@@ -8,6 +8,6 @@ import { WechatAuthService } from "./wechat-auth.service";
 @Module({
   controllers: [AuthController],
   providers: [AuthService, WechatAuthService, JwtAuthGuard, OptionalJwtAuthGuard],
-  exports: [AuthService, JwtAuthGuard, OptionalJwtAuthGuard]
+  exports: [AuthService, WechatAuthService, JwtAuthGuard, OptionalJwtAuthGuard]
 })
 export class AuthModule {}

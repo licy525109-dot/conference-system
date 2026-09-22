@@ -93,6 +93,7 @@
       </div>
       <el-empty v-if="!config.enabled" description="请先完成企微接入配置，然后同步企业微信客户群。" />
       <el-table v-else :data="groups" border>
+        <AdminTableIndex />
         <el-table-column prop="name" label="客户群" min-width="180" />
         <el-table-column prop="chatId" label="chat_id" min-width="180" />
         <el-table-column prop="ownerName" label="群主" min-width="120" />
@@ -125,6 +126,7 @@
         <el-form-item label="欢迎语 JSON"><el-input v-model="welcomeForm.contentText" type="textarea" :rows="7" placeholder='{"text":"欢迎加入{会议名称}客户群","agendaUrl":"","advisorPhone":""}' /></el-form-item>
       </el-form>
       <el-table :data="welcomeTemplates" border>
+        <AdminTableIndex />
         <el-table-column prop="name" label="模板" min-width="180" />
         <el-table-column prop="enabled" label="启用" width="90" />
         <el-table-column prop="updatedAt" label="更新时间" min-width="170" />
@@ -187,6 +189,7 @@
         </div>
       </div>
       <el-table :data="tasks" border>
+        <AdminTableIndex />
         <el-table-column prop="name" label="任务" min-width="180" />
         <el-table-column prop="sendMode" label="发送模式" min-width="140"><template #default="{ row }">{{ sendModeText(row.sendMode) }}</template></el-table-column>
         <el-table-column prop="targetScope" label="范围" min-width="130" />
@@ -214,6 +217,7 @@
 
     <section v-else-if="section === 'logs'" class="table-panel">
       <el-table :data="logs" border>
+        <AdminTableIndex />
         <el-table-column prop="taskName" label="任务" min-width="180" />
         <el-table-column prop="groupName" label="客户群" min-width="160" />
         <el-table-column prop="chatId" label="chat_id" min-width="160" />
@@ -227,6 +231,7 @@
 
     <section v-else class="table-panel">
       <el-table :data="callbackEvents" border>
+        <AdminTableIndex />
         <el-table-column prop="eventSource" label="来源" width="150" />
         <el-table-column prop="eventType" label="事件" width="140" />
         <el-table-column prop="changeType" label="变更" width="150" />
@@ -240,6 +245,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";

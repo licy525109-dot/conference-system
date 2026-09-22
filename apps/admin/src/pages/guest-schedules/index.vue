@@ -69,6 +69,7 @@
         <el-button link @click="clearSelection">取消选择</el-button>
       </div>
       <el-table ref="tableRef" v-loading="loading" :data="items" row-key="id" @selection-change="onSelectionChange">
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column type="selection" width="46" />
         <el-table-column label="嘉宾" min-width="190">
           <template #default="{ row }">
@@ -637,6 +638,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import {
   ArrowDown,

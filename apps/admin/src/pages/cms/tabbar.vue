@@ -11,6 +11,7 @@
 
     <section class="data-panel">
       <el-table :data="items" empty-text="暂无导航">
+        <AdminTableIndex />
         <el-table-column label="排序" width="90">
           <template #default="{ row }"><el-input-number v-model="row.sortOrder" :min="0" :controls="false" style="width: 64px" /></template>
         </el-table-column>
@@ -70,6 +71,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";

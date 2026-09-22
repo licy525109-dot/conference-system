@@ -35,6 +35,7 @@
 
     <section v-if="isUserList" class="table-panel">
       <el-table v-loading="userLoading" :data="users" empty-text="暂无用户">
+        <AdminTableIndex :page="userPage" :page-size="50" />
         <el-table-column label="用户" min-width="240">
           <template #default="{ row }">
             <div class="user-cell">
@@ -75,10 +76,11 @@
         <el-table-column label="用户来源" width="120"><template #default>微信小程序</template></el-table-column>
         <el-table-column label="注册时间" width="150"><template #default="{ row }">{{ formatDate(row.createdAt) }}</template></el-table-column>
         <el-table-column label="最近活跃" width="150"><template #default="{ row }">{{ formatDate(row.lastActiveAt) }}</template></el-table-column>
-        <el-table-column label="操作" width="350" fixed="right">
+        <el-table-column label="操作" width="410" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openUserDetail(row)">查看详情</el-button>
             <el-button size="small" @click="openEditUser(row)">编辑</el-button>
+            <el-button v-if="hasPermission('coupon:write')" size="small" type="primary" plain @click="openCouponDistribution(row)">发券</el-button>
             <el-button size="small" @click="openGrant(row.id)">授予会员</el-button>
             <el-button size="small" type="danger" plain @click="removeUser(row)">删除</el-button>
           </template>
@@ -89,6 +91,7 @@
 
     <section v-else class="table-panel">
       <el-table v-loading="loading" :data="memberships" empty-text="暂无会员记录">
+        <AdminTableIndex />
         <el-table-column label="用户" min-width="210">
           <template #default="{ row }">
             <div class="user-cell">
@@ -140,6 +143,7 @@
         <template #actions><el-button :loading="userLoading" @click="loadUsers">搜索用户</el-button></template>
       </AdminFilterBar>
       <el-table v-loading="userLoading" :data="users" empty-text="暂无用户">
+        <AdminTableIndex :page="userPage" :page-size="50" />
         <el-table-column label="用户" min-width="220">
           <template #default="{ row }">
             <strong>{{ userName(row) }}</strong>
@@ -264,8 +268,11 @@
       </template>
     </el-dialog>
 
+    <CouponDistributionDialog v-model="couponDistributionVisible" :user="couponRecipient" />
+
     <el-dialog v-model="grantsVisible" title="会员权益发放记录" width="860px">
       <el-table :data="selectedMembership?.benefitGrants || []" empty-text="暂无权益发放记录">
+        <AdminTableIndex />
         <el-table-column label="权益" min-width="180"><template #default="{ row }">{{ row.benefit?.title }}</template></el-table-column>
         <el-table-column label="状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="grantStatusText(row.status)" /></template></el-table-column>
         <el-table-column prop="source" label="来源" width="130" />
@@ -277,6 +284,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
@@ -285,6 +293,7 @@ import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
+import CouponDistributionDialog from "../../components/CouponDistributionDialog.vue";
 import { currentRoute, navigateTo, routeQuery } from "../../router";
 import { changeMembershipLevel, deleteUser, disableMembership, grantMembership, listMemberLevels, listMemberships, listUsers, revealUserPhone, renewMembership, updateUser } from "../../services/admin";
 import type { AdminAppUser, MemberLevel, UserMembership } from "../../services/types";
@@ -305,6 +314,8 @@ const actionVisible = ref(false);
 const grantsVisible = ref(false);
 const selectedMembership = ref<UserMembership | null>(null);
 const selectedUser = ref<AdminAppUser | null>(null);
+const couponRecipient = ref<AdminAppUser | null>(null);
+const couponDistributionVisible = ref(false);
 const userDetailVisible = ref(false);
 const userEditVisible = ref(false);
 const revealedPhone = ref<string | null>(null);
@@ -396,6 +407,12 @@ function openGrantLog(row: UserMembership) {
 
 function openUserDetail(row: AdminAppUser) {
   navigateTo("/users/detail", { id: row.id });
+}
+
+function openCouponDistribution(row: AdminAppUser) {
+  if (!hasPermission("coupon:write")) return;
+  couponRecipient.value = row;
+  couponDistributionVisible.value = true;
 }
 
 function openEditUser(row: AdminAppUser) {

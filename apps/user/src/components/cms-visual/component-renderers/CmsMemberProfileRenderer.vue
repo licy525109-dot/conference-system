@@ -8,10 +8,15 @@
         <text class="cms-member-profile__name">{{ name }}</text>
         <wd-tag v-if="loggedIn" round plain type="warning">{{ memberLevel }}</wd-tag>
       </view>
-      <text class="cms-member-profile__summary">{{ summary }}</text>
-      <text v-if="loggedIn && memberStatus" class="cms-member-profile__status">{{ memberStatus }}</text>
+      <text v-if="loggedIn && contextText('phone')" class="cms-member-profile__phone">{{ contextText('phone') }}</text>
+      <text v-if="summary" class="cms-member-profile__summary">{{ summary }}</text>
+      <text v-if="loggedIn && memberStatus && memberStatus !== memberLevel" class="cms-member-profile__status">{{ memberStatus }}</text>
     </view>
-    <wd-button custom-class="cms-member-profile__button" size="small" :round="false" :custom-style="profileButtonStyle" @click.stop="emit('activate')">{{ buttonText }}</wd-button>
+    <button class="cms-member-profile__button" @click.stop="emit('activate')">
+      <wd-icon :name="loggedIn ? 'edit' : 'user'" size="20px" />
+      <text>{{ buttonText }}</text>
+      <wd-icon name="chevron-right" size="18px" />
+    </button>
   </view>
 </template>
 
@@ -29,7 +34,7 @@ const avatarUrl = computed(() => contextText("avatarUrl"));
 const memberLevel = computed(() => contextText("memberLevel") || "普通用户");
 const memberStatus = computed(() => contextText("memberStatus"));
 const summary = computed(() => loggedIn.value
-  ? [contextText("phone"), stringConfig(props.component, "loggedInDescription", "查看会议报名与会员权益")].filter(Boolean).join(" · ")
+  ? stringConfig(props.component, "loggedInDescription", "")
   : stringConfig(props.component, "description", "登录后展示头像、昵称、手机号和会员等级"));
 const buttonText = computed(() => loggedIn.value ? stringConfig(props.component, "buttonText", "编辑资料") : stringConfig(props.component, "loginButtonText", "立即登录"));
 const initial = computed(() => name.value.slice(0, 1));
@@ -37,7 +42,6 @@ const cardStyle = computed(() => stringConfig(props.component, "cardStyle", "bra
 const rootStyle = computed(() => stringConfig(props.component, "imageUrl")
   ? { backgroundImage: `url(${stringConfig(props.component, "imageUrl")})` }
   : {});
-const profileButtonStyle = "position:relative;z-index:1;min-height:68rpx;padding:0 24rpx;border-radius:12rpx;background:var(--cms-primary);color:#f8faf8;border:0;";
 
 function contextText(key: string): string {
   const value = props.userContext?.[key];
@@ -50,18 +54,17 @@ function contextText(key: string): string {
   position: relative;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: 110rpx minmax(0, 1fr) auto;
+  grid-template-columns: 52px minmax(0, 1fr);
   align-items: center;
-  gap: 24rpx;
-  min-height: 220rpx;
-  padding: 34rpx;
+  gap: 14px;
+  padding: 18px 18px 0;
   overflow: hidden;
   border: 1rpx solid var(--cms-border);
-  border-radius: 16rpx;
+  border-radius: 8px;
   background-color: var(--cms-surface-elevated);
   background-position: center;
   background-size: cover;
-  box-shadow: var(--cms-shadow-md);
+  box-shadow: none;
 }
 
 .cms-member-profile__shade {
@@ -82,8 +85,8 @@ function contextText(key: string): string {
 }
 
 .cms-member-profile__avatar {
-  width: 108rpx;
-  height: 108rpx;
+  width: 52px;
+  height: 52px;
   border: 2rpx solid rgba(169, 126, 56, 0.5);
   border-radius: 50%;
   background: var(--cms-surface-muted);
@@ -113,12 +116,11 @@ function contextText(key: string): string {
 
 .cms-member-profile__name {
   min-width: 0;
-  overflow: hidden;
   color: var(--cms-text-primary);
-  font-size: 34rpx;
+  font-size: 20px;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .cms-member-profile__badge {
@@ -131,11 +133,12 @@ function contextText(key: string): string {
 }
 
 .cms-member-profile__summary,
+.cms-member-profile__phone,
 .cms-member-profile__status {
   display: block;
   min-width: 0;
   color: var(--cms-text-secondary);
-  font-size: 22rpx;
+  font-size: 14px;
   line-height: 1.45;
   white-space: normal;
   word-break: break-word;
@@ -146,37 +149,30 @@ function contextText(key: string): string {
 }
 
 .cms-member-profile__button {
-  min-height: 68rpx;
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
   margin: 0;
-  padding: 0 24rpx;
-  border-radius: 12rpx;
-  color: #f8faf8;
-  font-size: 23rpx;
-  line-height: 68rpx;
-  background: var(--cms-primary);
+  padding: 12px 0;
+  border-radius: 0;
+  border-top: 1px solid var(--cms-border, #e4e5e7);
+  color: var(--cms-primary, #987627);
+  font-size: 16px;
+  line-height: 1.5;
+  background: transparent;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
+.cms-member-profile__button text { flex: 1; min-width: 0; }
+.cms-member-profile__phone { font-size: 16px; }
 
 .cms-member-profile__button::after {
   border: 0;
 }
 
-@media (max-width: 430px) {
-  .cms-member-profile {
-    grid-template-columns: 88rpx minmax(0, 1fr);
-    gap: 18rpx;
-    min-height: 0;
-    padding: 28rpx;
-  }
-
-  .cms-member-profile__avatar {
-    width: 86rpx;
-    height: 86rpx;
-  }
-
-  .cms-member-profile__button {
-    grid-column: 2;
-    justify-self: start;
-    max-width: 100%;
-  }
-}
 </style>

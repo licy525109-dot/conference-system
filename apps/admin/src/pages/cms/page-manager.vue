@@ -37,6 +37,7 @@
         <el-button type="primary" @click="openCreateDialog">新建第一个页面</el-button>
       </el-empty>
       <el-table v-else :data="pagedPages" row-key="id" class="cms-page-table">
+        <AdminTableIndex :page="currentPage" :page-size="pageSize" />
         <el-table-column label="页面名称" min-width="250">
           <template #default="scope">
             <button class="page-name-cell" type="button" @click="editPage(scope.row)">
@@ -144,6 +145,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { Collection, CopyDocument, Delete, Document, EditPen, Plus, Search, Share } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";

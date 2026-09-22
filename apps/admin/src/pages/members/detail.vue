@@ -22,7 +22,8 @@
       <div class="section-heading"><h3>该账号关联的报名</h3><span>共 {{ data.registrations.total }} 条 · 下单 {{ data.orderCount }} 笔</span></div>
       <el-empty v-if="!data.registrations.total" description="暂无关联报名" />
       <div v-else class="registration-list">
-        <article v-for="item in data.registrations.items" :key="item.id" class="registration-item">
+        <article v-for="(item, index) in data.registrations.items" :key="item.id" class="registration-item">
+          <span class="admin-record-index">序号 {{ tableRowNumber(index, page, 20) }}</span>
           <div class="record-head"><h4>{{ item.conference.title }}</h4><AdminStatusBadge :status="item.status" /></div>
           <dl>
             <div><dt>会议时间</dt><dd>{{ date(item.conference.startsAt) }}</dd></div>
@@ -47,6 +48,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { tableRowNumber } from '../../utils/table-index';
 import AdminPageHeader from '../../components/AdminPageHeader.vue';
 import AdminStatusBadge from '../../components/AdminStatusBadge.vue';
 import { navigateTo, routeQuery } from '../../router';

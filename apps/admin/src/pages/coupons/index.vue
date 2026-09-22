@@ -8,7 +8,8 @@
     >
       <AdminFeatureBadge label="后端计价已接入" description="优惠券参与 quote 和 create order；最终金额以后端重新计算和订单快照为准。" tone="success" />
       <template #actions>
-        <el-button type="primary" @click="openCreate">新增优惠券</el-button>
+        <el-button v-if="hasPermission('coupon:view') && !conferenceId" @click="openDistribution(null, 'records')">发放记录</el-button>
+        <el-button v-if="hasPermission('coupon:write')" type="primary" @click="openCreate">新增优惠券</el-button>
       </template>
     </AdminPageHeader>
 
@@ -16,12 +17,13 @@
       <el-input v-model="keyword" clearable placeholder="券码 / 名称" style="width: 220px" @keyup.enter="load" />
       <template #actions>
         <el-button :loading="loading" type="primary" @click="load">查询</el-button>
-        <el-button v-if="embedded" type="primary" @click="openCreate">新增优惠券</el-button>
+        <el-button v-if="embedded && hasPermission('coupon:write')" type="primary" @click="openCreate">新增优惠券</el-button>
       </template>
     </AdminFilterBar>
 
     <section class="table-panel">
       <el-table v-loading="loading" :data="items">
+        <AdminTableIndex />
         <el-table-column prop="code" label="券码" width="140" />
         <el-table-column prop="name" label="名称" min-width="160" />
         <el-table-column label="适用业务" width="130"><template #default="{ row }">{{ scopeText(row.scope) }}</template></el-table-column>
@@ -29,14 +31,16 @@
         <el-table-column label="优惠" width="120"><template #default="{ row }">{{ discountText(row) }}</template></el-table-column>
         <el-table-column label="门槛" width="160"><template #default="{ row }">{{ thresholdText(row.minAmountCent, row.minQuantity) }}</template></el-table-column>
         <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
-        <el-table-column label="操作" width="170">
+        <el-table-column label="操作" width="330" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" type="danger" plain @click="removeCoupon(row)">删除</el-button>
+            <el-button v-if="hasPermission('coupon:write')" size="small" type="primary" plain :disabled="!row.enabled" @click="openDistribution(row, 'issue')">定向发放</el-button>
+            <el-button v-if="hasPermission('coupon:view')" size="small" @click="openDistribution(row, 'records')">发放记录</el-button>
+            <el-button v-if="hasPermission('coupon:write')" size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="hasPermission('coupon:write')" size="small" type="danger" plain @click="removeCoupon(row)">删除</el-button>
           </template>
         </el-table-column>
         <template #empty>
-          <AdminEmptyState title="暂无优惠券" description="可创建优惠码、领取限制和适用范围；没有配置时订单按原价或会员价计算。" action-text="新增优惠券" @action="openCreate" />
+          <AdminEmptyState title="暂无优惠券" description="可创建优惠码、领取限制和适用范围；没有配置时订单按原价或会员价计算。" :action-text="hasPermission('coupon:write') ? '新增优惠券' : undefined" @action="openCreate" />
         </template>
       </el-table>
     </section>
@@ -68,10 +72,12 @@
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
     </el-dialog>
+    <CouponDistributionDialog v-model="distributionVisible" :coupon="distributionCoupon" :initial-tab="distributionTab" />
   </section>
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";
@@ -79,14 +85,27 @@ import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
+import CouponDistributionDialog from "../../components/CouponDistributionDialog.vue";
 import { createCoupon, deleteCoupon, listCoupons, updateCoupon } from "../../services/admin";
 import type { Coupon } from "../../services/types";
+import { useAdminSession } from "../../stores/admin-session";
 
 const props = defineProps<{ conferenceId?: string; embedded?: boolean }>();
 const items = ref<Coupon[]>([]);
 const keyword = ref("");
 const loading = ref(false);
 const dialogVisible = ref(false);
+const { hasPermission } = useAdminSession();
+const distributionVisible = ref(false);
+const distributionCoupon = ref<Coupon | null>(null);
+const distributionTab = ref<"issue" | "records">("issue");
+
+function openDistribution(coupon: Coupon | null, tab: "issue" | "records") {
+  if (!hasPermission(tab === "issue" ? "coupon:write" : "coupon:view")) return;
+  distributionCoupon.value = coupon;
+  distributionTab.value = tab;
+  distributionVisible.value = true;
+}
 const form = reactive({
   id: "",
   code: "",
@@ -111,6 +130,7 @@ onMounted(() => void load());
 watch(() => props.conferenceId, () => void load());
 
 async function load() {
+  if (!hasPermission("coupon:view")) return;
   loading.value = true;
   try {
     items.value = (await listCoupons({ page: 1, pageSize: 100, keyword: keyword.value, conferenceId: props.conferenceId })).items;
@@ -120,11 +140,13 @@ async function load() {
 }
 
 function openCreate() {
+  if (!hasPermission("coupon:write")) return;
   Object.assign(form, { id: "", code: "", name: "", type: "AMOUNT", scope: props.conferenceId ? "CONFERENCE" : "CONFERENCE", discountAmountYuan: 0, discountPercent: 8500, maxDiscountYuan: 0, minAmountYuan: 0, minQuantity: 0, totalLimit: 0, perUserLimit: 0, allowedSkuIdsText: "", startAt: "", endAt: "", enabled: true, stackableWithPromotion: false });
   dialogVisible.value = true;
 }
 
 function openEdit(row: Coupon) {
+  if (!hasPermission("coupon:write")) return;
   Object.assign(form, {
     id: row.id,
     code: row.code,
@@ -148,6 +170,7 @@ function openEdit(row: Coupon) {
 }
 
 async function save() {
+  if (!hasPermission("coupon:write")) return;
   const payload = {
     ...(form.code.trim() ? { code: form.code.trim() } : {}),
     name: form.name,
@@ -175,6 +198,7 @@ async function save() {
 }
 
 async function removeCoupon(row: Coupon) {
+  if (!hasPermission("coupon:write")) return;
   try {
     await ElMessageBox.confirm(
       `确认删除优惠券「${row.name}」？删除后不可用于新订单，历史优惠记录会保留。`,
@@ -184,6 +208,7 @@ async function removeCoupon(row: Coupon) {
   } catch {
     return;
   }
+  if (!hasPermission("coupon:write")) return;
   await deleteCoupon(row.id);
   await load();
   ElMessage.success("优惠券已删除");

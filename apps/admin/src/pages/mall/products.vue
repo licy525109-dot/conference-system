@@ -28,6 +28,7 @@
 
     <section class="table-panel">
       <el-table v-loading="loading" :data="products" empty-text="暂无商品">
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column label="商品" min-width="280">
           <template #default="{ row }">
             <div class="product-cell">
@@ -170,6 +171,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";

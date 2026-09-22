@@ -26,6 +26,7 @@
       </AdminSectionCard>
       <AdminSectionCard title="库存预警日志">
         <el-table :data="inventoryLogs" empty-text="暂无库存预警日志">
+          <AdminTableIndex />
           <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
           <el-table-column prop="remainingStock" label="剩余" width="90" />
           <el-table-column prop="thresholdRemaining" label="阈值" width="90" />
@@ -104,6 +105,7 @@
           <el-button type="primary" :disabled="!staffForm.userId" @click="grantCheckinStaff">授予扫码权限</el-button>
         </div>
         <el-table :data="staffAssignments" empty-text="暂无工作人员授权">
+          <AdminTableIndex />
           <el-table-column label="微信用户" min-width="220">
             <template #default="{ row }">
               <div class="wechat-user-cell">
@@ -124,6 +126,7 @@
       </AdminSectionCard>
       <AdminSectionCard v-if="section === 'checkin-logs'" title="签到记录" subtitle="展示每一条客户自助、工作人员扫码、后台应急补签和撤销明细。">
         <el-table :data="checkinLogs" empty-text="暂无签到记录">
+          <AdminTableIndex />
           <el-table-column label="微信用户" width="180">
             <template #default="{ row }">
               <div class="wechat-user-cell compact">
@@ -152,15 +155,18 @@
       <AdminSectionCard v-else title="签到统计" subtitle="按票种、核销方式和时间段聚合，避免与签到记录页重复。">
         <div class="stat-tables">
           <el-table :data="asRows(checkinStats.bySku)" empty-text="暂无票种统计">
+            <AdminTableIndex />
             <el-table-column prop="key" label="票种" min-width="160" />
             <el-table-column prop="total" label="人数" width="100" />
             <el-table-column prop="checkedIn" label="已签到" width="100" />
           </el-table>
           <el-table :data="asRows(checkinStats.byMethod)" empty-text="暂无方式统计">
+            <AdminTableIndex />
             <el-table-column prop="key" label="方式" min-width="160"><template #default="{ row }">{{ checkinMethodText(row.key) }}</template></el-table-column>
             <el-table-column prop="count" label="次数" width="100" />
           </el-table>
           <el-table :data="asRows(checkinStats.byHour)" empty-text="暂无时间段统计">
+            <AdminTableIndex />
             <el-table-column prop="key" label="时间段" min-width="180" />
             <el-table-column prop="count" label="次数" width="100" />
           </el-table>
@@ -175,6 +181,7 @@
           <el-tab-pane label="重复明细" name="repeatedList" />
         </el-tabs>
         <el-table :data="checkinListRows" :empty-text="checkinEmptyText">
+          <AdminTableIndex />
           <el-table-column label="微信用户" width="190">
             <template #default="{ row }">
               <div class="wechat-user-cell compact">
@@ -206,6 +213,7 @@
           <el-button :disabled="checkinDetailRows.length === 0" @click="exportRows(checkinListTitle, checkinDetailRows)">导出当前详情</el-button>
         </div>
         <el-table :data="checkinDetailRows" :empty-text="checkinEmptyText" max-height="520">
+          <AdminTableIndex />
           <el-table-column prop="attendeeName" label="参会人" width="120" />
           <el-table-column prop="phone" label="手机号" width="140" />
           <el-table-column prop="company" label="公司" min-width="140" />
@@ -248,6 +256,7 @@
             <strong>报名表单摘要</strong>
             <el-empty v-if="formSummaryRows(checkinDetail).length === 0" description="暂无表单摘要" />
             <el-table v-else :data="formSummaryRows(checkinDetail)" size="small">
+              <AdminTableIndex />
               <el-table-column prop="label" label="字段" width="180" />
               <el-table-column prop="value" label="内容" min-width="220" show-overflow-tooltip />
             </el-table>
@@ -263,6 +272,7 @@
       </AdminFilterBar>
       <AdminSectionCard title="支付异常" subtitle="只展示和记录处理备注，不允许人工修改支付成功状态。">
         <el-table :data="paymentExceptions" empty-text="暂无支付异常">
+          <AdminTableIndex />
           <el-table-column prop="orderNo" label="订单号" min-width="160" />
           <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
           <el-table-column label="金额" width="110"><template #default="{ row }">¥{{ formatCent(toNumber(row.payableAmountCent)) }}</template></el-table-column>
@@ -282,6 +292,7 @@
       </AdminFilterBar>
       <AdminSectionCard title="支付记录" subtitle="来自真实 payments 表，不提供人工改支付状态。">
         <el-table :data="payments" empty-text="暂无支付记录">
+          <AdminTableIndex />
           <el-table-column prop="orderNo" label="订单号" min-width="160" />
           <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
           <el-table-column prop="provider" label="渠道" width="110"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
@@ -303,6 +314,7 @@
       </AdminFilterBar>
       <AdminSectionCard title="券活动批次" subtitle="每个批次有 claimCode 和小程序领取路径，可用于二维码领取。">
         <el-table :data="couponCampaigns" empty-text="暂无券活动">
+          <AdminTableIndex />
           <el-table-column prop="name" label="活动" min-width="180" />
           <el-table-column prop="claimCode" label="领取码" min-width="150" />
           <el-table-column prop="claimedCount" label="已领取" width="90" />
@@ -323,6 +335,7 @@
           <el-descriptions-item label="密钥展示">{{ channelConfig.secretVisible ? "可见" : "不可见" }}</el-descriptions-item>
         </el-descriptions>
         <el-table :data="asRows(channelConfig?.templates)" empty-text="暂无模板映射">
+          <AdminTableIndex />
           <el-table-column prop="code" label="模板编码" min-width="160" />
           <el-table-column prop="name" label="模板名称" min-width="160" />
           <el-table-column prop="status" label="状态" width="110" />
@@ -338,6 +351,7 @@
       </AdminFilterBar>
       <AdminSectionCard :title="currentRoute.title">
         <el-table :data="financeRows" empty-text="暂无财务数据">
+          <AdminTableIndex />
           <el-table-column prop="refundNo" label="退款号" min-width="150" />
           <el-table-column prop="invoiceNo" label="发票号" min-width="150" />
           <el-table-column prop="billType" label="账单类型" width="110" />
@@ -359,6 +373,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";

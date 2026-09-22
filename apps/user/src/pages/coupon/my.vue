@@ -70,7 +70,7 @@ async function load() {
 
 function discountText(item: MyCouponItem) {
   if (item.coupon.type === "AMOUNT") return `立减 ¥${formatCent(item.coupon.discountAmountCent ?? 0)}`;
-  return `${((item.coupon.discountPercent ?? 0) / 100).toFixed(2)} 折优惠`;
+  return `减免 ${(item.coupon.discountPercent ?? 0) / 100}%`;
 }
 
 function thresholdText(item: MyCouponItem) {

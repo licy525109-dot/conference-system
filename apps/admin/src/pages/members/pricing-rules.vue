@@ -23,6 +23,7 @@
 
     <section class="table-panel">
       <el-table v-loading="loading" :data="rules" empty-text="暂无会员价规则">
+        <AdminTableIndex />
         <el-table-column label="等级" min-width="160"><template #default="{ row }">{{ row.level.name }}</template></el-table-column>
         <el-table-column label="适用范围" min-width="220">
           <template #default="{ row }">
@@ -108,6 +109,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";

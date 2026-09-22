@@ -259,6 +259,8 @@ model User {
   adminWechatBindings       AdminWechatBinding[]
   checkinStaffAssignments   CheckinStaffAssignment[]
   couponClaims              CouponClaim[]
+  targetedCouponDistributions CouponDistribution[] @relation("CouponDistributionTarget")
+  claimedCouponDistributions  CouponDistribution[] @relation("CouponDistributionClaimant")
   refunds                   Refund[]
   invoiceApplications       InvoiceApplication[]
   invoiceProfiles           InvoiceProfile[]
@@ -287,6 +289,7 @@ model AdminUser {
   publishedGuestSchedules GuestScheduleAssignment[] @relation("GuestScheduleAssignmentPublishedBy")
   checkinLogs             CheckinLog[]
   saasTenantMemberships   SaasTenantMember[]
+  couponDistributions    CouponDistribution[]
 
   @@index([enabled])
   @@index([createdAt])
@@ -1806,6 +1809,7 @@ model Coupon {
   totalLimit             Int?
   perUserLimit           Int?
   enabled                Boolean                @default(true)
+  requiresClaim          Boolean                @default(false)
   startAt                DateTime?
   endAt                  DateTime?
   stackableWithPromotion Boolean                @default(false)
@@ -1821,6 +1825,7 @@ model Coupon {
   mallRedemptions        MallCouponRedemption[]
   campaigns              CouponCampaignCoupon[]
   claims                 CouponClaim[]
+  distributions          CouponDistribution[]
 
   @@index([enabled])
   @@index([scope])
@@ -2541,7 +2546,8 @@ model CouponCampaignCoupon {
 
 model CouponClaim {
   id         String            @id @default(cuid())
-  campaignId String
+  campaignId String?
+  distributionId String? @unique
   couponId   String
   userId     String
   status     CouponClaimStatus @default(CLAIMED)
@@ -2549,7 +2555,8 @@ model CouponClaim {
   usedAt     DateTime?
   createdAt  DateTime          @default(now())
   updatedAt  DateTime          @updatedAt
-  campaign   CouponCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign   CouponCampaign?   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  distribution CouponDistribution? @relation(fields: [distributionId], references: [id], onDelete: SetNull)
   coupon     Coupon            @relation(fields: [couponId], references: [id], onDelete: Cascade)
   user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -2559,6 +2566,37 @@ model CouponClaim {
   @@index([userId])
   @@index([status])
   @@map("coupon_claims")
+}
+
+model CouponDistribution {
+  id                 String    @id @default(cuid())
+  couponId           String
+  targetUserId       String?
+  targetPhone        String?
+  tokenHash          String?   @unique
+  tokenEncrypted     String?
+  idempotencyKey     String
+  requestHash        String
+  createdByAdminId   String?
+  remark             String?
+  expiresAt          DateTime
+  claimedAt          DateTime?
+  claimUserId        String?
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  coupon             Coupon    @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  targetUser         User?     @relation("CouponDistributionTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  claimUser          User?     @relation("CouponDistributionClaimant", fields: [claimUserId], references: [id], onDelete: SetNull)
+  createdByAdmin     AdminUser? @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  claim              CouponClaim?
+
+  @@unique([createdByAdminId, idempotencyKey])
+  @@index([couponId, createdAt])
+  @@index([targetUserId])
+  @@index([targetPhone, couponId])
+  @@index([claimUserId])
+  @@map("coupon_distributions")
 }
 
 model ConferenceAppointment {

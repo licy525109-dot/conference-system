@@ -43,11 +43,16 @@ import { UserNotificationsService } from "./user-notifications.service";
 import { AdminUserActivityService } from "./admin-user-activity.service";
 import { AdminGuestIdentityController, GuestIdentityController } from "../registration/guest-identity.controller";
 import { GuestIdentityService } from "../registration/guest-identity.service";
+import { GuestClaimLinkController } from "../registration/guest-claim-link.controller";
+import { AdminCouponDistributionController, CouponDistributionController } from "./coupon-distribution.controller";
+import { CouponDistributionService } from "./coupon-distribution.service";
 
 @Module({
   imports: [AuthModule],
   controllers: [
+    AdminCouponDistributionController, CouponDistributionController,
     AdminGuestIdentityController, GuestIdentityController,
+    GuestClaimLinkController,
     AdminAuthController,
     AdminMobileController,
     NotificationsController,
@@ -68,6 +73,7 @@ import { GuestIdentityService } from "../registration/guest-identity.service";
     AdminAuditLogController
   ],
   providers: [
+    CouponDistributionService,
     GuestIdentityService,
     AdminUserActivityService,
     AdminAccessService,

@@ -32,6 +32,7 @@
 
     <section class="table-panel">
       <el-table v-loading="loading" :data="items" row-key="id">
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column label="时间" width="170">
           <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
         </el-table-column>
@@ -57,6 +58,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { onMounted, ref } from "vue";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";

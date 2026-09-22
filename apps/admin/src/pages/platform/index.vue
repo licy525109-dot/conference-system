@@ -29,6 +29,7 @@
         <div><h2>生产能力就绪度</h2><p>“已配置”不等于“生产可用”，只有完成真实联调验证的能力才标记为就绪。</p></div>
       </header>
       <el-table :data="overview?.providers ?? []" empty-text="暂无能力检查结果">
+        <AdminTableIndex />
         <el-table-column label="能力" min-width="170">
           <template #default="{ row }"><strong>{{ row.name }}</strong></template>
         </el-table-column>
@@ -50,6 +51,7 @@
             <span>共 {{ filteredTenants.length }} 个租户</span>
           </div>
           <el-table :data="filteredTenants" row-key="id" empty-text="暂无租户">
+            <AdminTableIndex />
             <el-table-column label="租户" min-width="220">
               <template #default="{ row }"><button class="platform-tenant-link" type="button" @click="openTenant(row)"><strong>{{ row.name }}</strong><small>{{ row.slug }}</small></button></template>
             </el-table-column>
@@ -64,6 +66,7 @@
         <el-tab-pane label="套餐与订阅" name="plans">
           <div class="platform-table-toolbar"><span>所有金额以整数分保存，页面仅格式化展示。</span><el-button :icon="Plus" @click="openPlanCreate">新增套餐</el-button></div>
           <el-table :data="plans" row-key="id" empty-text="暂无套餐">
+            <AdminTableIndex />
             <el-table-column prop="name" label="套餐" min-width="150" />
             <el-table-column prop="code" label="编码" width="130" />
             <el-table-column label="月付" width="130"><template #default="{ row }">{{ formatCent(row.monthlyPriceCent) }}</template></el-table-column>
@@ -77,6 +80,7 @@
         <el-tab-pane label="插件注册表" name="plugins">
           <div class="platform-table-toolbar"><span>当前仅提供安装控制面；沙箱执行器尚未启用，不会加载第三方代码。</span><el-button :icon="Plus" @click="pluginDialogVisible = true">注册插件</el-button></div>
           <el-table :data="plugins" row-key="id" empty-text="暂无插件">
+            <AdminTableIndex />
             <el-table-column prop="name" label="插件" min-width="180" />
             <el-table-column prop="code" label="编码" min-width="160" />
             <el-table-column prop="version" label="版本" width="110" />
@@ -115,23 +119,23 @@
         </div>
         <el-tabs v-model="tenantTab">
           <el-tab-pane label="工作区" name="workspaces">
-            <el-table :data="selectedTenant.workspaces" empty-text="暂无工作区"><el-table-column prop="name" label="名称" /><el-table-column prop="slug" label="标识" /><el-table-column prop="status" label="状态" width="100" /></el-table>
+            <el-table :data="selectedTenant.workspaces" empty-text="暂无工作区"><AdminTableIndex /><el-table-column prop="name" label="名称" /><el-table-column prop="slug" label="标识" /><el-table-column prop="status" label="状态" width="100" /></el-table>
           </el-tab-pane>
           <el-tab-pane label="API Key" name="keys">
             <div class="drawer-toolbar"><span>密钥明文仅创建时显示一次。</span><el-button size="small" :icon="Plus" @click="openApiKeyCreate">新建 Key</el-button></div>
-            <el-table :data="selectedTenant.apiKeys" empty-text="暂无 API Key"><el-table-column prop="name" label="名称" /><el-table-column prop="keyPrefix" label="前缀" /><el-table-column prop="status" label="状态" width="100" /><el-table-column label="操作" width="80"><template #default="{ row }"><el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="revokeKey(row)">撤销</el-button></template></el-table-column></el-table>
+            <el-table :data="selectedTenant.apiKeys" empty-text="暂无 API Key"><AdminTableIndex /><el-table-column prop="name" label="名称" /><el-table-column prop="keyPrefix" label="前缀" /><el-table-column prop="status" label="状态" width="100" /><el-table-column label="操作" width="80"><template #default="{ row }"><el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="revokeKey(row)">撤销</el-button></template></el-table-column></el-table>
           </el-tab-pane>
           <el-tab-pane label="Webhook" name="webhooks">
             <div class="drawer-toolbar"><span>签名密钥仅创建时显示；投递执行器尚未启用。</span><el-button size="small" :icon="Plus" @click="openWebhookCreate">新建 Webhook</el-button></div>
-            <el-table :data="selectedTenant.webhooks" empty-text="暂无 Webhook"><el-table-column prop="name" label="名称" /><el-table-column prop="url" label="地址" min-width="260" show-overflow-tooltip /><el-table-column prop="status" label="状态" width="100" /></el-table>
+            <el-table :data="selectedTenant.webhooks" empty-text="暂无 Webhook"><AdminTableIndex /><el-table-column prop="name" label="名称" /><el-table-column prop="url" label="地址" min-width="260" show-overflow-tooltip /><el-table-column prop="status" label="状态" width="100" /></el-table>
           </el-tab-pane>
           <el-tab-pane label="功能开关" name="flags">
             <div class="drawer-toolbar"><span>功能开关只建立控制面记录，不自动改变受保护业务链路。</span><el-button size="small" :icon="Plus" @click="openFlagCreate">新增开关</el-button></div>
-            <el-table :data="selectedTenant.featureFlags" empty-text="暂无功能开关"><el-table-column prop="key" label="标识" /><el-table-column prop="scopeKey" label="作用域" /><el-table-column label="启用" width="90"><template #default="{ row }"><el-switch :model-value="row.enabled" @change="toggleFlag(row, $event)" /></template></el-table-column></el-table>
+            <el-table :data="selectedTenant.featureFlags" empty-text="暂无功能开关"><AdminTableIndex /><el-table-column prop="key" label="标识" /><el-table-column prop="scopeKey" label="作用域" /><el-table-column label="启用" width="90"><template #default="{ row }"><el-switch :model-value="row.enabled" @change="toggleFlag(row, $event)" /></template></el-table-column></el-table>
           </el-tab-pane>
           <el-tab-pane label="插件安装" name="plugin-installs">
             <div class="drawer-toolbar"><span>仅登记安装状态，不执行插件代码。</span><el-button size="small" :icon="Plus" :disabled="plugins.length === 0" @click="openPluginInstall">安装插件</el-button></div>
-            <el-table :data="selectedTenant.pluginInstalls" empty-text="暂无插件安装"><el-table-column label="插件"><template #default="{ row }">{{ row.plugin.name }} {{ row.plugin.version }}</template></el-table-column><el-table-column label="作用域"><template #default="{ row }">{{ row.workspace?.name || '整个租户' }}</template></el-table-column><el-table-column prop="status" label="状态" width="100" /></el-table>
+            <el-table :data="selectedTenant.pluginInstalls" empty-text="暂无插件安装"><AdminTableIndex /><el-table-column label="插件"><template #default="{ row }">{{ row.plugin.name }} {{ row.plugin.version }}</template></el-table-column><el-table-column label="作用域"><template #default="{ row }">{{ row.workspace?.name || '整个租户' }}</template></el-table-column><el-table-column prop="status" label="状态" width="100" /></el-table>
           </el-tab-pane>
         </el-tabs>
       </template>
@@ -162,6 +166,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { CopyDocument, Grid, Key, OfficeBuilding, Plus, Refresh, Search, Tickets } from "@element-plus/icons-vue";

@@ -10,11 +10,11 @@ const ts = require("typescript");
 const { parse, compileTemplate } = require("vue/compiler-sfc");
 const file = new URL("../../apps/user/src/components/ui/HomeMessageNotice.vue", import.meta.url);
 const { descriptor } = parse(readFileSync(file, "utf8"));
-const compiled = ts.transpileModule(`${descriptor.scriptSetup.content}\nexport const state = { authenticated, unreadCount, refresh, openMessages };`, {
+const compiled = ts.transpileModule(`${descriptor.scriptSetup.content}\nexport const state = { authenticated, unreadCount, visible, refresh, openMessages, dismiss };`, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
 }).outputText;
 
-function setup(t, initialToken, getCount) {
+function setup(t, initialToken, getCount, storage = new Map()) {
   let token = initialToken;
   let unmount;
   let requests = 0;
@@ -26,13 +26,20 @@ function setup(t, initialToken, getCount) {
     uni: {
       $on: (name, listener) => events.set(name, listener),
       $off: (name, listener) => { assert.equal(events.get(name), listener); events.delete(name); },
-      reLaunch: input => navigations.push(input.url)
+      reLaunch: input => navigations.push(input.url),
+      getStorageSync: key => storage.get(key),
+      setStorageSync: (key, value) => storage.set(key, value)
     },
     require(id) {
       if (id === "vue") return { ...vue, onMounted: fn => fn(), onUnmounted: fn => { unmount = fn; } };
-      if (id.endsWith("/session")) return { getToken: () => token };
+      if (id.endsWith("/session")) return { getToken: () => token, getStoredUser: () => ({ id: token }) };
       if (id.endsWith("/user-notifications")) return {
-        getUnreadNotificationCount: () => { requests += 1; return getCount(); }
+        getMyNotifications: async unreadOnly => {
+          assert.equal(unreadOnly, true);
+          requests += 1;
+          const result = await getCount();
+          return { unreadCount: result.count, items: result.items || Array.from({ length: result.count }, (_, id) => ({ id: String(id), readAt: null })) };
+        }
       };
       throw new Error(`Unexpected dependency: ${id}`);
     }
@@ -68,18 +75,21 @@ test("visitors do not fetch private data or get a login prompt", async t => {
   assert.equal(state.requests, 0);
 });
 
-test("signed-in users get an independent message entry with or without unread messages", async t => {
+test("only unread messages show a dismissible homepage notice; zero unread shows nothing", async t => {
   let count = 3;
   const state = setup(t, "account-a", async () => ({ count }));
   await settle();
   assert.equal(state.authenticated.value, true);
   assert.equal(state.unreadCount.value, 3);
+  assert.equal(state.visible.value, true);
+  assert.match(descriptor.template.content, /v-if="authenticated && visible && unreadCount > 0"/);
   await state.refresh();
   assert.equal(state.requests, 1);
   count = 0;
   state.events.get("notifications:changed")();
   await settle();
   assert.equal(state.unreadCount.value, 0);
+  assert.equal(state.visible.value, false);
   state.openMessages();
   assert.deepEqual(state.navigations, ["/pages/notifications/index"]);
 });
@@ -96,6 +106,36 @@ test("late responses cannot leak a previous account's unread badge after switchi
   state.setToken("");
   assert.equal(state.authenticated.value, false);
   assert.equal(state.unreadCount.value, 0);
+  assert.equal(state.visible.value, false);
+});
+
+test("dismissed messages stay quiet after remount, while a new message shows again", async t => {
+  const storage = new Map();
+  let items = [{ id: "first", readAt: null }];
+  const response = async () => ({ count: items.length, items });
+  const first = setup(t, "user-a", response, storage);
+  await settle();
+  first.dismiss();
+  assert.equal(first.visible.value, false);
+  const next = setup(t, "user-a", response, storage);
+  await settle();
+  assert.equal(next.visible.value, false);
+  items = [{ id: "second", readAt: null }, ...items];
+  await next.refresh(true);
+  assert.equal(next.visible.value, true);
+  assert.deepEqual(Array.from(storage.keys()), ["home_notice_dismissed:user-a"]);
+});
+
+test("notice dismissal is isolated by account and is not a message read mutation", async t => {
+  const state = setup(t, "user-a", async () => ({ count: 1 }));
+  await settle();
+  state.dismiss();
+  await state.refresh(true);
+  assert.equal(state.visible.value, false);
+  assert.equal(state.unreadCount.value, 1);
+  state.setToken("user-b");
+  await settle();
+  assert.equal(state.visible.value, true);
 });
 
 test("reading messages during an in-flight refresh schedules one fresh badge read", async t => {

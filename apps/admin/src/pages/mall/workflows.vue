@@ -59,6 +59,7 @@
 
     <section v-if="mode === 'categories'" class="table-panel">
       <el-table v-loading="loading" :data="categories" empty-text="暂无商品分类">
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column prop="name" label="分类名称" min-width="160" />
         <el-table-column prop="code" label="编码" width="160" />
         <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
@@ -77,6 +78,7 @@
 
     <section v-else-if="mode === 'skus'" class="table-panel">
       <el-table v-loading="loading" :data="skus" empty-text="暂无 SKU">
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column prop="productTitle" label="商品" min-width="180" />
         <el-table-column prop="name" label="SKU" min-width="160" />
         <el-table-column label="价格" width="110"><template #default="{ row }">¥{{ formatCent(row.priceCent) }}</template></el-table-column>
@@ -96,6 +98,7 @@
 
       <el-divider v-if="inventoryLogs.length">库存流水</el-divider>
       <el-table v-if="inventoryLogs.length" :data="inventoryLogs" size="small">
+        <AdminTableIndex />
         <el-table-column prop="createdAt" label="时间" width="180" />
         <el-table-column prop="action" label="动作" width="160" />
         <el-table-column prop="quantity" label="数量" width="90" />
@@ -108,6 +111,7 @@
 
     <section v-else-if="mode === 'fulfillment'" class="table-panel">
       <el-table v-loading="loading" :data="shipments" empty-text="暂无发货记录">
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column prop="orderNo" label="订单号" min-width="180" />
         <el-table-column prop="receiverName" label="收件人" width="120" />
         <el-table-column label="物流 / 核销" min-width="220">
@@ -130,6 +134,7 @@
 
     <section v-else class="table-panel">
       <el-table v-loading="loading" :data="afterSales" empty-text="暂无售后记录">
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column prop="orderNo" label="订单号" min-width="180" />
         <el-table-column label="类型" width="120"><template #default="{ row }">{{ afterSaleTypeText(row.type) }}</template></el-table-column>
         <el-table-column label="状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="afterSaleStatusText(row.status)" /></template></el-table-column>
@@ -245,6 +250,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, defineComponent, h, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElPagination } from "element-plus";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";

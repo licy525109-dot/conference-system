@@ -21,6 +21,7 @@ interface MallCouponRecord {
   totalLimit: number | null;
   perUserLimit: number | null;
   enabled: boolean;
+  requiresClaim?: boolean;
   deletedAt: Date | null;
   startAt: Date | null;
   endAt: Date | null;
@@ -58,7 +59,7 @@ export async function applyMallCoupon(
   if (!coupon) throw new BadRequestException("优惠券不存在");
 
   validateMallCoupon(coupon, input.items, input.originAmountCent);
-  await ensureCouponClaimed(client, coupon.id, input.userId);
+  await ensureCouponClaimed(client, coupon.id, input.userId, coupon.requiresClaim);
   await ensureCouponLimit(client, coupon, input.userId);
 
   const scopedAmountCent = filterAllowedItems(input.items, coupon.allowedSkuIds).reduce((sum, item) => sum + item.totalAmountCent, 0);
@@ -86,13 +87,16 @@ export async function applyMallCoupon(
   };
 }
 
-async function ensureCouponClaimed(client: CouponClient, couponId: string, userId: string) {
-  if (!client.couponClaim?.count) return;
+async function ensureCouponClaimed(client: CouponClient, couponId: string, userId: string, requiresClaim = false) {
+  if (!client.couponClaim?.count) {
+    if (requiresClaim) throw new BadRequestException("请先领取该优惠券");
+    return;
+  }
   const [totalClaims, userClaims] = await Promise.all([
     client.couponClaim.count({ where: { couponId } }),
     client.couponClaim.count({ where: { couponId, userId, status: CouponClaimStatus.CLAIMED } })
   ]);
-  if (totalClaims > 0 && userClaims === 0) {
+  if ((requiresClaim || totalClaims > 0) && userClaims === 0) {
     throw new BadRequestException("请先领取该优惠券");
   }
 }

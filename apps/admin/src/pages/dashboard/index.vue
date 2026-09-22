@@ -83,6 +83,7 @@
       <el-col :span="12">
         <AdminSectionCard title="热门会议" subtitle="按报名热度排序，帮助判断主推会议。">
           <el-table :data="overview.hotConferences" empty-text="暂无会议数据">
+            <AdminTableIndex />
             <el-table-column prop="title" label="会议" min-width="180" />
             <el-table-column prop="orderCount" label="订单" width="100" />
             <el-table-column prop="registrationCount" label="报名" width="100" />
@@ -92,6 +93,7 @@
       <el-col :span="12">
         <AdminSectionCard title="库存预警" subtitle="剩余 10 张以内的票种需要关注。">
           <el-table :data="overview.inventoryAlerts" empty-text="暂无库存预警">
+            <AdminTableIndex />
             <el-table-column prop="conferenceTitle" label="会议" min-width="160" />
             <el-table-column prop="name" label="规格" min-width="140" />
             <el-table-column prop="remainingStock" label="剩余" width="100" />
@@ -104,6 +106,7 @@
       <el-col :span="12">
         <AdminSectionCard title="最近支付订单" subtitle="按创建时间倒序，异常订单建议进入订单页核对。">
           <el-table :data="overview.recentOrders" empty-text="暂无订单">
+            <AdminTableIndex />
             <el-table-column prop="orderNo" label="订单号" min-width="160" />
             <el-table-column prop="conferenceTitle" label="会议" min-width="160" />
             <el-table-column label="应付" width="100">
@@ -120,6 +123,7 @@
       <el-col :span="12">
         <AdminSectionCard title="最近报名记录" subtitle="支付成功后生成报名记录。">
           <el-table :data="overview.recentRegistrations" empty-text="暂无报名">
+            <AdminTableIndex />
             <el-table-column prop="registrationNo" label="报名号" min-width="160" />
             <el-table-column prop="conferenceTitle" label="会议" min-width="160" />
             <el-table-column prop="attendeeName" label="姓名" width="100" />
@@ -133,6 +137,7 @@
 
     <AdminSectionCard v-if="overview" title="热门票种" subtitle="按售卖量观察票种表现和库存压力。">
       <el-table :data="ticketSales?.items ?? overview.hotSkus" empty-text="暂无票种数据">
+        <AdminTableIndex />
         <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
         <el-table-column prop="name" label="票种" min-width="140" />
         <el-table-column prop="soldCount" label="已售" width="100" />
@@ -144,6 +149,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, ref } from "vue";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";

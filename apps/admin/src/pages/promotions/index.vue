@@ -25,6 +25,7 @@
 
     <section class="table-panel">
       <el-table v-loading="loading" :data="items">
+        <AdminTableIndex />
         <el-table-column prop="name" label="名称" min-width="180" />
         <el-table-column prop="conferenceTitle" label="适用会议" min-width="220" show-overflow-tooltip />
         <el-table-column label="门槛" width="170"><template #default="{ row }">{{ thresholdText(row.minAmountCent, row.minQuantity) }}</template></el-table-column>
@@ -60,6 +61,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";
