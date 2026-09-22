@@ -111,12 +111,13 @@ export class PublicOperationsService {
       items: filtered.map((item) => {
         const usage = usageByCoupon.get(item.couponId);
         const expired = Boolean(item.coupon.endAt && item.coupon.endAt < new Date());
-        const usable = item.status === CouponClaimStatus.CLAIMED && item.coupon.enabled && !expired && !usage?.pending && !usage?.used;
+        const notStarted = Boolean(item.coupon.startAt && item.coupon.startAt > new Date());
+        const usable = item.status === CouponClaimStatus.CLAIMED && item.coupon.enabled && !item.coupon.deletedAt && !expired && !notStarted && !usage?.pending && !usage?.used;
         return {
           ...formatDateFields(item),
           usedAt: usage?.usedAt ?? item.usedAt?.toISOString() ?? null,
           usable,
-          statusText: usage?.used ? "已使用" : usage?.pending ? "待支付占用" : expired ? "已过期" : usable ? "可使用" : "不可用",
+          statusText: usage?.used ? "已使用" : usage?.pending ? "待支付占用" : expired ? "已过期" : notStarted ? "未到使用时间" : usable ? "可使用" : "不可用",
           businessType: couponBusinessType(item.coupon.scope),
           scopeText: couponScopeText(item.coupon.scope),
           usePath: couponUsePath(item.coupon),
@@ -136,10 +137,10 @@ export class PublicOperationsService {
             startAt: item.coupon.startAt?.toISOString() ?? null,
             endAt: item.coupon.endAt?.toISOString() ?? null
           },
-          campaign: {
+          campaign: item.campaign ? {
             id: item.campaign.id,
             name: item.campaign.name
-          }
+          } : { id: null, name: "会务定向发放" }
         };
       })
     });
@@ -722,11 +723,12 @@ function couponMatchesScope(couponScope: CouponScope, requestedScope: CouponScop
 
 function isCouponClaimEligible(coupon: {
   enabled: boolean;
+  requiresClaim?: boolean;
   deletedAt: Date | null;
   startAt: Date | null;
   endAt: Date | null;
 }, now: Date): boolean {
-  return coupon.enabled && !coupon.deletedAt && (!coupon.startAt || coupon.startAt <= now) && (!coupon.endAt || coupon.endAt >= now);
+  return coupon.enabled && !coupon.requiresClaim && !coupon.deletedAt && (!coupon.startAt || coupon.startAt <= now) && (!coupon.endAt || coupon.endAt >= now);
 }
 
 function couponBusinessType(scope: CouponScope): "CONFERENCE" | "MALL" | "BOTH" {

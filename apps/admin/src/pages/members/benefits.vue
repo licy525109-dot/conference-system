@@ -22,6 +22,7 @@
 
     <section class="table-panel">
       <el-table v-loading="loading" :data="benefits" empty-text="暂无会员权益">
+        <AdminTableIndex />
         <el-table-column label="权益" min-width="220">
           <template #default="{ row }">
             <strong>{{ row.title }}</strong>
@@ -50,6 +51,7 @@
         <template #actions><el-button @click="loadGrants">查询记录</el-button></template>
       </AdminFilterBar>
       <el-table :data="grants" empty-text="暂无发放记录">
+        <AdminTableIndex />
         <el-table-column label="用户" min-width="180"><template #default="{ row }">{{ userName(row.user) }}</template></el-table-column>
         <el-table-column label="权益" min-width="180"><template #default="{ row }">{{ row.benefit.title }}</template></el-table-column>
         <el-table-column label="等级" width="130"><template #default="{ row }">{{ row.benefit.level?.name || row.membership?.level.name }}</template></el-table-column>
@@ -102,6 +104,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";

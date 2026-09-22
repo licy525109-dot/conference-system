@@ -58,6 +58,7 @@
         </template>
       </AdminFilterBar>
       <el-table v-loading="paymentsLoading" :data="payments" empty-text="暂无支付流水">
+        <AdminTableIndex :page="paymentFilters.page" :page-size="paymentFilters.pageSize" />
         <el-table-column label="来源" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.sourceType" :label="sourceText(row.sourceType)" /></template></el-table-column>
         <el-table-column prop="orderNo" label="订单号" min-width="160" />
         <el-table-column prop="businessTitle" label="业务摘要" min-width="180" show-overflow-tooltip />
@@ -129,6 +130,7 @@
         <el-button type="primary" @click="createRefundRequest">创建退款申请</el-button>
       </div>
       <el-table v-loading="refundsLoading" :data="refunds" empty-text="暂无退款记录">
+        <AdminTableIndex :page="refundFilters.page" :page-size="refundFilters.pageSize" />
         <el-table-column label="来源" width="90"><template #default="{ row }">{{ sourceText(row.sourceType) }}</template></el-table-column>
         <el-table-column prop="refundNo" label="退款号" min-width="150" />
         <el-table-column prop="orderNo" label="订单号" min-width="160" />
@@ -168,6 +170,7 @@
         </template>
       </AdminFilterBar>
       <el-table v-loading="invoicesLoading" :data="invoices" empty-text="暂无发票申请">
+        <AdminTableIndex :page="invoiceFilters.page" :page-size="invoiceFilters.pageSize" />
         <el-table-column label="来源" width="90"><template #default="{ row }">{{ sourceText(row.sourceType) }}</template></el-table-column>
         <el-table-column prop="invoiceNo" label="申请号" min-width="150" />
         <el-table-column prop="orderNo" label="订单号" min-width="160" />
@@ -209,6 +212,7 @@
         <el-button :disabled="!selectedBillId" @click="importSelectedBill">导入到选中账单</el-button>
       </div>
       <el-table v-loading="billsLoading" :data="bills" highlight-current-row empty-text="暂无微信账单" @current-change="(row: any) => { selectedBillId = row?.id || ''; if (row?.billDate) billForm.billDate = row.billDate; if (row?.billType) billForm.billType = row.billType; }">
+        <AdminTableIndex :page="billFilters.page" :page-size="billFilters.pageSize" />
         <el-table-column prop="billDate" label="账单日期" width="130" />
         <el-table-column prop="billType" label="类型" width="120" />
         <el-table-column label="状态" width="140"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="statusText(row.status)" /></template></el-table-column>
@@ -243,6 +247,7 @@
         </template>
       </AdminFilterBar>
       <el-table v-loading="reconciliationLoading" :data="reconciliationResults" empty-text="暂无对账结果">
+        <AdminTableIndex :page="reconciliationFilters.page" :page-size="reconciliationFilters.pageSize" />
         <el-table-column prop="billDate" label="账单日期" width="120" />
         <el-table-column prop="type" label="类型" min-width="150"><template #default="{ row }">{{ statusText(row.type) }}</template></el-table-column>
         <el-table-column label="状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="statusText(row.status)" /></template></el-table-column>
@@ -291,6 +296,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";

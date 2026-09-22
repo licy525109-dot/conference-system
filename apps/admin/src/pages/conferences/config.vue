@@ -111,6 +111,7 @@
           <el-button type="primary" @click="openSku()">新增票种</el-button>
         </div>
         <el-table :data="skus" empty-text="暂无票种">
+          <AdminTableIndex />
           <el-table-column prop="name" label="名称" min-width="160" />
           <el-table-column label="价格" width="120"><template #default="{ row }">¥{{ formatCent(row.priceCent) }}</template></el-table-column>
           <el-table-column prop="stock" label="库存" width="100" />
@@ -127,6 +128,7 @@
           <el-button type="primary" @click="openField()">新增字段</el-button>
         </div>
         <el-table :data="fields" empty-text="暂无字段">
+          <AdminTableIndex />
           <el-table-column prop="label" label="标签" min-width="140" />
           <el-table-column prop="fieldKey" label="字段标识" min-width="140" />
           <el-table-column label="类型" width="120"><template #default="{ row }">{{ fieldTypeText(row.type) }}</template></el-table-column>
@@ -292,6 +294,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Delete, FolderOpened, Picture, Upload } from "@element-plus/icons-vue";

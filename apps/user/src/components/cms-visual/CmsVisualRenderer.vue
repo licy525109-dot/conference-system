@@ -53,35 +53,39 @@
         </view>
       </view>
 
-      <view v-else-if="component.type === 'conference-list'" class="cms-section">
+      <view v-else-if="component.type === 'conference-list'" class="cms-section cms-conference-list">
         <text class="cms-section__title" :style="titleStyle(component)">{{ stringConfig(component, "title") || "可报名会议" }}</text>
         <view v-if="conferences.length === 0" class="cms-empty">{{ conferenceLoading ? '正在读取会议…' : '暂无可报名会议' }}</view>
-        <view v-for="(item, index) in limitedConferences(component)" :key="item.id" :class="conferenceCardClass(component, 'cms-card')" :style="conferenceCardStyle(component)">
-          <image
-            v-if="showConferenceCover(component, item)"
-            :class="conferenceImageClass(component, 'cms-card__image')"
-            :style="conferenceImageStyle(component)"
-            :src="conferenceCoverUrl(item)"
-            :mode="conferenceImageMode(component)"
-            :lazy-load="index > 0"
-            @error="markConferenceCoverFailed(item.id)"
-          />
-          <view
-            v-else-if="booleanConfig(component, 'showCover', true)"
-            :class="conferenceImageClass(component, 'cms-card__image cms-card__image--empty')"
-            :style="conferenceImageStyle(component)"
-          >
-            <text>{{ conferenceCoverInitial(item) }}</text>
+        <button
+          v-for="(item, index) in limitedConferences(component)"
+          :key="item.id"
+          :class="['conference-entry', { 'conference-entry--no-cover': !showConferenceCover(component, item) }]"
+          :aria-label="`${item.title}，${conferenceActionText(item, component)}`"
+          role="button"
+          tabindex="0"
+          @click.stop="handleConferenceAction(item, component)"
+          @keydown.enter.prevent="handleConferenceAction(item, component)"
+          @keydown.space.prevent="handleConferenceAction(item, component)"
+        >
+          <view v-if="showConferenceCover(component, item)" class="conference-entry__cover">
+            <image
+              class="conference-entry__image"
+              :src="conferenceCoverUrl(item)"
+              mode="aspectFit"
+              :lazy-load="index > 0"
+              @error="markConferenceCoverFailed(item.id)"
+            />
           </view>
-          <view class="cms-card__body">
-            <text class="cms-card__title" :style="conferenceTextStyle(component, 'title')">{{ item.title }}</text>
-            <text v-if="booleanConfig(component, 'showSummary', true)" class="cms-card__text" :style="conferenceTextStyle(component, 'summary')">{{ item.summary || summaryFallback(component) }}</text>
-            <text v-for="line in conferenceMetaLines(item, component, index)" :key="line" class="cms-card__meta" :style="conferenceTextStyle(component, 'meta')">{{ line }}</text>
-            <view class="cms-card__button" @click.stop="handleConferenceAction(item, component)">
-              <text>{{ conferenceActionText(item, component) }}</text>
+          <view class="conference-entry__body">
+            <text class="conference-entry__title" :style="conferenceListTextStyle(component, 'title')">{{ item.title }}</text>
+            <text v-if="booleanConfig(component, 'showSummary', false) && item.summary" class="conference-entry__summary" :style="conferenceListTextStyle(component, 'summary')">{{ item.summary }}</text>
+            <view v-for="line in conferenceListMeta(item, component, index)" :key="line.icon" class="conference-entry__meta" :style="conferenceListTextStyle(component, 'meta')">
+              <wd-icon :name="line.icon" size="15px" />
+              <text>{{ line.text }}</text>
             </view>
           </view>
-        </view>
+          <view class="conference-entry__arrow"><wd-icon name="chevron-right" size="16px" /></view>
+        </button>
       </view>
 
       <CmsConferenceScheduleRenderer
@@ -2233,6 +2237,13 @@ function conferenceTextStyle(component: CmsComponent, part: "title" | "summary" 
   };
 }
 
+function conferenceListTextStyle(component: CmsComponent, part: "title" | "summary" | "meta"): Record<string, string> {
+  const style = conferenceTextStyle(component, part);
+  // Legacy thumbnail sizes are too small for reading. Keep configured colors and fonts.
+  style.fontSize = `${Math.max(part === "title" ? 17 : 14, Number.parseFloat(style.fontSize) / 2)}px`;
+  return style;
+}
+
 function conferenceCardClass(component: CmsComponent, baseClass: string): string[] {
   return [baseClass, "is-conference-card", stringConfig(component, "cardImageLayout") === "full" ? "is-cover-full" : ""].filter(Boolean);
 }
@@ -2344,6 +2355,14 @@ function conferenceMetaLines(item: ConferenceListItem, component: CmsComponent, 
   if (booleanConfig(component, "showLocation", true) && item.location) parts.push(`会议地点：${item.location}`);
   if (booleanConfig(component, "showRegistrationCount", false)) parts.push(`${registrationCountFor(item, component, index)} 人已报名`);
   return parts;
+}
+
+function conferenceListMeta(item: ConferenceListItem, component: CmsComponent, index: number): { icon: string; text: string }[] {
+  const lines: { icon: string; text: string }[] = [];
+  if (booleanConfig(component, "showTime", true)) lines.push({ icon: "calendar", text: formatDateTime(item.startsAt).split(" ")[0] });
+  if (booleanConfig(component, "showLocation", true) && item.location) lines.push({ icon: "location", text: item.location });
+  if (booleanConfig(component, "showRegistrationCount", false)) lines.push({ icon: "user", text: `${registrationCountFor(item, component, index)} 人已报名` });
+  return lines;
 }
 
 function registrationCountFor(item: ConferenceListItem, component: CmsComponent, index: number): number {
@@ -2488,3 +2507,26 @@ function readErrorText(error: unknown, fallback: string): string {
 </script>
 
 <style scoped src="./CmsVisualRenderer.css"></style>
+<style scoped>
+.cms-conference-list { background: var(--cms-surface, #fff); padding: 16px 16px 2px; border-radius: 0; box-shadow: none; }
+.cms-conference-list .cms-section__title { font-size: 20px; line-height: 1.4; }
+.conference-entry { display: grid; grid-template-columns: 88px minmax(0, 1fr) 16px; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 96px; box-sizing: border-box; margin: 0; padding: 16px 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; line-height: 1.5; text-align: left; }
+.conference-entry + .conference-entry { border-top: 1px solid var(--cms-border, #e4e5e7); }
+.conference-entry::after { border: 0; }
+.conference-entry:focus-visible { outline: 2px solid var(--cms-primary, #987627); outline-offset: -2px; }
+.conference-entry--no-cover { grid-template-columns: minmax(0, 1fr) 16px; }
+.conference-entry__cover { position: relative; width: 88px; height: 72px; overflow: hidden; border-radius: 4px; background: #f5f6f6; }
+.conference-entry__image { position: absolute; inset: 0; width: 100%; height: 100%; }
+.conference-entry__body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.conference-entry__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-weight: 700; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
+.conference-entry__summary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5; }
+.conference-entry__meta { display: flex; align-items: center; gap: 5px; min-width: 0; line-height: 1.5; }
+.conference-entry__meta > :first-child { flex: 0 0 15px; }
+.conference-entry__meta text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conference-entry__arrow { width: 16px; color: var(--cms-primary, #987627); }
+@media (max-width: 359px) {
+  .conference-entry { grid-template-columns: 76px minmax(0, 1fr) 16px; gap: 8px; }
+  .conference-entry--no-cover { grid-template-columns: minmax(0, 1fr) 16px; }
+  .conference-entry__cover { width: 76px; height: 64px; }
+}
+</style>

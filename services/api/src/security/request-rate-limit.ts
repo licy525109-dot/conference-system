@@ -37,6 +37,8 @@ const RULES: RateLimitRule[] = [
   { pattern: /^\/api\/mall\/orders\/[^/]+\/payments\/(wechat\/prepay|mock-pay)$/, methods: ["POST"], limit: 60, windowMs: 60_000 },
   { pattern: /^\/api\/mall\/orders\/[^/]+\/payment-status$/, methods: ["GET"], limit: 120, windowMs: 60_000 },
   { pattern: /^\/api\/coupons\/claim$/, methods: ["POST"], limit: 10, windowMs: 60_000 },
+  { pattern: /^\/api\/coupon-distributions\/preview$/, methods: ["POST"], limit: 60, windowMs: 60_000 },
+  { pattern: /^\/api\/coupon-distributions\/claim$/, methods: ["POST"], limit: 10, windowMs: 60_000 },
   { pattern: /^\/api\/conferences\/[^/]+\/ai\/ask$/, methods: ["POST"], limit: 20, windowMs: 60_000 },
   { pattern: /^\/api\/checkin\/self$/, methods: ["POST"], limit: 10, windowMs: 60_000 },
   { pattern: /^\/api\/checkin\/(scan|staff-scan)$/, methods: ["POST"], limit: 120, windowMs: 60_000 },

@@ -85,6 +85,7 @@
 
     <section v-else-if="visibleSection === 'templates'" class="table-panel">
       <el-table :data="templates" empty-text="暂无通知模板">
+        <AdminTableIndex />
         <el-table-column prop="code" label="模板编码" min-width="180" />
         <el-table-column prop="name" label="模板名称" min-width="180" />
         <el-table-column label="用途" min-width="130"><template #default="{ row }">{{ purposeText(templatePurpose(row)) }}</template></el-table-column>
@@ -104,6 +105,7 @@
 
     <section v-else-if="visibleSection === 'tasks'" class="table-panel">
       <el-table :data="tasks" empty-text="暂无通知任务">
+        <AdminTableIndex />
         <el-table-column prop="name" label="任务" min-width="200" />
         <el-table-column label="模板" min-width="180"><template #default="{ row }">{{ row.template?.name || row.templateId }}</template></el-table-column>
         <el-table-column label="目标类型" min-width="140"><template #default="{ row }">{{ recipientTypeText(row.targetType) }}</template></el-table-column>
@@ -133,6 +135,7 @@
 
     <section v-else class="table-panel">
       <el-table :data="logs" empty-text="暂无发送日志">
+        <AdminTableIndex />
         <el-table-column label="任务" min-width="180"><template #default="{ row }">{{ row.task?.name || row.taskId || "-" }}</template></el-table-column>
         <el-table-column label="模板" min-width="160"><template #default="{ row }">{{ row.template?.name || row.templateId || "-" }}</template></el-table-column>
         <el-table-column label="渠道" width="140"><template #default="{ row }">{{ channelText(row.channel) }}</template></el-table-column>
@@ -217,6 +220,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Delete, Plus } from "@element-plus/icons-vue";

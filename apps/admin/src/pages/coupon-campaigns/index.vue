@@ -28,6 +28,7 @@
 
     <section class="table-panel">
       <el-table v-loading="loading" :data="items" empty-text="暂无券活动">
+        <AdminTableIndex />
         <el-table-column prop="name" label="活动" min-width="180" />
         <el-table-column prop="claimCode" label="领取码" width="150" />
         <el-table-column label="绑定券" min-width="220">
@@ -87,6 +88,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";

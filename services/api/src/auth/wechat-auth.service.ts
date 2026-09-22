@@ -34,6 +34,56 @@ type WechatHttpPayload = {
 export class WechatAuthService {
   private cachedAccessToken?: { value: string; expiresAt: number };
 
+  async generateGuestClaimLink(token: string, expiresAt: Date): Promise<string> {
+    return this.generatePrivateClaimLink("pages/account/claim", token, expiresAt, 24);
+  }
+
+  async generateCouponClaimLink(token: string, expiresAt: Date): Promise<string> {
+    return this.generatePrivateClaimLink("pages/coupon/claim", token, expiresAt, 168);
+  }
+
+  private async generatePrivateClaimLink(path: "pages/account/claim" | "pages/coupon/claim", token: string, expiresAt: Date, maxHours: number): Promise<string> {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token) || !Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= Date.now() + 60_000 || expiresAt.getTime() > Date.now() + maxHours * 3600_000) {
+      throw new BadRequestException("邀请即将到期或无效，请重新生成邀请");
+    }
+    const body = { path, query: `token=${token}`, env_version: "release", expire_type: 0, expire_time: Math.floor(expiresAt.getTime() / 1000) };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const accessToken = await this.getAccessToken();
+      const url = new URL("https://api.weixin.qq.com/wxa/generate_urllink");
+      url.searchParams.set("access_token", accessToken);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), CODE2SESSION_TIMEOUT_MS);
+      try {
+        const response = await this.fetchUrlLinkPayload(url, body, controller.signal);
+        const error = readWechatApiError(response.payload);
+        if (error && attempt === 0 && RETRYABLE_ACCESS_TOKEN_ERRCODES.has(error.errcode)) {
+          this.cachedAccessToken = undefined;
+          continue;
+        }
+        if (error) {
+          const hint = error.errcode === 40165 || error.errcode === 85079
+            ? "请先发布包含邀请页面的小程序版本"
+            : "请管理员核对小程序 URL Link 权限或稍后重试";
+          throw new BadGatewayException(`邀请链接生成失败（错误码 ${error.errcode}），${hint}`);
+        }
+        const link = response.payload.url_link;
+        if (!response.ok || typeof link !== "string" || !/^https:\/\/[^\s]+$/.test(link)) throw new BadGatewayException("微信返回的邀请链接无效，请重试");
+        return link;
+      } catch (error) {
+        if (error instanceof HttpException) throw error;
+        if (isAbortError(error)) throw new GatewayTimeoutException("邀请链接生成超时，请重试");
+        // Upstream errors may contain credentials or invitation tokens. Never forward them.
+        throw new BadGatewayException("邀请链接暂时无法生成，请重试");
+      } finally { clearTimeout(timeout); }
+    }
+    throw new BadGatewayException("邀请链接暂时无法生成，请重试");
+  }
+
+  protected async fetchUrlLinkPayload(url: URL, body: Record<string, unknown>, signal: AbortSignal): Promise<WechatHttpPayload> {
+    const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+    return { ok: response.ok, payload: await safeJson(response) };
+  }
+
   async code2Session(code: string): Promise<WechatSession> {
     const appId = readRequiredEnv("WECHAT_APP_ID");
     const appSecret = readRequiredEnv("WECHAT_APP_SECRET");

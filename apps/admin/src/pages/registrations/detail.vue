@@ -32,6 +32,7 @@
 
       <AdminSectionCard title="参会人信息">
         <el-table :data="detail.attendees" empty-text="暂无参会人">
+          <AdminTableIndex />
           <el-table-column prop="skuName" label="票种" min-width="120" />
           <el-table-column prop="name" label="姓名" width="120" />
           <el-table-column prop="phone" label="手机" width="140" />
@@ -52,6 +53,7 @@
           <el-descriptions-item label="支付时间">{{ formatDate(detail.order.paidAt) }}</el-descriptions-item>
         </el-descriptions>
         <el-table class="section-table" :data="detail.order.payments" empty-text="暂无支付流水">
+          <AdminTableIndex />
           <el-table-column prop="provider" label="渠道" width="100"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
           <el-table-column label="状态" width="120"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
           <el-table-column prop="outTradeNo" label="商户单号" min-width="180" />
@@ -97,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";

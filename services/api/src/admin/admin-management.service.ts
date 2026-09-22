@@ -1250,13 +1250,15 @@ export class AdminManagementService {
   async updateCoupon(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const existing = await this.prisma.coupon.findUnique({
       where: { id },
-      select: { id: true, type: true, deletedAt: true }
+      select: { id: true, type: true, deletedAt: true, requiresClaim: true }
     });
     if (!existing || existing.deletedAt) {
       throw new NotFoundException("Coupon not found");
     }
 
     const request = parseCouponInput(input, true);
+    const changesLimit = request.perUserLimit !== undefined && request.perUserLimit !== 1;
+    if (existing.requiresClaim && changesLimit) throw new ConflictException("定向券须保持每人限用 1 次");
     const nextType = request.type ?? existing.type;
     validateCouponDiscountInput(nextType, request, true);
     const data: Prisma.CouponUncheckedUpdateInput = {
@@ -1283,7 +1285,7 @@ export class AdminManagementService {
 
     const coupon = await catchUniqueConstraint(
       this.prisma.coupon.update({
-        where: { id },
+        where: { id, ...(changesLimit ? { requiresClaim: false } : {}) },
         data,
         select: couponSelect
       }),

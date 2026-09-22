@@ -5,18 +5,20 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-skeleton v-if="loading && !items.length" :rows="5" animated />
     <el-empty v-else-if="!items.length" description="暂无报名记录" />
-    <article v-for="item in items" :key="item.id" class="registration-item" @click="showDetail(item.id)">
+    <article v-for="(item, index) in items" :key="item.id" class="registration-item" @click="showDetail(item.id)">
+      <span class="admin-record-index">序号 {{ tableRowNumber(index, page, 20) }}</span>
       <div class="item-top"><h2>{{ item.attendeeName || '参会人' }}</h2><AdminStatusBadge :status="item.status" /></div>
       <p>{{ item.conferenceTitle }}</p><p>{{ item.skuName }} · {{ item.attendeeCount }} 人</p>
       <div class="item-bottom"><strong>{{ item.complimentary ? '主办方邀请' : `实付 ¥${formatCent(item.paidAmountCent)}` }}</strong><el-button link type="primary" @click.stop="showDetail(item.id)">查看报名详情</el-button></div>
     </article>
-    <el-pagination size="small" layout="prev, pager, next" :total="total" :page-size="20" v-model:current-page="page" @current-change="load" />
+    <el-pagination size="small" layout="total, prev, pager, next" :total="total" :page-size="20" v-model:current-page="page" @current-change="load" />
     <el-drawer v-model="detailVisible" title="报名详情" size="min(700px, 100vw)" destroy-on-close>
       <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" />
       <el-skeleton v-if="detailLoading" :rows="5" animated />
       <template v-else-if="detail">
         <h2>{{ detail.conferenceTitle }}</h2><p class="muted">{{ detail.registrationNo }}</p>
-        <div v-for="guest in detail.attendees" :key="guest.id" class="guest">
+        <div v-for="(guest, index) in detail.attendees" :key="guest.id" class="guest">
+          <span class="admin-record-index">序号 {{ index + 1 }}</span>
           <h3>{{ guest.name }}</h3><a :href="`tel:${guest.phone}`">{{ guest.phone }}</a>
           <p v-if="guest.company || guest.title">{{ guest.company }} {{ guest.title }}</p>
           <AdminStatusBadge :status="guest.checkInStatus" :label="guest.checkInStatus === 'PENDING' ? '待签到' : undefined" />
@@ -33,6 +35,7 @@
 </template>
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { tableRowNumber } from "../../utils/table-index";
 import { Refresh, Search } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";

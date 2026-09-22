@@ -12,14 +12,15 @@
         <el-button v-if="canEdit" type="primary" :loading="saving" @click="save">保存接收设置</el-button>
       </el-form>
       <h3>接收人</h3>
-      <el-table :data="config.recipients"><el-table-column label="管理员"><template #default="{ row }">{{ config.admins.find(a => a.id === row.adminUserId)?.displayName || config.admins.find(a => a.id === row.adminUserId)?.username || row.adminUserId }}</template></el-table-column><el-table-column prop="wecomUserId" label="企业微信 UserID" /><el-table-column label="状态"><template #default="{ row }">{{ row.enabled ? '已开启' : '已关闭' }}</template></el-table-column><el-table-column label="操作"><template #default="{ row }"><el-button @click="Object.assign(form, row)">编辑</el-button></template></el-table-column></el-table>
+      <el-table :data="config.recipients"><AdminTableIndex /><el-table-column label="管理员"><template #default="{ row }">{{ config.admins.find(a => a.id === row.adminUserId)?.displayName || config.admins.find(a => a.id === row.adminUserId)?.username || row.adminUserId }}</template></el-table-column><el-table-column prop="wecomUserId" label="企业微信 UserID" /><el-table-column label="状态"><template #default="{ row }">{{ row.enabled ? '已开启' : '已关闭' }}</template></el-table-column><el-table-column label="操作"><template #default="{ row }"><el-button @click="Object.assign(form, row)">编辑</el-button></template></el-table-column></el-table>
       <h3>最近发送记录</h3>
-      <el-table :data="config.deliveries"><el-table-column label="报名"><template #default="{ row }"><el-button link @click="navigateTo('/registrations/detail', { id: row.registrationId })">查看报名</el-button></template></el-table-column><el-table-column label="状态"><template #default="{ row }">{{ statuses[row.status] || row.status }}</template></el-table-column><el-table-column prop="attempts" label="尝试次数" /><el-table-column prop="lastError" label="结果" /><el-table-column prop="sentAt" label="发送时间" /></el-table>
+      <el-table :data="config.deliveries"><AdminTableIndex /><el-table-column label="报名"><template #default="{ row }"><el-button link @click="navigateTo('/registrations/detail', { id: row.registrationId })">查看报名</el-button></template></el-table-column><el-table-column label="状态"><template #default="{ row }">{{ statuses[row.status] || row.status }}</template></el-table-column><el-table-column prop="attempts" label="尝试次数" /><el-table-column prop="lastError" label="结果" /><el-table-column prop="sentAt" label="发送时间" /></el-table>
       <el-alert v-if="config.deliveries.some(item => item.status === 'REVIEW')" title="存在待人工核实的投递，自动重试已停止。请核实企业微信收件情况，避免重复通知。" type="warning" :closable="false" />
     </template>
   </section>
 </template>
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";

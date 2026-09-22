@@ -563,7 +563,7 @@ export class RegistrationService {
       throw new BadRequestException("优惠券不存在");
     }
     validateCoupon(coupon, this.getCurrentTime(), conferenceId, items, discountBaseAmountCent, totalQuantity);
-    await ensureCouponClaimedForUse(prismaAny, coupon.id, userId);
+    await ensureCouponClaimedForUse(prismaAny, coupon.id, userId, coupon.requiresClaim);
 
     if (prismaAny.couponRedemption?.count) {
       if (typeof coupon.totalLimit === "number") {
@@ -761,7 +761,7 @@ async function validateRegistrationCouponReservation(
   const discountBaseAmountCent = calculateEffectiveAmount(input.items);
   const totalQuantity = input.items.reduce((sum, item) => sum + item.quantity, 0);
   validateCoupon(coupon, now, input.conferenceId, input.items, discountBaseAmountCent, totalQuantity);
-  await ensureCouponClaimedForUse(tx, coupon.id, input.userId);
+  await ensureCouponClaimedForUse(tx, coupon.id, input.userId, coupon.requiresClaim);
 
   const [registrationUsed, mallUsed, userRegistrationUsed, userMallUsed] = await Promise.all([
     tx.couponRedemption.count({
@@ -954,11 +954,15 @@ async function ensureCouponClaimedForUse(
     };
   },
   couponId: string,
-  userId: string | null
+  userId: string | null,
+  requiresClaim = false
 ) {
-  if (!client.couponClaim?.count) return;
+  if (!client.couponClaim?.count) {
+    if (requiresClaim) throw new BadRequestException("请先领取该优惠券");
+    return;
+  }
   const totalClaims = await client.couponClaim.count({ where: { couponId } });
-  if (totalClaims === 0) return;
+  if (totalClaims === 0 && !requiresClaim) return;
   if (!userId) throw new BadRequestException("请先登录后使用已领取优惠券");
   const userClaims = await client.couponClaim.count({ where: { couponId, userId, status: CouponClaimStatus.CLAIMED } });
   if (userClaims === 0) throw new BadRequestException("请先领取该优惠券");
@@ -1421,6 +1425,7 @@ interface CouponRecord {
   totalLimit: number | null;
   perUserLimit: number | null;
   enabled: boolean;
+  requiresClaim?: boolean;
   startAt: Date | null;
   endAt: Date | null;
   stackableWithPromotion: boolean;

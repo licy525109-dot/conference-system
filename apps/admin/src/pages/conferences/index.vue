@@ -21,6 +21,7 @@
 
     <section class="table-panel">
       <el-table :data="items" empty-text="暂无会议">
+        <AdminTableIndex />
         <el-table-column label="会议" min-width="260">
           <template #default="{ row }">
             <strong>{{ row.title }}</strong>
@@ -114,6 +115,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminEmptyState from "../../components/AdminEmptyState.vue";

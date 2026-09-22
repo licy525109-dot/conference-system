@@ -21,6 +21,7 @@
         </div>
       </div>
       <el-table v-loading="loading" :data="knowledgeBases" empty-text="暂无知识库">
+        <AdminTableIndex :page="pager.knowledgePage" :page-size="pageSize" />
         <el-table-column prop="title" label="知识库" min-width="180" />
         <el-table-column prop="conferenceTitle" label="会议" min-width="180" />
         <el-table-column label="启用" width="90"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
@@ -77,6 +78,7 @@
         <template #actions><el-button :disabled="!conferenceId" @click="loadDocuments">查询</el-button></template>
       </AdminFilterBar>
       <el-table v-loading="loading" :data="documents" empty-text="暂无文档">
+        <AdminTableIndex :page="pager.documentPage" :page-size="pageSize" />
         <el-table-column prop="title" label="文档标题" min-width="180" />
         <el-table-column prop="sourceType" label="类型" width="90"><template #default="{ row }">{{ sourceTypeText(row.sourceType) }}</template></el-table-column>
         <el-table-column prop="status" label="状态" width="100"><template #default="{ row }">{{ documentStatusText(row.status) }}</template></el-table-column>
@@ -105,6 +107,7 @@
         <el-button type="primary" :disabled="!conferenceId || !suggestionText.trim()" @click="saveSuggestions">批量添加</el-button>
       </el-form>
       <el-table :data="suggestions" empty-text="暂无推荐问题">
+        <AdminTableIndex />
         <el-table-column prop="question" label="问题" min-width="260">
           <template #default="{ row }"><el-input v-model="row.question" /></template>
         </el-table-column>
@@ -128,6 +131,7 @@
         <template #actions><el-button :disabled="!conferenceId" @click="loadLogs">查询</el-button></template>
       </AdminFilterBar>
       <el-table v-loading="loading" :data="logs" empty-text="暂无问答日志">
+        <AdminTableIndex :page="pager.logPage" :page-size="pageSize" />
         <el-table-column prop="question" label="问题" min-width="220" show-overflow-tooltip />
         <el-table-column prop="answer" label="回答" min-width="260" show-overflow-tooltip />
         <el-table-column prop="userId" label="用户" min-width="140" show-overflow-tooltip />
@@ -199,6 +203,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AdminFilterBar from "../../components/AdminFilterBar.vue";

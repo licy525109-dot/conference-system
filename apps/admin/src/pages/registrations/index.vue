@@ -48,6 +48,7 @@
         :max-height="440"
         @row-click="selectRow"
       >
+        <AdminTableIndex :page="page" :page-size="pageSize" />
         <el-table-column label="实际参会人" min-width="190">
           <template #default="{ row }">
             <div class="attendee-name">
@@ -148,6 +149,7 @@
             </div>
             <div class="detail-subheading"><h3>{{ detail.conferenceTitle }}</h3><el-button v-if="hasPermission('guest-schedule:view')" link type="primary" @click="navigateTo('/guest-schedules')">会务安排</el-button></div>
             <el-table :data="detail.attendees" empty-text="暂无参会人资料" class="attendee-table">
+              <AdminTableIndex />
               <el-table-column prop="name" label="实际参会人" min-width="130" />
               <el-table-column prop="phone" label="手机" min-width="145" />
               <el-table-column prop="company" label="单位" min-width="160" />
@@ -172,6 +174,7 @@
           </el-tab-pane>
           <el-tab-pane v-if="detail.order.payments.length" label="支付记录" name="payments">
             <el-table :data="detail.order.payments">
+              <AdminTableIndex />
               <el-table-column label="渠道" width="130"><template #default="{ row }">{{ providerText(row.provider) }}</template></el-table-column>
               <el-table-column label="支付状态" width="130"><template #default="{ row }"><AdminStatusBadge :status="row.status" /></template></el-table-column>
               <el-table-column label="金额" width="130"><template #default="{ row }">{{ row.amountCent == null ? '-' : `¥${formatCent(row.amountCent)}` }}</template></el-table-column>
@@ -222,6 +225,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Close, Delete, Document, Download, FullScreen, Plus, Refresh, Search, User } from "@element-plus/icons-vue";

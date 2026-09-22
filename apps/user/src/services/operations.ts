@@ -62,7 +62,7 @@ export interface MyCouponItem {
     endAt: string | null;
   };
   campaign?: {
-    id: string;
+    id: string | null;
     name: string;
   };
 }
