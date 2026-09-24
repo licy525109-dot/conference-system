@@ -1519,6 +1519,10 @@ export interface GuestScheduleWideSheetConfig {
     registrationStatusField: string;
     syncedAtField: string;
   };
+  statusWriteback: {
+    enabled: boolean;
+    fields: Record<"checkInStatus" | "checkedInAt" | "registrationStatus" | "orderNo" | "paymentStatus" | "paidAt" | "refundStatus", string>;
+  };
   schedules: Array<{
     id: string;
     type: GuestScheduleType;
@@ -1580,6 +1584,16 @@ export interface GuestScheduleSyncRun {
   skippedCount: number;
   errorCount: number;
   errorMessage: string | null;
+  statusWriteback?: {
+    enabled: boolean;
+    readCount: number;
+    updatedCount: number;
+    unchangedCount: number;
+    skippedCount: number;
+    errorCount: number;
+    errors: string[];
+    issues: Array<{ attendeeId: string; registrationNo: string; reason: string }>;
+  } | null;
   startedAt: string;
   finishedAt: string | null;
 }

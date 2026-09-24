@@ -34,11 +34,65 @@ test("existing SmartSheet link opens visual field mapping without asking for int
 
   await expect(page.getByText("已识别“数据汇总”，共 11 个字段")).toBeVisible();
   await expect(page.getByText("系统只读取能唯一对应到已报名嘉宾的行")).toBeVisible();
-  await expect(page.getByText("只读保护", { exact: true })).toBeVisible();
+  await expect(page.getByText("不写报名资料", { exact: true })).toBeVisible();
   await expect(page.locator(".schedule-mapping-rule").first()).toContainText("工作坊");
   await expect(page.getByText("同一位嘉宾可以同时命中多条规则")).toBeVisible();
   await expect(page.locator(".connection-drawer")).toHaveScreenshot("guest-schedule-wide-sheet-mapping.png", {
     maxDiffPixelRatio: 0.02
+  });
+});
+
+test("status writeback is opt-in, selects only text columns and saves independent mappings", async ({ page }) => {
+  await page.route("**/api/admin/guest-schedules/smart-sheet/discover**", async (route) => ok(route, {
+    docId: "s3_existing", docUrl: "https://doc.weixin.qq.com/smartsheet/s3_existing?tab=data-sheet",
+    selectedSheetId: "data-sheet", transport: "SMART_BOT_API",
+    sheets: [{ id: "data-sheet", title: "数据汇总", type: "smartsheet", fieldCount: 15, recordCount: 2 }],
+    fields: [
+      ...fieldTitles.map((title, index) => ({ id: `base-${index}`, title, type: "text" })),
+      { id: "status", title: "系统签到状态", type: "FIELD_TYPE_TEXT" },
+      { id: "time", title: "系统签到时间", type: "text" },
+      { id: "pay", title: "系统付款状态", type: "FIELD_TYPE_TEXT" },
+      { id: "formula", title: "公式汇总", type: "FIELD_TYPE_FORMULA" }
+    ],
+    suggestedWideSheetConfig: wideConfig(true)
+  }));
+  await page.goto("http://localhost:5174/#/guest-schedules?conferenceId=conference-jiangmen");
+  await page.getByRole("button", { name: "智能表连接" }).click();
+  await page.getByLabel("智能机器人 Bot ID").fill("test-bot-id");
+  await page.getByLabel("智能机器人 Secret").fill("test-bot-secret");
+  await page.locator(".link-recognizer input").fill("https://doc.weixin.qq.com/smartsheet/s3_existing?tab=data-sheet");
+  await page.getByRole("button", { name: "识别现有表" }).click();
+  const section = page.locator(".status-writeback-section");
+  await expect(section.getByRole("switch")).not.toBeChecked();
+  await section.locator(".el-switch").click();
+  await section.locator(".el-form-item").filter({ has: page.getByLabel("签到状态列", { exact: true }) }).locator(".el-select").click();
+  await expect(page.getByRole("option", { name: "公式汇总", exact: true })).toHaveCount(0);
+  let listId = await page.getByLabel("签到状态列", { exact: true }).getAttribute("aria-controls");
+  await page.locator(`[id="${listId}"]`).getByRole("option", { name: "系统签到状态", exact: true }).click();
+  await section.locator(".el-form-item").filter({ has: page.getByLabel("签到时间列", { exact: true }) }).locator(".el-select").click();
+  listId = await page.getByLabel("签到时间列", { exact: true }).getAttribute("aria-controls");
+  await page.locator(`[id="${listId}"]`).getByRole("option", { name: "系统签到时间", exact: true }).click();
+  await section.locator(".el-form-item").filter({ has: page.getByLabel("付款状态列", { exact: true }) }).locator(".el-select").click();
+  listId = await page.getByLabel("付款状态列", { exact: true }).getAttribute("aria-controls");
+  await page.locator(`[id="${listId}"]`).getByRole("option", { name: "系统付款状态", exact: true }).click();
+  await section.scrollIntoViewIfNeeded();
+  await expect(section).toHaveScreenshot("guest-schedule-status-writeback.png");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await section.scrollIntoViewIfNeeded();
+  const drawer = page.locator(".el-drawer").filter({ has: section });
+  expect((await drawer.boundingBox())!.width).toBeLessThanOrEqual(390);
+  const sectionBounds = (await section.boundingBox())!;
+  expect(sectionBounds.x).toBeGreaterThanOrEqual(0);
+  expect(sectionBounds.x + sectionBounds.width).toBeLessThanOrEqual(390);
+  expect(await section.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await expect(section).toHaveScreenshot("guest-schedule-status-writeback-mobile.png");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const requestPromise = page.waitForRequest((request) => request.method() === "PATCH" && request.url().includes("smart-sheet/config"));
+  await page.getByRole("button", { name: "保存连接" }).click();
+  const request = await requestPromise;
+  expect(request.postDataJSON().wideSheetConfig).toMatchObject({
+    writeRegistrationFields: false,
+    statusWriteback: { enabled: true, fields: { checkInStatus: "系统签到状态", checkedInAt: "系统签到时间", paymentStatus: "系统付款状态" } }
   });
 });
 

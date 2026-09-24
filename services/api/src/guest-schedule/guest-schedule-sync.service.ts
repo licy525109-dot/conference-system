@@ -37,6 +37,13 @@ import {
 } from "./guest-schedule.constants";
 import { GuestScheduleDraft, hashDraft } from "./guest-schedule.service";
 import {
+  buildStatusIdentityMatcher,
+  emptyStatusWritebackResult,
+  STATUS_ATTENDEE_SELECT,
+  validateStatusWriteback,
+  writeSmartSheetStatuses
+} from "./smart-sheet-status-writeback";
+import {
   configuredWideFields,
   createDefaultWideSheetConfig,
   ExistingWideSheetConfig,
@@ -233,6 +240,13 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     const wideSheetConfig = mode === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
       ? normalizeWideSheetConfig(body.wideSheetConfig ?? existingWideConfig)
       : null;
+    if (wideSheetConfig?.statusWriteback.enabled) {
+      if (transport === SMART_SHEET_TRANSPORT.WEBHOOK_AUTOMATION) {
+        throw new BadRequestException("状态回写需要使用智能机器人 API 或自建应用 API 的现有宽表模式");
+      }
+      const issues = validateStatusWriteback(wideSheetConfig);
+      if (issues.length) throw new BadRequestException(issues.join("；"));
+    }
     const wideSheetId = readOptionalString(body.sheetId)
       ?? readOptionalString(body.guestSheetId)
       ?? parsedLink?.sheetId
@@ -389,6 +403,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       if (!schema) issues.push("尚未识别 Webhook 示例字段");
       const wideConfig = normalizeWideSheetConfig(connection.assignmentFieldMappingJson);
       issues.push(...validateWideConfigStructure(wideConfig));
+      if (wideConfig.statusWriteback.enabled) issues.push("Webhook 模式不支持系统状态回写");
       const titles = new Set(schema ? smartSheetWebhookFields(schema).map((field) => field.title) : []);
       const missingFields = configuredWideFields(wideConfig).filter((title) => !titles.has(title));
       if (missingFields.length) issues.push(`示例 JSON 中找不到已映射字段：${missingFields.join("、")}`);
@@ -416,11 +431,18 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       const titles = fieldTitles(fields);
       const wideConfig = normalizeWideSheetConfig(connection.assignmentFieldMappingJson);
       const issues = validateWideConfigStructure(wideConfig);
+      issues.push(...validateStatusWriteback(wideConfig, formatFieldOptions(fields)));
+      if (wideConfig.statusWriteback.enabled) {
+        try { await this.assertExclusiveStatusSheet(connection); }
+        catch (error) { issues.push(errorMessage(error, "无法核对智能表会议绑定")); }
+      }
       const missingFields = configuredWideFields(wideConfig).filter((title) => !titles.has(title));
       if (missingFields.length) issues.push(`找不到已映射字段：${missingFields.join("、")}`);
       const warnings = wideConfig.writeRegistrationFields
         ? ["新报名仅会写入已映射列，不会修改表内其他邀约、分组或房间字段"]
-        : ["当前为只读保护模式：读取现有嘉宾安排，但不会新增或修改智能表记录"];
+        : wideConfig.statusWriteback.enabled ? ["报名资料不写回；仅更新已绑定嘉宾的指定系统状态列"]
+          : ["当前为只读保护模式：读取现有嘉宾安排，但不会新增或修改智能表记录"];
+      if (wideConfig.statusWriteback.enabled) warnings.push("检查只读取字段；实际编辑权限需在首次同步时验证，时间以北京时间写入文本列");
       const ready = issues.length === 0;
       return ok({
         ready,
@@ -614,6 +636,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     const errors: string[] = [];
     let guestResult: GuestSyncResult = emptyGuestResult();
     let assignmentResult: AssignmentSyncResult = emptyAssignmentResult();
+    let statusWriteback = emptyStatusWritebackResult();
     try {
       const connection = await this.prisma.wecomSmartSheetConnection.findUnique({
         where: { id: connectionId },
@@ -621,6 +644,9 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       });
       if (!connection) throw new NotFoundException("智能表连接不存在");
       if (readSmartSheetTransport(connection.transport) === SMART_SHEET_TRANSPORT.WEBHOOK_AUTOMATION) {
+        if (normalizeWideSheetConfig(connection.assignmentFieldMappingJson).statusWriteback.enabled) {
+          throw new BadRequestException("Webhook 模式不支持系统状态回写，请调整连接配置");
+        }
         try {
           guestResult = await this.pushWebhookGuestRows(connection);
         } catch (error) {
@@ -630,6 +656,16 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
       } else {
         assertSheetConnection(connection);
         const session = await this.createSmartSheetSession(connection);
+        const wideConfig = readSmartSheetMode(connection.assignmentFieldMappingJson) === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
+          ? normalizeWideSheetConfig(connection.assignmentFieldMappingJson) : null;
+        if (wideConfig?.statusWriteback.enabled) {
+          await this.assertExclusiveStatusSheet(connection);
+          const fields = await session.getFields(connection.guestSheetId).catch(() => {
+            throw new BadRequestException("系统状态列读取失败，请检查企微连接和文档权限后重试");
+          });
+          const issues = validateStatusWriteback(wideConfig, formatFieldOptions(fields));
+          if (issues.length) throw new BadRequestException(issues.join("；"));
+        }
         try {
           guestResult = await this.pushGuestRows(connection, session);
         } catch (error) {
@@ -640,12 +676,22 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
         } catch (error) {
           errors.push(errorMessage(error, "嘉宾事项读取失败"));
         }
+        if (wideConfig?.statusWriteback.enabled) {
+          try {
+            statusWriteback = await this.pushStatusRows(connection, session, wideConfig);
+          } catch {
+            statusWriteback = {
+              ...emptyStatusWritebackResult(true), errorCount: 1,
+              errors: ["系统状态回写读取失败，将在下一轮重试；请检查企微连接和编辑权限"]
+            };
+          }
+        }
       }
 
-      const issueCount = errors.length + assignmentResult.errorCount;
+      const issueCount = errors.length + assignmentResult.errorCount + statusWriteback.errorCount;
       const status = issueCount === 0
         ? GuestScheduleSyncStatus.SUCCESS
-        : guestResult.readCount > 0 || assignmentResult.readCount > 0
+        : guestResult.readCount > 0 || assignmentResult.readCount > 0 || statusWriteback.readCount > 0
           ? GuestScheduleSyncStatus.PARTIAL_FAILED
           : GuestScheduleSyncStatus.FAILED;
       const finishedAt = new Date();
@@ -660,12 +706,13 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
             assignmentReadCount: assignmentResult.readCount,
             assignmentCreatedCount: assignmentResult.createdCount,
             assignmentUpdatedCount: assignmentResult.updatedCount,
-            skippedCount: guestResult.skippedCount + assignmentResult.skippedCount,
+            skippedCount: guestResult.skippedCount + assignmentResult.skippedCount + statusWriteback.skippedCount,
             errorCount: issueCount,
-            errorMessage: errors.length ? errors.join("；") : null,
+            errorMessage: [...errors, ...statusWriteback.errors].join("；") || null,
             detailsJson: {
               guest: guestResult,
               assignment: assignmentResult,
+              statusWriteback,
               errors
             },
             finishedAt
@@ -678,7 +725,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
             lastAssignmentPulledAt: assignmentResult.completed ? finishedAt : connection.lastAssignmentPulledAt,
             lastSyncAt: finishedAt,
             lastSyncStatus: status,
-            lastError: errors.length ? errors.join("；") : assignmentResult.errors[0] ?? null
+            lastError: [...errors, ...statusWriteback.errors].join("；") || assignmentResult.errors[0] || null
           }
         })
       ]);
@@ -687,6 +734,7 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
         status,
         guest: guestResult,
         assignment: assignmentResult,
+        statusWriteback,
         errors,
         finishedAt: finishedAt.toISOString()
       };
@@ -709,6 +757,39 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
         data: { syncLockedAt: null }
       });
     }
+  }
+
+  private async assertExclusiveStatusSheet(connection: SheetConnectionRecord) {
+    const connections = await this.prisma.wecomSmartSheetConnection.findMany({
+      where: { id: { not: connection.id }, enabled: true, guestSheetId: connection.guestSheetId },
+      select: { docId: true, docUrl: true, assignmentFieldMappingJson: true }
+    });
+    const docId = smartSheetDocumentId(connection);
+    if (!docId) throw new BadRequestException("状态回写无法确认文档身份，请重新识别智能表链接");
+    if (connections.some((other) => smartSheetDocumentId(other) === docId
+      && readSmartSheetMode(other.assignmentFieldMappingJson) === SMART_SHEET_MODE.EXISTING_WIDE_SHEET
+      && normalizeWideSheetConfig(other.assignmentFieldMappingJson).statusWriteback.enabled)) {
+      throw new BadRequestException("同一智能表子表不能为多个会议同时回写状态，请为各会议使用独立子表");
+    }
+  }
+
+  private async pushStatusRows(connection: SheetConnectionRecord, session: SmartSheetSession, config: ExistingWideSheetConfig) {
+    const [fields, records, attendees, bindings] = await Promise.all([
+      session.getFields(connection.guestSheetId),
+      session.getRecords(connection.guestSheetId),
+      this.prisma.registrationAttendee.findMany({
+        where: { registration: { conferenceId: connection.conferenceId } },
+        orderBy: { id: "asc" },
+        select: STATUS_ATTENDEE_SELECT
+      }),
+      this.prisma.wecomSmartSheetGuestRecord.findMany({
+        where: { connectionId: connection.id }, select: { attendeeId: true, remoteRecordId: true }
+      })
+    ]);
+    return writeSmartSheetStatuses({
+      config, fields: formatFieldOptions(fields), records, attendees, bindings,
+      updateRecords: (updates) => session.updateRecords(connection.guestSheetId, updates)
+    });
   }
 
   private async pushGuestRows(connection: SheetConnectionRecord, session: SmartSheetSession): Promise<GuestSyncResult> {
@@ -1013,7 +1094,10 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     const config = normalizeWideSheetConfig(connection.assignmentFieldMappingJson);
     const [attendees, records, mappings] = await Promise.all([
       this.prisma.registrationAttendee.findMany({
-        where: { registration: { conferenceId: connection.conferenceId, status: RegistrationStatus.CONFIRMED } },
+        where: { registration: {
+          conferenceId: connection.conferenceId,
+          ...(config.statusWriteback.enabled ? {} : { status: RegistrationStatus.CONFIRMED })
+        } },
         orderBy: { createdAt: "asc" },
         include: {
           sku: { select: { name: true } },
@@ -1034,11 +1118,12 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     const recordById = new Map(records.map((item) => [item.record_id, item]));
     const remoteIndexes = buildWideRemoteIndexes(records, config);
     const mappingByAttendee = new Map(mappings.map((item) => [item.attendeeId, item]));
+    const matchesStatusIdentity = buildStatusIdentityMatcher(config, attendees, records);
     const additions: Array<{ attendee: SyncAttendee; values: Record<string, unknown>; payloadHash: string }> = [];
     const updates: Array<{ attendee: SyncAttendee; record: WecomSmartSheetRecord; values: Record<string, unknown>; payloadHash: string }> = [];
     const links: Array<{ attendee: SyncAttendee; record: WecomSmartSheetRecord; payloadHash: string | null }> = [];
     const result: GuestSyncResult = {
-      readCount: attendees.length,
+      readCount: attendees.filter((item) => item.registration.status === RegistrationStatus.CONFIRMED).length,
       createdCount: 0,
       updatedCount: 0,
       skippedCount: 0,
@@ -1046,9 +1131,16 @@ export class GuestScheduleSyncService implements OnModuleInit, OnModuleDestroy {
     };
 
     for (const attendee of attendees) {
+      if (attendee.registration.status !== RegistrationStatus.CONFIRMED) continue;
       const currentMapping = mappingByAttendee.get(attendee.id);
       const mappedRecord = currentMapping?.remoteRecordId ? recordById.get(currentMapping.remoteRecordId) : undefined;
       const record = mappedRecord ?? findWideRecordForAttendee(attendee, remoteIndexes, config);
+      if (config.statusWriteback.enabled && (
+        (currentMapping?.remoteRecordId && !mappedRecord) || (record && !matchesStatusIdentity(attendee, record))
+      )) {
+        result.skippedCount += 1;
+        continue;
+      }
       const values = wideGuestValues(config, attendee);
       const payloadHash = hashJson(values);
       if (!record) {
@@ -1753,6 +1845,13 @@ function canonicalSmartSheetUrl(value: string, sheetId: string): string {
   return url.toString();
 }
 
+function smartSheetDocumentId(connection: { docId: string | null; docUrl: string | null }): string {
+  if (connection.docUrl) {
+    try { return parseSmartSheetLink(connection.docUrl).docId; } catch { /* Legacy API connections may store docid only. */ }
+  }
+  return connection.docId || "";
+}
+
 function validateWideConfigStructure(config: ExistingWideSheetConfig): string[] {
   const issues: string[] = [];
   const hasIdentity = Boolean(
@@ -1766,7 +1865,8 @@ function validateWideConfigStructure(config: ExistingWideSheetConfig): string[] 
     issues.push("写入新报名时必须映射系统参会人 ID 或手机号，避免重复新增");
   }
   const rules = config.schedules.filter((rule) => rule.enabled);
-  if (!rules.length) issues.push("至少启用一条现场事项规则");
+  if (!rules.length && !config.statusWriteback.enabled) issues.push("至少启用一条现场事项规则或系统状态回写");
+  issues.push(...validateStatusWriteback(config));
   const ids = new Set<string>();
   for (const rule of rules) {
     if (ids.has(rule.id)) issues.push(`事项规则“${rule.label}”标识重复`);
@@ -1867,11 +1967,13 @@ function formatRun(item: {
   skippedCount: number;
   errorCount: number;
   errorMessage: string | null;
+  detailsJson?: Prisma.JsonValue;
   startedAt: Date;
   finishedAt: Date | null;
 }) {
   return {
     ...item,
+    statusWriteback: isRecord(item.detailsJson) ? item.detailsJson.statusWriteback ?? null : null,
     startedAt: item.startedAt.toISOString(),
     finishedAt: item.finishedAt?.toISOString() ?? null
   };

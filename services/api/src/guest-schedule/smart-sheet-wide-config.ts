@@ -46,7 +46,25 @@ export interface ExistingWideSheetConfig {
   identity: WideSheetIdentityMapping;
   writeRegistrationFields: boolean;
   registration: WideSheetRegistrationMapping;
+  statusWriteback: WideSheetStatusWriteback;
   schedules: WideSheetScheduleRule[];
+}
+
+export const STATUS_WRITEBACK_LABELS = {
+  checkInStatus: "签到状态",
+  checkedInAt: "签到时间",
+  registrationStatus: "系统报名状态",
+  orderNo: "系统订单号",
+  paymentStatus: "付款状态",
+  paidAt: "付款时间",
+  refundStatus: "退款状态"
+} as const;
+
+export type StatusWritebackKey = keyof typeof STATUS_WRITEBACK_LABELS;
+
+export interface WideSheetStatusWriteback {
+  enabled: boolean;
+  fields: Record<StatusWritebackKey, string>;
 }
 
 export interface SmartSheetLinkParts {
@@ -84,6 +102,11 @@ export function createDefaultWideSheetConfig(fieldTitles: string[] = []): Existi
       registrationStatusField: findField(fields, ["报名状态"]),
       syncedAtField: findField(fields, ["系统同步时间", "报名同步时间"])
     },
+    statusWriteback: {
+      enabled: false,
+      fields: Object.fromEntries(Object.entries(STATUS_WRITEBACK_LABELS)
+        .map(([key, label]) => [key, findField(fields, [label])])) as Record<StatusWritebackKey, string>
+    },
     schedules: SCHEDULE_PRESETS.map((preset) => suggestedScheduleRule(preset, fields))
   };
 }
@@ -93,6 +116,8 @@ export function normalizeWideSheetConfig(value: unknown): ExistingWideSheetConfi
   if (!isRecord(value)) return defaults;
   const identity = isRecord(value.identity) ? value.identity : {};
   const registration = isRecord(value.registration) ? value.registration : {};
+  const statusWriteback = isRecord(value.statusWriteback) ? value.statusWriteback : {};
+  const statusFields = isRecord(statusWriteback.fields) ? statusWriteback.fields : {};
   const schedules = Array.isArray(value.schedules)
     ? value.schedules.slice(0, 20).map((item, index) => normalizeScheduleRule(item, index)).filter(Boolean) as WideSheetScheduleRule[]
     : defaults.schedules;
@@ -112,6 +137,11 @@ export function normalizeWideSheetConfig(value: unknown): ExistingWideSheetConfi
       skuNameField: readString(registration.skuNameField),
       registrationStatusField: readString(registration.registrationStatusField),
       syncedAtField: readString(registration.syncedAtField)
+    },
+    statusWriteback: {
+      enabled: statusWriteback.enabled === true,
+      fields: Object.fromEntries(Object.keys(STATUS_WRITEBACK_LABELS)
+        .map((key) => [key, readString(statusFields[key])])) as Record<StatusWritebackKey, string>
     },
     schedules: schedules.length ? schedules : defaults.schedules
   };
@@ -151,6 +181,7 @@ export function configuredWideFields(config: ExistingWideSheetConfig): string[] 
   const fields = [
     ...Object.values(config.identity),
     ...(config.writeRegistrationFields ? Object.values(config.registration) : []),
+    ...(config.statusWriteback.enabled ? Object.values(config.statusWriteback.fields) : []),
     ...config.schedules.filter((rule) => rule.enabled).flatMap((rule) => [
       rule.triggerField,
       rule.activityNameField,
