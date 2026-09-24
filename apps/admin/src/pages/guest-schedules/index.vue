@@ -237,7 +237,7 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="connectionVisible" title="企微智能表连接" size="820px" destroy-on-close>
+    <el-drawer v-model="connectionVisible" title="企微智能表连接" size="min(820px, 100vw)" destroy-on-close>
       <div class="connection-drawer">
         <el-alert
           v-if="connectionForm.transport === 'API' && !connectionForm.integrationId"
@@ -414,9 +414,9 @@
               <div class="connection-section__heading connection-section__heading--switch">
                 <div>
                   <strong>3. 新报名写回现有表</strong>
-                  <span>关闭时完全只读；开启后也只写下方映射列，不会碰邀约、分组、房间等其他数据。</span>
+                  <span>关闭时不写报名资料；系统状态回写单独控制。</span>
                 </div>
-                <el-switch v-model="connectionForm.wideSheetConfig.writeRegistrationFields" active-text="允许写入" inactive-text="只读保护" />
+                <el-switch v-model="connectionForm.wideSheetConfig.writeRegistrationFields" active-text="允许写入" inactive-text="不写报名资料" />
               </div>
               <div v-if="connectionForm.wideSheetConfig.writeRegistrationFields" class="form-grid registration-mapping">
                 <el-form-item label="报名编号列">
@@ -452,10 +452,28 @@
               </div>
             </section>
 
+            <section v-if="discovery && connectionForm.transport !== 'WEBHOOK_AUTOMATION'" class="connection-section status-writeback-section">
+              <div class="connection-section__heading connection-section__heading--switch">
+                <div>
+                  <strong>4. 系统状态回写</strong>
+                  <span>签到、付款和退款以系统结果为准；每位参会人对应一行。</span>
+                </div>
+                <el-switch v-model="connectionForm.wideSheetConfig.statusWriteback.enabled" aria-label="系统状态回写" active-text="已开启" inactive-text="已关闭" />
+              </div>
+              <div v-if="connectionForm.wideSheetConfig.statusWriteback.enabled" class="form-grid">
+                <el-form-item v-for="item in statusWritebackFields" :key="item.key" :label="item.label">
+                  <el-select v-model="connectionForm.wideSheetConfig.statusWriteback.fields[item.key]" filterable clearable placeholder="选择专用文本列（可不填）" style="width: 100%">
+                    <el-option v-for="field in statusTextFields" :key="field.id" :label="field.title" :value="field.title" />
+                  </el-select>
+                </el-form-item>
+              </div>
+              <el-alert v-if="connectionForm.wideSheetConfig.statusWriteback.enabled" type="info" :closable="false" title="仅回写已绑定记录；时间为北京时间。缺少文本列请先在智能表新增，再重新识别。" />
+            </section>
+
             <section v-if="discovery" class="connection-section schedule-mapping-section">
               <div class="connection-section__heading">
                 <div>
-                  <strong>4. 现场事项规则</strong>
+                  <strong>{{ connectionForm.transport === 'WEBHOOK_AUTOMATION' ? '4' : '5' }}. 现场事项规则</strong>
                   <span>每条规则对应一类事项；同一位嘉宾可以同时命中多条规则。</span>
                 </div>
                 <el-button text type="primary" :icon="Plus" @click="addScheduleRule">添加规则</el-button>
@@ -630,6 +648,8 @@
             <AdminStatusBadge :status="run.status" />
             <span>{{ formatDateTime(run.startedAt) }}</span>
             <small>嘉宾 +{{ run.guestCreatedCount }}/{{ run.guestUpdatedCount }}，事项 +{{ run.assignmentCreatedCount }}/{{ run.assignmentUpdatedCount }}</small>
+            <small v-if="run.statusWriteback?.enabled">状态回写 {{ run.statusWriteback.updatedCount }}，无变化 {{ run.statusWriteback.unchangedCount }}，待处理 {{ run.statusWriteback.errorCount }}</small>
+            <el-button v-if="run.errorMessage || run.statusWriteback?.issues.length" text type="danger" @click="showRunErrors(run)">查看问题</el-button>
           </div>
         </section>
       </div>
@@ -766,13 +786,24 @@ const syncDescription = computed(() => {
     return `每 ${formatInterval(connection.syncIntervalSeconds)} 检查新报名写回 · 原表变更由自动化实时回推 · 回推后仍需人工发布`;
   }
   if (connection.mode === "EXISTING_WIDE_SHEET") {
-    return `每 ${formatInterval(connection.syncIntervalSeconds)} 同步一次 · 使用现有数据子表 · ${connection.wideSheetConfig?.writeRegistrationFields ? "新报名按映射列写回" : "只读保护"}`;
+    const writes = [connection.wideSheetConfig?.writeRegistrationFields ? "新报名写回" : "", connection.wideSheetConfig?.statusWriteback?.enabled ? "系统状态回写" : ""].filter(Boolean);
+    return `每 ${formatInterval(connection.syncIntervalSeconds)} 同步一次 · 使用现有数据子表 · ${writes.join("、") || "只读保护"}`;
   }
   return `每 ${formatInterval(connection.syncIntervalSeconds)} 同步一次 · 嘉宾表 ${connection.guestSheetId} · 事项表 ${connection.assignmentSheetId}`;
 });
 const guestFieldNames = computed(() => Object.values(syncConfig.value?.defaults.guestFieldMapping || {}));
 const assignmentFieldNames = computed(() => Object.values(syncConfig.value?.defaults.assignmentFieldMapping || {}));
 const fieldOptions = computed(() => discovery.value?.fields || []);
+const statusTextFields = computed(() => fieldOptions.value.filter((field) => ["text", "FIELD_TYPE_TEXT"].includes(field.type)));
+const statusWritebackFields: Array<{ key: keyof GuestScheduleWideSheetConfig["statusWriteback"]["fields"]; label: string }> = [
+  { key: "checkInStatus", label: "签到状态列" },
+  { key: "checkedInAt", label: "签到时间列" },
+  { key: "registrationStatus", label: "系统报名状态列" },
+  { key: "orderNo", label: "系统订单号列" },
+  { key: "paymentStatus", label: "付款状态列" },
+  { key: "paidAt", label: "付款时间列" },
+  { key: "refundStatus", label: "退款状态列" }
+];
 const selectedSheet = computed(() => discovery.value?.sheets.find((item) => item.id === connectionForm.sheetId));
 const automationPayloadExample = computed(() => {
   const fields = new Set<string>();
@@ -1046,6 +1077,9 @@ function onTransportChange() {
   if (connectionForm.transport !== "API") {
     connectionForm.mode = "EXISTING_WIDE_SHEET";
   }
+  if (connectionForm.transport === "WEBHOOK_AUTOMATION") {
+    connectionForm.wideSheetConfig.statusWriteback.enabled = false;
+  }
 }
 
 async function inspectWebhookFields(useSuggestions: boolean, quiet = false) {
@@ -1302,8 +1336,9 @@ async function syncNow() {
   if (!conferenceId.value) return;
   syncing.value = true;
   try {
-    await syncGuestScheduleSmartSheet(conferenceId.value);
-    ElMessage.success("智能表同步完成");
+    const result = await syncGuestScheduleSmartSheet(conferenceId.value);
+    if (result.status === "SUCCESS") ElMessage.success("智能表同步完成");
+    else ElMessage.warning("部分数据尚未同步，请在智能表连接的最近同步中查看问题");
     await Promise.all([loadSchedules(), loadSyncConfig()]);
   } finally {
     syncing.value = false;
@@ -1312,6 +1347,13 @@ async function syncNow() {
 
 function showSyncError() {
   ElMessageBox.alert(syncConfig.value?.connection?.lastError || "暂无错误详情", "最近同步错误", { type: "error" });
+}
+
+function showRunErrors(run: GuestScheduleSyncRun) {
+  const details = (run.statusWriteback?.issues || []).map((issue) => `${issue.registrationNo} / ${issue.attendeeId}：${issue.reason}`);
+  ElMessageBox.alert([run.errorMessage, ...details].filter(Boolean).join("\n"), "同步待处理记录（最多显示 20 项）", {
+    type: "warning", customClass: "sync-issues-dialog"
+  });
 }
 
 function stateLabel(state: GuestScheduleState) {
@@ -1404,16 +1446,26 @@ function emptyWideSheetConfig(): GuestScheduleWideSheetConfig {
       registrationStatusField: "",
       syncedAtField: ""
     },
+    statusWriteback: {
+      enabled: false,
+      fields: { checkInStatus: "", checkedInAt: "", registrationStatus: "", orderNo: "", paymentStatus: "", paidAt: "", refundStatus: "" }
+    },
     schedules: []
   };
 }
 
 function cloneWideSheetConfig(value: GuestScheduleWideSheetConfig): GuestScheduleWideSheetConfig {
-  return JSON.parse(JSON.stringify(value)) as GuestScheduleWideSheetConfig;
+  const copy = JSON.parse(JSON.stringify(value)) as GuestScheduleWideSheetConfig;
+  const defaults = emptyWideSheetConfig().statusWriteback;
+  return { ...copy, statusWriteback: {
+    enabled: copy.statusWriteback?.enabled === true,
+    fields: { ...defaults.fields, ...copy.statusWriteback?.fields }
+  } };
 }
 </script>
 
 <style scoped>
+:global(.sync-issues-dialog .el-message-box__message) { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow-y: auto; }
 .guest-schedule-page {
   --schedule-ink: #122238;
   --schedule-line: #dfe7ef;
@@ -1495,13 +1547,15 @@ function cloneWideSheetConfig(value: GuestScheduleWideSheetConfig): GuestSchedul
 .attendee-option span { color: #5e6d7e; }
 .attendee-option small { grid-column: 1 / -1; color: #8491a0; }
 
-.connection-drawer { display: grid; gap: 20px; padding: 0 2px 28px; }
+.connection-drawer { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 20px; padding: 0 2px 28px; }
+.connection-drawer > * { min-width: 0; }
 .connection-mode-control { display: grid; gap: 8px; }
 .connection-mode-control > span { color: var(--schedule-ink); font-size: 13px; font-weight: 700; }
-.connection-section { display: grid; gap: 14px; padding: 18px 0; border-top: 1px solid var(--schedule-line); }
+.connection-section { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 14px; padding: 18px 0; border-top: 1px solid var(--schedule-line); }
 .connection-section:first-of-type { padding-top: 4px; border-top: 0; }
 .connection-section__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.connection-section__heading > div { display: grid; gap: 4px; min-width: 0; }
+.connection-section__heading > div:not(.el-switch) { display: grid; gap: 4px; min-width: 0; }
+.connection-section__heading > .el-switch { flex-shrink: 0; }
 .connection-section__heading strong { color: var(--schedule-ink); font-size: 15px; }
 .connection-section__heading span { color: var(--schedule-muted); font-size: 12px; line-height: 1.6; }
 .connection-section__heading--switch { align-items: center; }
@@ -1534,6 +1588,16 @@ function cloneWideSheetConfig(value: GuestScheduleWideSheetConfig): GuestSchedul
 .sync-history h3 { margin: 0 0 4px; color: var(--schedule-ink); font-size: 14px; }
 .sync-run { display: grid; grid-template-columns: auto 100px 1fr; align-items: center; gap: 10px; min-height: 38px; color: #425469; font-size: 12px; }
 .sync-run small { color: var(--schedule-muted); }
+
+@media (max-width: 640px) {
+  .connection-mode-control :deep(.el-segmented__group) { flex-wrap: wrap; }
+  .connection-mode-control :deep(.el-segmented__item) { flex-basis: 100%; }
+  .form-grid, .link-recognizer, .copy-row { grid-template-columns: minmax(0, 1fr); }
+  .connection-section__heading--switch { align-items: flex-start; flex-wrap: wrap; }
+  .schedule-rule-fields { padding-left: 0; }
+  .sync-run { grid-template-columns: auto minmax(0, 1fr); }
+  .sync-run small { grid-column: 1 / -1; overflow-wrap: anywhere; }
+}
 
 @media (max-width: 1100px) {
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
