@@ -98,7 +98,7 @@
       </el-table>
       <footer class="table-footer">
         <span class="result-count" role="status">{{ listError ? '加载失败' : `本页显示 ${displayedItems.length} 条 / 查询共 ${total} 条` }}</span>
-        <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total" layout="prev, pager, next" :pager-count="5" :disabled="loading" @current-change="changePage" />
+        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]" :total="total" layout="sizes, prev, pager, next" :pager-count="5" :disabled="loading" @current-change="changePage" @size-change="changePageSize" />
         <el-button
           v-if="canCleanupTestData"
           link type="danger"
@@ -206,19 +206,19 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="hasPermission('member:view')" label="关联小程序用户">
-          <el-select v-model="complimentaryForm.userId" clearable filterable remote :remote-method="loadUsersForSelection" :loading="usersLoading" placeholder="搜索已登录过小程序的用户" style="width: 100%">
+          <el-select v-model="complimentaryForm.userId" clearable filterable remote :remote-method="loadUsersForSelection" :loading="usersLoading" placeholder="搜索已登录过小程序的用户" style="width: 100%" @change="selectComplimentaryUser">
             <el-option v-for="item in users" :key="item.id" :label="userLabel(item)" :value="item.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="嘉宾姓名" required><el-input v-model="complimentaryForm.attendeeName" maxlength="80" /></el-form-item>
-        <el-form-item label="手机号" required><el-input v-model="complimentaryForm.phone" maxlength="30" /></el-form-item>
+        <el-form-item label="手机号" required :error="complimentaryUserError"><el-input v-model="complimentaryForm.phone" maxlength="30" :placeholder="complimentaryUserLoading ? '正在读取手机号' : ''" @input="editComplimentaryPhone" /></el-form-item>
         <el-form-item label="公司"><el-input v-model="complimentaryForm.company" maxlength="120" /></el-form-item>
         <el-form-item label="职位"><el-input v-model="complimentaryForm.title" maxlength="120" /></el-form-item>
         <el-form-item label="内部备注"><el-input v-model="complimentaryForm.adminRemark" type="textarea" :rows="3" maxlength="500" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button :disabled="complimentarySaving" @click="complimentaryVisible = false">取消</el-button>
-        <el-button type="primary" :loading="complimentarySaving" :disabled="skuLoading || !complimentaryForm.skuId" @click="saveComplimentary">确认添加</el-button>
+        <el-button type="primary" :loading="complimentarySaving" :disabled="skuLoading || complimentaryUserLoading || !complimentaryForm.skuId" @click="saveComplimentary">确认添加</el-button>
       </template>
     </el-dialog>
   </section>
@@ -231,7 +231,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Close, Delete, Document, Download, FullScreen, Plus, Refresh, Search, User } from "@element-plus/icons-vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { navigateTo } from "../../router";
-import { cleanupConferenceTestData, createComplimentaryRegistration, deleteRegistration, exportRegistrationsExcel, getRegistration, listConferences, listRegistrations, listSkus, listUsers, manualCheckin, previewConferenceTestDataCleanup, updateRegistrationRemark } from "../../services/admin";
+import { cleanupConferenceTestData, createComplimentaryRegistration, deleteRegistration, exportRegistrationsExcel, getRegistration, listConferences, listRegistrations, listSkus, listUsers, manualCheckin, previewConferenceTestDataCleanup, revealUserPhone, updateRegistrationRemark } from "../../services/admin";
 import type { AdminAppUser, AdminRegistration, AdminRegistrationDetail, Conference, Sku } from "../../services/types";
 import { useAdminSession } from "../../stores/admin-session";
 
@@ -246,7 +246,7 @@ const conferenceId = ref("");
 const registrationStatus = ref("");
 const checkInStatus = ref("");
 const page = ref(1);
-const pageSize = 10;
+const pageSize = ref(10);
 const total = ref(0);
 const appliedFilters = ref({ keyword: "", conferenceId: "", status: "" });
 const loading = ref(false);
@@ -261,6 +261,9 @@ const complimentaryVisible = ref(false);
 const complimentarySaving = ref(false);
 const skuLoading = ref(false);
 const usersLoading = ref(false);
+const complimentaryUserLoading = ref(false);
+const complimentaryUserError = ref("");
+let complimentaryPhoneEdited = false;
 const cleaningTestData = ref(false);
 const deletingId = ref("");
 const remarkSaving = ref(false);
@@ -270,6 +273,7 @@ let listVersion = 0;
 let detailVersion = 0;
 let skuVersion = 0;
 let usersVersion = 0;
+let complimentaryUserVersion = 0;
 let disposed = false;
 const complimentaryForm = reactive({
   conferenceId: "",
@@ -318,11 +322,20 @@ onBeforeUnmount(() => {
   detailVersion += 1;
   skuVersion += 1;
   usersVersion += 1;
+  complimentaryUserVersion += 1;
 });
 
 watch(checkInStatus, () => {
   if (selectedId.value && !displayedItems.value.some(item => item.id === selectedId.value)) closeDetail();
 });
+
+watch(complimentaryVisible, (visible) => {
+  if (!visible) {
+    complimentaryUserVersion += 1;
+    complimentaryUserLoading.value = false;
+    complimentaryUserError.value = "";
+  }
+}, { flush: "sync" });
 
 async function loadConferences() {
   if (!hasPermission("conference:view")) return;
@@ -368,8 +381,56 @@ async function loadComplimentarySkus() {
   }
 }
 
+function invitationUserName(user?: AdminAppUser) {
+  return [user?.realName, user?.nickname, user?.wechatNickname]
+    .map(value => value?.trim() || "")
+    .find(value => value && !["未命名用户", "微信用户", "未设置昵称", "待完善姓名"].includes(value)) || "";
+}
+
+function editComplimentaryPhone() {
+  complimentaryPhoneEdited = true;
+  complimentaryUserError.value = "";
+}
+
+async function selectComplimentaryUser() {
+  if (disposed || !complimentaryVisible.value || complimentarySaving.value || !hasPermission("registration:write") || !hasPermission("member:view")) return;
+  const version = ++complimentaryUserVersion;
+  const userId = complimentaryForm.userId;
+  const user = users.value.find(item => item.id === userId);
+  complimentaryForm.attendeeName = invitationUserName(user);
+  complimentaryForm.phone = "";
+  complimentaryPhoneEdited = false;
+  complimentaryUserError.value = "";
+  complimentaryUserLoading.value = false;
+  if (!userId) return;
+  if (!hasPermission("member:phone:view")) {
+    complimentaryUserError.value = "当前账号无完整手机号查看权限，请手动填写";
+    return;
+  }
+  complimentaryUserLoading.value = true;
+  try {
+    const result = await revealUserPhone(userId);
+    if (version !== complimentaryUserVersion || complimentaryForm.userId !== userId || disposed) return;
+    if (result.userId !== userId) throw new Error("User phone response mismatch");
+    const phone = result.phone?.trim() || "";
+    if (phone.includes("*")) throw new Error("Masked phone cannot be used for registration");
+    // A delayed profile response must not replace the attendee phone entered by the administrator.
+    if (!complimentaryPhoneEdited) complimentaryForm.phone = phone;
+  } catch {
+    if (version === complimentaryUserVersion && !complimentaryPhoneEdited && !disposed) {
+      complimentaryUserError.value = "手机号读取失败，请手动填写或重新选择用户";
+    }
+  } finally {
+    if (version === complimentaryUserVersion && !disposed) complimentaryUserLoading.value = false;
+  }
+}
+
 async function openComplimentary() {
   if (!hasPermission("registration:write") || complimentarySaving.value) return;
+  complimentaryUserVersion += 1;
+  complimentaryUserLoading.value = false;
+  complimentaryUserError.value = "";
+  complimentaryPhoneEdited = false;
   Object.assign(complimentaryForm, {
     conferenceId: conferenceId.value || conferences.value[0]?.id || "",
     skuId: "",
@@ -386,7 +447,7 @@ async function openComplimentary() {
 }
 
 async function saveComplimentary() {
-  if (!hasPermission("registration:write") || complimentarySaving.value || skuLoading.value) return;
+  if (!hasPermission("registration:write") || complimentarySaving.value || skuLoading.value || complimentaryUserLoading.value) return;
   if (!complimentaryForm.conferenceId || !complimentaryForm.skuId || !complimentaryForm.attendeeName.trim() || !complimentaryForm.phone.trim()) {
     ElMessage.warning("请完整填写会议、票种、嘉宾姓名和手机号");
     return;
@@ -488,6 +549,12 @@ function changePage() {
   void load();
 }
 
+function changePageSize() {
+  page.value = 1;
+  closeDetail();
+  void load();
+}
+
 async function load(refreshDetail = true) {
   if (disposed) return;
   const version = ++listVersion;
@@ -496,10 +563,10 @@ async function load(refreshDetail = true) {
   loading.value = true;
   listError.value = "";
   try {
-    const result = await listRegistrations({ page: page.value, pageSize, ...filters });
+    const result = await listRegistrations({ page: page.value, pageSize: pageSize.value, ...filters });
     if (version !== listVersion) return;
     total.value = result.total;
-    const lastPage = Math.max(1, Math.ceil(result.total / pageSize));
+    const lastPage = Math.max(1, Math.ceil(result.total / pageSize.value));
     if (page.value > lastPage) { page.value = lastPage; await load(refreshDetail); return; }
     items.value = result.items;
     appliedFilters.value = filters;
@@ -651,7 +718,7 @@ function sourceText(row: AdminRegistration) {
 }
 
 function userLabel(user: AdminAppUser) {
-  return `${user.wechatNickname || user.nickname || "未命名用户"}${user.phone ? ` · ${user.phone}` : ""}`;
+  return `${invitationUserName(user) || "未命名用户"}${user.phone ? ` · ${user.phone}` : ""}`;
 }
 
 function formatDate(value: string | null | undefined) {
@@ -802,6 +869,7 @@ function errorText(error: unknown, fallback: string) {
 .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .row-actions { gap: 12px; flex-wrap: nowrap; }
 .table-footer { padding-top: 12px; gap: 8px; }
+.table-footer :deep(.el-pagination) { max-width: 100%; flex-wrap: wrap; gap: 8px; }
 .result-count,
 .detail-number { color: var(--admin-color-muted, #626973); font-size: 14px; overflow-wrap: anywhere; }
 

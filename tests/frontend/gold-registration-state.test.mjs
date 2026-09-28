@@ -23,7 +23,9 @@ const exposed = [
   "formFields", "openDetail", "closeDetail", "load", "saveRemark", "checkIn",
   "removeRegistration", "exportExcel", "loadComplimentarySkus", "loadUsersForSelection",
   "openComplimentary", "saveComplimentary", "progressText", "checkInTone", "sourceText",
-  "accountName", "canCleanupTestData", "cleanCurrentConferenceTestData", "selectRow"
+  "accountName", "canCleanupTestData", "cleanCurrentConferenceTestData", "selectRow",
+  "pageSize", "changePageSize", "changePage", "complimentaryVisible", "complimentaryUserLoading",
+  "complimentaryUserError", "selectComplimentaryUser", "editComplimentaryPhone", "invitationUserName"
 ];
 const compiled = ts.transpileModule(`${descriptor.scriptSetup.content}\nexport const state = { ${exposed.join(", ")} };`, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
@@ -326,4 +328,173 @@ test("form labels come from real snapshot; attendee is never used as account fal
   assert.equal(state.accountName(registration("a", { user: null })), "未关联账号");
   assert.equal(state.accountName(registration("a")), "submitter-a");
   assert.equal(state.sourceText(registration("a", { complimentary: true })), "主办方邀请");
+});
+
+function selectInvitationUser(state, id = "user-a") {
+  state.complimentaryVisible.value = true;
+  state.complimentaryForm.userId = id;
+  return state.selectComplimentaryUser();
+}
+
+test("invitation uses registered real name and audited full phone, never the masked search value", async t => {
+  const state = setup(t, { revealUserPhone: userId => ({ userId, phone: "13800000001" }) });
+  state.users.value = [{ id: "user-a", realName: " 嘉宾甲 ", nickname: "账号昵称", wechatNickname: "微信昵称", phone: "138****0001" }];
+  await selectInvitationUser(state);
+  assert.equal(state.complimentaryForm.attendeeName, "嘉宾甲");
+  assert.equal(state.complimentaryForm.phone, "13800000001");
+  assert.equal(state.complimentaryUserLoading.value, false);
+  assert.equal(state.calls[0].key, "revealUserPhone");
+  assert.equal(state.calls[0].args[0], "user-a");
+  assert.equal(state.invitationUserName({ nickname: " 昵称 " }), "昵称");
+  assert.equal(state.invitationUserName({ nickname: "未命名用户", wechatNickname: "已填微信昵称" }), "已填微信昵称");
+  assert.equal(state.invitationUserName({ realName: "", nickname: "未设置昵称", wechatNickname: "微信用户" }), "");
+});
+
+test("switching accounts replaces previous values and missing profile fields stay blank", async t => {
+  const state = setup(t, { revealUserPhone: userId => ({ userId, phone: userId === "user-a" ? "13800000001" : null }) });
+  state.users.value = [{ id: "user-a", realName: "嘉宾甲" }, { id: "user-b", nickname: "微信用户" }];
+  await selectInvitationUser(state);
+  await selectInvitationUser(state, "user-b");
+  assert.equal(state.complimentaryForm.attendeeName, "");
+  assert.equal(state.complimentaryForm.phone, "");
+  assert.equal(state.complimentaryUserError.value, "");
+});
+
+for (const failOldRequest of [false, true]) {
+  test(`latest invitation user wins over stale ${failOldRequest ? "failure" : "success"}`, async t => {
+    const old = deferred();
+    const state = setup(t, { revealUserPhone: userId => userId === "user-a" ? old.promise : { userId, phone: "13800000002" } });
+    state.users.value = [{ id: "user-a", realName: "嘉宾甲" }, { id: "user-b", realName: "嘉宾乙" }];
+    const first = selectInvitationUser(state);
+    await selectInvitationUser(state, "user-b");
+    if (failOldRequest) old.reject(new Error("stale profile error"));
+    else old.resolve({ userId: "user-a", phone: "13800000001" });
+    await first;
+    assert.equal(state.complimentaryForm.attendeeName, "嘉宾乙");
+    assert.equal(state.complimentaryForm.phone, "13800000002");
+    assert.equal(state.complimentaryUserError.value, "");
+    assert.equal(state.complimentaryUserLoading.value, false);
+  });
+}
+
+for (const action of ["clear", "close", "unmount"]) {
+  test(`${action} invalidates pending invitation profile response`, async t => {
+    const pending = deferred();
+    const state = setup(t, { revealUserPhone: () => pending.promise });
+    const request = selectInvitationUser(state);
+    if (action === "clear") await selectInvitationUser(state, "");
+    if (action === "close") {
+      state.complimentaryVisible.value = false;
+      state.complimentaryVisible.value = true;
+    }
+    if (action === "unmount") state.unmount();
+    pending.resolve({ userId: "user-a", phone: "13800000001" });
+    await request;
+    assert.equal(state.complimentaryForm.phone, "");
+    assert.equal(state.calls.length, 1);
+  });
+}
+
+test("manual attendee phone survives a late response and creation waits for profile completion", async t => {
+  const pending = deferred();
+  const state = setup(t, {
+    revealUserPhone: () => pending.promise,
+    createComplimentaryRegistration: () => registration("new"),
+    getRegistration: () => registration("new")
+  });
+  state.users.value = [{ id: "user-a", realName: "嘉宾甲" }];
+  Object.assign(state.complimentaryForm, { conferenceId: "conference-a", skuId: "sku-a" });
+  const request = selectInvitationUser(state);
+  state.complimentaryForm.phone = "13800000003";
+  state.editComplimentaryPhone();
+  await state.saveComplimentary();
+  assert.equal(state.calls.some(call => call.key === "createComplimentaryRegistration"), false);
+  pending.resolve({ userId: "user-a", phone: "13800000001" });
+  await request;
+  assert.equal(state.complimentaryForm.phone, "13800000003");
+  state.complimentaryForm.attendeeName = "实际受邀嘉宾";
+  await state.saveComplimentary();
+  const submitted = state.calls.find(call => call.key === "createComplimentaryRegistration").args[0];
+  assert.equal(submitted.attendeeName, "实际受邀嘉宾");
+  assert.equal(submitted.phone, "13800000003");
+  assert.equal(submitted.userId, "user-a");
+  assert.equal(state.calls.some(call => call.key === "updateUser"), false);
+});
+
+test("phone failures permit manual recovery without exposing raw error details", async t => {
+  const state = setup(t, { revealUserPhone: () => Promise.reject(new Error("internal profile error")) });
+  await selectInvitationUser(state);
+  assert.equal(state.complimentaryUserLoading.value, false);
+  assert.equal(state.complimentaryUserError.value, "手机号读取失败，请手动填写或重新选择用户");
+  state.complimentaryForm.phone = "13800000003";
+  state.editComplimentaryPhone();
+  assert.equal(state.complimentaryUserError.value, "");
+});
+
+test("full-phone permission is required for autofill, while manual entry remains available", async t => {
+  const state = setup(t, {}, ["registration:write", "member:view"]);
+  state.users.value = [{ id: "user-a", realName: "嘉宾甲", phone: "138****0001" }];
+  await selectInvitationUser(state);
+  assert.equal(state.complimentaryForm.attendeeName, "嘉宾甲");
+  assert.equal(state.complimentaryForm.phone, "");
+  assert.equal(state.calls.length, 0);
+  assert.equal(state.complimentaryUserError.value, "当前账号无完整手机号查看权限，请手动填写");
+  const readOnly = setup(t, {}, ["member:view", "member:phone:view"]);
+  await selectInvitationUser(readOnly);
+  assert.equal(readOnly.calls.length, 0);
+});
+
+for (const result of [{ userId: "user-b", phone: "13800000002" }, { userId: "user-a", phone: "138****0001" }]) {
+  test(`invalid profile response is not copied: ${result.userId} / ${result.phone}`, async t => {
+    const state = setup(t, { revealUserPhone: () => result });
+    await selectInvitationUser(state);
+    assert.equal(state.complimentaryForm.phone, "");
+    assert.notEqual(state.complimentaryUserError.value, "");
+  });
+}
+
+test("page-size selector offers bounded choices and keeps row numbering tied to actual page size", () => {
+  assert.match(descriptor.template.content, /v-model:page-size="pageSize"/);
+  assert.match(descriptor.template.content, /:page-sizes="\[10, 20, 50, 100\]"/);
+  assert.match(descriptor.template.content, /layout="sizes, prev, pager, next"/);
+  assert.match(descriptor.template.content, /@size-change="changePageSize"/);
+  assert.match(descriptor.template.content, /<AdminTableIndex[^>]*:page="page"[^>]*:page-size="pageSize"/);
+});
+
+test("changing page size resets page and details, preserves query and ignores old list responses", async t => {
+  const old = deferred();
+  const state = setup(t, { listRegistrations: ({ pageSize }) => pageSize === 10 ? old.promise : { items: [registration("new")], total: 137 } });
+  state.page.value = 3;
+  state.keyword.value = "嘉宾";
+  state.conferenceId.value = "conference-a";
+  state.registrationStatus.value = "CONFIRMED";
+  state.selectedId.value = "old";
+  const request = state.load();
+  for (const size of [20, 50, 100]) {
+    state.pageSize.value = size;
+    state.changePageSize();
+    await vue.nextTick();
+    const params = state.calls.at(-1).args[0];
+    assert.equal(params.page, 1);
+    assert.equal(params.pageSize, size);
+    assert.equal(params.keyword, "嘉宾");
+    assert.equal(params.conferenceId, "conference-a");
+    assert.equal(params.status, "CONFIRMED");
+    assert.equal(state.selectedId.value, "");
+  }
+  old.resolve({ items: [registration("old")], total: 1 });
+  await request;
+  assert.equal(state.items.value[0].id, "new");
+  assert.equal(state.total.value, 137);
+  assert.equal(state.page.value, 1);
+});
+
+test("last-page correction uses the chosen page size", async t => {
+  const state = setup(t, { listRegistrations: () => ({ items: [registration("last")], total: 51 }) });
+  state.pageSize.value = 50;
+  state.page.value = 3;
+  await state.load();
+  assert.equal(state.page.value, 2);
+  assert.equal(state.calls.at(-1).args[0].page, 2);
+  assert.equal(state.calls.at(-1).args[0].pageSize, 50);
 });
