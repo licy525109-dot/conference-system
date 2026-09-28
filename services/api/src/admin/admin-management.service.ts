@@ -23,6 +23,7 @@ import { AdminNotificationsService, formatWechatTemplateDateTime } from "./admin
 import { detectPaymentExceptions } from "./admin-payment-exceptions.service";
 import { type CheckinMethod, formatCheckinConfig } from "../checkin/checkin.service";
 import { createCheckinCredentialPayload } from "../checkin/checkin-credential";
+import { orderTicketItems, resolveAdminOrderWhere } from "./admin-order-query";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -479,26 +480,86 @@ export class AdminManagementService {
 
   async listOrders(query: Record<string, unknown>): Promise<ApiResponse<unknown>> {
     const pagination = parsePagination(query);
-    const where = parseOrderWhere(query);
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.order.findMany({
-        where,
-        orderBy: [{ createdAt: "desc" }],
-        skip: pagination.skip,
-        take: pagination.pageSize,
-        select: orderListSelect
-      }),
-      this.prisma.order.count({ where })
-    ]);
-
-    return ok({
-      items: items.map(formatOrderListItem),
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    });
+    const result = await this.prisma.$transaction(async (tx) => {
+      const where = await resolveAdminOrderWhere(tx, query);
+      const [items, total, amounts, paid, refunds] = await Promise.all([
+        tx.order.findMany({
+          where,
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          skip: pagination.skip,
+          take: pagination.pageSize,
+          select: orderListSelect
+        }),
+        tx.order.count({ where }),
+        tx.order.aggregate({ where, _sum: { payableAmountCent: true, discountAmountCent: true } }),
+        tx.order.aggregate({ where: { AND: [where, { status: { in: [OrderStatus.PAID, OrderStatus.REFUNDED] } }] },
+          _count: { _all: true }, _sum: { paidAmountCent: true } }),
+        tx.refund.aggregate({ where: { order: where, status: "SUCCESS" }, _sum: { amountCent: true } })
+      ]);
+      const paidAmountCent = paid._sum.paidAmountCent ?? 0;
+      const refundedAmountCent = refunds._sum.amountCent ?? 0;
+      return {
+        items: items.map(formatOrderListItem),
+        total,
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        summary: { orderCount: total, paidOrderCount: paid._count._all, paidAmountCent, refundedAmountCent,
+          netPaidAmountCent: paidAmountCent - refundedAmountCent,
+          payableAmountCent: amounts._sum.payableAmountCent ?? 0, discountAmountCent: amounts._sum.discountAmountCent ?? 0 }
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    return ok(result);
   }
 
+  async orderSkuOptions(query: Record<string, unknown>) {
+    const conferenceId = readOptionalString(query, "conferenceId");
+    return ok({ items: await this.prisma.registrationSku.findMany({
+      where: conferenceId ? { conferenceId } : {}, orderBy: [{ conferenceId: "asc" }, { sortOrder: "asc" }, { id: "asc" }],
+      select: { id: true, name: true, conferenceId: true, conference: { select: { title: true } } }
+    }) });
+  }
+
+  async recycleOrders(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
+    const reason = readRequiredString(body, "reason");
+    if (reason.length > 300) throw new BadRequestException("删除原因不能超过 300 字");
+    if (!Array.isArray(body.orderNos) || !body.orderNos.length || body.orderNos.length > 100
+      || body.orderNos.some(value => typeof value !== "string" || !value.trim())) {
+      throw new BadRequestException("请选择 1 至 100 个订单");
+    }
+    const orderNos = [...new Set(body.orderNos as string[])];
+    return ok(await this.prisma.$transaction(async tx => {
+      const orders = await tx.order.findMany({ where: { orderNo: { in: orderNos } }, select: {
+        id: true, orderNo: true, status: true, adminDeletedAt: true,
+        refunds: { where: { status: { in: ["REQUESTED", "APPROVED", "PROCESSING"] } }, select: { id: true } }
+      } });
+      if (orders.length !== orderNos.length) throw new NotFoundException("部分订单不存在，请刷新后重试");
+      if (orders.some(order => order.status === OrderStatus.PENDING)) throw new ConflictException("待支付订单请先关闭或等待支付完成，再移入回收站");
+      if (orders.some(order => order.refunds.length)) throw new ConflictException("存在退款申请或处理中退款，请先处理退款");
+      const ids = orders.filter(order => !order.adminDeletedAt).map(order => order.id);
+      const deleted = await tx.order.updateMany({ where: { id: { in: ids }, adminDeletedAt: null },
+        data: { adminDeletedAt: new Date(), adminDeletedBy: admin.id, adminDeleteReason: reason } });
+      if (deleted.count !== ids.length) throw new ConflictException("订单已发生变化，请刷新后重试");
+      if (deleted.count) await tx.auditLog.create({ data: {
+        adminUserId: admin.id, action: AuditAction.DELETE, entityType: "OrderRecycleBin", entityId: null,
+        summary: "Move orders to admin recycle bin; financial and attendance records retained",
+        metadataJson: { orderNos, reason, count: deleted.count }
+      } });
+      return { deleted: deleted.count, alreadyDeleted: orders.length - ids.length };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+  }
+
+  async restoreOrder(orderNo: string, admin: CurrentAdmin) {
+    return ok(await this.prisma.$transaction(async tx => {
+      const order = await tx.order.findUnique({ where: { orderNo }, select: { id: true, adminDeletedAt: true } });
+      if (!order) throw new NotFoundException("订单不存在");
+      if (!order.adminDeletedAt) return { restored: 0 };
+      await tx.order.update({ where: { id: order.id }, data: { adminDeletedAt: null, adminDeletedBy: null, adminDeleteReason: null } });
+      await tx.auditLog.create({ data: { adminUserId: admin.id, action: AuditAction.UPDATE,
+        entityType: "OrderRecycleBin", entityId: order.id, summary: "Restore order from admin recycle bin", metadataJson: { orderNo } } });
+      return { restored: 1 };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+  }
   async getOrder(orderNo: string): Promise<ApiResponse<unknown>> {
     const order = await this.prisma.order.findUnique({
       where: { orderNo },
@@ -556,8 +617,8 @@ export class AdminManagementService {
     return ok({ orderNo: order.orderNo, closed: 1, skipped: 0, failed: 0 });
   }
 
-  async deleteOrder(orderNo: string, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
-    return this.closeOrder(orderNo, admin);
+  async deleteOrder(orderNo: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    return this.recycleOrders({ ...readObject(input), orderNos: [orderNo] }, admin);
   }
 
   async previewConferenceTestDataCleanup(conferenceId: string): Promise<ApiResponse<unknown>> {
@@ -658,7 +719,7 @@ export class AdminManagementService {
 
   async closeOrdersByFilter(input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const body = readObject(input);
-    const where = parseOrderWhere(body);
+    const where = await resolveAdminOrderWhere(this.prisma, { ...body, deleted: false });
     const onlyExceptions = readOptionalBoolean(body, "onlyExceptions");
     const orders = await this.prisma.order.findMany({
       where,
@@ -1598,6 +1659,7 @@ const formFieldSelect = {
 
 const adminUserProfileSelect = {
   id: true,
+  realName: true,
   openid: true,
   nickname: true,
   wechatNickname: true,
@@ -1622,6 +1684,10 @@ const orderListSelect = {
   expiredAt: true,
   paidAt: true,
   createdAt: true,
+  adminDeletedAt: true,
+  adminDeleteReason: true,
+  items: { orderBy: { id: "asc" }, select: { id: true, skuId: true, skuName: true, unitPriceCent: true, quantity: true, totalAmountCent: true } },
+  refunds: { where: { status: "SUCCESS" }, select: { amountCent: true } },
   user: { select: adminUserProfileSelect },
   conference: { select: { title: true } },
   sku: { select: { name: true } },
@@ -1654,8 +1720,10 @@ const orderDetailSelect = {
   submittedFormJson: true,
   registrationSnapshotJson: true,
   items: {
+    orderBy: { id: "asc" },
     select: {
       id: true,
+      skuId: true,
       skuName: true,
       unitPriceCent: true,
       quantity: true,
@@ -1988,6 +2056,10 @@ function formatOrderListItem(order: Prisma.OrderGetPayload<{ select: typeof orde
     conferenceTitle: order.conference.title,
     skuId: order.skuId,
     skuName: order.sku.name,
+    items: orderTicketItems(order),
+    adminDeletedAt: order.adminDeletedAt?.toISOString() ?? null,
+    adminDeleteReason: order.adminDeleteReason,
+    refundedAmountCent: order.refunds.reduce((sum, refund) => sum + refund.amountCent, 0),
     originAmountCent: order.originAmountCent,
     discountAmountCent: order.discountAmountCent,
     payableAmountCent: order.payableAmountCent,
@@ -2021,7 +2093,7 @@ function formatOrderDetail(
     ...formatOrderListItem(order),
     submittedFormJson: order.submittedFormJson,
     registrationSnapshotJson: order.registrationSnapshotJson,
-    items: order.items,
+    items: orderTicketItems(order),
     discounts: order.discounts.map((discount) => ({
       ...discount,
       createdAt: discount.createdAt.toISOString()
@@ -2224,6 +2296,7 @@ function formatUserProfile(user: Prisma.UserGetPayload<{ select: typeof adminUse
 
   return {
     id: user.id,
+    realName: user.realName,
     openid: user.openid,
     nickname: user.nickname,
     wechatNickname: user.wechatNickname,
@@ -2461,29 +2534,6 @@ function parseFormFieldInput(input: unknown, partial: boolean, existing?: { type
   };
 }
 
-function parseOrderWhere(query: Record<string, unknown>): Prisma.OrderWhereInput {
-  const conferenceId = readOptionalString(query, "conferenceId");
-  const status = readOptionalEnum(query, "status", OrderStatus);
-  const paymentStatus = readOptionalEnum(query, "paymentStatus", PaymentStatus);
-  const keyword = readOptionalString(query, "keyword");
-  return {
-    ...(conferenceId ? { conferenceId } : {}),
-    ...(status ? { status } : {}),
-    ...(paymentStatus ? { payments: { some: { status: paymentStatus } } } : {}),
-    ...(keyword
-      ? {
-          OR: [
-            { orderNo: { contains: keyword, mode: "insensitive" } },
-            { attendeeName: { contains: keyword, mode: "insensitive" } },
-            { phone: { contains: keyword, mode: "insensitive" } },
-            { payments: { some: { outTradeNo: { contains: keyword, mode: "insensitive" } } } },
-            { payments: { some: { transactionId: { contains: keyword, mode: "insensitive" } } } }
-          ]
-        }
-      : {})
-  };
-}
-
 function orderDeleteBlockReason(order: Prisma.OrderGetPayload<{ select: typeof orderDeleteSelect }>): string | null {
   if (order.status !== OrderStatus.PENDING) {
     return "仅待支付订单可关闭";
@@ -2522,7 +2572,7 @@ function isStandaloneMockOrderCleanupCandidate(
 }
 
 function sanitizeDeleteFilters(query: Record<string, unknown>): Prisma.InputJsonObject {
-  const allowed = ["keyword", "conferenceId", "status", "paymentStatus", "onlyExceptions"];
+  const allowed = ["keyword", "conferenceId", "skuId", "status", "paymentStatus", "onlyExceptions"];
   return Object.fromEntries(allowed.map((key) => [key, typeof query[key] === "string" || typeof query[key] === "boolean" ? query[key] : null]));
 }
 

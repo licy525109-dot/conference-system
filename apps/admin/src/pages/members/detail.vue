@@ -1,7 +1,7 @@
 <template>
   <section class="admin-page account-detail">
     <AdminPageHeader title="用户详情" eyebrow="用户中心">
-      <template #actions><el-button @click="goBack">返回</el-button><el-button :loading="loading" @click="load">刷新</el-button></template>
+      <template #actions><el-button @click="goBack">返回</el-button><el-button v-if="data && hasPermission('member:write')" type="primary" @click="editVisible = true">编辑账号资料</el-button><el-button :loading="loading" @click="load">刷新</el-button></template>
     </AdminPageHeader>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <section v-if="data" v-loading="loading">
@@ -44,6 +44,7 @@
       </template>
     </section>
     <el-skeleton v-else-if="loading" :rows="8" animated />
+    <UserAccountEditor v-model="editVisible" :user-id="id" @saved="accountSaved" />
   </section>
 </template>
 <script setup lang="ts">
@@ -51,12 +52,15 @@ import { computed, ref, watch } from 'vue';
 import { tableRowNumber } from '../../utils/table-index';
 import AdminPageHeader from '../../components/AdminPageHeader.vue';
 import AdminStatusBadge from '../../components/AdminStatusBadge.vue';
+import UserAccountEditor from '../../components/UserAccountEditor.vue';
 import { navigateTo, routeQuery } from '../../router';
 import { getUserActivity, type UserActivity } from '../../services/user-activity';
 import { revealUserPhone } from '../../services/admin';
 import { useAdminSession } from '../../stores/admin-session';
 const data = ref<UserActivity | null>(null);
 const loading = ref(false), phoneLoading = ref(false), error = ref('');
+const editVisible = ref(false);
+function accountSaved() { fullPhone.value = null; void load(); }
 const fullPhone = ref<string | null>(null), page = ref(1);
 const smallScreen = window.matchMedia('(max-width: 600px)').matches;
 const id = computed(() => routeQuery.value.id || '');

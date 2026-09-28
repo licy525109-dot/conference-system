@@ -11,7 +11,7 @@ export interface PaymentExceptionItem {
 
 const OVERDUE_MINUTES = 30;
 
-const paymentExceptionOrderSelect = {
+export const paymentExceptionOrderSelect = {
   id: true,
   orderNo: true,
   status: true,

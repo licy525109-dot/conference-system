@@ -73,6 +73,7 @@ export interface FormField {
 
 export interface AdminWechatUser {
   id: string;
+  realName?: string | null;
   openid: string | null;
   nickname: string | null;
   wechatNickname: string | null;
@@ -106,6 +107,10 @@ export interface AdminOrder {
   conferenceTitle: string;
   skuId: string;
   skuName: string;
+  items: AdminOrderTicket[];
+  adminDeletedAt: string | null;
+  adminDeleteReason: string | null;
+  refundedAmountCent: number;
   originAmountCent: number;
   discountAmountCent: number;
   payableAmountCent: number;
@@ -123,16 +128,18 @@ export interface AdminOrder {
   createdAt: string;
 }
 
+export interface AdminOrderTicket {
+  id: string; skuId: string; skuName: string; unitPriceCent: number; quantity: number; totalAmountCent: number;
+}
+
+export interface AdminOrderSummary {
+  orderCount: number; paidOrderCount: number; payableAmountCent: number; discountAmountCent: number;
+  paidAmountCent: number; refundedAmountCent: number; netPaidAmountCent: number;
+}
+
 export interface AdminOrderDetail extends AdminOrder {
   submittedFormJson: Record<string, unknown>;
   registrationSnapshotJson: Record<string, unknown> | null;
-  items: Array<{
-    id: string;
-    skuName: string;
-    unitPriceCent: number;
-    quantity: number;
-    totalAmountCent: number;
-  }>;
   discounts: AdminOrderDiscount[];
   payments: AdminPayment[];
   registration: {
