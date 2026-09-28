@@ -122,6 +122,24 @@ export class AdminManagementController {
     return this.adminManagementService.listOrders(query);
   }
 
+  @Get("orders/sku-options")
+  @RequireAdminPermissions("order:view")
+  orderSkuOptions(@Query() query: Record<string, unknown>) {
+    return this.adminManagementService.orderSkuOptions(query);
+  }
+
+  @Post("orders/recycle")
+  @RequireAdminPermissions("order:delete")
+  recycleOrders(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.recycleOrders(body, request.currentAdmin!);
+  }
+
+  @Patch("orders/:orderNo/restore")
+  @RequireAdminPermissions("order:delete")
+  restoreOrder(@Param("orderNo") orderNo: string, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.restoreOrder(orderNo, request.currentAdmin!);
+  }
+
   @Get("orders/:orderNo")
   @RequireAdminPermissions("order:view")
   getOrder(@Param("orderNo") orderNo: string) {
@@ -136,8 +154,8 @@ export class AdminManagementController {
 
   @Delete("orders/:orderNo")
   @RequireAdminPermissions("order:delete")
-  deleteOrder(@Param("orderNo") orderNo: string, @Req() request: RequestWithCurrentAdmin) {
-    return this.adminManagementService.deleteOrder(orderNo, request.currentAdmin!);
+  deleteOrder(@Param("orderNo") orderNo: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.deleteOrder(orderNo, body, request.currentAdmin!);
   }
 
   @Post("orders/close-by-filter")

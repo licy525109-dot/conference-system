@@ -194,17 +194,25 @@ export function disableFormField(id: string) {
   });
 }
 
-export function listOrders(params: { page?: number; pageSize?: number; keyword?: string; conferenceId?: string; status?: string; paymentStatus?: string }) {
-  return apiRequest<ApiList<AdminOrder>>(`/admin/orders${toQuery(params)}`);
+export type OrderFilters = { keyword?: string; conferenceId?: string; skuId?: string; status?: string; paymentStatus?: string; onlyExceptions?: boolean; deleted?: boolean };
+
+export function listOrders(params: OrderFilters & { page?: number; pageSize?: number }) {
+  return apiRequest<ApiList<AdminOrder> & { summary: import('./types').AdminOrderSummary }>(`/admin/orders${toQuery(params)}`);
 }
 
-export function exportOrdersExcel(params: {
-  keyword?: string;
-  conferenceId?: string;
-  status?: string;
-  paymentStatus?: string;
-  onlyExceptions?: boolean;
-}) {
+export function listOrderSkuOptions(conferenceId?: string) {
+  return apiRequest<{ items: Array<{ id: string; name: string; conferenceId: string; conference: { title: string } }> }>(`/admin/orders/sku-options${toQuery({ conferenceId })}`);
+}
+
+export function recycleOrders(orderNos: string[], reason: string) {
+  return apiRequest<{ deleted: number; alreadyDeleted: number }>("/admin/orders/recycle", { method: "POST", body: JSON.stringify({ orderNos, reason }) });
+}
+
+export function restoreOrder(orderNo: string) {
+  return apiRequest<{ restored: number }>(`/admin/orders/${encodeURIComponent(orderNo)}/restore`, { method: "PATCH" });
+}
+
+export function exportOrdersExcel(params: OrderFilters) {
   return downloadAdminFile(`/admin/exports/orders.xls${toQuery(params)}`, "orders.xls");
 }
 
@@ -218,7 +226,7 @@ export function closeOrder(orderNo: string) {
   });
 }
 
-export function closeOrdersByFilter(params: { keyword?: string; conferenceId?: string; status?: string; paymentStatus?: string; onlyExceptions?: boolean }) {
+export function closeOrdersByFilter(params: OrderFilters) {
   return apiRequest<{ matched: number; closed: number; skipped: number; failed: number }>("/admin/orders/close-by-filter", {
     method: "POST",
     body: JSON.stringify(params)

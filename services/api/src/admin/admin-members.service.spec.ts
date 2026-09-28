@@ -106,6 +106,17 @@ describe("AdminMembersService production workflows", () => {
     assert.equal(JSON.stringify(audit).includes("13800000000"), false);
   });
 
+  it("editing only the account name retains the verified phone and audits only the changed field", async () => {
+    const prisma = createMemberPrismaMock();
+    const verifiedAt = new Date("2026-09-28T00:00:00Z");
+    prisma.users[0].phoneVerifiedAt = verifiedAt;
+    await new AdminMembersService(prisma).updateUser("user-1", { realName: "账号本人" }, admin);
+    assert.equal(prisma.users[0].realName, "账号本人");
+    assert.equal(prisma.users[0].phone, "13800000000");
+    assert.equal(prisma.users[0].phoneVerifiedAt, verifiedAt);
+    assert.deepEqual(prisma.auditLogs.at(-1).metadataJson.changedFields, ["realName"]);
+  });
+
   it("deletes a mini program identity while recording retained historical rows", async () => {
     const prisma = createMemberPrismaMock();
     const service = new AdminMembersService(prisma);

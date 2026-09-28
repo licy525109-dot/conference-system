@@ -1,8 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { AuditAction, CheckInStatus, OrderStatus, PaymentStatus, Prisma, RegistrationStatus } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { CurrentAdmin } from "./current-admin";
 import { detectPaymentExceptions } from "./admin-payment-exceptions.service";
+import { orderTicketItems, resolveAdminOrderWhere } from "./admin-order-query";
 
 @Injectable()
 export class AdminExportsService {
@@ -97,16 +98,18 @@ export class AdminExportsService {
   }
 
   async exportOrdersExcel(query: Record<string, unknown>, admin: CurrentAdmin): Promise<string> {
-    const where = parseOrderWhere(query);
-    const paymentStatus = readOptionalEnum(query, "paymentStatus", PaymentStatus);
-    const onlyExceptions = readOptionalBoolean(query, "onlyExceptions");
+    const where = await resolveAdminOrderWhere(this.prisma, query);
     const rows = await this.prisma.order.findMany({
       where,
       orderBy: [{ createdAt: "desc" }],
-      take: 5000,
+      take: 5001,
       select: {
         id: true,
         orderNo: true,
+        skuId: true,
+        sku: { select: { name: true } },
+        items: { orderBy: { id: "asc" }, select: { id: true, skuId: true, skuName: true, quantity: true, unitPriceCent: true, totalAmountCent: true } },
+        refunds: { where: { status: "SUCCESS" }, select: { amountCent: true } },
         originAmountCent: true,
         discountAmountCent: true,
         payableAmountCent: true,
@@ -120,6 +123,8 @@ export class AdminExportsService {
         conference: { select: { title: true } },
         user: {
           select: {
+            realName: true,
+            nickname: true,
             wechatNickname: true,
             phone: true
           }
@@ -148,12 +153,8 @@ export class AdminExportsService {
       }
     });
 
-    const filteredRows = rows.filter((row) => {
-      const latestPayment = row.payments[0] ?? null;
-      if (paymentStatus && latestPayment?.status !== paymentStatus) return false;
-      if (onlyExceptions && detectPaymentExceptions(row).length === 0) return false;
-      return true;
-    });
+    if (rows.length > 5000) throw new BadRequestException("导出超过 5000 单，请缩小筛选范围后重试");
+    const filteredRows = rows;
 
     await this.writeExportAudit(admin, "Order", "Export orders", {
       filters: sanitizeFilters(query),
@@ -164,7 +165,9 @@ export class AdminExportsService {
       [
         "订单号",
         "会议名称",
-        "用户昵称",
+        "票种明细（下单快照）",
+        "票数",
+        "下单账号",
         "手机号",
         "订单状态",
         "支付状态",
@@ -172,6 +175,8 @@ export class AdminExportsService {
         "原价(元)",
         "优惠金额(元)",
         "实付金额(元)",
+        "已退款(元)",
+        "净收款(元)",
         "微信支付单号",
         "创建时间",
         "支付时间",
@@ -184,7 +189,9 @@ export class AdminExportsService {
         return [
           row.orderNo,
           row.conference.title,
-          row.user?.wechatNickname ?? "",
+          orderTicketItems(row).map(item => `${item.skuName} × ${item.quantity}（单价 ¥${centsToYuan(item.unitPriceCent)}）`).join("；"),
+          orderTicketItems(row).reduce((sum, item) => sum + item.quantity, 0),
+          row.user?.realName || row.user?.nickname || row.user?.wechatNickname || "",
           row.phone ?? row.user?.phone ?? "",
           row.status,
           latestPayment?.status ?? "",
@@ -192,6 +199,8 @@ export class AdminExportsService {
           centsToYuan(row.originAmountCent),
           centsToYuan(row.discountAmountCent),
           row.paidAmountCent === null ? "" : centsToYuan(row.paidAmountCent),
+          centsToYuan(row.refunds.reduce((sum, item) => sum + item.amountCent, 0)),
+          centsToYuan((row.paidAmountCent ?? 0) - row.refunds.reduce((sum, item) => sum + item.amountCent, 0)),
           latestPayment?.transactionId ?? "",
           row.createdAt.toISOString(),
           row.paidAt?.toISOString() ?? latestPayment?.paidAt?.toISOString() ?? "",
@@ -214,27 +223,6 @@ export class AdminExportsService {
       }
     });
   }
-}
-
-function parseOrderWhere(query: Record<string, unknown>): Prisma.OrderWhereInput {
-  const conferenceId = readOptionalString(query, "conferenceId");
-  const status = readOptionalEnum(query, "status", OrderStatus);
-  const keyword = readOptionalString(query, "keyword");
-  return {
-    ...(conferenceId ? { conferenceId } : {}),
-    ...(status ? { status } : {}),
-    ...(keyword
-      ? {
-          OR: [
-            { orderNo: { contains: keyword, mode: "insensitive" } },
-            { attendeeName: { contains: keyword, mode: "insensitive" } },
-            { phone: { contains: keyword, mode: "insensitive" } },
-            { payments: { some: { outTradeNo: { contains: keyword, mode: "insensitive" } } } },
-            { payments: { some: { transactionId: { contains: keyword, mode: "insensitive" } } } }
-          ]
-        }
-      : {})
-  };
 }
 
 function parseRegistrationWhere(query: Record<string, unknown>): Prisma.RegistrationWhereInput {
@@ -267,7 +255,7 @@ function summarizeCheckIn(attendees: Array<{ checkInStatus: CheckInStatus }>): s
 }
 
 function sanitizeFilters(query: Record<string, unknown>): Prisma.InputJsonObject {
-  const allowed = ["keyword", "conferenceId", "status", "paymentStatus", "checkInStatus", "onlyExceptions"];
+  const allowed = ["keyword", "conferenceId", "skuId", "status", "paymentStatus", "checkInStatus", "onlyExceptions", "deleted"];
   return Object.fromEntries(allowed.map((key) => [key, typeof query[key] === "string" || typeof query[key] === "boolean" ? query[key] : null]));
 }
 
