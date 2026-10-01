@@ -2,11 +2,12 @@ import type {
   InvitationCampaignSummary,
   InvitationContent,
   InvitationRecord,
+  InvitationRegistration,
 } from "@conference/shared";
 import { apiRequest, toQuery } from "./api";
 export interface InvitationCampaignDetail {
   id: string;
-  conferenceId: string;
+  conferenceId: string | null;
   draft: InvitationContent;
   published: InvitationContent | null;
   draftRevision: number;
@@ -23,11 +24,57 @@ export const listInvitationCampaigns = () =>
   apiRequest<{ items: InvitationCampaignSummary[] }>(`${base}/campaigns`);
 export const invitationOptions = () =>
   apiRequest<InvitationOptions>(`${base}/options`);
-export const createInvitationCampaign = (conferenceId: string) =>
+export const createInvitationCampaign = (
+  input:
+    | string
+    | {
+        source: "internal" | "external";
+        conferenceId?: string;
+        title?: string;
+        dateLabel?: string;
+        location?: string;
+        registration?: InvitationRegistration;
+      },
+) =>
   apiRequest<{ id: string }>(`${base}/campaigns`, {
     method: "POST",
-    body: JSON.stringify({ conferenceId }),
+    body: JSON.stringify(
+      typeof input === "string" ? { conferenceId: input } : input,
+    ),
   });
+export const invitationRegistrationOptions = () =>
+  apiRequest<{ conferences: InvitationOptions["conferences"] }>(
+    `${base}/registration-options`,
+  );
+
+export interface InvitationWechatSettings {
+  revision: number;
+  enabled: boolean;
+  appId: string;
+  secretConfigured: boolean;
+  source: "database" | "environment" | "none";
+  domain: string;
+  verificationFileName: string;
+  verificationUrl: string;
+}
+export const getInvitationWechatSettings = () =>
+  apiRequest<InvitationWechatSettings>(`${base}/settings/wechat`);
+export const saveInvitationWechatSettings = (body: {
+  revision: number;
+  enabled: boolean;
+  appId: string;
+  appSecret: string;
+  verificationFile?: { name: string; content: string } | null;
+}) =>
+  apiRequest<InvitationWechatSettings>(`${base}/settings/wechat`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+export const testInvitationWechatSettings = () =>
+  apiRequest<{ ok: boolean; checkedAt: string; message: string }>(
+    `${base}/settings/wechat/test`,
+    { method: "POST" },
+  );
 export const getInvitationCampaign = (id: string) =>
   apiRequest<InvitationCampaignDetail>(
     `${base}/campaigns/${encodeURIComponent(id)}`,

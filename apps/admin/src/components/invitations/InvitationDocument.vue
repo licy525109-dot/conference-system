@@ -468,7 +468,7 @@
       >
         <Share /><span>分享</span>
       </button>
-      <div class="invitation-register">
+      <div v-if="document.registrationMode !== 'none'" class="invitation-register">
         <button
           :disabled="!document.registrationOpen"
           @click="$emit('register')"

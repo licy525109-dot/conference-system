@@ -109,6 +109,11 @@ export class AdminInvitationsController {
   options() {
     return this.service.options();
   }
+  @Get("registration-options")
+  @RequireAdminPermissions("invitation:view", "invitation:content")
+  async registrationOptions() {
+    return this.service.registrationOptions();
+  }
   @Post("campaigns")
   @RequireAdminPermissions(
     "invitation:view",
@@ -212,6 +217,12 @@ export class PublicInvitationsController {
     @Res() response: { type(type: string): { send(data: Buffer): void } },
   ) {
     const invitation = await this.service.publicInvitation(token);
+    if (
+      invitation.data.registrationMode !== "miniapp" ||
+      !invitation.data.registrationOpen ||
+      !invitation.data.registrationPath
+    )
+      throw new BadRequestException("当前邀请函未开放小程序报名");
     const bytes = await this.wechat.registrationCode(
       invitation.data.registrationPath,
     );

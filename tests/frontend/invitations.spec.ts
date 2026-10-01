@@ -628,6 +628,10 @@ async function adminFixture(
           { id: "admin", username: "operator", displayName: "邀约工作人员" },
         ],
       });
+    if (path.endsWith("/registration-options"))
+      return ok(route, {
+        conferences: [{ id: "meeting", title: campaign.title }],
+      });
     if (path.endsWith("/recipients")) {
       if (route.request().method() === "POST") {
         const body = route.request().postDataJSON();
@@ -655,6 +659,220 @@ async function adminFixture(
   });
   return campaign;
 }
+for (const width of [390, 1440]) {
+  test(`external meeting creation and registration settings are usable at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 920 });
+    const campaign = await adminFixture(page, ["*"]);
+    let created: Record<string, any> | undefined;
+    await page.route("**/api/admin/invitations/campaigns", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      created = route.request().postDataJSON();
+      Object.assign(campaign, {
+        conferenceId: null,
+        draft: {
+          ...campaign.draft,
+          title: created!.title,
+          registration: created!.registration,
+        },
+      });
+      return ok(route, { id: "campaign" });
+    });
+    await page.goto(`${origin}/#/invitations`);
+    await page
+      .getByRole("button", { name: "新建会议邀请函", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "新建会议邀请函" });
+    await dialog
+      .locator(".el-radio-button")
+      .filter({ hasText: "外部会议" })
+      .click();
+    await dialog
+      .getByRole("textbox", { name: "会议名称", exact: true })
+      .fill("独立行业研讨会");
+    await dialog
+      .getByRole("textbox", { name: "会议时间", exact: true })
+      .fill("2026年12月18日");
+    await dialog
+      .getByRole("textbox", { name: "会议地点", exact: true })
+      .fill("杭州");
+    await dialog
+      .getByRole("textbox", { name: "外部报名链接", exact: true })
+      .fill("https://example.com/form?event=conference");
+    await page.screenshot({
+      path: `output/playwright/invitation-external-create-${width}.png`,
+      animations: "disabled",
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await dialog.getByRole("button", { name: "创建", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    expect(created?.source).toBe("external");
+    expect(created?.conferenceId).toBeUndefined();
+    expect(created?.registration.url).toBe(
+      "https://example.com/form?event=conference",
+    );
+    await page.getByRole("tab", { name: "报名入口", exact: true }).click();
+    await expect(
+      page.getByRole("textbox", { name: "外部报名链接", exact: true }),
+    ).toHaveValue("https://example.com/form?event=conference");
+    await page
+      .getByRole("textbox", { name: "报名按钮文字", exact: true })
+      .fill("填写参会表");
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(
+      page
+        .locator(".invite-editor-toolbar")
+        .getByText("草稿已保存", { exact: true }),
+    ).toBeVisible();
+    expect(campaign.draft.registration?.label).toBe("填写参会表");
+    await page.screenshot({
+      path: `output/playwright/invitation-registration-${width}.png`,
+      animations: "disabled",
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+  test(`official account settings save without echoing secret at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 920 });
+    await adminFixture(page, ["*"]);
+    let state = {
+      revision: 0,
+      enabled: false,
+      appId: "",
+      secretConfigured: false,
+      source: "none",
+      domain: "guanchaohuiji.com",
+      verificationFileName: "",
+      verificationUrl: "",
+    };
+    await page.route(
+      "**/api/admin/invitations/settings/wechat",
+      async (route) => {
+        if (route.request().method() === "PATCH") {
+          const body = route.request().postDataJSON();
+          expect(body.appSecret).toHaveLength(32);
+          expect(body.verificationFile.name).toBe("MP_verify_fixture.txt");
+          state = {
+            ...state,
+            appId: body.appId,
+            enabled: body.enabled,
+            secretConfigured: true,
+            revision: 1,
+            source: "database",
+            verificationFileName: body.verificationFile.name,
+            verificationUrl: "https://guanchaohuiji.com/MP_verify_fixture.txt",
+          };
+        }
+        return ok(route, state);
+      },
+    );
+    await page.route("**/api/admin/invitations/settings/wechat/test", (route) =>
+      ok(route, {
+        ok: true,
+        message: "微信接口连接成功；分享效果仍需在微信中验证",
+      }),
+    );
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("button", { name: "公众号配置", exact: true }).click();
+    const drawer = page.getByRole("dialog", { name: "公众号配置" });
+    await drawer
+      .getByRole("textbox", { name: "公众号 AppID", exact: true })
+      .fill("wx" + "a".repeat(16));
+    await drawer
+      .getByLabel("公众号 AppSecret", { exact: true })
+      .fill("1".repeat(32));
+    await drawer.locator(".el-switch").click();
+    await drawer.getByLabel("公众号域名校验文件").setInputFiles({
+      name: "MP_verify_fixture.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("FixtureVerification0123"),
+    });
+    await drawer.getByRole("button", { name: "保存配置", exact: true }).click();
+    await expect(
+      drawer.getByLabel("公众号 AppSecret", { exact: true }),
+    ).toHaveValue("");
+    await expect(drawer.getByText("密钥已配置", { exact: true })).toBeVisible();
+    await drawer.getByRole("button", { name: "检测连接", exact: true }).click();
+    await expect(
+      drawer.getByText("微信接口连接成功；分享效果仍需在微信中验证", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: `output/playwright/invitation-wechat-settings-${width}.png`,
+      animations: "disabled",
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await drawer
+      .getByRole("textbox", { name: "公众号 AppID", exact: true })
+      .fill("wx" + "b".repeat(16));
+    await expect(
+      drawer.getByText("微信接口连接成功；分享效果仍需在微信中验证", {
+        exact: true,
+      }),
+    ).toBeHidden();
+    await expect(
+      drawer.getByRole("button", { name: "检测连接", exact: true }),
+    ).toBeDisabled();
+    await drawer
+      .getByRole("button", { name: "关闭", exact: true })
+      .last()
+      .click();
+    await page.getByRole("button", { name: "公众号配置", exact: true }).click();
+    await expect(
+      page.getByLabel("公众号 AppSecret", { exact: true }),
+    ).toHaveValue("");
+  });
+}
+test("official settings action is hidden without its dedicated permission", async ({
+  page,
+}) => {
+  await adminFixture(page, ["invitation:view", "invitation:content"]);
+  await page.goto(`${origin}/#/invitations`);
+  await expect(
+    page.getByRole("heading", { name: "专属邀请函", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "公众号配置", exact: true }),
+  ).toHaveCount(0);
+});
+test("external registration opens only its configured URL and none hides the CTA", async ({
+  page,
+}) => {
+  const doc = document();
+  doc.registrationMode = "external";
+  doc.registrationUrl = "https://example.com/form?event=1";
+  doc.registrationMessage = "填写参会表";
+  await publicFixture(page, () => doc);
+  await page.route("https://example.com/form?event=1", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>外部报名表</h1>" }),
+  );
+  await page.goto(`${origin}/i/${token}`);
+  await page.getByRole("button", { name: "填写参会表", exact: true }).click();
+  await expect(page).toHaveURL("https://example.com/form?event=1");
+  doc.registrationMode = "none";
+  doc.registrationOpen = false;
+  await page.goto(`${origin}/i/${token}`);
+  await expect(page.locator(".invitation-document")).toBeVisible();
+  await expect(page.locator(".invitation-register")).toHaveCount(0);
+});
 for (const width of [390, 1512]) {
   test(`navigation editor saves independent order, labels and switches at ${width}px`, async ({
     page,

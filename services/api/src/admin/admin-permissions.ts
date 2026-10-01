@@ -5,6 +5,7 @@ export const ADMIN_PERMISSIONS = [
   { code: "invitation:publish", name: "发布邀请函公共更新", group: "专属邀请函" },
   { code: "invitation:all", name: "查看和管理授权会议的全部邀约", group: "专属邀请函" },
   { code: "invitation:access", name: "管理全部邀请会议及人员授权", group: "专属邀请函" },
+  { code: "invitation:settings", name: "配置邀请函公众号", group: "专属邀请函" },
   { code: "dashboard:view", name: "查看数据看板", group: "控制台" },
   { code: "conference:view", name: "查看会议", group: "会议管理" },
   { code: "conference:write", name: "编辑会议", group: "会议管理" },

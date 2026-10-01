@@ -8,6 +8,11 @@ import { InvitationPageController } from "./invitation-page.controller";
 import { InvitationsService } from "./invitations.service";
 import { InvitationWechatService } from "./invitation-wechat.service";
 import { InvitationAssetsService } from "./invitation-assets.service";
+import { InvitationSettingsService } from "./invitation-settings.service";
+import {
+  InvitationSettingsController,
+  InvitationVerificationController,
+} from "./invitation-settings.controller";
 
 @Module({
   imports: [AdminModule],
@@ -15,7 +20,14 @@ import { InvitationAssetsService } from "./invitation-assets.service";
     AdminInvitationsController,
     PublicInvitationsController,
     InvitationPageController,
+    InvitationSettingsController,
+    InvitationVerificationController,
   ],
-  providers: [InvitationsService, InvitationWechatService, InvitationAssetsService],
+  providers: [
+    InvitationsService,
+    InvitationWechatService,
+    InvitationAssetsService,
+    InvitationSettingsService,
+  ],
 })
 export class InvitationsModule {}

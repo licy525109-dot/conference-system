@@ -58,7 +58,10 @@ async function bootstrap() {
   app.use(createSensitiveEndpointRateLimiter());
   app.use("/invitation-assets", express.static(resolve(inferProjectRoot(process.cwd()), "apps/admin/dist/assets")));
   app.use("/invitation-art", express.static(resolve(inferProjectRoot(process.cwd()), "apps/admin/dist/invitation-art")));
-  app.setGlobalPrefix("api", { exclude: [{ path: "i/:token", method: RequestMethod.GET }] });
+  app.setGlobalPrefix("api", { exclude: [
+    { path: "i/:token", method: RequestMethod.GET },
+    { path: "MP_verify_:code.txt", method: RequestMethod.GET },
+  ] });
 
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
   const host = process.env.API_HOST?.trim() || (process.env.NODE_ENV === "production" ? "127.0.0.1" : "0.0.0.0");

@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
 import { invitationUrl } from "./invitation-policy";
+import { InvitationSettingsService } from "./invitation-settings.service";
 
 export function invitationSigningUrl(input: string, token: string): string {
   let url: URL;
@@ -39,8 +40,9 @@ export function signInvitationTicket(
 }
 @Injectable()
 export class InvitationWechatService {
-  private ticket?: { value: string; expires: number };
-  private pendingTicket?: Promise<string>;
+  constructor(private readonly settings: InvitationSettingsService) {}
+  private ticket?: { key: string; value: string; expires: number };
+  private pendingTicket?: { key: string; promise: Promise<string> };
   private miniToken?: { value: string; expires: number };
   private readonly codes = new Map<
     string,
@@ -48,13 +50,13 @@ export class InvitationWechatService {
   >();
   async config(token: string, inputUrl: string) {
     const url = invitationSigningUrl(inputUrl, token);
-    const appId = process.env.WECHAT_OFFICIAL_APP_ID?.trim();
-    const secret = process.env.WECHAT_OFFICIAL_APP_SECRET?.trim();
-    if (!appId || !secret)
+    const credentials = await this.settings.credentials();
+    if (!credentials)
       return {
         available: false as const,
         message: "微信分享配置尚未完成，请联系会务",
       };
+    const { appId, secret } = credentials;
     const ticket = await this.getTicket(appId, secret);
     const timestamp = Math.floor(Date.now() / 1000);
     const nonceStr = randomBytes(16).toString("hex");
@@ -64,6 +66,17 @@ export class InvitationWechatService {
       timestamp,
       nonceStr,
       signature: signInvitationTicket(ticket, nonceStr, timestamp, url),
+    };
+  }
+  async testConnection() {
+    const credentials = await this.settings.credentials(true);
+    if (!credentials)
+      throw new BadRequestException("请先保存公众号 AppID 和 AppSecret");
+    await this.getTicket(credentials.appId, credentials.secret);
+    return {
+      ok: true,
+      checkedAt: new Date().toISOString(),
+      message: "微信接口连接成功；分享效果仍需在微信中验证",
     };
   }
   async registrationCode(path: string): Promise<Buffer> {
@@ -129,8 +142,16 @@ export class InvitationWechatService {
     const payload = await this.fetchJson(
       `https://api.weixin.qq.com/cgi-bin/token?${query}`,
     );
-    if (typeof payload.access_token !== "string")
-      throw new BadGatewayException("微信接口配置不可用，请联系管理员核验");
+    if (typeof payload.access_token !== "string") {
+      const code = Number(payload.errcode);
+      throw new BadGatewayException(
+        code === 40164
+          ? "请在公众号平台配置服务器 IP 白名单后重试"
+          : [40013, 40125, 40001].includes(code)
+            ? "公众号 AppID 或 AppSecret 无效，请核对后重新保存"
+            : "微信接口配置不可用，请核对公众号接口权限与 IP 白名单",
+      );
+    }
     return {
       value: payload.access_token,
       expires:
@@ -139,28 +160,34 @@ export class InvitationWechatService {
     };
   }
   private async getTicket(appId: string, secret: string): Promise<string> {
-    if (this.ticket && this.ticket.expires > Date.now())
+    const key = createHash("sha256").update(`${appId}:${secret}`).digest("hex");
+    if (this.ticket?.key === key && this.ticket.expires > Date.now())
       return this.ticket.value;
-    if (this.pendingTicket) return this.pendingTicket;
-    this.pendingTicket = (async () => {
-      const token = await this.accessToken(appId, secret);
-      const payload = await this.fetchJson(
-        `https://api.weixin.qq.com/cgi-bin/ticket/getticket?access_token=${encodeURIComponent(token.value)}&type=jsapi`,
-      );
-      if (payload.errcode !== 0 || typeof payload.ticket !== "string")
-        throw new BadGatewayException("微信分享暂不可用，请联系管理员核验");
-      this.ticket = {
-        value: payload.ticket,
-        expires:
-          Date.now() +
-          Math.max(60, Number(payload.expires_in || 7200) - 300) * 1000,
-      };
-      return this.ticket.value;
-    })();
+    if (this.pendingTicket?.key === key) return this.pendingTicket.promise;
+    const pending = {
+      key,
+      promise: (async () => {
+        const token = await this.accessToken(appId, secret);
+        const payload = await this.fetchJson(
+          `https://api.weixin.qq.com/cgi-bin/ticket/getticket?access_token=${encodeURIComponent(token.value)}&type=jsapi`,
+        );
+        if (payload.errcode !== 0 || typeof payload.ticket !== "string")
+          throw new BadGatewayException("微信分享暂不可用，请联系管理员核验");
+        this.ticket = {
+          key,
+          value: payload.ticket,
+          expires:
+            Date.now() +
+            Math.max(60, Number(payload.expires_in || 7200) - 300) * 1000,
+        };
+        return this.ticket.value;
+      })(),
+    };
+    this.pendingTicket = pending;
     try {
-      return await this.pendingTicket;
+      return await pending.promise;
     } finally {
-      this.pendingTicket = undefined;
+      if (this.pendingTicket === pending) this.pendingTicket = undefined;
     }
   }
   protected async fetchJson(url: string): Promise<Record<string, unknown>> {

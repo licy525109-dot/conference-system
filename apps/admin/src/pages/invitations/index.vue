@@ -1,10 +1,19 @@
 <template>
   <section
     class="admin-page invitations-admin"
-    :class="{ 'is-editing': ['content', 'design', 'roster'].includes(tab) }"
+    :class="{
+      'is-editing': ['content', 'design', 'roster', 'registration'].includes(
+        tab,
+      ),
+    }"
   >
     <AdminPageHeader title="专属邀请函" eyebrow="会议邀约"
       ><template #actions
+        ><el-button
+          v-if="can('settings')"
+          :icon="Setting"
+          @click="wechatSettingsVisible = true"
+          >公众号配置</el-button
         ><el-button
           v-if="can('content')"
           :icon="Rank"
@@ -74,6 +83,9 @@
           v-if="can('content') || can('publish')"
           label="视觉与分享"
           name="design" /><el-tab-pane
+          v-if="can('content') || can('publish')"
+          label="报名入口"
+          name="registration" /><el-tab-pane
           v-if="can('access')"
           label="会议授权"
           name="access"
@@ -194,7 +206,9 @@
         />
       </template>
       <div
-        v-else-if="['content', 'design', 'roster'].includes(tab)"
+        v-else-if="
+          ['content', 'design', 'roster', 'registration'].includes(tab)
+        "
         class="invite-editor-layout"
         :class="{ 'invite-editor-layout--wide': tab !== 'roster' }"
       >
@@ -271,7 +285,7 @@
               :disabled="!can('content') || saving || publishing"
             />
             <InvitationDesignStudio
-              v-else
+              v-else-if="tab === 'design'"
               ref="designStudio"
               v-model="draft"
               v-model:preview-name="previewName"
@@ -281,6 +295,13 @@
                 previewVisible = true;
                 replayPreview();
               "
+            />
+            <InvitationRegistrationEditor
+              v-else-if="tab === 'registration'"
+              v-model="draft.registration"
+              :linked-id="detail.conferenceId"
+              :conferences="options.conferences"
+              :disabled="!can('content') || saving || publishing"
             />
           </el-form>
         </div>
@@ -323,8 +344,19 @@
       v-model="newCampaignVisible"
       title="新建会议邀请函"
       width="min(92vw, 480px)"
-      ><el-form label-position="top"
-        ><el-form-item label="会议"
+      :close-on-click-modal="!saving"
+      :close-on-press-escape="!saving"
+      :show-close="!saving"
+      ><el-form
+        label-position="top"
+        :disabled="saving"
+        @submit.prevent="createCampaign"
+        ><el-form-item label="会议来源">
+          <el-radio-group v-model="newSource" aria-label="会议来源">
+            <el-radio-button value="internal">系统内会议</el-radio-button>
+            <el-radio-button value="external">外部会议</el-radio-button>
+          </el-radio-group> </el-form-item
+        ><el-form-item v-if="newSource === 'internal'" label="会议"
           ><el-select
             v-model="newConferenceId"
             filterable
@@ -334,18 +366,46 @@
               v-for="conference in availableConferences"
               :key="conference.id"
               :label="conference.title"
-              :value="conference.id" /></el-select></el-form-item></el-form
+              :value="conference.id" /></el-select
+        ></el-form-item>
+        <template v-else>
+          <el-form-item label="会议名称" required
+            ><el-input v-model="newTitle" aria-label="会议名称" maxlength="200"
+          /></el-form-item>
+          <el-form-item label="会议时间"
+            ><el-input
+              v-model="newDateLabel"
+              aria-label="会议时间"
+              maxlength="200"
+          /></el-form-item>
+          <el-form-item label="会议地点"
+            ><el-input
+              v-model="newLocation"
+              aria-label="会议地点"
+              maxlength="200"
+          /></el-form-item>
+          <InvitationRegistrationEditor
+            v-model="newRegistration"
+            :conferences="options.conferences"
+            :disabled="saving"
+          />
+        </template> </el-form
       ><template #footer
-        ><el-button @click="newCampaignVisible = false">取消</el-button
+        ><el-button :disabled="saving" @click="newCampaignVisible = false"
+          >取消</el-button
         ><el-button
           type="primary"
-          :disabled="!newConferenceId"
+          :disabled="!canCreateCampaign"
           :loading="saving"
           @click="createCampaign"
           >创建</el-button
         ></template
       ></el-dialog
     >
+    <InvitationWechatSettings
+      v-if="can('settings')"
+      v-model="wechatSettingsVisible"
+    />
     <el-dialog
       v-model="recipientVisible"
       :title="editingRecipientId ? '修改受邀人' : '生成专属邀请函'"
@@ -467,11 +527,14 @@ import {
   Refresh,
   Search,
   Share,
+  Setting,
   View,
 } from "@element-plus/icons-vue";
 import {
   createInvitationContent,
   normalizeInvitationContent,
+  normalizeInvitationRegistration,
+  invitationRegistrationUrl,
   invitationNameKey,
   type InvitationCampaignSummary,
   type InvitationContent,
@@ -483,6 +546,8 @@ import InvitationRuntime from "../../components/invitations/InvitationRuntime.vu
 import InvitationModulesEditor from "../../components/invitations/InvitationModulesEditor.vue";
 import InvitationDesignStudio from "../../components/invitations/InvitationDesignStudio.vue";
 import InvitationRosterEditor from "../../components/invitations/InvitationRosterEditor.vue";
+import InvitationRegistrationEditor from "../../components/invitations/InvitationRegistrationEditor.vue";
+import InvitationWechatSettings from "../../components/invitations/InvitationWechatSettings.vue";
 import { useAdminSession } from "../../stores/admin-session";
 import { API_BASE_URL } from "../../config";
 import {
@@ -491,6 +556,7 @@ import {
   getInvitationCampaign,
   getInvitationMembers,
   invitationOptions,
+  invitationRegistrationOptions,
   listInvitationCampaigns,
   listInvitationRecipients,
   publishInvitationCampaign,
@@ -538,6 +604,23 @@ const publishing = ref(false);
 const error = ref("");
 const newCampaignVisible = ref(false);
 const newConferenceId = ref("");
+const newSource = ref<"internal" | "external">("internal");
+const newTitle = ref(""),
+  newDateLabel = ref(""),
+  newLocation = ref("");
+const newRegistration = ref(
+  normalizeInvitationRegistration({ mode: "external" }),
+);
+const wechatSettingsVisible = ref(false);
+const canCreateCampaign = computed(() =>
+  newSource.value === "internal"
+    ? Boolean(newConferenceId.value)
+    : Boolean(newTitle.value.trim()) &&
+      (newRegistration.value.mode === "none" ||
+        (newRegistration.value.mode === "external"
+          ? Boolean(invitationRegistrationUrl(newRegistration.value.url))
+          : Boolean(newRegistration.value.conferenceId))),
+);
 const recipientVisible = ref(false);
 const recipientName = ref("");
 const recipientSalutation = ref("老师");
@@ -597,8 +680,14 @@ const previewDocument = computed<PublicInvitation>(() => ({
   },
   shareUrl: "",
   registrationPath: "",
-  registrationOpen: true,
-  registrationMessage: "前往小程序报名",
+  registrationMode: draft.value.registration?.mode || "miniapp",
+  registrationUrl: draft.value.registration?.url || "",
+  registrationOpen: draft.value.registration?.mode !== "none",
+  registrationMessage:
+    draft.value.registration?.label ||
+    (draft.value.registration?.mode === "external"
+      ? "前往报名"
+      : "前往小程序报名"),
   miniAppId: "",
 }));
 function assetUrl(url: string) {
@@ -695,9 +784,20 @@ function changePage(value: number) {
   void loadRecipients();
 }
 async function createCampaign() {
+  if (!canCreateCampaign.value || saving.value) return;
   saving.value = true;
   try {
-    const result = await createInvitationCampaign(newConferenceId.value);
+    const result = await createInvitationCampaign(
+      newSource.value === "internal"
+        ? { source: "internal", conferenceId: newConferenceId.value }
+        : {
+            source: "external",
+            title: newTitle.value,
+            dateLabel: newDateLabel.value,
+            location: newLocation.value,
+            registration: newRegistration.value,
+          },
+    );
     newCampaignVisible.value = false;
     await loadCampaigns();
     await selectCampaign(result.id);
@@ -895,6 +995,14 @@ function beforeUnload(event: BeforeUnloadEvent) {
   }
 }
 watch(newCampaignVisible, async (visible) => {
+  if (visible) {
+    newSource.value = "internal";
+    newConferenceId.value = "";
+    newTitle.value = newDateLabel.value = newLocation.value = "";
+    newRegistration.value = normalizeInvitationRegistration({
+      mode: "external",
+    });
+  }
   if (visible && can("access")) {
     try {
       options.value = await invitationOptions();
@@ -909,6 +1017,11 @@ onMounted(async () => {
   try {
     await loadCampaigns();
     if (can("access")) options.value = await invitationOptions();
+    else if (can("content"))
+      options.value = {
+        ...(await invitationRegistrationOptions()),
+        admins: [],
+      };
     if (campaigns.value[0]) await selectCampaign(campaigns.value[0].id);
   } catch (cause) {
     fail(cause);

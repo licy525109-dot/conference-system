@@ -6,6 +6,7 @@ import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { CurrentAdmin } from "./current-admin";
 import { fetchPublicUrl } from "../security/public-outbound-fetch";
+import { normalizeInvitationContent } from "@conference/shared";
 
 export interface UploadedMaterialFile {
   buffer: Buffer;
@@ -281,7 +282,7 @@ export class AdminMaterialsService {
       ...tabbarItems.map((item) => referenceItem("底部导航图标", item.id, `${item.title} / ${item.pageKey}`)),
       ...memberBenefits.map((item) => referenceItem("会员权益图标", item.id, item.title)),
       ...wecomGroups.map((item) => referenceItem("企微群二维码", item.id, item.name)),
-      ...invitations.filter((item) => invitationMentionsMaterial(item.draftJson, asset) || invitationMentionsMaterial(item.publishedJson, asset)).map((item) => referenceItem("会议邀请函", item.id, item.conference.title))
+      ...invitations.filter((item) => invitationMentionsMaterial(item.draftJson, asset) || invitationMentionsMaterial(item.publishedJson, asset)).map((item) => referenceItem("会议邀请函", item.id, normalizeInvitationContent(item.draftJson).title || item.conference?.title || "外部会议邀请函"))
     ];
     return { items, total: items.length };
   }

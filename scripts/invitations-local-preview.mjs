@@ -18,7 +18,7 @@ try {
   const password = randomBytes(12).toString("base64url");
   const salt = randomBytes(16).toString("hex");
   const passwordHash = `pbkdf2$sha512$210000$${salt}$${pbkdf2Sync(password, salt, 210000, 64, "sha512").toString("hex")}`;
-  const codes = ["view", "write", "content", "publish", "all", "access"].map(
+  const codes = ["view", "write", "content", "publish", "all", "access", "settings"].map(
     (code) => `invitation:${code}`,
   );
   const permissions = await db.permission.findMany({
@@ -39,6 +39,13 @@ try {
       },
     },
   });
+  for (const permission of permissions) {
+    await db.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+      update: {},
+      create: { roleId: role.id, permissionId: permission.id },
+    });
+  }
   const admin = await db.adminUser.upsert({
     where: { username },
     update: { passwordHash, enabled: true },

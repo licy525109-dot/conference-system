@@ -37,6 +37,37 @@ export interface InvitationInvitee {
   organization: string;
   role?: string;
 }
+export interface InvitationRegistration {
+  mode: "miniapp" | "external" | "none";
+  conferenceId: string;
+  url: string;
+  label: string;
+}
+export function invitationRegistrationUrl(input: unknown): string {
+  if (typeof input !== "string" || input.length > 2000) return "";
+  try {
+    const url = new URL(input.trim());
+    return url.protocol === "https:" && !url.username && !url.password
+      ? url.href
+      : "";
+  } catch {
+    return "";
+  }
+}
+export function normalizeInvitationRegistration(
+  input: unknown,
+): InvitationRegistration {
+  const source = object(input);
+  return {
+    mode:
+      source.mode === "external" || source.mode === "none"
+        ? source.mode
+        : "miniapp",
+    conferenceId: string(source.conferenceId, 100),
+    url: invitationRegistrationUrl(source.url),
+    label: string(source.label, 24),
+  };
+}
 export interface InvitationContent {
   version: 1;
   title: string;
@@ -75,6 +106,7 @@ export interface InvitationContent {
   invitees: InvitationInvitee[];
   highlights: Array<{ id: string; title: string; description: string }>;
   organizers: string[];
+  registration?: InvitationRegistration;
 }
 export const INVITATION_THEMES: Record<
   InvitationTheme,
@@ -155,6 +187,7 @@ export function createInvitationContent(conference?: {
     invitees: [],
     highlights: [],
     organizers: [],
+    registration: normalizeInvitationRegistration(null),
   };
 }
 function object(value: unknown): Record<string, unknown> {
@@ -198,6 +231,7 @@ export function normalizeInvitationContent(input: unknown): InvitationContent {
   ] as const)
     result[key] = string(source[key], key === "shareDescription" ? 300 : 200);
   result.introduction = string(source.introduction, 10000);
+  result.registration = normalizeInvitationRegistration(source.registration);
   result.theme =
     source.theme === "ceremony" || source.theme === "coral"
       ? source.theme
@@ -284,7 +318,7 @@ export interface PublicInvitation {
     salutation: string;
     publicInviteeId?: string | null;
   };
-  conferenceId: string;
+  conferenceId: string | null;
   revision: number;
   publishedAt: string;
   content: InvitationContent;
@@ -293,10 +327,12 @@ export interface PublicInvitation {
   registrationOpen: boolean;
   registrationMessage: string;
   miniAppId: string;
+  registrationMode?: InvitationRegistration["mode"];
+  registrationUrl?: string;
 }
 export interface InvitationCampaignSummary {
   id: string;
-  conferenceId: string;
+  conferenceId: string | null;
   title: string;
   publishedRevision: number;
   draftRevision: number;
