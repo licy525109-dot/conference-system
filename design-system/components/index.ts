@@ -36,6 +36,7 @@ export const DSSection = component("ds-section", "DSSection", ["title", "descrip
 export const DSTag = component("ds-tag", "DSTag", ["text", "tone", "size"]);
 export const DSImage = component("ds-image", "DSImage", ["src", "alt", "mode", "ratio"]);
 export const DSCarousel = component("ds-carousel", "DSCarousel", ["images", "autoplay", "indicatorDots", "height"]);
+export const DSInvitation = component("ds-invitation", "DSInvitation", ["document"]);
 
 export const designSystemComponents: RegisteredComponent[] = [
   DSButton,
@@ -46,7 +47,8 @@ export const designSystemComponents: RegisteredComponent[] = [
   DSSection,
   DSTag,
   DSImage,
-  DSCarousel
+  DSCarousel,
+  DSInvitation
 ];
 
 export function createDesignSystemRegistry(): ComponentRegistry {

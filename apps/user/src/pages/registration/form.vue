@@ -161,7 +161,7 @@
       amount-label="合计"
       :amount-value="`¥${formatCent(payableAmountCent)}`"
       :primary-text="registrationModuleContent('submitOrder', '提交订单')"
-      :secondary-text="isRegistrationModuleVisible('addCartButton') ? (addingToCart ? '加入中...' : registrationModuleContent('addCartButton', '加入购物车')) : ''"
+      :secondary-text="!invitationToken && isRegistrationModuleVisible('addCartButton') ? (addingToCart ? '加入中...' : registrationModuleContent('addCartButton', '加入购物车')) : ''"
       :loading="submitting"
       loading-text="提交中..."
       :primary-disabled="submitting || addingToCart || quoteLoading || totalTickets === 0"
@@ -209,6 +209,7 @@ import { attendeeMatchesSelf, preserveQuantities, registrationProfileReady, reus
 import { couponFitsRegistration, readPendingRegistrationCoupon } from "@/utils/registration-coupons";
 
 const conferenceId = ref("");
+const invitationToken = ref("");
 const selectedSkuId = ref("");
 const conference = ref<ConferenceDetail | null>(null);
 const form = ref<ConferenceForm | null>(null);
@@ -256,6 +257,7 @@ const attendeeSectionDescription = computed(() =>
 
 onLoad((query) => {
   conferenceId.value = String(query?.conferenceId || "");
+  invitationToken.value = String(query?.invitationToken || "");
   selectedSkuId.value = String(query?.skuId || "");
   couponCode.value = readInitialCouponCode(query, "CONFERENCE");
   void refreshTheme();
@@ -476,6 +478,7 @@ async function submitOrder() {
     const identityError = validateSelfDeclarations();
     if (identityError) { uni.showToast({ title: identityError, icon: "none" }); return; }
     const order = await createRegistrationOrder({
+      ...(invitationToken.value ? { invitationToken: invitationToken.value } : {}),
       conferenceId: conferenceId.value,
       items: selectedItems.value,
       couponCode: normalizedCouponCode(),

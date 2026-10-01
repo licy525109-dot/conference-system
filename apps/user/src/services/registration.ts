@@ -31,6 +31,7 @@ export interface QuoteResponse extends QuoteRequest {
 }
 
 export interface CreateOrderRequest extends QuoteRequest {
+  invitationToken?: string;
   formData?: Record<string, string | string[]>;
   attendees?: RegistrationOrderAttendee[];
 }

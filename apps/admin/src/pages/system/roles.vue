@@ -139,6 +139,7 @@ async function save() {
 }
 
 function permissionMenuGroup(permission: Permission): string {
+  if (permission.code.startsWith("invitation:")) return "专属邀请函";
   const route = routes.find((item) => item.permission === permission.code);
   if (route) return route.group;
   if (permission.code.startsWith("dashboard:")) return "控制台";

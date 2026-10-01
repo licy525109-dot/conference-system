@@ -16,9 +16,10 @@ import { PrismaModule } from "./prisma.module";
 import { RegistrationModule } from "./registration/registration.module";
 import { RegistrationsModule } from "./registrations/registrations.module";
 import { WecomModule } from "./wecom/wecom.module";
+import { InvitationsModule } from "./invitations/invitations.module";
 
 @Module({
-  imports: [PrismaModule, AdminModule, AuthModule, CartModule, CheckinModule, CmsModule, ConferencesModule, GuestScheduleModule, MallModule, MemberModule, OrderLifecycleModule, PaymentsModule, PlatformModule, RegistrationModule, RegistrationsModule, WecomModule],
+  imports: [PrismaModule, AdminModule, AuthModule, CartModule, CheckinModule, CmsModule, ConferencesModule, GuestScheduleModule, InvitationsModule, MallModule, MemberModule, OrderLifecycleModule, PaymentsModule, PlatformModule, RegistrationModule, RegistrationsModule, WecomModule],
   controllers: [HealthController]
 })
 export class AppModule {}

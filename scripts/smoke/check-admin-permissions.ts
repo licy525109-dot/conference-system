@@ -8,6 +8,7 @@ const apiSrc = join(root, "services/api/src");
 const allowedGroups = new Set([
   "控制台",
   "会议管理",
+  "专属邀请函",
   "订单交易",
   "营销活动",
   "通知中心",
@@ -25,6 +26,7 @@ const requiredPrefixes = [
   "conference",
   "registration",
   "guest-schedule",
+  "invitation",
   "checkin",
   "inventory",
   "order",
@@ -118,6 +120,7 @@ function unique<T>(items: T[]): T[] {
 }
 
 function permissionMenuGroup(code: string): string {
+  if (code.startsWith("invitation:")) return "专属邀请函";
   const routeGroup = routeGroupByPermission(code);
   if (routeGroup) return routeGroup;
   if (code.startsWith("dashboard:")) return "控制台";

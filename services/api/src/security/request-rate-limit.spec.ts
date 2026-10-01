@@ -3,6 +3,17 @@ import { describe, it } from "node:test";
 import { createSensitiveEndpointRateLimiter } from "./request-rate-limit";
 
 describe("sensitive endpoint rate limiter", () => {
+  it("shares the invitation signing quota across tokens to prevent token rotation bypass", () => {
+    const limiter = createSensitiveEndpointRateLimiter();
+    let accepted = 0;
+    let status = 0;
+    const response = { setHeader: () => undefined, status: (code: number) => ({ json: () => { status = code; } }) };
+    for (let index = 0; index < 61; index++) {
+      limiter({ method: "GET", path: `/api/invitations/${index}/wechat`, ip: "203.0.113.30", socket: {} }, response, () => { accepted++; });
+    }
+    assert.equal(accepted, 60);
+    assert.equal(status, 429);
+  });
   for (const [route, limit] of [["preview", 60], ["claim", 10]] as const) {
     it(`limits private coupon ${route} attempts independently per caller`, () => {
       const limiter = createSensitiveEndpointRateLimiter();
