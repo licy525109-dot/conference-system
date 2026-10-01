@@ -102,6 +102,14 @@ describe("Admin materials", () => {
     assert.equal(prisma.assets.length, 0);
     assert.equal(prisma.auditLogs.some((log) => log.summary === "Hard delete material asset"), true);
   });
+  it("protects assets referenced by a published invitation using its relative upload URL", async () => {
+    const prisma = createMaterialsPrismaMock();
+    const service = new AdminMaterialsService(prisma);
+    const asset = await service.createAsset({ name: "邀请函字体", usage: "conference_invitation:test", url: "https://admin.example.com/uploads/materials/font.woff2" }, undefined, "https://admin.example.com", currentAdmin);
+    Object.assign(prisma.invitationCampaign, { findMany: async () => [{ id: 'campaign', draftJson: {}, publishedJson: { design: { fontUrl: '/uploads/materials/font.woff2' } }, conference: { title: '测试会议' } }] });
+    await assert.rejects(() => service.hardDeleteAsset(asset.data.id, currentAdmin), /会议邀请函/);
+    assert.equal(prisma.assets.length, 1);
+  });
 });
 
 function createDashboardPrismaMock() {
@@ -231,6 +239,7 @@ function createMaterialsPrismaMock(options: { referenced?: boolean } = {}) {
     wecomCustomerGroup: {
       findMany: async () => []
     },
+    invitationCampaign: { findMany: async () => [] },
     auditLog: {
       create: async (args: { data: AuditLogRecord }) => {
         auditLogs.push(args.data);

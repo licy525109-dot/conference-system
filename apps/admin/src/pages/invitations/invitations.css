@@ -1,0 +1,409 @@
+.invitations-admin {
+  min-width: 0;
+}
+.invitations-admin.is-editing { gap: 12px; }
+.is-editing .invite-campaign-bar { padding: 4px 0; }
+.is-editing .invite-editor-toolbar { margin-bottom: 20px; }
+.invite-setup-steps {
+  display: flex;
+  border-bottom: 1px solid #dce3dd;
+  gap: 24px;
+  padding: 0 0 18px;
+  flex-wrap: wrap;
+}
+.invite-setup-steps button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: #6c786e;
+  cursor: pointer;
+}
+.invite-setup-steps button.active {
+  color: #28533e;
+  font-weight: 600;
+}
+.invite-setup-steps span {
+  font-size: 11px;
+  color: #9ba49d;
+}
+.invite-setup-steps small {
+  font-size: 11px;
+  font-weight: 400;
+}
+.invite-content-sections {
+  --el-collapse-header-bg-color: transparent;
+  --el-collapse-content-bg-color: transparent;
+}
+.invite-match-status {
+  font-size: 13px;
+  color: #355f49;
+  line-height: 1.7;
+}
+.invite-campaign-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 22px 0 12px;
+}
+.invite-campaign-bar > .el-select {
+  width: min(100%, 440px);
+}
+.invite-publish-date {
+  font-size: 12px;
+  color: var(--admin-color-muted, #6e7a73);
+}
+.invite-tabs :deep(.el-tabs__header) {
+  margin-bottom: 24px;
+}
+.invite-list-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.invite-list-toolbar > .el-input {
+  width: 260px;
+  max-width: 100%;
+}
+.invite-list-toolbar > .el-button:last-child {
+  margin-left: auto;
+}
+.invite-record {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--admin-color-border, #e2e8e2);
+}
+.invite-record__person {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+}
+.invite-record__initial {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+  color: var(--admin-color-primary, #28533e);
+  background: var(--admin-color-primary-soft, #edf4ee);
+}
+.invite-record__person strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.invite-record__person small {
+  font-size: 12px;
+  color: #6e7a73;
+  margin-left: 8px;
+  font-weight: 400;
+}
+.invite-record__person span {
+  display: block;
+  font-size: 12px;
+  color: #7a857c;
+  margin-top: 5px;
+}
+.invite-record__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.invite-record__actions .el-button + .el-button {
+  margin-left: 0;
+}
+.invite-pagination {
+  justify-content: flex-end;
+  margin: 24px 0;
+  max-width: 100%;
+}
+.invite-editor-layout.invite-editor-layout--wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+.invite-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 32px;
+  align-items: start;
+}
+.invite-editor {
+  min-width: 0;
+}
+.invite-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  padding: 14px 0;
+  background: var(--admin-color-bg, #f8faf8);
+  border-bottom: 1px solid #e2e8e2;
+  margin-bottom: 24px;
+}
+.invite-editor-toolbar > span {
+  font-size: 12px;
+  color: #727e74;
+}
+.invite-editor-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.invite-editor-toolbar :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.invite-editor-title {
+  font-size: 17px;
+  margin: 24px 0;
+  font-weight: 600;
+}
+.invite-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+.invite-form-grid > .wide {
+  grid-column: 1/-1;
+}
+.invite-form-grid :deep(.el-form-item) {
+  min-width: 0;
+}
+.invite-form-grid :deep(.el-select) {
+  width: 100%;
+}
+.invite-preview-aside {
+  position: sticky;
+  top: 18px;
+  min-width: 0;
+}
+.invite-preview-heading {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #6a786e;
+  padding: 0 0 14px;
+}
+.invite-preview-screen {
+  height: 740px;
+  overflow: auto;
+  border: 1px solid #d8e0d8;
+  border-radius: 6px;
+  background: #fefefd;
+  scrollbar-width: thin;
+}
+.invite-theme-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+.invite-theme-options button {
+  border: 1px solid #dbe2d9;
+  background: #fefefd;
+  padding: 14px 8px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1.6;
+  color: #455647;
+}
+.invite-theme-options button.active {
+  outline: 2px solid var(--admin-color-primary, #28533e);
+  outline-offset: 1px;
+}
+.invite-theme-swatches {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 9px;
+}
+.invite-theme-swatches i {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgb(0 0 0 / 5%);
+}
+.invite-colors {
+  display: flex;
+  gap: 30px;
+  margin-top: 24px;
+}
+.invite-card-preview {
+  display: flex;
+  gap: 14px;
+  padding: 18px;
+  background: #edf1eb;
+  border-radius: 4px;
+  max-width: 390px;
+}
+.invite-card-preview img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+}
+.invite-card-preview > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.invite-card-preview strong {
+  font-size: 14px;
+}
+.invite-card-preview p {
+  font-size: 12px;
+  color: #6a786e;
+  line-height: 1.6;
+  margin: 5px 0;
+}
+.invite-card-preview small {
+  font-size: 11px;
+  color: #7a867b;
+}
+.invite-access {
+  max-width: 760px;
+}
+.invite-access h2 {
+  font-size: 17px;
+  margin: 0 0 20px;
+}
+.invite-access .el-checkbox-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.invite-salutation-preview {
+  padding: 18px;
+  background: #edf3ed;
+  color: #335a45;
+  font-size: 16px;
+}
+.invite-share-result {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.invite-share-result > strong {
+  font-size: 20px;
+  color: #35513e;
+}
+.invite-share-result__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.invite-share-result p {
+  font-size: 13px;
+  color: #637267;
+  line-height: 1.7;
+  margin: 0;
+}
+.invite-preview-dialog :deep(.el-dialog__body) {
+  padding: 0;
+}
+.invite-preview-dialog :deep(.el-dialog) {
+  padding: 0;
+}
+.invite-preview-dialog :deep(.el-dialog__header) {
+  padding: 16px;
+}
+@media (max-width: 1100px) {
+  .invite-editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .invite-preview-aside {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .invite-publish-date {
+    display: none;
+  }
+  .invite-list-toolbar {
+    gap: 8px;
+  }
+  .invite-list-toolbar > .el-input {
+    flex: 1;
+    width: auto;
+    min-width: 150px;
+  }
+  .invite-list-toolbar > .el-button:last-child {
+    width: 100%;
+    margin: 8px 0 0;
+  }
+  .invite-record {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px 12px;
+    padding: 20px 0;
+  }
+  .invite-record__actions {
+    grid-column: 1/-1;
+    justify-content: flex-end;
+  }
+  .invite-record__person {
+    gap: 10px;
+  }
+  .invite-record__initial {
+    width: 36px;
+    height: 36px;
+  }
+  .invite-record__person span {
+    font-size: 11px;
+  }
+  .invite-record__person strong {
+    font-size: 15px;
+  }
+  .invite-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .invite-editor-toolbar > span {
+    width: 100%;
+  }
+  .invite-editor-toolbar > div {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+  .invite-editor-toolbar :deep(.el-button) {
+    padding: 8px;
+    min-width: 0;
+    font-size: 12px;
+  }
+  .invite-campaign-bar > .el-select {
+    width: 100%;
+  }
+  .invite-theme-options {
+    gap: 8px;
+  }
+  .invite-pagination {
+    justify-content: center;
+  }
+  .invite-pagination :deep(.el-pagination__total) {
+    display: none;
+  }
+  .invite-access .el-checkbox-group {
+    grid-template-columns: 1fr;
+  }
+}
+.invite-share-qr {
+  display: block;
+  margin: 8px auto;
+  max-width: 100%;
+  aspect-ratio: 1;
+}

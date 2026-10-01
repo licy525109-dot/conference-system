@@ -101,6 +101,6 @@ import { CouponDistributionService } from "./coupon-distribution.service";
     RegistrationRefundFinalizationService,
     WechatPaySigner
   ],
-  exports: [AdminAuthService, AdminJwtAuthGuard, AdminPermissionGuard, AdminNotificationsService]
+  exports: [AdminAuthService, AdminJwtAuthGuard, AdminPermissionGuard, AdminNotificationsService, AdminMaterialsService]
 })
 export class AdminModule {}

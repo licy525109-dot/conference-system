@@ -17,6 +17,13 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir,
+    experimental: {
+      // Shared chunks run under /assets in admin and /invitation-assets on guest links.
+      renderBuiltUrl(_filename, { hostType, type }) {
+        if (type === "asset" && hostType !== "html") return { relative: true };
+      }
+    },
+    optimizeDeps: { include: ["xlsx"] },
     resolve: {
       alias: {
         "@conference/business-modules": resolve(repoRoot, "business-modules/src/index.ts"),
@@ -27,7 +34,16 @@ export default defineConfig(({ mode }) => {
         "@conference/shared": resolve(repoRoot, "packages/shared/src/index.ts")
       }
     },
-    plugins: [vue()],
+    plugins: [vue(), {
+      name: "invitation-brand-route",
+      configureServer(server) {
+        server.middlewares.use((req, _res, next) => {
+          if (/^\/i\/[A-Za-z0-9_-]+(?:\?.*)?$/.test(req.url || "")) req.url = "/invitation.html";
+          next();
+        });
+      }
+    }],
+    build: { rollupOptions: { input: { admin: resolve(configDir, "index.html"), invitation: resolve(configDir, "invitation.html") } } },
     server: {
       port: 5174
     }

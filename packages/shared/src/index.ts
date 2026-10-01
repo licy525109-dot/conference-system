@@ -51,3 +51,4 @@ export interface ConferenceListItemDto {
 export * from "./cms-compositions";
 export * from "./cms-preview";
 export * from "./conference-detail";
+export * from "./invitations";

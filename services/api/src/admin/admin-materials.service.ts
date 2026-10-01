@@ -28,6 +28,9 @@ const ALLOWED_MATERIAL_TYPES = new Map([
   ["image/gif", ".gif"],
   ["image/svg+xml", ".svg"],
   ["video/mp4", ".mp4"],
+  ["audio/mpeg", ".mp3"],
+  ["audio/wav", ".wav"],
+  ["audio/ogg", ".ogg"],
   ["application/pdf", ".pdf"],
   ["text/plain", ".txt"],
   ["text/markdown", ".md"],
@@ -55,6 +58,9 @@ const ALLOWED_EXTENSION_TYPES = new Map<string, string[]>([
   [".gif", ["image/gif"]],
   [".svg", ["image/svg+xml"]],
   [".mp4", ["video/mp4"]],
+  [".mp3", ["audio/mpeg"]],
+  [".wav", ["audio/wav"]],
+  [".ogg", ["audio/ogg"]],
   [".pdf", ["application/pdf"]],
   [".txt", ["text/plain"]],
   [".md", ["text/markdown", "text/plain"]],
@@ -250,7 +256,7 @@ export class AdminMaterialsService {
   }
 
   private async listAssetReferences(asset: { id: string; url: string }) {
-    const [productsByMaterial, productImagesByMaterial, productsByUrl, productImagesByUrl, conferences, pageVersions, themes, tabbarItems, memberBenefits, wecomGroups] =
+    const [productsByMaterial, productImagesByMaterial, productsByUrl, productImagesByUrl, conferences, pageVersions, themes, tabbarItems, memberBenefits, wecomGroups, invitations] =
       await this.prisma.$transaction([
         this.prisma.product.findMany({ where: { coverMaterialId: asset.id }, select: { id: true, title: true } }),
         this.prisma.productImage.findMany({ where: { materialId: asset.id }, select: { id: true, product: { select: { title: true } } } }),
@@ -261,7 +267,8 @@ export class AdminMaterialsService {
         this.prisma.activeThemeConfig.findMany({ select: { id: true, scope: true, configJson: true } }),
         this.prisma.tabBarItem.findMany({ where: { OR: [{ iconUrl: asset.url }, { selectedIconUrl: asset.url }] }, select: { id: true, title: true, pageKey: true } }),
         this.prisma.memberBenefit.findMany({ where: { iconUrl: asset.url }, select: { id: true, title: true } }),
-        this.prisma.wecomCustomerGroup.findMany({ where: { groupQrUrl: asset.url }, select: { id: true, name: true } })
+        this.prisma.wecomCustomerGroup.findMany({ where: { groupQrUrl: asset.url }, select: { id: true, name: true } }),
+        this.prisma.invitationCampaign.findMany({ select: { id: true, draftJson: true, publishedJson: true, conference: { select: { title: true } } } })
       ]);
     const items = [
       ...productsByMaterial.map((item) => referenceItem("商品封面", item.id, item.title)),
@@ -273,7 +280,8 @@ export class AdminMaterialsService {
       ...themes.filter((item) => jsonMentionsMaterial(item.configJson, asset)).map((item) => referenceItem("主题配置", item.id, item.scope)),
       ...tabbarItems.map((item) => referenceItem("底部导航图标", item.id, `${item.title} / ${item.pageKey}`)),
       ...memberBenefits.map((item) => referenceItem("会员权益图标", item.id, item.title)),
-      ...wecomGroups.map((item) => referenceItem("企微群二维码", item.id, item.name))
+      ...wecomGroups.map((item) => referenceItem("企微群二维码", item.id, item.name)),
+      ...invitations.filter((item) => invitationMentionsMaterial(item.draftJson, asset) || invitationMentionsMaterial(item.publishedJson, asset)).map((item) => referenceItem("会议邀请函", item.id, item.conference.title))
     ];
     return { items, total: items.length };
   }
@@ -486,6 +494,13 @@ function jsonMentionsMaterial(value: unknown, asset: { id: string; url: string }
   const text = JSON.stringify(value ?? "");
   return text.includes(asset.id) || text.includes(asset.url);
 }
+function invitationMentionsMaterial(value: unknown, asset: { id: string; url: string }): boolean {
+  if (jsonMentionsMaterial(value, asset)) return true;
+  try {
+    const path = new URL(asset.url).pathname;
+    return path.startsWith('/uploads/materials/') && JSON.stringify(value ?? '').includes(path);
+  } catch { return false; }
+}
 
 function referenceItem(type: string, id: string, name?: string | null) {
   return { type, id, label: `${type}${name ? `：${name}` : ""}` };
@@ -516,6 +531,9 @@ function readAllowedExtension(file: UploadedMaterialFile): string {
 
 function inferFileType(url: string): string {
   const extension = extname(url).toLowerCase();
+  if (extension === ".mp3") return "audio/mpeg";
+  if (extension === ".wav") return "audio/wav";
+  if (extension === ".ogg") return "audio/ogg";
   if (extension === ".pdf") return "application/pdf";
   if (extension === ".txt") return "text/plain";
   if (extension === ".md") return "text/markdown";

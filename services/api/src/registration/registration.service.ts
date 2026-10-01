@@ -22,6 +22,7 @@ import { randomBytes } from "node:crypto";
 import { CurrentUser } from "../auth/current-user";
 import { requireRegistrationProfile } from "../auth/registration-profile";
 import { PrismaService } from "../prisma.service";
+import { readInvitationToken, resolveOrderInvitation } from "../invitations/invitation-policy";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -194,6 +195,7 @@ export class RegistrationService {
     } satisfies Prisma.InputJsonObject;
 
     const order = await this.createPendingOrderWithRetry({
+      invitationToken: readInvitationToken((input as Record<string, unknown>).invitationToken),
       userId: currentUser.id,
       conferenceId: request.conferenceId,
       skuId: primaryItem.skuId,
@@ -617,9 +619,11 @@ export class RegistrationService {
         return await this.prisma.$transaction(async (tx) => {
           const inventoryReservedAt = this.getCurrentTime();
           await validateRegistrationCouponReservation(tx, input, inventoryReservedAt);
+          const invitationId = await resolveOrderInvitation(tx, input.invitationToken, input.conferenceId);
           const order = await tx.order.create({
             data: {
               orderNo,
+              ...(invitationId ? { invitationId } : {}),
               userId: input.userId,
               conferenceId: input.conferenceId,
               skuId: input.skuId,
@@ -1495,6 +1499,7 @@ interface FormFieldConfig {
 }
 
 interface CreatePendingOrderInput {
+  invitationToken?: string;
   userId: string;
   conferenceId: string;
   skuId: string;

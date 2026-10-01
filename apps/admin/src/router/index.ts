@@ -9,6 +9,7 @@ const OrdersPage = defineAsyncComponent(() => import("../pages/orders/index.vue"
 const RegistrationsPage = defineAsyncComponent(() => import("../pages/registrations/index.vue"));
 const RegistrationDetailPage = defineAsyncComponent(() => import("../pages/registrations/detail.vue"));
 const GuestSchedulesPage = defineAsyncComponent(() => import("../pages/guest-schedules/index.vue"));
+const InvitationsPage = defineAsyncComponent(() => import("../pages/invitations/index.vue"));
 const CouponsPage = defineAsyncComponent(() => import("../pages/coupons/index.vue"));
 const CouponCampaignsPage = defineAsyncComponent(() => import("../pages/coupon-campaigns/index.vue"));
 const PromotionsPage = defineAsyncComponent(() => import("../pages/promotions/index.vue"));
@@ -49,6 +50,7 @@ export interface AdminRoute {
 }
 
 export const routes: AdminRoute[] = [
+  { path: "/invitations", title: "专属邀请函", menuTitle: "专属邀请函", group: "会议管理", permission: "invitation:view", component: InvitationsPage },
   { path: "/users/detail", title: "用户详情", menuTitle: "用户详情", group: "用户中心", permission: "member:view", component: UserDetailPage, hidden: true },
   { path: "/dashboard", title: "数据看板", menuTitle: "数据看板", group: "控制台", description: "核心报名、收入和订单指标", permission: "dashboard:view", component: DashboardPage },
   { path: "/mobile", title: "会务工作台", menuTitle: "手机工作台", group: "控制台", permission: "registration:view", component: MobileWorkspacePage },

@@ -290,6 +290,8 @@ model AdminUser {
   checkinLogs             CheckinLog[]
   saasTenantMemberships   SaasTenantMember[]
   couponDistributions    CouponDistribution[]
+  conferenceInvitations  ConferenceInvitation[]
+  invitationCampaigns    InvitationCampaignMember[]
 
   @@index([enabled])
   @@index([createdAt])
@@ -683,6 +685,7 @@ model Conference {
   checkinStaffAssignments  CheckinStaffAssignment[]
   guestScheduleAssignments GuestScheduleAssignment[]
   smartSheetConnection     WecomSmartSheetConnection?
+  invitationCampaign       InvitationCampaign?
 
   @@index([status])
   @@index([createdAt])
@@ -921,6 +924,54 @@ model WecomCallbackEvent {
   @@index([chatId])
   @@index([createdAt])
   @@map("wecom_callback_events")
+}
+
+model InvitationCampaign {
+  id                    String @id @default(cuid())
+  conferenceId          String @unique
+  draftJson             Json
+  publishedJson         Json?
+  draftRevision         Int @default(1)
+  publishedRevision     Int @default(0)
+  publishedDraftRevision Int @default(0)
+  publishedAt           DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  conference            Conference @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
+  invitations           ConferenceInvitation[]
+  members               InvitationCampaignMember[]
+
+  @@map("invitation_campaigns")
+}
+
+model InvitationCampaignMember {
+  campaignId String
+  adminId    String
+  campaign   InvitationCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  admin      AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, adminId])
+  @@index([adminId])
+  @@map("invitation_campaign_members")
+}
+
+model ConferenceInvitation {
+  id         String @id @default(cuid())
+  campaignId String
+  token      String @unique
+  name       String
+  publicInviteeId String?
+  salutation String @default("老师")
+  enabled    Boolean @default(true)
+  createdBy  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  campaign   InvitationCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  creator    AdminUser @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  orders     Order[]
+
+  @@index([campaignId, createdBy, createdAt])
+  @@map("conference_invitations")
 }
 
 model ConferencePage {
@@ -1764,6 +1815,10 @@ model Order {
   registration             Registration?
   refunds                  Refund[]
   invoiceApplications      InvoiceApplication[]
+  invitationId             String?
+  invitation               ConferenceInvitation? @relation(fields: [invitationId], references: [id], onDelete: SetNull)
+
+  @@index([invitationId])
 
   @@index([userId])
   @@index([conferenceId])

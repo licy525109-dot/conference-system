@@ -13,6 +13,7 @@ interface ResponseLike {
 type NextFunction = () => void;
 
 interface RateLimitRule {
+  bucket?: string;
   pattern: RegExp;
   methods: string[];
   limit: number;
@@ -25,6 +26,8 @@ interface Counter {
 }
 
 const RULES: RateLimitRule[] = [
+  { pattern: /^\/api\/invitations\/[^/]+\/(wechat|qrcode)$/, bucket: "invitation-wechat", methods: ["GET"], limit: 60, windowMs: 60_000 },
+  { pattern: /^(\/api\/invitations|\/i)\/[^/]+$/, bucket: "invitation-public", methods: ["GET"], limit: 300, windowMs: 60_000 },
   { pattern: /^\/api\/admin\/auth\/login$/, methods: ["POST"], limit: 10, windowMs: 15 * 60_000 },
   { pattern: /^\/api\/admin\/mobile\/login-and-bind$/, methods: ["POST"], limit: 10, windowMs: 15 * 60_000 },
   { pattern: /^\/api\/auth\/wechat\/login$/, methods: ["POST"], limit: 60, windowMs: 60_000 },
@@ -65,7 +68,7 @@ export function createSensitiveEndpointRateLimiter() {
       lastCleanupAt = now;
     }
 
-    const key = `${request.ip || request.socket.remoteAddress || "unknown"}:${request.method}:${request.path}`;
+    const key = `${request.ip || request.socket.remoteAddress || "unknown"}:${request.method}:${rule.bucket || request.path}`;
     const current = counters.get(key);
     const counter = !current || current.resetAt <= now
       ? { count: 1, resetAt: now + rule.windowMs }
