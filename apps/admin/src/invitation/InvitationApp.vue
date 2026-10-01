@@ -22,7 +22,11 @@
         <template #registration
           ><div
             v-if="
-              wechatReady && invitation.miniAppId && invitation.registrationOpen
+              wechatReady &&
+              invitation.miniAppId &&
+              invitation.registrationOpen &&
+              invitation.registrationMode !== 'external' &&
+              invitation.registrationMode !== 'none'
             "
             ref="launchContainer"
             class="invitation-launch"
@@ -117,7 +121,11 @@ import {
   watch,
 } from "vue";
 import { Close } from "@element-plus/icons-vue";
-import { invitationShare, type PublicInvitation } from "@conference/shared";
+import {
+  invitationShare,
+  invitationRegistrationUrl,
+  type PublicInvitation,
+} from "@conference/shared";
 import InvitationRuntime from "../components/invitations/InvitationRuntime.vue";
 import { API_BASE_URL } from "../config";
 import {
@@ -178,6 +186,12 @@ async function refresh() {
     const data = body.data as PublicInvitation;
     if (!data?.content || !data.recipient) throw new Error("payload");
     invitation.value = data;
+    if (
+      !data.registrationOpen ||
+      data.registrationMode === "external" ||
+      data.registrationMode === "none"
+    )
+      registrationVisible.value = false;
     offline.value = false;
     fatal.value = "";
     document.title = invitationShare(data).title;
@@ -218,7 +232,9 @@ function renderLaunch() {
   if (
     !container ||
     !invitation.value?.miniAppId ||
-    !invitation.value.registrationOpen
+    !invitation.value.registrationOpen ||
+    invitation.value.registrationMode === "external" ||
+    invitation.value.registrationMode === "none"
   )
     return;
   const tag = document.createElement("wx-open-launch-weapp");
@@ -236,7 +252,13 @@ function renderLaunch() {
   container.replaceChildren(tag);
 }
 watch(
-  [launchContainer, () => invitation.value?.registrationOpen],
+  [
+    launchContainer,
+    () => invitation.value?.registrationOpen,
+    () => invitation.value?.registrationPath,
+    () => invitation.value?.miniAppId,
+    () => invitation.value?.registrationMode,
+  ],
   () => {
     if (wechatReady.value) renderLaunch();
   },
@@ -244,6 +266,12 @@ watch(
 );
 function openRegistration() {
   if (invitation.value?.registrationOpen) {
+    if (invitation.value.registrationMode === "external") {
+      const url = invitationRegistrationUrl(invitation.value.registrationUrl);
+      if (url) window.location.assign(url);
+      return;
+    }
+    if (invitation.value.registrationMode === "none") return;
     registrationVisible.value = true;
     codeFailed.value = false;
   }

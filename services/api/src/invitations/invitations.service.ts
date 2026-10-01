@@ -12,6 +12,8 @@ import {
   normalizeInvitationContent,
   matchInvitationInvitee,
   applyInvitationPreset,
+  normalizeInvitationRegistration,
+  invitationRegistrationUrl,
   type PublicInvitation,
 } from "@conference/shared";
 import type { CurrentAdmin } from "../admin/current-admin";
@@ -70,7 +72,10 @@ export class InvitationsService {
       items: campaigns.map((item) => ({
         id: item.id,
         conferenceId: item.conferenceId,
-        title: item.conference.title,
+        title:
+          normalizeInvitationContent(item.draftJson).title ||
+          item.conference?.title ||
+          "未命名邀请函",
         draftRevision: item.draftRevision,
         publishedRevision: item.publishedRevision,
         publishedAt: item.publishedAt,
@@ -94,34 +99,65 @@ export class InvitationsService {
     ]);
     return ok({ conferences, admins });
   }
-  async createCampaign(input: unknown, admin: CurrentAdmin) {
-    const conferenceId = boundedText(
-      readObject(input).conferenceId,
-      "会议",
-      100,
-    );
-    const conference = await this.prisma.conference.findUnique({
-      where: { id: conferenceId },
+  async registrationOptions() {
+    return ok({
+      conferences: await this.prisma.conference.findMany({
+        where: { status: "PUBLISHED" },
+        select: { id: true, title: true },
+        orderBy: { startsAt: "desc" },
+        take: 500,
+      }),
     });
-    if (!conference) throw new NotFoundException("会议不存在");
+  }
+  async createCampaign(input: unknown, admin: CurrentAdmin) {
+    const body = readObject(input);
     if (
-      await this.prisma.invitationCampaign.findUnique({
+      body.source !== undefined &&
+      !["internal", "external"].includes(String(body.source))
+    )
+      throw new BadRequestException("会议来源无效");
+    const external = body.source === "external";
+    const conferenceId = external
+      ? null
+      : boundedText(body.conferenceId, "会议", 100);
+    const conference = conferenceId
+      ? await this.prisma.conference.findUnique({ where: { id: conferenceId } })
+      : null;
+    if (!external && !conference) throw new NotFoundException("会议不存在");
+    if (
+      conferenceId &&
+      (await this.prisma.invitationCampaign.findUnique({
         where: { conferenceId },
-      })
+      }))
     )
       throw new ConflictException("该会议已有邀请函，请在列表中打开");
+    let content = createInvitationContent(conference || undefined);
+    if (!conference?.coverImageUrl)
+      content = applyInvitationPreset(content, "tide");
+    if (external) {
+      content.title = boundedText(body.title, "会议名称", 200);
+      content.dateLabel = boundedText(
+        body.dateLabel ?? "",
+        "会议时间",
+        200,
+        false,
+      );
+      content.location = boundedText(
+        body.location ?? "",
+        "会议地点",
+        200,
+        false,
+      );
+      content.registration = normalizeInvitationRegistration(
+        body.registration ?? { mode: "none" },
+      );
+      await this.validateRegistration(content, null, false, body.registration);
+    }
     const campaign = await this.prisma.$transaction(async (tx) => {
       const created = await tx.invitationCampaign.create({
         data: {
           conferenceId,
-          draftJson: json(
-            conference.coverImageUrl
-              ? createInvitationContent(conference)
-              : applyInvitationPreset(
-                  createInvitationContent(conference),
-                  "tide",
-                ),
-          ),
+          draftJson: json(content),
           members: { create: { adminId: admin.id } },
         },
       });
@@ -151,7 +187,7 @@ export class InvitationsService {
     });
   }
   async save(id: string, input: unknown, admin: CurrentAdmin) {
-    await this.requireCampaign(id, admin);
+    const campaign = await this.requireCampaign(id, admin);
     const body = readObject(input);
     const source = readObject(body.content);
     if (JSON.stringify(source).length > 250000)
@@ -164,6 +200,12 @@ export class InvitationsService {
     if (Array.isArray(cover.layers) && cover.layers.length > 12)
       throw new BadRequestException("封面文字最多 12 层，未保存超限内容");
     const content = normalizeInvitationContent(source);
+    await this.validateRegistration(
+      content,
+      campaign.conferenceId,
+      false,
+      source.registration,
+    );
     if (
       new Set(content.invitees.map((item) => item.id)).size !==
       content.invitees.length
@@ -197,6 +239,7 @@ export class InvitationsService {
       throw new BadRequestException("公开名单中存在未填写姓名的行");
     if (!content.coverImageUrl)
       throw new BadRequestException("发布前请上传封面图片或选择视觉模板");
+    await this.validateRegistration(content, campaign.conferenceId, true);
     await this.prisma.$transaction(async (tx) => {
       const result = await tx.invitationCampaign.updateMany({
         where: {
@@ -406,21 +449,34 @@ export class InvitationsService {
     if (
       !invitation?.enabled ||
       !invitation.campaign.publishedJson ||
-      invitation.campaign.conference.status !== "PUBLISHED"
+      (invitation.campaign.conference &&
+        invitation.campaign.conference.status !== "PUBLISHED")
     )
       throw new GoneException("邀请函暂不可用，请联系邀请您的工作人员");
     const { campaign } = invitation;
-    const conference = campaign.conference;
+    const content = normalizeInvitationContent(campaign.publishedJson);
+    const registration = normalizeInvitationRegistration(content.registration);
+    const registrationConferenceId =
+      registration.conferenceId || campaign.conferenceId;
+    const conference =
+      registration.mode === "miniapp" && registrationConferenceId
+        ? registrationConferenceId === campaign.conferenceId
+          ? campaign.conference
+          : await this.prisma.conference.findUnique({
+              where: { id: registrationConferenceId },
+            })
+        : null;
     const now = new Date();
     const started =
-      !conference.registrationStartsAt ||
+      !conference?.registrationStartsAt ||
       conference.registrationStartsAt <= now;
     const ended =
+      !conference ||
+      conference.status !== "PUBLISHED" ||
       conference.endsAt < now ||
       Boolean(
         conference.registrationEndsAt && conference.registrationEndsAt < now,
       );
-    const content = normalizeInvitationContent(campaign.publishedJson);
     for (const key of ["coverImageUrl", "logoUrl", "shareImageUrl"] as const)
       if (content[key].startsWith("/"))
         content[key] = `${invitationOrigin()}${content[key]}`;
@@ -441,15 +497,66 @@ export class InvitationsService {
       publishedAt: campaign.publishedAt!.toISOString(),
       content,
       shareUrl: invitationUrl(token),
-      registrationPath: `pages/registration/form?conferenceId=${encodeURIComponent(campaign.conferenceId)}&invitationToken=${token}`,
-      registrationOpen: started && !ended,
-      registrationMessage: ended
-        ? "报名已截止"
-        : started
-          ? "前往小程序报名"
-          : "报名尚未开始",
-      miniAppId: process.env.WECHAT_APP_ID || "",
+      registrationMode: registration.mode,
+      registrationUrl: registration.mode === "external" ? registration.url : "",
+      registrationPath:
+        registration.mode === "miniapp" && registrationConferenceId
+          ? `pages/registration/form?conferenceId=${encodeURIComponent(registrationConferenceId)}&invitationToken=${token}`
+          : "",
+      registrationOpen:
+        registration.mode === "external"
+          ? Boolean(registration.url)
+          : registration.mode === "miniapp" && started && !ended,
+      registrationMessage:
+        registration.mode === "none"
+          ? ""
+          : registration.mode === "external"
+            ? registration.label || "前往报名"
+            : ended
+              ? "报名已截止"
+              : started
+                ? registration.label || "前往小程序报名"
+                : "报名尚未开始",
+      miniAppId:
+        registration.mode === "miniapp" ? process.env.WECHAT_APP_ID || "" : "",
     });
+  }
+  private async validateRegistration(
+    content: ReturnType<typeof normalizeInvitationContent>,
+    linkedId: string | null,
+    publishing: boolean,
+    raw?: unknown,
+  ) {
+    const registration = normalizeInvitationRegistration(content.registration);
+    const source = raw === undefined ? {} : readObject(raw);
+    if (
+      source.mode !== undefined &&
+      !["miniapp", "external", "none"].includes(String(source.mode))
+    )
+      throw new BadRequestException("报名方式无效");
+    if (
+      registration.mode === "external" &&
+      !invitationRegistrationUrl(source.url ?? registration.url)
+    )
+      throw new BadRequestException(
+        "请填写有效的 HTTPS 外部报名链接，链接不能包含账号密码",
+      );
+    if (registration.mode !== "miniapp") return;
+    const id = registration.conferenceId || linkedId;
+    if (!id) {
+      if (publishing)
+        throw new BadRequestException("发布前请选择小程序报名会议");
+      return;
+    }
+    if (registration.conferenceId || publishing) {
+      const conference = await this.prisma.conference.findUnique({
+        where: { id },
+      });
+      if (!conference || conference.status === "ARCHIVED")
+        throw new BadRequestException("报名会议不存在或已归档");
+      if (publishing && conference.status !== "PUBLISHED")
+        throw new BadRequestException("请先发布所选小程序报名会议");
+    }
   }
   private async requireCampaign(id: string, admin: CurrentAdmin) {
     const campaign = await this.prisma.invitationCampaign.findFirst({

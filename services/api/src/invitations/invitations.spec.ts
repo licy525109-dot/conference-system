@@ -91,6 +91,7 @@ test("finished artwork can publish without duplicated title, date, venue or body
       coverImageUrl: "/uploads/poster.png",
       cover: { mode: "artwork", layers: [] },
       modules: [],
+      registration: { mode: "none" },
     },
   };
   const service = new InvitationsService({

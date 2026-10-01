@@ -5,6 +5,10 @@ import {
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { CurrentAdmin } from "../admin/current-admin";
+import {
+  normalizeInvitationContent,
+  normalizeInvitationRegistration,
+} from "@conference/shared";
 
 export function hasInvitationPermission(
   admin: CurrentAdmin,
@@ -76,12 +80,25 @@ export async function resolveOrderInvitation(
     select: {
       id: true,
       enabled: true,
-      campaign: { select: { conferenceId: true, publishedRevision: true } },
+      campaign: {
+        select: {
+          conferenceId: true,
+          publishedRevision: true,
+          publishedJson: true,
+        },
+      },
     },
   });
   if (!invitation?.enabled || !invitation.campaign.publishedRevision)
     throw new GoneException("邀请函已停用或尚未发布，请联系会务");
-  if (invitation.campaign.conferenceId !== conferenceId)
+  const registration = normalizeInvitationRegistration(
+    normalizeInvitationContent(invitation.campaign.publishedJson).registration,
+  );
+  if (
+    registration.mode !== "miniapp" ||
+    (registration.conferenceId || invitation.campaign.conferenceId) !==
+      conferenceId
+  )
     throw new BadRequestException("邀请函与报名会议不匹配");
   return invitation.id;
 }

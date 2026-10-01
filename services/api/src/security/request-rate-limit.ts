@@ -27,6 +27,7 @@ interface Counter {
 
 const RULES: RateLimitRule[] = [
   { pattern: /^\/api\/invitations\/[^/]+\/(wechat|qrcode)$/, bucket: "invitation-wechat", methods: ["GET"], limit: 60, windowMs: 60_000 },
+  { pattern: /^\/api\/admin\/invitations\/settings\/wechat\/test$/, bucket: "invitation-wechat-test", methods: ["POST"], limit: 10, windowMs: 60_000 },
   { pattern: /^(\/api\/invitations|\/i)\/[^/]+$/, bucket: "invitation-public", methods: ["GET"], limit: 300, windowMs: 60_000 },
   { pattern: /^\/api\/admin\/auth\/login$/, methods: ["POST"], limit: 10, windowMs: 15 * 60_000 },
   { pattern: /^\/api\/admin\/mobile\/login-and-bind$/, methods: ["POST"], limit: 10, windowMs: 15 * 60_000 },
