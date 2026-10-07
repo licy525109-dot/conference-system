@@ -40,6 +40,21 @@
       :settings="settings"
       :title="module.title"
     />
+    <InvitationContacts
+      v-else-if="module.type === 'contacts'"
+      :module="module"
+      :asset-origin="assetOrigin"
+    />
+    <InvitationOrganizationCanvas
+      v-else-if="
+        module.type === 'organizations' &&
+        settings.organizationLayout === 'canvas'
+      "
+      :module="module"
+      :asset-origin="assetOrigin"
+      :font-family="content.design?.replaceAllFonts ? 'inherit' : undefined"
+      :custom-font-family="customFontFamily"
+    />
     <dl
       v-else-if="module.type === 'organizations'"
       class="invitation-organization-list"
@@ -231,6 +246,8 @@ import {
   type InvitationContent,
   type InvitationModule,
 } from "@conference/shared";
+import InvitationOrganizationCanvas from "./InvitationOrganizationCanvas.vue";
+import InvitationContacts from "./InvitationContacts.vue";
 const InvitationCarousel = defineAsyncComponent(
   () => import("./InvitationCarousel.vue"),
 );
@@ -239,6 +256,7 @@ const props = defineProps<{
   module: InvitationModule;
   content: InvitationContent;
   assetOrigin: string;
+  customFontFamily?: string;
 }>();
 defineEmits<{
   navigate: [item: { type: string; id: string; date?: string }];

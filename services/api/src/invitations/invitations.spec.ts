@@ -5,6 +5,8 @@ import { Reflector } from "@nestjs/core";
 import {
   normalizeInvitationContent,
   createInvitationContent,
+  createInvitationModule,
+  arrangeInvitationOrganizations,
 } from "@conference/shared";
 import { InvitationsService } from "./invitations.service";
 import { escapeInvitationHtml } from "./invitation-page.controller";
@@ -364,11 +366,67 @@ test("previous links read a shared published revision, never draft or private op
     ...published,
     agenda: [{ ...published.agenda[0]!, title: "最新议程" }],
   };
+  const venue = createInvitationModule("venue", "venue");
+  venue.settings!.venueMode = "custom";
+  venue.items = [
+    {
+      id: "time",
+      title: "接待",
+      description: "最新接待安排",
+      imageUrl: "",
+      href: "",
+      icon: "calendar",
+      body: [],
+    },
+  ];
+  const org = createInvitationModule("organizations", "org");
+  org.items = [
+    {
+      id: "logo",
+      title: "主办单位",
+      description: "演示单位",
+      imageUrl: "https://example.com/logo.png",
+      href: "",
+      icon: "link",
+      body: [],
+    },
+  ];
+  Object.assign(org, arrangeInvitationOrganizations(org));
+  org.settings!.organizationLayout = "canvas";
+  const contacts = createInvitationModule("contacts", "contacts");
+  contacts.contacts = [
+    {
+      id: "contact",
+      name: "合成测试会务",
+      role: "咨询",
+      phone: "010-12345678",
+      wechat: "synthetic",
+      note: "最新会务说明",
+      imageUrl: "",
+    },
+  ];
+  campaign.publishedJson.modules = [venue, org, contacts];
   campaign.publishedRevision = 2;
   for (const link of [token, "b".repeat(43)]) {
     const response = await service.publicInvitation(link);
     assert.equal(response.data.content.agenda[0]?.title, "最新议程");
     assert.equal(response.data.revision, 2);
+    assert.equal(
+      response.data.content.modules[0].items![0].description,
+      "最新接待安排",
+    );
+    assert.equal(
+      response.data.content.modules[1].settings!.organizationLayout,
+      "canvas",
+    );
+    assert.deepEqual(
+      response.data.content.modules[1].items![0].frame,
+      org.items![0].frame,
+    );
+    assert.equal(
+      response.data.content.modules[2].contacts![0].note,
+      "最新会务说明",
+    );
   }
   campaign.conference.status = "ARCHIVED";
   await assert.rejects(service.publicInvitation(token), /暂不可用/);

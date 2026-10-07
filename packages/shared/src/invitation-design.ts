@@ -55,6 +55,7 @@ export const INVITATION_MODULE_LABELS = {
   links: "图标与链接",
   search: "内容搜索",
   organizations: "组织架构",
+  contacts: "联系会务组",
 } as const;
 export type InvitationModuleType = keyof typeof INVITATION_MODULE_LABELS;
 export interface InvitationModule {
@@ -67,6 +68,17 @@ export interface InvitationModule {
   style?: InvitationModuleStyle;
   settings?: InvitationModuleSettings;
   items?: InvitationModuleItem[];
+  organizationCanvas?: InvitationOrganizationCanvas;
+  contacts?: InvitationContact[];
+}
+export interface InvitationContact {
+  id: string;
+  name: string;
+  role: string;
+  phone: string;
+  wechat: string;
+  note: string;
+  imageUrl: string;
 }
 export interface InvitationNavigationItem {
   moduleId: string;
@@ -94,6 +106,18 @@ export interface InvitationModuleItem {
   href: string;
   icon: string;
   body: InvitationRichNode[];
+  frame?: InvitationCanvasFrame;
+}
+export interface InvitationCanvasFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface InvitationOrganizationCanvas {
+  width: number;
+  height: number;
+  labels: InvitationTextLayer[];
 }
 export interface InvitationModuleSettings {
   mediaUrl: string;
@@ -107,6 +131,8 @@ export interface InvitationModuleSettings {
   logoColumns: number;
   logoHeight: number;
   showOrganizationNames: boolean;
+  organizationLayout: "auto" | "canvas";
+  venueMode: "meeting" | "custom";
   agendaTitleSize: number;
   agendaMetaSize: number;
   agendaLineHeight: number;
@@ -242,6 +268,8 @@ export function normalizeInvitationModuleSettings(
     logoColumns: Math.round(num(s.logoColumns, 3, 2, 4)),
     logoHeight: Math.round(num(s.logoHeight, 56, 32, 96)),
     showOrganizationNames: s.showOrganizationNames !== false,
+    organizationLayout: s.organizationLayout === "canvas" ? "canvas" : "auto",
+    venueMode: s.venueMode === "custom" ? "custom" : "meeting",
     agendaTitleSize: Math.round(num(s.agendaTitleSize, 14, 12, 24)),
     agendaMetaSize: Math.round(num(s.agendaMetaSize, 12, 10, 18)),
     agendaLineHeight: num(s.agendaLineHeight, 1.7, 1.2, 2.2),
@@ -339,6 +367,90 @@ export function invitationAssetUrl(value: unknown): string {
   } catch {
     return "";
   }
+}
+export function normalizeInvitationFrame(
+  value: unknown,
+): InvitationCanvasFrame {
+  const s = record(value),
+    width = num(s.width, 35, 2, 100),
+    height = num(s.height, 15, 1, 100);
+  return {
+    width,
+    height,
+    x: num(s.x, 5, 0, 100 - width),
+    y: num(s.y, 5, 0, 100 - height),
+  };
+}
+export function normalizeInvitationOrganizationCanvas(
+  value: unknown,
+): InvitationOrganizationCanvas {
+  const s = record(value),
+    seen = new Set<string>();
+  return {
+    width: Math.round(num(s.width, 750, 320, 1600)),
+    height: Math.round(num(s.height, 750, 200, 6000)),
+    labels: (Array.isArray(s.labels) ? s.labels : [])
+      .slice(0, 20)
+      .map((value, index) => {
+        const label = normalizeInvitationCover({ layers: [value] }).layers[0]!;
+        let id = label.id;
+        while (seen.has(id)) id = `caption-${index}-${id}`;
+        seen.add(id);
+        return { ...label, id };
+      }),
+  };
+}
+export function arrangeInvitationOrganizations(
+  module: InvitationModule,
+): Pick<InvitationModule, "items" | "organizationCanvas"> {
+  const settings = normalizeInvitationModuleSettings(module.settings),
+    columns = settings.logoColumns;
+  const items = (module.items || []).map((item) => ({ ...item }));
+  const groups = new Map<string, number[]>();
+  items.forEach((item, index) => {
+    if (!item.imageUrl && !item.description.trim()) return;
+    const role = item.title || "组织单位";
+    const group = groups.get(role) || [];
+    group.push(index);
+    groups.set(role, group);
+  });
+  const height = Math.max(
+    300,
+    24 +
+      [...groups.values()].reduce(
+        (sum, group) => sum + 72 + Math.ceil(group.length / columns) * 150,
+        0,
+      ),
+  );
+  const labels: InvitationTextLayer[] = [];
+  let y = 24;
+  for (const [role, group] of groups) {
+    labels.push({
+      ...createInvitationLayer(`organization-caption-${labels.length}`, role),
+      label: "分组标题",
+      x: 4,
+      y: (y / height) * 100,
+      width: 92,
+      height: (42 / height) * 100,
+      fontSize: 28,
+      color: module.style?.accentColor || "#8b693b",
+      align: "left",
+    });
+    y += 54;
+    group.forEach((index, column) => {
+      items[index] = {
+        ...items[index]!,
+        frame: {
+          x: 4 + ((column % columns) * 92) / columns,
+          y: ((y + Math.floor(column / columns) * 150) / height) * 100,
+          width: 92 / columns - 4,
+          height: (120 / height) * 100,
+        },
+      };
+    });
+    y += Math.ceil(group.length / columns) * 150 + 18;
+  }
+  return { items, organizationCanvas: { width: 750, height, labels } };
 }
 export function createInvitationLayer(
   id: string,
@@ -441,6 +553,29 @@ export function normalizeInvitationModules(value: unknown): InvitationModule[] {
         imageUrl: invitationAssetUrl(s.imageUrl),
         style: normalizeInvitationModuleStyle(s.style),
         settings: normalizeInvitationModuleSettings(s.settings),
+        ...(Array.isArray(s.contacts)
+          ? {
+              contacts: s.contacts.slice(0, 20).map((entry, index) => {
+                const contact = record(entry);
+                return {
+                  id: `${id}-contact-${index}`,
+                  name: str(contact.name, 80),
+                  role: str(contact.role, 100),
+                  phone: str(contact.phone, 80),
+                  wechat: str(contact.wechat, 100),
+                  note: str(contact.note, 2000),
+                  imageUrl: invitationAssetUrl(contact.imageUrl),
+                };
+              }),
+            }
+          : {}),
+        ...(s.organizationCanvas
+          ? {
+              organizationCanvas: normalizeInvitationOrganizationCanvas(
+                s.organizationCanvas,
+              ),
+            }
+          : {}),
         items: (Array.isArray(s.items) ? s.items : [])
           .slice(0, 20)
           .map((item, index) => {
@@ -457,6 +592,7 @@ export function normalizeInvitationModules(value: unknown): InvitationModule[] {
                 ? String(a.icon)
                 : "link",
               body: normalizeInvitationRichText(a.body),
+              ...(a.frame ? { frame: normalizeInvitationFrame(a.frame) } : {}),
             };
           }),
       },

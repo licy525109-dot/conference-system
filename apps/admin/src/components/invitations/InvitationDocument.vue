@@ -393,7 +393,34 @@
             <span>{{ sectionNumbers.venue }}</span>
             <h2>{{ module.title }}</h2>
           </div>
-          <dl class="invitation-facts">
+          <dl
+            v-if="module.settings?.venueMode === 'custom'"
+            class="invitation-facts invitation-facts--custom"
+          >
+            <div
+              v-for="item in invitationVenueItems(content, module)"
+              :key="item.id"
+            >
+              <dt>
+                <component :is="venueIcons[item.icon] || Link" /><span>{{
+                  item.title
+                }}</span>
+              </dt>
+              <dd>
+                <a
+                  v-if="item.href"
+                  :href="item.href"
+                  :target="
+                    item.href.startsWith('https://') ? '_blank' : undefined
+                  "
+                  rel="noopener noreferrer"
+                  >{{ item.description || item.title || "查看详情" }}</a
+                >
+                <span v-else>{{ item.description }}</span>
+              </dd>
+            </div>
+          </dl>
+          <dl v-else class="invitation-facts">
             <div v-if="content.dateLabel">
               <dt><Calendar />时间</dt>
               <dd>{{ content.dateLabel }}</dd>
@@ -415,7 +442,12 @@
               </dd>
             </div>
           </dl>
-          <div v-if="venueOrganizers.length" class="invitation-organizers">
+          <div
+            v-if="
+              module.settings?.venueMode !== 'custom' && venueOrganizers.length
+            "
+            class="invitation-organizers"
+          >
             <span>组织单位</span>
             <p v-for="organizer in venueOrganizers" :key="organizer">
               {{ organizer }}
@@ -465,6 +497,7 @@
             'links',
             'search',
             'organizations',
+            'contacts',
           ].includes(module.type)
         "
         :id="moduleAnchor(module)"
@@ -476,6 +509,7 @@
         </div>
         <InvitationExtraModule
           :asset-origin="assetOrigin"
+          :custom-font-family="pageFont.customFamily.value"
           :module="module"
           :content="content"
           @navigate="navigateResult"
@@ -529,6 +563,11 @@ import {
   Phone,
   Search,
   Share,
+  Link,
+  Ticket,
+  VideoPlay,
+  Document,
+  Star,
 } from "@element-plus/icons-vue";
 import {
   matchInvitationInvitee,
@@ -536,6 +575,7 @@ import {
   normalizeInvitationModules,
   normalizeInvitationNavigation,
   invitationVisibleModules,
+  invitationVenueItems,
   invitationNavigationLinks,
   normalizeInvitationEffects,
   invitationRichTextHtml,
@@ -566,6 +606,11 @@ const assetOrigin = computed(() =>
 const customNeeded = computed(
   () =>
     content.value.cover.layers.some((layer) => layer.font === "custom") ||
+    content.value.modules.some((module) =>
+      module.organizationCanvas?.labels.some(
+        (label) => label.font === "custom",
+      ),
+    ) ||
     JSON.stringify(content.value.modules).includes("var(--invite-custom-font)"),
 );
 const pageFont = useInvitationFont(design, assetOrigin, customNeeded);
@@ -602,6 +647,16 @@ function keywordPresentation(module: InvitationModule) {
   );
 }
 const isBooklet = computed(() => content.value.visualPreset === "booklet");
+const venueIcons: Record<string, unknown> = {
+  link: Link,
+  location: Location,
+  calendar: Calendar,
+  phone: Phone,
+  ticket: Ticket,
+  video: VideoPlay,
+  document: Document,
+  star: Star,
+};
 const venueOrganizers = computed(() => {
   const presented = new Set(
     modules.value
@@ -1521,6 +1576,33 @@ const themeStyle = computed(() => ({
 .invitation-facts dd a {
   display: block;
   color: var(--invite-primary);
+}
+.invitation-facts--custom > div {
+  grid-template-columns: 104px minmax(0, 1fr);
+}
+.invitation-facts--custom dt {
+  align-items: flex-start;
+  color: var(--invite-accent, #687269);
+}
+.invitation-facts--custom dt svg {
+  flex-shrink: 0;
+  height: 17px;
+}
+.invitation-facts--custom dt span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.invitation-facts--custom dd {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: var(--invite-module-text, inherit);
+  line-height: 1.8;
+}
+@media (max-width: 600px) {
+  .invitation-facts--custom > div {
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 14px;
+  }
 }
 .invitation-organizers {
   border-top: 1px solid #d9e0d8;

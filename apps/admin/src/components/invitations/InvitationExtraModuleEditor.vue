@@ -1,5 +1,12 @@
 <template>
   <div class="extra-module-editor">
+    <InvitationContactsEditor
+      v-if="module.type === 'contacts'"
+      :module="module"
+      :campaign-id="campaignId"
+      :disabled="disabled"
+      @patch="$emit('patch', $event)"
+    />
     <template v-if="module.type === 'video' || module.type === 'audio'">
       <el-form-item :label="module.type === 'video' ? '视频素材' : '音频素材'"
         ><InvitationAssetField
@@ -180,18 +187,26 @@
     >
       <el-form-item label="展示方式">
         <el-radio-group
-          :model-value="settings.layout"
+          :model-value="
+            settings.organizationLayout === 'canvas'
+              ? 'canvas'
+              : settings.layout
+          "
           :disabled="disabled"
           aria-label="组织展示方式"
-          @update:model-value="
-            patchSettings({ layout: $event === 'list' ? 'list' : 'grid' })
-          "
+          @update:model-value="setOrganizationLayout(String($event))"
         >
           <el-radio-button value="grid">并排展示</el-radio-button>
           <el-radio-button value="list">逐行展示</el-radio-button>
+          <el-radio-button value="canvas">自由画布</el-radio-button>
         </el-radio-group>
       </el-form-item>
-      <el-form-item v-if="settings.layout === 'grid'" label="每行数量">
+      <el-form-item
+        v-if="
+          settings.organizationLayout !== 'canvas' && settings.layout === 'grid'
+        "
+        label="每行数量"
+      >
         <el-select
           :model-value="settings.logoColumns"
           :disabled="disabled"
@@ -206,7 +221,10 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="Logo 统一高度">
+      <el-form-item
+        v-if="settings.organizationLayout !== 'canvas'"
+        label="Logo 统一高度"
+      >
         <el-slider
           :model-value="settings.logoHeight"
           :min="32"
@@ -229,6 +247,16 @@
         />
       </el-form-item>
     </div>
+    <InvitationOrganizationCanvasEditor
+      v-if="
+        module.type === 'organizations' &&
+        settings.organizationLayout === 'canvas'
+      "
+      :module="module"
+      :page-design="pageDesign"
+      :disabled="disabled"
+      @patch="$emit('patch', $event)"
+    />
     <template
       v-if="
         ['carousel', 'tabs', 'links', 'organizations'].includes(module.type)
@@ -369,6 +397,7 @@ import { computed, ref } from "vue";
 import { Plus, Delete, Top, Bottom, Document } from "@element-plus/icons-vue";
 import {
   INVITATION_DISCUSSION_NOTE,
+  arrangeInvitationOrganizations,
   normalizeInvitationModuleSettings,
   type InvitationModule,
   type InvitationModuleItem,
@@ -378,6 +407,8 @@ import {
 import InvitationAssetField from "./InvitationAssetField.vue";
 import InvitationImageField from "./InvitationImageField.vue";
 import InvitationRichTextEditor from "./InvitationRichTextEditor.vue";
+import InvitationOrganizationCanvasEditor from "./InvitationOrganizationCanvasEditor.vue";
+import InvitationContactsEditor from "./InvitationContactsEditor.vue";
 const props = defineProps<{
   module: InvitationModule;
   campaignId: string;
@@ -406,6 +437,21 @@ function patchSettings(value: Partial<InvitationModuleSettings>) {
 }
 function setItems(value: InvitationModuleItem[]) {
   if (!props.disabled) emit("patch", { items: value });
+}
+function setOrganizationLayout(value: string) {
+  if (props.disabled) return;
+  if (value === "canvas")
+    emit("patch", {
+      ...(!props.module.organizationCanvas
+        ? arrangeInvitationOrganizations(props.module)
+        : {}),
+      settings: { ...settings.value, organizationLayout: "canvas" },
+    });
+  else
+    patchSettings({
+      organizationLayout: "auto",
+      layout: value === "list" ? "list" : "grid",
+    });
 }
 function patchItem(index: number, value: Partial<InvitationModuleItem>) {
   setItems(

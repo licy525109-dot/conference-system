@@ -56,6 +56,7 @@
           :model-value="active.title"
           placeholder="模块标题（可留空）"
           aria-label="模块标题"
+          :disabled="disabled"
           maxlength="80"
           @update:model-value="patch({ title: $event })"
         />
@@ -129,19 +130,21 @@
           :disabled="disabled"
           @update:model-value="patch({ imageUrl: $event })"
         />
+        <InvitationAgendaEditor
+          v-else-if="active.type === 'agenda'"
+          :key="active.id"
+          :model-value="modelValue.agenda"
+          :campaign-id="campaignId"
+          :disabled="disabled"
+          @update:model-value="update({ agenda: $event })"
+        />
         <InvitationRowsEditor
-          v-else-if="
-            active.type === 'agenda' ||
-            active.type === 'guests' ||
-            active.type === 'highlights'
-          "
+          v-else-if="active.type === 'guests' || active.type === 'highlights'"
           :title="INVITATION_MODULE_LABELS[active.type]"
           :model-value="modelValue[active.type]"
           :fields="fields[active.type]"
           :campaign-id="campaignId"
-          :max="
-            active.type === 'agenda' ? 150 : active.type === 'guests' ? 100 : 12
-          "
+          :max="active.type === 'guests' ? 100 : 12"
           :disabled="disabled"
           @update:model-value="setRows"
         />
@@ -153,34 +156,13 @@
           @update:model-value="update({ invitees: $event })"
           @update:sort="update({ inviteeSort: $event })"
         />
-        <div v-else-if="active.type === 'venue'" class="invitation-venue-form">
-          <el-form-item
-            v-for="(label, key) in {
-              dateLabel: '会议时间（选填）',
-              location: '会场（选填）',
-              address: '详细地址（选填）',
-              contactName: '会务联系人（选填）',
-              contactPhone: '联系电话（选填）',
-            }"
-            :key="key"
-            :label="label"
-          >
-            <el-input
-              :model-value="modelValue[key]"
-              maxlength="200"
-              @update:model-value="update({ [key]: $event })"
-            />
-          </el-form-item>
-          <el-form-item label="组织单位（每行一个 · 选填）"
-            ><el-input
-              :model-value="modelValue.organizers.join('\n')"
-              type="textarea"
-              :rows="4"
-              @update:model-value="
-                update({ organizers: $event.split('\n').filter(Boolean) })
-              "
-          /></el-form-item>
-        </div>
+        <InvitationVenueEditor
+          v-else-if="active.type === 'venue'"
+          :model-value="modelValue"
+          :module="active"
+          :disabled="disabled"
+          @update:model-value="update($event)"
+        />
         <InvitationExtraModuleEditor
           v-else-if="invitationModuleRepeatable(active.type)"
           :key="active.id"
@@ -229,6 +211,8 @@ import InvitationRosterEditor from "./InvitationRosterEditor.vue";
 import InvitationModuleStyleEditor from "./InvitationModuleStyleEditor.vue";
 import InvitationExtraModuleEditor from "./InvitationExtraModuleEditor.vue";
 import InvitationRuntime from "./InvitationRuntime.vue";
+import InvitationVenueEditor from "./InvitationVenueEditor.vue";
+import InvitationAgendaEditor from "./InvitationAgendaEditor.vue";
 const props = defineProps<{
   modelValue: InvitationContent;
   campaignId: string;
