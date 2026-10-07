@@ -177,6 +177,15 @@ export class AdminInvitationsController {
   ) {
     return this.service.create(id, body, req.currentAdmin!);
   }
+  @Post("campaigns/:id/recipients/batch")
+  @RequireAdminPermissions("invitation:view", "invitation:write")
+  inviteBatch(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Req() req: RequestWithCurrentAdmin,
+  ) {
+    return this.service.createBatch(id, body, req.currentAdmin!);
+  }
   @Patch("recipients/:id")
   @RequireAdminPermissions("invitation:view", "invitation:write")
   update(

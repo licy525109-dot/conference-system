@@ -1,5 +1,16 @@
 <template>
-  <div class="invitation-rich-editor" :class="{ 'is-disabled': disabled }">
+  <div
+    class="invitation-rich-editor"
+    :class="{
+      'is-disabled': disabled,
+      'is-unified-font': design.replaceAllFonts && !!pageFont.family.value,
+    }"
+    :style="{
+      '--invite-custom-font':
+        pageFont.customFamily.value || INVITATION_FONTS.sans.family,
+      '--invite-editor-font': pageFont.family.value,
+    }"
+  >
     <div ref="toolbarElement" class="invitation-rich-toolbar" />
     <div ref="editorElement" class="invitation-rich-canvas" />
     <div class="invitation-rich-status">
@@ -9,7 +20,14 @@
 </template>
 <script setup lang="ts">
 import "@wangeditor/editor/dist/css/style.css";
-import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  watch,
+} from "vue";
 import {
   createEditor,
   createToolbar,
@@ -21,20 +39,31 @@ import {
 import { ElMessage } from "element-plus";
 import {
   INVITATION_FONTS,
+  INVITATION_CUSTOM_FONT,
+  normalizeInvitationPageDesign,
   invitationRichTextHtml,
   type InvitationRichNode,
+  type InvitationPageDesign,
 } from "@conference/shared";
 import { invitationNodesFromHtml } from "../../utils/invitation-richtext";
 import { uploadInvitationImage } from "../../services/invitations";
 import { API_BASE_URL } from "../../config";
+import { useInvitationFont } from "../../utils/invitation-font";
 const props = defineProps<{
   modelValue: InvitationRichNode[];
   campaignId: string;
   disabled?: boolean;
+  pageDesign?: InvitationPageDesign;
 }>();
 const emit = defineEmits<{
   "update:modelValue": [value: InvitationRichNode[]];
 }>();
+const design = computed(() => normalizeInvitationPageDesign(props.pageDesign));
+const pageFont = useInvitationFont(
+  design,
+  computed(() => new URL(API_BASE_URL).origin),
+  computed(() => !!design.value.fontUrl),
+);
 const editorElement = ref<HTMLElement>(),
   toolbarElement = ref<HTMLElement>();
 const editor = shallowRef<IDomEditor>(),
@@ -64,10 +93,20 @@ onMounted(() => {
       maxLength: 30000,
       MENU_CONF: {
         fontFamily: {
-          fontFamilyList: Object.values(INVITATION_FONTS).map((font) => ({
-            name: font.label,
-            value: font.family.replaceAll('"', ""),
-          })),
+          fontFamilyList: [
+            ...Object.values(INVITATION_FONTS).map((font) => ({
+              name: font.label,
+              value: font.family.replaceAll('"', ""),
+            })),
+            ...(design.value.fontUrl
+              ? [
+                  {
+                    name: design.value.fontName || "自定义字体",
+                    value: INVITATION_CUSTOM_FONT,
+                  },
+                ]
+              : []),
+          ],
         },
         fontSize: {
           fontSizeList: [
@@ -196,6 +235,10 @@ onBeforeUnmount(() => {
 });
 </script>
 <style scoped>
+.invitation-rich-editor.is-unified-font
+  :deep(.invitation-rich-canvas [contenteditable] *) {
+  font-family: var(--invite-editor-font) !important;
+}
 .invitation-rich-editor {
   border: 1px solid #dce1e4;
   border-radius: 4px;

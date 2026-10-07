@@ -20,6 +20,8 @@
           :role="matchedPerson?.role"
           :editable="!disabled"
           :selected-id="selectedId"
+          :custom-font="pageFont.customFamily.value"
+          :font-family="design.replaceAllFonts ? pageFont.family.value : ''"
           @select="selectedId = $event"
           @change="changeLayer"
         />
@@ -114,8 +116,19 @@
                 v-for="(font, id) in INVITATION_FONTS"
                 :key="id"
                 :label="font.label"
-                :value="id" /></el-select
-          ></el-form-item>
+                :value="id" /><el-option
+                :label="design.fontName || '自定义字体'"
+                value="custom"
+                :disabled="!design.fontUrl"
+            /></el-select>
+            <el-button
+              text
+              :icon="Upload"
+              :disabled="disabled"
+              @click="$emit('fonts')"
+              >上传字体</el-button
+            ></el-form-item
+          >
           <el-form-item label="字号 · 原图 px"
             ><el-input-number
               :model-value="selected.fontSize"
@@ -201,25 +214,40 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Delete, Plus, EditPen } from "@element-plus/icons-vue";
+import { Delete, Plus, EditPen, Upload } from "@element-plus/icons-vue";
 import {
   createInvitationLayer,
   INVITATION_FONTS,
   normalizeInvitationCover,
   matchInvitationInvitee,
+  normalizeInvitationPageDesign,
   type InvitationContent,
   type InvitationTextLayer,
 } from "@conference/shared";
 import InvitationCoverCanvas from "./InvitationCoverCanvas.vue";
 import InvitationImageField from "./InvitationImageField.vue";
 import { API_BASE_URL } from "../../config";
+import { useInvitationFont } from "../../utils/invitation-font";
 const props = defineProps<{
   modelValue: InvitationContent;
   campaignId: string;
   previewName: string;
   disabled?: boolean;
 }>();
-const emit = defineEmits<{ "update:modelValue": [value: InvitationContent] }>();
+const emit = defineEmits<{
+  "update:modelValue": [value: InvitationContent];
+  fonts: [];
+}>();
+const design = computed(() =>
+  normalizeInvitationPageDesign(props.modelValue.design),
+);
+const pageFont = useInvitationFont(
+  design,
+  computed(() => new URL(API_BASE_URL).origin),
+  computed(() =>
+    props.modelValue.cover.layers.some((layer) => layer.font === "custom"),
+  ),
+);
 const selectedId = ref(props.modelValue.cover.layers[0]?.id || "");
 const selected = computed(() =>
   props.modelValue.cover.layers.find((layer) => layer.id === selectedId.value),

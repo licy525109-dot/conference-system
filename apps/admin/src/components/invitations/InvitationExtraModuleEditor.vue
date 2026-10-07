@@ -136,6 +136,32 @@
         ></el-form-item
       >
     </div>
+    <template v-if="module.type === 'tabs'">
+      <el-form-item label="显示讨论备注"
+        ><el-switch
+          :model-value="settings.showNote"
+          :disabled="disabled"
+          aria-label="显示讨论备注"
+          @update:model-value="patchSettings({ showNote: Boolean($event) })"
+      /></el-form-item>
+      <el-form-item label="讨论备注"
+        ><el-input
+          :model-value="settings.note"
+          type="textarea"
+          :rows="5"
+          maxlength="2000"
+          show-word-limit
+          :disabled="disabled"
+          aria-label="讨论备注"
+          @update:model-value="patchSettings({ note: $event })"
+      /></el-form-item>
+      <el-button
+        :disabled="disabled"
+        :icon="Document"
+        @click="patchSettings({ note: INVITATION_DISCUSSION_NOTE })"
+        >使用共创说明</el-button
+      >
+    </template>
     <el-form-item v-if="module.type === 'tabs'" label="展示形式">
       <el-radio-group
         :model-value="settings.layout"
@@ -148,6 +174,61 @@
         <el-radio-button value="list">议题列表</el-radio-button>
       </el-radio-group>
     </el-form-item>
+    <div
+      v-if="module.type === 'organizations'"
+      class="organization-display-fields"
+    >
+      <el-form-item label="展示方式">
+        <el-radio-group
+          :model-value="settings.layout"
+          :disabled="disabled"
+          aria-label="组织展示方式"
+          @update:model-value="
+            patchSettings({ layout: $event === 'list' ? 'list' : 'grid' })
+          "
+        >
+          <el-radio-button value="grid">并排展示</el-radio-button>
+          <el-radio-button value="list">逐行展示</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item v-if="settings.layout === 'grid'" label="每行数量">
+        <el-select
+          :model-value="settings.logoColumns"
+          :disabled="disabled"
+          aria-label="Logo 每行数量"
+          @update:model-value="patchSettings({ logoColumns: $event })"
+        >
+          <el-option
+            v-for="count in [2, 3, 4]"
+            :key="count"
+            :label="`${count} 个`"
+            :value="count"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="Logo 统一高度">
+        <el-slider
+          :model-value="settings.logoHeight"
+          :min="32"
+          :max="96"
+          :step="4"
+          :disabled="disabled"
+          aria-label="Logo 统一高度"
+          :format-tooltip="(value: number) => `${value}px`"
+          @update:model-value="patchSettings({ logoHeight: Number($event) })"
+        />
+      </el-form-item>
+      <el-form-item label="显示单位名称">
+        <el-switch
+          :model-value="settings.showOrganizationNames"
+          :disabled="disabled"
+          aria-label="显示单位名称"
+          @update:model-value="
+            patchSettings({ showOrganizationNames: Boolean($event) })
+          "
+        />
+      </el-form-item>
+    </div>
     <template
       v-if="
         ['carousel', 'tabs', 'links', 'organizations'].includes(module.type)
@@ -171,7 +252,9 @@
           :icon="Plus"
           :disabled="disabled || items.length >= 20"
           @click="addItem"
-          >添加项目</el-button
+          >{{
+            module.type === "organizations" ? "添加单位" : "添加项目"
+          }}</el-button
         >
       </div>
       <el-empty v-if="!items.length" description="暂无项目" :image-size="64" />
@@ -213,11 +296,19 @@
               maxlength="120"
               @update:model-value="patchItem(index, { title: $event })"
           /></el-form-item>
-          <el-form-item v-if="module.type !== 'links'" label="图片（选填）"
+          <el-form-item
+            v-if="module.type !== 'links'"
+            :label="
+              module.type === 'organizations'
+                ? '单位 Logo（选填）'
+                : '图片（选填）'
+            "
             ><InvitationImageField
               :model-value="item.imageUrl"
               :campaign-id="campaignId"
-              label="项目图片"
+              :label="
+                module.type === 'organizations' ? '单位 Logo' : '项目图片'
+              "
               :disabled="disabled"
               @update:model-value="patchItem(index, { imageUrl: $event })"
           /></el-form-item>
@@ -237,6 +328,7 @@
             v-if="module.type === 'tabs'"
             :key="item.id"
             :model-value="item.body"
+            :page-design="pageDesign"
             :campaign-id="campaignId"
             :disabled="disabled"
             @update:model-value="patchItem(index, { body: $event })"
@@ -274,12 +366,14 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Plus, Delete, Top, Bottom } from "@element-plus/icons-vue";
+import { Plus, Delete, Top, Bottom, Document } from "@element-plus/icons-vue";
 import {
+  INVITATION_DISCUSSION_NOTE,
   normalizeInvitationModuleSettings,
   type InvitationModule,
   type InvitationModuleItem,
   type InvitationModuleSettings,
+  type InvitationPageDesign,
 } from "@conference/shared";
 import InvitationAssetField from "./InvitationAssetField.vue";
 import InvitationImageField from "./InvitationImageField.vue";
@@ -288,6 +382,7 @@ const props = defineProps<{
   module: InvitationModule;
   campaignId: string;
   disabled?: boolean;
+  pageDesign?: InvitationPageDesign;
 }>();
 const emit = defineEmits<{ patch: [value: Partial<InvitationModule>] }>();
 const settings = computed(() =>
@@ -323,7 +418,11 @@ function addItem() {
     ...items.value,
     {
       id,
-      title: "",
+      title:
+        props.module.type === "organizations"
+          ? items.value.find((item) => opened.value.includes(item.id))?.title ||
+            "主办单位"
+          : "",
       description: "",
       imageUrl: "",
       href: "",
@@ -340,6 +439,20 @@ function move(index: number, delta: number) {
 }
 </script>
 <style scoped>
+.organization-display-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+.organization-display-fields :deep(.el-select),
+.organization-display-fields :deep(.el-slider) {
+  width: 100%;
+}
+@media (max-width: 700px) {
+  .organization-display-fields {
+    grid-template-columns: 1fr;
+  }
+}
 .extra-module-editor {
   padding: 12px 0;
   min-width: 0;

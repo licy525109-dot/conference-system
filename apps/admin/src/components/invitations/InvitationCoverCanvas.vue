@@ -72,6 +72,8 @@ const props = defineProps<{
   location?: string;
   editable?: boolean;
   selectedId?: string;
+  customFont?: string;
+  fontFamily?: string;
 }>();
 const emit = defineEmits<{
   select: [id: string];
@@ -113,7 +115,11 @@ function layerStyle(layer: InvitationTextLayer) {
     width: `${layer.width}%`,
     height: `${layer.height}%`,
     color: layer.color,
-    fontFamily: INVITATION_FONTS[layer.font].family,
+    fontFamily:
+      props.fontFamily ||
+      (layer.font === "custom"
+        ? props.customFont || INVITATION_FONTS.sans.family
+        : INVITATION_FONTS[layer.font].family),
     fontWeight: layer.bold ? "700" : "400",
     fontStyle: layer.italic ? "italic" : "normal",
     textDecoration: layer.underline ? "underline" : "none",
@@ -215,6 +221,8 @@ watch(
     props.title,
     props.date,
     props.location,
+    props.customFont,
+    props.fontFamily,
   ],
   () => nextTick(fitText),
   { deep: true },

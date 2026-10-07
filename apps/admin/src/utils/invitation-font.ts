@@ -6,8 +6,10 @@ import {
 export function useInvitationFont(
   design: Ref<InvitationPageDesign>,
   assetOrigin: Ref<string>,
+  customNeeded?: Ref<boolean>,
 ) {
   const family = ref(""),
+    customFamily = ref(""),
     status = ref<"idle" | "loading" | "loaded" | "error">("idle");
   const name = `InvitationFont${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   let face: FontFace | undefined,
@@ -17,17 +19,19 @@ export function useInvitationFont(
       () => design.value.font,
       () => design.value.fontUrl,
       () => assetOrigin.value,
+      () => customNeeded?.value,
     ],
     async () => {
       const current = ++generation;
       if (face) document.fonts.delete(face);
       face = undefined;
       family.value = "";
+      customFamily.value = "";
       status.value = "idle";
       if (design.value.font !== "custom") {
         if (design.value.font !== "default")
           family.value = INVITATION_FONTS[design.value.font].family;
-        return;
+        if (!customNeeded?.value) return;
       }
       if (!design.value.fontUrl || !("FontFace" in window)) return;
       status.value = "loading";
@@ -41,7 +45,8 @@ export function useInvitationFont(
         if (current !== generation) return;
         face = next;
         document.fonts.add(next);
-        family.value = `${name}, ${INVITATION_FONTS.sans.family}`;
+        customFamily.value = `${name}, ${INVITATION_FONTS.sans.family}`;
+        if (design.value.font === "custom") family.value = customFamily.value;
         status.value = "loaded";
       } catch {
         if (current === generation) status.value = "error";
@@ -53,5 +58,5 @@ export function useInvitationFont(
     generation++;
     if (face) document.fonts.delete(face);
   });
-  return { family, status };
+  return { family, customFamily, status };
 }

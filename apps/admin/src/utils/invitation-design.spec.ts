@@ -17,7 +17,158 @@ import {
   invitationVisibleModules,
   applyInvitationBooklet,
   invitationAssetUrl,
+  normalizeInvitationModuleSettings,
+  INVITATION_CUSTOM_FONT,
+  INVITATION_DISCUSSION_NOTE,
 } from "@conference/shared";
+
+test("discussion notes use the supplied wording only for new templates and preserve independent visibility", () => {
+  const content = applyInvitationBooklet(createInvitationContent());
+  const discussion = content.modules.find(
+    (module) => module.id === "booklet-discussion",
+  )!;
+  assert.equal(discussion.settings!.note, INVITATION_DISCUSSION_NOTE);
+  assert.match(discussion.settings!.note, /最多选择 3 项，按总票数取前 6 项/);
+  discussion.settings!.note = "我修改的说明\n可以换行";
+  discussion.settings!.showNote = false;
+  const saved = normalizeInvitationContent(content);
+  assert.equal(
+    saved.modules.find((module) => module.id === discussion.id)!.settings!.note,
+    discussion.settings!.note,
+  );
+  assert.equal(
+    saved.modules.find((module) => module.id === discussion.id)!.settings!
+      .showNote,
+    false,
+  );
+  assert.deepEqual(applyInvitationBooklet(saved), saved);
+  const existing = createInvitationModule("tabs", "booklet-discussion");
+  const before = createInvitationContent();
+  before.modules.push(existing);
+  assert.equal(
+    applyInvitationBooklet(before).modules.find(
+      (module) => module.id === existing.id,
+    )!.settings!.note,
+    "",
+  );
+});
+test("keyword presentation settings are bounded and do not change authored rich text", () => {
+  const module = createInvitationModule("richtext", "keywords");
+  module.settings = { ...module.settings!, textPresentation: "keywords" };
+  module.body = [
+    { tag: "p", attrs: {}, children: [{ text: "新需求 · 新产品" }] },
+  ];
+  const saved = normalizeInvitationContent({ modules: [module] }).modules[0];
+  assert.equal(saved.settings!.textPresentation, "keywords");
+  assert.deepEqual(saved.body, module.body);
+  assert.equal(
+    normalizeInvitationModuleSettings({
+      textPresentation: "bad",
+      note: "x".repeat(3000),
+      showNote: false,
+    }).note.length,
+    2000,
+  );
+  assert.equal(
+    normalizeInvitationModuleSettings({ textPresentation: "bad" })
+      .textPresentation,
+    "auto",
+  );
+});
+
+test("agenda typography defaults and bounds survive save without dropping other settings", () => {
+  const defaults = normalizeInvitationModuleSettings(null);
+  assert.equal(defaults.agendaTitleSize, 14);
+  assert.equal(defaults.agendaMetaSize, 12);
+  assert.equal(defaults.agendaLayout, "auto");
+  const module = createInvitationModule("agenda", "agenda");
+  module.settings = {
+    ...defaults,
+    agendaTitleSize: 99,
+    agendaMetaSize: -1,
+    agendaLineHeight: 9,
+    agendaWeight: 550,
+    agendaPadding: 1,
+    agendaLayout: "continuous",
+    fit: "cover",
+  };
+  const saved = normalizeInvitationContent({ modules: [module] }).modules[0]
+    .settings!;
+  assert.equal(saved.agendaTitleSize, 24);
+  assert.equal(saved.agendaMetaSize, 10);
+  assert.equal(saved.agendaLineHeight, 2.2);
+  assert.equal(saved.agendaWeight, 600);
+  assert.equal(saved.agendaPadding, 8);
+  assert.equal(saved.agendaLayout, "continuous");
+  assert.equal(saved.fit, "cover");
+  const invalid = normalizeInvitationModuleSettings({
+    agendaTitleSize: "20",
+    agendaMetaSize: Number.NaN,
+    agendaLayout: "injected",
+  });
+  assert.equal(invalid.agendaTitleSize, 14);
+  assert.equal(invalid.agendaMetaSize, 12);
+  assert.equal(invalid.agendaLayout, "auto");
+});
+
+test("organization logo settings are bounded and survive content normalization", () => {
+  assert.deepEqual(
+    (({ logoColumns, logoHeight, showOrganizationNames }) => ({
+      logoColumns,
+      logoHeight,
+      showOrganizationNames,
+    }))(normalizeInvitationModuleSettings(null)),
+    { logoColumns: 3, logoHeight: 56, showOrganizationNames: true },
+  );
+  const module = createInvitationModule("organizations", "logos");
+  module.settings = {
+    ...module.settings!,
+    logoColumns: 99,
+    logoHeight: -1,
+    showOrganizationNames: false,
+    layout: "list",
+  };
+  const saved = normalizeInvitationContent({ modules: [module] }).modules[0]
+    .settings!;
+  assert.equal(saved.logoColumns, 4);
+  assert.equal(saved.logoHeight, 32);
+  assert.equal(saved.showOrganizationNames, false);
+  assert.equal(saved.layout, "list");
+  const invalid = normalizeInvitationModuleSettings({
+    logoColumns: "4",
+    logoHeight: Number.NaN,
+    showOrganizationNames: "false",
+  });
+  assert.equal(invalid.logoColumns, 3);
+  assert.equal(invalid.logoHeight, 56);
+  assert.equal(invalid.showOrganizationNames, true);
+});
+
+test("custom font marks and cover layers persist without accepting arbitrary CSS variables", () => {
+  const cover = normalizeInvitationCover({
+    layers: [{ ...createInvitationLayer("name"), font: "custom" }],
+  });
+  assert.equal(cover.layers[0].font, "custom");
+  const nodes = normalizeInvitationRichText([
+    {
+      tag: "span",
+      attrs: { style: `font-family:${INVITATION_CUSTOM_FONT};font-weight:700` },
+      children: [{ text: "嘉宾姓名" }],
+    },
+    {
+      tag: "span",
+      attrs: {
+        style:
+          "font-family:var(--attacker-font);background-image:url(https://example.com)",
+      },
+      children: [{ text: "不可信样式" }],
+    },
+  ]);
+  const html = invitationRichTextHtml(nodes);
+  assert.match(html, /font-family:var\(--invite-custom-font\)/);
+  assert.match(html, /font-weight:700/);
+  assert.doesNotMatch(html, /attacker|background-image/);
+});
 
 test("booklet arranges nine chapters without replacing authored facts or extra modules", () => {
   let content = createInvitationContent({

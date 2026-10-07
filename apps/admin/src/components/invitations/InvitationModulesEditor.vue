@@ -95,14 +95,19 @@
       <InvitationModuleStyleEditor
         v-if="editorTab === 'style'"
         :model-value="active.style"
+        :module-type="active.type"
+        :settings="active.settings"
         :campaign-id="campaignId"
         :disabled="disabled"
         @update:model-value="patch({ style: $event })"
+        @update:settings="patch({ settings: $event })"
+        @reset="patch($event)"
       />
       <template v-else>
         <InvitationExtraModuleEditor
           v-if="active.type === 'guests'"
           :module="active"
+          :page-design="modelValue.design"
           :campaign-id="campaignId"
           :disabled="disabled"
           @patch="patch"
@@ -111,6 +116,7 @@
           v-if="active.type === 'richtext' || active.type === 'letter'"
           :key="active.id"
           :model-value="letterBody"
+          :page-design="modelValue.design"
           :campaign-id="campaignId"
           :disabled="disabled"
           @update:model-value="patch({ body: $event })"
@@ -179,6 +185,7 @@
           v-else-if="invitationModuleRepeatable(active.type)"
           :key="active.id"
           :module="active"
+          :page-design="modelValue.design"
           :campaign-id="campaignId"
           :disabled="disabled"
           @patch="patch"
