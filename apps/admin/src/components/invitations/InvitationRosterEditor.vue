@@ -21,6 +21,22 @@
         >
       </div>
     </header>
+    <el-form-item
+      v-if="note !== undefined"
+      label="名单提示"
+      class="roster-note-field"
+    >
+      <el-input
+        :model-value="note"
+        type="textarea"
+        :autosize="{ minRows: 2, maxRows: 5 }"
+        maxlength="2000"
+        show-word-limit
+        aria-label="拟邀名单提示文案"
+        :disabled="disabled"
+        @update:model-value="!disabled && $emit('update:note', $event)"
+      />
+    </el-form-item>
     <div v-if="modelValue.length" class="roster-order">
       <el-select
         :model-value="sortRule.key"
@@ -272,10 +288,12 @@ const props = defineProps<{
   modelValue: InvitationInvitee[];
   disabled?: boolean;
   sort?: InvitationRosterSort;
+  note?: string;
 }>();
 const emit = defineEmits<{
   "update:modelValue": [value: InvitationInvitee[]];
   "update:sort": [value: InvitationRosterSort];
+  "update:note": [value: string];
 }>();
 const sortRule = computed(() => normalizeInvitationRosterSort(props.sort));
 const orderedRows = computed(() =>
@@ -515,6 +533,9 @@ onBeforeUnmount(() => {
 });
 </script>
 <style scoped>
+.roster-note-field {
+  margin-top: 18px;
+}
 .roster-order {
   display: flex;
   flex-wrap: wrap;

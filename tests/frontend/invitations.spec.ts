@@ -25,6 +25,153 @@ const artworkPath =
   process.env.INVITATION_ARTWORK_PATH ||
   "apps/admin/public/invitation-art/tide-paper.jpg";
 
+for (const width of [390, 1440]) {
+  test(`roster note shares both editors, persists and publishes at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const doc = document();
+    const campaign = await adminFixture(page, ["*"], doc);
+    const originalRows = normalizeInvitationContent(doc.content).invitees;
+    await publicFixture(page, () => ({
+      ...doc,
+      content: campaign.published,
+      revision: campaign.publishedRevision,
+    }));
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "公开名单", exact: true }).click();
+    const field = page.getByRole("textbox", {
+      name: "拟邀名单提示文案",
+      exact: true,
+    });
+    await expect(field).toHaveValue("拟邀名单，不代表已确认出席");
+    const note = "名单陆续更新\n最终出席情况以会务组确认为准。";
+    await field.fill(note);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /拟邀名单/ })
+      .first()
+      .click();
+    await expect(field).toHaveValue(note);
+    await expect(
+      page.locator(".module-live-preview .invitation-roster-note"),
+    ).toHaveText(note);
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    expect(
+      campaign.draft.modules.find((module) => module.type === "invitees")!
+        .settings!.inviteeNote,
+    ).toBe(note);
+    expect(campaign.draft.invitees).toEqual(originalRows);
+    await page.reload();
+    await page.getByRole("tab", { name: "公开名单", exact: true }).click();
+    await expect(field).toHaveValue(note);
+    await page.getByRole("button", { name: "发布更新", exact: true }).click();
+    await page
+      .getByRole("dialog", { name: "发布会议邀请函" })
+      .getByRole("button", { name: "发布更新", exact: true })
+      .click();
+    await expect(
+      page.getByText("已发布，所有专属链接已同步", { exact: true }),
+    ).toBeVisible();
+    await page.goto(`${origin}/i/${token}`);
+    await expect(page.locator(".invitation-roster-note")).toHaveText(note);
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "公开名单", exact: true }).click();
+    await field.fill("");
+    await page.getByRole("button", { name: "保存并发布", exact: true }).click();
+    await page
+      .getByRole("dialog", { name: "发布会议邀请函" })
+      .getByRole("button", { name: "发布更新", exact: true })
+      .click();
+    await expect(
+      page.getByText("已发布，所有专属链接已同步", { exact: true }),
+    ).toBeVisible();
+    expect(
+      campaign.published.modules.find((module) => module.type === "invitees")!
+        .settings!.inviteeNote,
+    ).toBe("");
+    expect(campaign.published.invitees).toEqual(originalRows);
+    await page.goto(`${origin}/i/${token}`);
+    await expect(page.locator(".invitation-roster")).toBeVisible();
+    await expect(page.locator(".invitation-roster-note")).toHaveCount(0);
+  });
+}
+
+test("roster note editing retains the invitation content permission boundary", async ({
+  page,
+}) => {
+  let writes = 0;
+  page.on("request", (request) => {
+    if (request.method() === "PATCH") writes++;
+  });
+  await adminFixture(page, ["invitation:view", "invitation:publish"]);
+  await page.goto(`${origin}/#/invitations`);
+  await page.getByRole("tab", { name: "公开名单", exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "拟邀名单提示文案", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+  await page
+    .getByRole("button", { name: /拟邀名单/ })
+    .first()
+    .click();
+  await expect(
+    page.getByRole("textbox", { name: "拟邀名单提示文案", exact: true }),
+  ).toBeDisabled();
+  expect(writes).toBe(0);
+});
+
+for (const preset of ["classic", "booklet"]) {
+  for (const width of [320, 390, 1440]) {
+    test(`roster note defaults, wraps as plain text and live-clears in ${preset} at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 920 });
+      const doc = document();
+      if (preset === "booklet")
+        doc.content = applyInvitationBooklet(doc.content);
+      const module = doc.content.modules.find(
+        (item) => item.type === "invitees",
+      )!;
+      module.settings = undefined;
+      await publicFixture(page, () => doc);
+      await page.goto(`${origin}/i/${token}`);
+      const note = page.locator(".invitation-roster-note");
+      await expect(note).toHaveText("拟邀名单，不代表已确认出席");
+      const text = `名单更新说明\n<img src=x onerror=alert(1)> ${"LONGWORD".repeat(25)}`;
+      module.settings = {
+        ...createInvitationModule("invitees", "defaults").settings!,
+        inviteeNote: text,
+      };
+      doc.revision++;
+      await page.evaluate(() => window.dispatchEvent(new Event("online")));
+      await expect(note).toHaveText(text);
+      await expect(note.locator("img")).toHaveCount(0);
+      await expect(note).toHaveCSS("white-space", "pre-line");
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth + 1,
+          ),
+        )
+        .toBe(true);
+      await note.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `output/playwright/invitation-roster-note-${preset}-${width}.png`,
+        animations: "disabled",
+      });
+      module.settings.inviteeNote = "  \n ";
+      doc.revision++;
+      await page.evaluate(() => window.dispatchEvent(new Event("online")));
+      await expect(note).toHaveCount(0);
+      await expect(page.locator(".invitation-roster")).toBeVisible();
+    });
+  }
+}
+
 for (const format of ["xlsx", "xls", "csv"] as const) {
   test(`agenda imports ${format} and replaces only the selected day after confirmation`, async ({
     page,

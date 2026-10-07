@@ -381,7 +381,12 @@
             <ArrowRight />
           </button>
         </div>
-        <p class="invitation-footnote">拟邀名单，不代表已确认出席</p>
+        <p
+          v-if="module.settings?.inviteeNote.trim()"
+          class="invitation-footnote invitation-roster-note"
+        >
+          {{ module.settings.inviteeNote }}
+        </p>
       </section>
       <section
         v-if="module.type === 'venue'"
@@ -1448,6 +1453,10 @@ const themeStyle = computed(() => ({
   color: #768077;
   font-size: 12px;
   margin-top: 18px !important;
+}
+.invitation-roster-note {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 .invitation-guests {
   display: grid;

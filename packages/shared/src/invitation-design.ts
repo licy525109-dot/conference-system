@@ -140,6 +140,7 @@ export interface InvitationModuleSettings {
   agendaPadding: number;
   agendaLayout: "auto" | "tabs" | "continuous";
   textPresentation: "auto" | "prose" | "keywords";
+  inviteeNote: string;
   note: string;
   showNote: boolean;
   latitude: number | null;
@@ -168,6 +169,7 @@ export const INVITATION_ICONS = [
   "document",
   "star",
 ] as const;
+export const INVITATION_ROSTER_NOTE = "拟邀名单，不代表已确认出席";
 export const INVITATION_SINGLETON_MODULES = [
   "letter",
   "highlights",
@@ -283,6 +285,10 @@ export function normalizeInvitationModuleSettings(
       s.textPresentation === "prose" || s.textPresentation === "keywords"
         ? s.textPresentation
         : "auto",
+    inviteeNote:
+      typeof s.inviteeNote === "string"
+        ? str(s.inviteeNote, 2000)
+        : INVITATION_ROSTER_NOTE,
     note: str(s.note, 2000),
     showNote: s.showNote !== false,
     latitude:

@@ -152,9 +152,13 @@
           v-else-if="active.type === 'invitees'"
           :model-value="modelValue.invitees"
           :sort="modelValue.inviteeSort"
+          :note="active.settings?.inviteeNote"
           :disabled="disabled"
           @update:model-value="update({ invitees: $event })"
           @update:sort="update({ inviteeSort: $event })"
+          @update:note="
+            patch({ settings: { ...active.settings!, inviteeNote: $event } })
+          "
         />
         <InvitationVenueEditor
           v-else-if="active.type === 'venue'"
