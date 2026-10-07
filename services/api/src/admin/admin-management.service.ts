@@ -428,6 +428,77 @@ export class AdminManagementService {
     return ok(field);
   }
 
+  async importFormFields(conferenceId: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
+    const body = readObject(input);
+    const sourceConferenceId = readRequiredString(body, "sourceConferenceId");
+    if (sourceConferenceId === conferenceId) {
+      throw new BadRequestException("请选择其他会议的报名字段");
+    }
+    if (!Array.isArray(body.fieldIds) || body.fieldIds.length === 0 || body.fieldIds.length > 200
+      || body.fieldIds.some(id => typeof id !== "string" || !id.trim())) {
+      throw new BadRequestException("请选择 1 至 200 个报名字段");
+    }
+    const fieldIds = (body.fieldIds as string[]).map(id => id.trim());
+    if (new Set(fieldIds).size !== fieldIds.length) {
+      throw new BadRequestException("报名字段不能重复选择");
+    }
+
+    try {
+      return ok(await this.prisma.$transaction(async tx => {
+        const target = await tx.conference.findUnique({ where: { id: conferenceId }, select: { id: true } });
+        const source = await tx.conference.findUnique({ where: { id: sourceConferenceId }, select: { id: true } });
+        if (!target || !source) throw new NotFoundException("来源会议或当前会议不存在");
+        const sourceForm = await tx.formDefinition.findUnique({ where: { conferenceId: sourceConferenceId }, select: { id: true } });
+        if (!sourceForm) throw new BadRequestException("来源会议尚未配置报名字段");
+        const sourceFields = await tx.formField.findMany({
+          where: { formDefinitionId: sourceForm.id, id: { in: fieldIds } },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+          select: formFieldSelect
+        });
+        if (sourceFields.length !== fieldIds.length) {
+          throw new BadRequestException("部分字段不属于来源会议或已被移除，请重新选择");
+        }
+        const form = await tx.formDefinition.upsert({
+          where: { conferenceId }, update: {},
+          create: { conferenceId, title: "报名信息", description: null }, select: { id: true }
+        });
+        const existing = await tx.formField.findMany({ where: { formDefinitionId: form.id }, select: { fieldKey: true, sortOrder: true } });
+        const keys = new Set(existing.map(field => field.fieldKey));
+        const copied = sourceFields.filter(field => !keys.has(field.fieldKey));
+        const skippedFieldKeys = sourceFields.filter(field => keys.has(field.fieldKey)).map(field => field.fieldKey);
+        const lastSortOrder = Math.max(-1, ...existing.map(field => field.sortOrder));
+        if (lastSortOrder + copied.length > 2147483647) throw new BadRequestException("字段排序值过大，请先调整当前会议的字段排序");
+
+        if (copied.length) {
+          // Copy configuration only. Existing definitions and submitted registration snapshots stay untouched.
+          await tx.formField.createMany({ data: copied.map((field, index) => ({
+            formDefinitionId: form.id,
+            label: field.label, fieldKey: field.fieldKey, type: field.type,
+            required: field.required, enabled: field.enabled, placeholder: field.placeholder,
+            optionsJson: field.optionsJson === null ? Prisma.DbNull : field.optionsJson as Prisma.InputJsonValue,
+            validationJson: field.validationJson === null ? Prisma.DbNull : field.validationJson as Prisma.InputJsonValue,
+            sortOrder: lastSortOrder + index + 1
+          })) });
+          await tx.auditLog.create({ data: {
+            adminUserId: admin.id, action: AuditAction.CREATE, entityType: "FormDefinition", entityId: form.id,
+            summary: "Import registration fields from another conference",
+            metadataJson: { conferenceId, sourceConferenceId, sourceFieldIds: copied.map(field => field.id), copiedFieldKeys: copied.map(field => field.fieldKey), skippedFieldKeys }
+          } });
+        }
+        const items = await tx.formField.findMany({
+          where: { formDefinitionId: form.id },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }], select: formFieldSelect
+        });
+        return { formId: form.id, items, copiedCount: copied.length, skippedFieldKeys };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+    } catch (error) {
+      if (isRecord(error) && ["P2002", "P2034"].includes(String(error.code))) {
+        throw new ConflictException("报名字段配置已发生变化，请刷新后重试；已有字段不会被覆盖");
+      }
+      throw error;
+    }
+  }
+
   async updateFormField(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const existing = await this.prisma.formField.findUnique({
       where: { id },

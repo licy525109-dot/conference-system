@@ -181,6 +181,13 @@ export function createFormField(conferenceId: string, input: Record<string, unkn
   });
 }
 
+export function importFormFields(conferenceId: string, input: { sourceConferenceId: string; fieldIds: string[] }) {
+  return apiRequest<{ formId: string; items: FormField[]; copiedCount: number; skippedFieldKeys: string[] }>(
+    `/admin/conferences/${encodeURIComponent(conferenceId)}/form-fields/import`,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
 export function updateFormField(id: string, input: Record<string, unknown>) {
   return apiRequest<FormField>(`/admin/form-fields/${encodeURIComponent(id)}`, {
     method: "PATCH",

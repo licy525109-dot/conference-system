@@ -104,6 +104,12 @@ export class AdminManagementController {
     return this.adminManagementService.createFormField(conferenceId, body, request.currentAdmin!);
   }
 
+  @Post("conferences/:conferenceId/form-fields/import")
+  @RequireAdminPermissions("conference:view", "conference:write")
+  importFormFields(@Param("conferenceId") conferenceId: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {
+    return this.adminManagementService.importFormFields(conferenceId, body, request.currentAdmin!);
+  }
+
   @Patch("form-fields/:id")
   @RequireAdminPermissions("conference:write")
   updateFormField(@Param("id") id: string, @Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {

@@ -126,6 +126,7 @@
       <el-tab-pane label="报名字段" name="fields">
         <div class="toolbar">
           <el-button type="primary" @click="openField()">新增字段</el-button>
+          <el-button v-if="hasPermission('conference:view') && hasPermission('conference:write')" :icon="CopyDocument" :disabled="!conferenceId || conference?.id !== conferenceId" @click="fieldImportVisible = true">从其他会议引用</el-button>
         </div>
         <el-table :data="fields" empty-text="暂无字段">
           <AdminTableIndex />
@@ -289,6 +290,7 @@
       </div>
     </el-dialog>
 
+    <FormFieldImportDialog v-model="fieldImportVisible" :conference-id="conferenceId" :fields="fields" @imported="applyImportedFields" />
     <input ref="detailImageInput" class="hidden-file" type="file" accept="image/jpeg,image/png,image/webp" @change="handleDetailImageUpload" />
   </section>
 </template>
@@ -297,12 +299,13 @@
 import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Delete, FolderOpened, Picture, Upload } from "@element-plus/icons-vue";
+import { CopyDocument, Delete, FolderOpened, Picture, Upload } from "@element-plus/icons-vue";
 import AdminFeatureBadge from "../../components/AdminFeatureBadge.vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import ConferenceCoverPicker from "../../components/conference/ConferenceCoverPicker.vue";
+import FormFieldImportDialog from "../../components/conference/FormFieldImportDialog.vue";
 import ConferenceDetailRichTextEditor from "../../components/conference/ConferenceDetailRichTextEditor.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
 import CouponsPage from "../coupons/index.vue";
@@ -324,6 +327,7 @@ import {
   updateSku
 } from "../../services/admin";
 import type { Conference, FormField, MaterialAsset, Sku } from "../../services/types";
+import { useAdminSession } from "../../stores/admin-session";
 import { isConferenceDetailImageAsset, prepareConferenceDetailImage } from "../../utils/conferenceDetailImage";
 import {
   hasConferenceDetailSectionsContract,
@@ -339,6 +343,7 @@ import {
   createConferenceDetailRichText
 } from "../../utils/conferenceDetailRichText";
 
+const { hasPermission } = useAdminSession();
 const conferences = ref<Conference[]>([]);
 const conferenceId = ref("");
 const selectedConference = ref<Conference | null>(null);
@@ -348,6 +353,7 @@ const fields = ref<FormField[]>([]);
 const activeTab = ref("basic");
 const skuDialogVisible = ref(false);
 const fieldDialogVisible = ref(false);
+const fieldImportVisible = ref(false);
 const detailMaterialVisible = ref(false);
 const detailMaterialLoading = ref(false);
 const detailMaterialKeyword = ref("");
@@ -570,6 +576,10 @@ async function saveSku() {
   else await createSku(conferenceId.value, payload);
   skuDialogVisible.value = false;
   skus.value = (await listSkus(conferenceId.value)).items;
+}
+
+function applyImportedFields(id: string, importedFields: FormField[]) {
+  if (id === conferenceId.value) fields.value = importedFields;
 }
 
 function openField(row?: FormField) {
