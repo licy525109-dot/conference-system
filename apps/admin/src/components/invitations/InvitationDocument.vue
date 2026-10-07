@@ -2029,7 +2029,6 @@ const themeStyle = computed(() => ({
   }
 }
 .background-wave-pattern {
-  filter: invert(1);
   mix-blend-mode: multiply;
   background-size: 720px auto;
   background-repeat: repeat;

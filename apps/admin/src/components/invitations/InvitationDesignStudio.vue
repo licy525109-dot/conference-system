@@ -635,7 +635,7 @@ async function insertVariable(name: string) {
 }
 .studio-presets {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 24px;
 }
@@ -777,6 +777,11 @@ async function insertVariable(name: string) {
   height: 64px;
   object-fit: cover;
   flex-shrink: 0;
+}
+@media (max-width: 1000px) {
+  .studio-presets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 640px) {
   .studio-presets {

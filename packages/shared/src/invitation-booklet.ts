@@ -47,6 +47,7 @@ const topics = [
 export function applyInvitationBooklet(
   content: InvitationContent,
 ): InvitationContent {
+  if (content.visualPreset === "booklet") return content;
   const used = new Set<string>();
   const singleton = (type: InvitationModuleType, title: string) => {
     const existing = content.modules.find((module) => module.type === type);
@@ -160,7 +161,7 @@ export function applyInvitationBooklet(
       ...normalizeInvitationPageDesign(content.design),
       textColor: "#292a2c",
       backgroundImage: "/invitation-art/booklet-pattern.jpg",
-      backgroundOpacity: 7,
+      backgroundOpacity: 12,
       backgroundMotion: "none",
       bodySize: 15,
     },

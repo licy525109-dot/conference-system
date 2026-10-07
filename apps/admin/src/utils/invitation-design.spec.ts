@@ -110,6 +110,7 @@ test("booklet reapplication keeps edits, visibility, navigation and topic presen
     (module) => module.id === "booklet-keywords",
   )!;
   keywords.body = [];
+  content.modules.reverse();
   content.navigation = normalizeInvitationNavigation(
     {
       enabled: false,
