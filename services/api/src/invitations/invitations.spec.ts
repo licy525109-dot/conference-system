@@ -405,7 +405,9 @@ test("previous links read a shared published revision, never draft or private op
       imageUrl: "",
     },
   ];
-  campaign.publishedJson.modules = [venue, org, contacts];
+  const roster = createInvitationModule("invitees", "roster");
+  roster.settings!.inviteeNote = "最新拟邀名单说明\n名单持续更新";
+  campaign.publishedJson.modules = [venue, org, contacts, roster];
   campaign.publishedRevision = 2;
   for (const link of [token, "b".repeat(43)]) {
     const response = await service.publicInvitation(link);
@@ -426,6 +428,10 @@ test("previous links read a shared published revision, never draft or private op
     assert.equal(
       response.data.content.modules[2].contacts![0].note,
       "最新会务说明",
+    );
+    assert.equal(
+      response.data.content.modules[3].settings!.inviteeNote,
+      roster.settings!.inviteeNote,
     );
   }
   campaign.conference.status = "ARCHIVED";

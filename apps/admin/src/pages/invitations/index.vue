@@ -288,7 +288,9 @@
               v-else-if="tab === 'roster'"
               v-model="draft.invitees"
               v-model:sort="draft.inviteeSort"
+              :note="rosterModule?.settings?.inviteeNote"
               :disabled="!can('content') || saving || publishing"
+              @update:note="updateRosterNote"
             />
             <InvitationDesignStudio
               v-else-if="tab === 'design'"
@@ -548,6 +550,7 @@ import {
 import {
   createInvitationContent,
   normalizeInvitationContent,
+  normalizeInvitationModuleSettings,
   normalizeInvitationRegistration,
   invitationRegistrationUrl,
   invitationNameKey,
@@ -590,6 +593,22 @@ const detail = ref<InvitationCampaignDetail | null>(null);
 const options = ref<InvitationOptions>({ conferences: [], admins: [] });
 const selectedId = ref("");
 const draft = ref<InvitationContent>(createInvitationContent());
+const rosterModule = computed(() =>
+  draft.value.modules.find((module) => module.type === "invitees"),
+);
+function updateRosterNote(value: string) {
+  if (
+    !can("content") ||
+    saving.value ||
+    publishing.value ||
+    !rosterModule.value
+  )
+    return;
+  rosterModule.value.settings = {
+    ...normalizeInvitationModuleSettings(rosterModule.value.settings),
+    inviteeNote: value,
+  };
+}
 const savedDraft = ref("");
 const dirty = computed(() =>
   Boolean(detail.value && JSON.stringify(draft.value) !== savedDraft.value),

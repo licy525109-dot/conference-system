@@ -20,7 +20,45 @@ import {
   normalizeInvitationModuleSettings,
   INVITATION_CUSTOM_FONT,
   INVITATION_DISCUSSION_NOTE,
+  INVITATION_ROSTER_NOTE,
 } from "@conference/shared";
+
+test("roster notes default only for missing or invalid settings and preserve explicit clearing", () => {
+  for (const value of [null, {}, { inviteeNote: null }, { inviteeNote: 123 }])
+    assert.equal(
+      normalizeInvitationModuleSettings(value).inviteeNote,
+      INVITATION_ROSTER_NOTE,
+    );
+  for (const inviteeNote of [
+    "",
+    "  ",
+    "自定义名单说明\n第二行 <b>保留纯文本</b>",
+  ]) {
+    const content = normalizeInvitationContent(createInvitationContent());
+    const module = content.modules.find((item) => item.type === "invitees")!;
+    module.settings!.inviteeNote = inviteeNote;
+    const saved = normalizeInvitationContent(
+      JSON.parse(JSON.stringify(content)),
+    );
+    assert.equal(
+      saved.modules.find((item) => item.type === "invitees")!.settings!
+        .inviteeNote,
+      inviteeNote,
+    );
+    assert.deepEqual(saved.invitees, content.invitees);
+    assert.equal(
+      applyInvitationBooklet(saved).modules.find(
+        (item) => item.type === "invitees",
+      )!.settings!.inviteeNote,
+      inviteeNote,
+    );
+  }
+  assert.equal(
+    normalizeInvitationModuleSettings({ inviteeNote: "x".repeat(3000) })
+      .inviteeNote.length,
+    2000,
+  );
+});
 
 test("discussion notes use the supplied wording only for new templates and preserve independent visibility", () => {
   const content = applyInvitationBooklet(createInvitationContent());
