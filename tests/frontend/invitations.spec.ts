@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { createRequire } from "node:module";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   createInvitationContent,
@@ -13,13 +13,978 @@ import {
   normalizeInvitationNavigation,
   type PublicInvitation,
 } from "../../packages/shared/src/invitations";
-import { applyInvitationBooklet } from "../../packages/shared/src/invitation-booklet";
+import {
+  applyInvitationBooklet,
+  INVITATION_DISCUSSION_NOTE,
+} from "../../packages/shared/src/invitation-booklet";
 const token = "a".repeat(43);
 const origin =
   process.env.INVITATION_TEST_ADMIN_ORIGIN || "http://localhost:5174";
 const artworkPath =
   process.env.INVITATION_ARTWORK_PATH ||
   "apps/admin/public/invitation-art/tide-paper.jpg";
+
+async function testFontFile() {
+  const dir = resolve(
+    dirname(
+      createRequire(resolve("services/api/package.json")).resolve(
+        "prisma/package.json",
+      ),
+    ),
+    "build/public/assets",
+  );
+  const name = (await readdir(dir)).find((name) =>
+    /^inter-latin-400-normal\..+\.woff2$/.test(name),
+  );
+  expect(name).toBeTruthy();
+  return resolve(dir, name!);
+}
+
+for (const width of [320, 390, 1440]) {
+  test(`keywords and editable discussion notes remain readable and refresh at ${width}px`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width, height: 1000 });
+    const doc = document();
+    doc.content = applyInvitationBooklet(doc.content);
+    const keywords = doc.content.modules.find(
+      (module) => module.id === "booklet-keywords",
+    )!;
+    keywords.body = [
+      { tag: "p", attrs: {}, children: [{ text: "新需求 · 新产品 · 新方案" }] },
+      { tag: "p", attrs: {}, children: [{ text: "新渠道 · 新场景 · 新合作" }] },
+    ];
+    const discussion = doc.content.modules.find(
+      (module) => module.id === "booklet-discussion",
+    )!;
+    await publicFixture(page, () => doc);
+    await page.goto(`${origin}/i/${token}`);
+    await expect(page.locator(".invitation-keywords strong")).toHaveText([
+      "新需求",
+      "新产品",
+      "新方案",
+      "新渠道",
+      "新场景",
+      "新合作",
+    ]);
+    await expect(page.locator(".keyword-number")).toHaveText([
+      "01",
+      "02",
+      "03",
+      "04",
+      "05",
+      "06",
+    ]);
+    const columns = await page
+      .locator(".invitation-keywords")
+      .evaluate(
+        (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+      );
+    expect(columns).toBe(width <= 600 ? 2 : 3);
+    await expect(page.locator(".invitation-discussion-note")).toHaveText(
+      INVITATION_DISCUSSION_NOTE,
+    );
+    await expect(page.locator(".invitation-topic")).toHaveCount(8);
+    await page
+      .locator('[data-module-id="booklet-keywords"]')
+      .evaluate((el) => el.scrollIntoView({ block: "start" }));
+    await page.evaluate(() => window.scrollBy(0, -70));
+    await page.screenshot({
+      path: `output/playwright/invitation-keywords-${width}.png`,
+    });
+    await page
+      .locator('[data-module-id="booklet-discussion"]')
+      .evaluate((el) => el.scrollIntoView({ block: "start" }));
+    await page.evaluate(() => window.scrollBy(0, -70));
+    await page.screenshot({
+      path: `output/playwright/invitation-discussion-${width}.png`,
+    });
+    discussion.settings!.showNote = false;
+    doc.revision++;
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.locator(".invitation-discussion-note")).toHaveCount(0);
+    discussion.settings!.note = "我修改的备注\n<script>这里只是文字</script>";
+    discussion.settings!.showNote = true;
+    keywords.settings!.textPresentation = "prose";
+    doc.revision++;
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.locator(".invitation-discussion-note")).toHaveText(
+      discussion.settings!.note,
+    );
+    await expect(
+      page.locator(".invitation-discussion-note script"),
+    ).toHaveCount(0);
+    await expect(page.locator(".invitation-keywords")).toHaveCount(0);
+    await expect(
+      page.locator('[data-module-id="booklet-keywords"]'),
+    ).toContainText("新需求 · 新产品 · 新方案");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}
+for (const width of [390, 1440]) {
+  test(`keyword presentation and discussion note controls save without changing topics at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const doc = document();
+    doc.content = applyInvitationBooklet(doc.content);
+    const campaign = await adminFixture(page, ["*"], doc);
+    const topics = structuredClone(
+      campaign.draft.modules.find(
+        (module) => module.id === "booklet-discussion",
+      )!.items,
+    );
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /会议关键词/ })
+      .first()
+      .click();
+    await page.getByRole("tab", { name: "样式", exact: true }).click();
+    await page
+      .locator(".module-style-editor")
+      .getByText("正文", { exact: true })
+      .click();
+    await expect(
+      page.locator(".module-live-preview .invitation-keywords"),
+    ).toHaveCount(0);
+    await page
+      .getByRole("button", { name: /小组讨论话题/ })
+      .first()
+      .click();
+    await page
+      .getByRole("textbox", { name: "讨论备注", exact: true })
+      .fill("会务已确认的自定义备注\n第二段说明");
+    await page.locator(".extra-module-editor .el-switch").click();
+    await expect(
+      page.locator(".module-live-preview .invitation-discussion-note"),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    const saved = campaign.draft.modules.find(
+      (module) => module.id === "booklet-discussion",
+    )!;
+    expect(saved.settings).toMatchObject({
+      note: "会务已确认的自定义备注\n第二段说明",
+      showNote: false,
+    });
+    expect(saved.items).toEqual(topics);
+    expect(
+      campaign.draft.modules.find((module) => module.id === "booklet-keywords")!
+        .settings!.textPresentation,
+    ).toBe("prose");
+    await page.reload();
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /小组讨论话题/ })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("textbox", { name: "讨论备注", exact: true }),
+    ).toHaveValue(saved.settings!.note);
+    await page
+      .getByRole("button", { name: "使用共创说明", exact: true })
+      .click();
+    await expect(
+      page.getByRole("textbox", { name: "讨论备注", exact: true }),
+    ).toHaveValue(INVITATION_DISCUSSION_NOTE);
+    await page.locator(".extra-module-editor .el-switch").click();
+    await expect(
+      page.locator(".module-live-preview .invitation-discussion-note"),
+    ).toHaveText(INVITATION_DISCUSSION_NOTE);
+    await page.screenshot({
+      path: `output/playwright/invitation-discussion-controls-${width}.png`,
+      fullPage: true,
+    });
+  });
+}
+
+for (const width of [390, 1440]) {
+  test(`batch invitations preview, retry idempotently and export at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const doc = document();
+    doc.content.invitees = [
+      { id: "a", name: "同名", organization: "甲机构" },
+      { id: "b", name: "同名", organization: "乙机构" },
+    ];
+    await adminFixture(page, ["invitation:view", "invitation:write"], doc);
+    const requests: Array<{
+      requestKey: string;
+      recipients: Array<{
+        name: string;
+        salutation: string;
+        publicInviteeId?: string;
+      }>;
+    }> = [];
+    await page.route(
+      "**/api/admin/invitations/campaigns/campaign/recipients/batch",
+      async (route) => {
+        const body = route.request().postDataJSON();
+        requests.push(body);
+        if (requests.length === 1)
+          return route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ message: "连接中断，请重试" }),
+          });
+        await ok(route, {
+          created: 2,
+          reused: 0,
+          items: body.recipients.map((row: any, index: number) => ({
+            ...row,
+            id: `batch-${index}`,
+            shareUrl: `https://guanchaohuiji.com/i/${String(index).repeat(43)}`,
+            reused: false,
+          })),
+        });
+      },
+    );
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("button", { name: "批量生成", exact: true }).click();
+    const dialog = page.getByRole("dialog", {
+      name: "批量生成邀请函",
+      exact: true,
+    });
+    await dialog
+      .getByRole("textbox", { name: "批量受邀人名单" })
+      .fill(
+        "姓名\t单位\t称谓\t手机号\n同名\t甲机构\t老师\t13800000000\n同名\t乙机构\t先生\t13900000000\n同名\t甲机构\t老师\t13800000000",
+      );
+    await dialog.getByRole("button", { name: "预览名单", exact: true }).click();
+    await expect(dialog.locator(".batch-summary")).toContainText("2 位受邀人");
+    await expect(dialog.locator(".batch-summary")).toContainText(
+      "1 条完全重复",
+    );
+    await expect(
+      dialog.locator(".batch-preview .el-select").first(),
+    ).toContainText("甲机构 · 未填写职务");
+    await dialog
+      .getByRole("button", { name: "生成 2 份邀请函", exact: true })
+      .click();
+    await expect(dialog).toContainText("连接中断，请重试");
+    expect(requests[0].requestKey).toMatch(/^[a-f0-9]{64}$/);
+    expect(requests[0].recipients).toEqual([
+      { name: "同名", salutation: "老师", publicInviteeId: "a" },
+      { name: "同名", salutation: "先生", publicInviteeId: "b" },
+    ]);
+    expect(JSON.stringify(requests)).not.toMatch(/13800000000|13900000000/);
+    await dialog
+      .getByRole("button", { name: "重试同一批次", exact: true })
+      .click();
+    await expect(dialog).toContainText("2 份邀请已就绪");
+    expect(requests[1]).toEqual(requests[0]);
+    await expect(dialog.locator(".batch-results a")).toHaveCount(2);
+    const downloadPromise = page.waitForEvent("download");
+    await dialog
+      .getByRole("button", { name: "导出链接表格", exact: true })
+      .click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe("专属邀请链接.csv");
+    const csv = await readFile((await download.path())!, "utf8");
+    expect(csv).toContain("同名");
+    expect(csv).toContain("guanchaohuiji.com/i/");
+    await page.screenshot({
+      path: `output/playwright/invitation-batch-results-${width}.png`,
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}
+test("batch CSV upload requires manual confirmation for ambiguous names and blocks invalid rows", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 1000 });
+  const doc = document();
+  doc.content.invitees = [
+    { id: "a", name: "同名", organization: "甲机构" },
+    { id: "b", name: "同名", organization: "乙机构" },
+  ];
+  await adminFixture(page, ["*"], doc);
+  await page.goto(`${origin}/#/invitations`);
+  await page.getByRole("button", { name: "批量生成", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "批量生成邀请函" });
+  await dialog.getByRole("tab", { name: "上传表格", exact: true }).click();
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: "名单.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("姓名,单位\n同名,\n,问题行"),
+  });
+  await expect(dialog.locator(".batch-summary")).toContainText("2 位受邀人");
+  const submit = dialog.getByRole("button", {
+    name: "生成 2 份邀请函",
+    exact: true,
+  });
+  await expect(submit).toBeDisabled();
+  await dialog.getByRole("button", { name: "移除第3行", exact: true }).click();
+  await expect(
+    dialog.getByRole("button", { name: "生成 1 份邀请函", exact: true }),
+  ).toBeDisabled();
+  await dialog.locator(".batch-preview .el-select").click();
+  await page
+    .getByRole("option", { name: "乙机构 · 未填写职务", exact: true })
+    .click();
+  await expect(
+    page.getByRole("option", { name: "乙机构 · 未填写职务", exact: true }),
+  ).toBeHidden();
+  await expect(
+    dialog.getByRole("button", { name: "生成 1 份邀请函", exact: true }),
+  ).toBeEnabled();
+  await page.screenshot({
+    path: "output/playwright/invitation-batch-upload-390.png",
+    fullPage: true,
+  });
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: "bad.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("not a spreadsheet"),
+  });
+  await expect(dialog).toContainText("请选择 5MB 以内");
+});
+test("batch public roster selection generates bound recipients with a custom default salutation", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 1000 });
+  const doc = document();
+  doc.content.invitees = doc.content.invitees.slice(0, 2);
+  await adminFixture(page, ["*"], doc);
+  let submitted: any;
+  await page.route(
+    "**/api/admin/invitations/campaigns/campaign/recipients/batch",
+    async (route) => {
+      submitted = route.request().postDataJSON();
+      await ok(route, {
+        created: 0,
+        reused: 2,
+        items: submitted.recipients.map((row: any, index: number) => ({
+          ...row,
+          id: `batch-${index}`,
+          shareUrl: `https://guanchaohuiji.com/i/${String(index).repeat(43)}`,
+          reused: true,
+        })),
+      });
+    },
+  );
+  await page.goto(`${origin}/#/invitations`);
+  await page.getByRole("button", { name: "批量生成", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "批量生成邀请函" });
+  await dialog.getByRole("tab", { name: "公开名单", exact: true }).click();
+  await dialog.getByRole("button", { name: "全选", exact: true }).click();
+  await dialog.getByRole("button", { name: "预览名单", exact: true }).click();
+  await dialog.getByRole("textbox", { name: "批量默认称谓" }).fill("嘉宾");
+  await dialog
+    .getByRole("button", { name: "生成 2 份邀请函", exact: true })
+    .click();
+  await expect(dialog).toContainText("复用已有 2 份");
+  expect(submitted.recipients).toEqual(
+    doc.content.invitees.map((person) => ({
+      name: person.name,
+      salutation: "嘉宾",
+      publicInviteeId: person.id,
+    })),
+  );
+});
+test("batch generation is unavailable without write permission or before publication", async ({
+  page,
+}) => {
+  const campaign = await adminFixture(page, ["invitation:view"]);
+  await page.goto(`${origin}/#/invitations`);
+  await expect(
+    page.getByRole("button", { name: "批量生成", exact: true }),
+  ).toHaveCount(0);
+  await page.route("**/api/admin/auth/me", (route) =>
+    ok(route, {
+      admin: {
+        id: "admin",
+        username: "operator",
+        permissions: ["invitation:view", "invitation:write"],
+      },
+    }),
+  );
+  campaign.publishedRevision = 0;
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "批量生成", exact: true }),
+  ).toBeDisabled();
+});
+
+for (const width of [390, 1440]) {
+  test(`agenda style controls save, preview and reset independently at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const doc = document();
+    const module = doc.content.modules.find((item) => item.type === "agenda")!;
+    module.settings = { ...module.settings!, fit: "cover" };
+    module.style = {
+      ...module.style!,
+      textColor: "#123456",
+      spacing: "spacious",
+    };
+    const before = normalizeInvitationContent(doc.content);
+    const campaign = await adminFixture(page, ["*"], doc);
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /会议议程/ })
+      .first()
+      .click();
+    await page.getByRole("tab", { name: "样式", exact: true }).click();
+    const controls = page.locator(".module-style-editor");
+    for (const [name, value] of [
+      ["议程标题字号", "12"],
+      ["时间与嘉宾字号", "11"],
+      ["议程行距", "1.4"],
+    ]) {
+      await controls.getByRole("spinbutton", { name, exact: true }).fill(value);
+      await controls
+        .getByRole("spinbutton", { name, exact: true })
+        .press("Tab");
+    }
+    await controls.locator(".el-select").click();
+    await page.getByRole("option", { name: "常规", exact: true }).click();
+    await controls.getByRole("slider", { name: "议程条目间距" }).focus();
+    await controls
+      .getByRole("slider", { name: "议程条目间距" })
+      .press("ArrowLeft");
+    await controls.getByText("连续展示", { exact: true }).click();
+    const preview = page.locator(".module-live-preview");
+    await expect(
+      preview.locator(".invitation-agenda__row h3").first(),
+    ).toHaveCSS("font-size", "12px");
+    await expect(
+      preview.locator(".invitation-agenda__row h3").first(),
+    ).toHaveCSS("font-weight", "400");
+    await expect(
+      preview.locator(".invitation-agenda__row time").first(),
+    ).toHaveCSS("font-size", "11px");
+    await expect(preview.locator(".invitation-agenda__row").first()).toHaveCSS(
+      "padding-top",
+      "16px",
+    );
+    await expect(preview.locator(".invitation-agenda__row")).toHaveCount(2);
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    expect(
+      campaign.draft.modules.find((item) => item.type === "agenda")!.settings,
+    ).toMatchObject({
+      agendaTitleSize: 12,
+      agendaMetaSize: 11,
+      agendaLineHeight: 1.4,
+      agendaWeight: 400,
+      agendaPadding: 16,
+      agendaLayout: "continuous",
+      fit: "cover",
+    });
+    expect(campaign.draft.agenda).toEqual(before.agenda);
+    expect(campaign.draft.design).toEqual(before.design);
+    expect(
+      campaign.draft.modules.filter((item) => item.type !== "agenda"),
+    ).toEqual(before.modules.filter((item) => item.type !== "agenda"));
+    await expect(page.locator(".el-message")).toHaveCount(0);
+    await page.screenshot({
+      path: `output/playwright/invitation-agenda-controls-${width}.png`,
+      fullPage: true,
+    });
+    await page.reload();
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /会议议程/ })
+      .first()
+      .click();
+    await page.getByRole("tab", { name: "样式", exact: true }).click();
+    await expect(
+      controls.getByRole("spinbutton", { name: "议程标题字号", exact: true }),
+    ).toHaveValue("12");
+    await controls
+      .getByRole("button", { name: "恢复主题样式", exact: true })
+      .click();
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    const reset = campaign.draft.modules.find(
+      (item) => item.type === "agenda",
+    )!;
+    expect(reset.settings).toMatchObject({
+      agendaTitleSize: 14,
+      agendaMetaSize: 12,
+      agendaLayout: "auto",
+      fit: "cover",
+    });
+    expect(reset.style!.textColor).toBe("");
+    expect(reset.style!.spacing).toBe("comfortable");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+  for (const preset of ["tide", "booklet"] as const) {
+    test(`agenda typography overrides responsive defaults and refreshes at ${width}px in ${preset}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const doc = document();
+      if (preset === "booklet")
+        doc.content = applyInvitationBooklet(doc.content);
+      doc.content.agenda[0].speaker = "示例分享嘉宾";
+      const module = doc.content.modules.find(
+        (item) => item.type === "agenda",
+      )!;
+      await publicFixture(page, () => doc);
+      await page.goto(`${origin}/i/${token}`);
+      const title = page.locator(".invitation-agenda__row h3").first();
+      const otherTitle = page
+        .locator(".invitation-section__heading h2")
+        .first();
+      const originalSize = await otherTitle.evaluate(
+        (el) => getComputedStyle(el).fontSize,
+      );
+      await expect(title).toHaveCSS("font-size", "14px");
+      await expect(
+        page.locator(".invitation-agenda__row time").first(),
+      ).toHaveCSS("font-size", "12px");
+      module.settings = {
+        ...module.settings!,
+        agendaTitleSize: 20,
+        agendaMetaSize: 15,
+        agendaLineHeight: 1.4,
+        agendaWeight: 400,
+        agendaPadding: 10,
+        agendaLayout: "tabs",
+      };
+      module.style = {
+        ...module.style!,
+        textColor: "#123456",
+        accentColor: "#287b70",
+      };
+      doc.revision++;
+      await page.evaluate(() => window.dispatchEvent(new Event("online")));
+      await expect(title).toHaveCSS("font-size", "20px");
+      await expect(title).toHaveCSS("line-height", "28px");
+      await expect(title).toHaveCSS("font-weight", "400");
+      await expect(page.locator(".invitation-agenda__row p").first()).toHaveCSS(
+        "font-size",
+        "15px",
+      );
+      await expect(page.locator(".invitation-agenda__row p").first()).toHaveCSS(
+        "color",
+        "rgb(18, 52, 86)",
+      );
+      await expect(
+        page.locator(".invitation-agenda__row time").first(),
+      ).toHaveCSS("color", "rgb(40, 123, 112)");
+      await expect(page.locator(".invitation-agenda__row").first()).toHaveCSS(
+        "padding-top",
+        "10px",
+      );
+      await expect(
+        page.getByRole("tablist", { name: "议程日期" }),
+      ).toBeVisible();
+      await page
+        .getByRole("tab", { name: doc.content.agenda[1].date, exact: true })
+        .click();
+      await expect(page.locator(".invitation-agenda")).toContainText(
+        doc.content.agenda[1].title,
+      );
+      module.settings.agendaTitleSize = 12;
+      module.settings.agendaMetaSize = 11;
+      module.settings.agendaLayout = "continuous";
+      doc.revision++;
+      await page.evaluate(() => window.dispatchEvent(new Event("online")));
+      await expect(title).toHaveCSS("font-size", "12px");
+      await expect(page.locator(".invitation-agenda__row")).toHaveCount(
+        doc.content.agenda.length,
+      );
+      await expect(page.getByRole("tablist", { name: "议程日期" })).toHaveCount(
+        0,
+      );
+      await expect(otherTitle).toHaveCSS("font-size", originalSize);
+      await expect(page.locator(".invitation-hero__recipient")).toContainText(
+        "受邀嘉宾",
+      );
+      await page.locator("#invitation-agenda").screenshot({
+        path: `output/playwright/invitation-agenda-${preset}-${width}.png`,
+      });
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+    });
+  }
+}
+
+for (const width of [390, 1440]) {
+  test(`font upload, library, cover and rich text controls work at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const doc = document();
+    doc.content.cover = {
+      ...doc.content.cover,
+      mode: "artwork",
+      layers: [createInvitationLayer("name")],
+    };
+    const campaign = await adminFixture(page, ["*"], doc);
+    const fontPath = await testFontFile();
+    const asset = {
+      id: "font",
+      name: "测试上传字体.woff2",
+      url: "/uploads/test-font.woff2",
+      fileType: "font/woff2",
+      sizeBytes: 1000,
+    };
+    let uploads = 0,
+      listed = false;
+    const failures: string[] = [];
+    page.on("pageerror", (error) => failures.push(error.message));
+    await page.route("**/uploads/test-font.woff2", (route) =>
+      route.fulfill({
+        path: fontPath,
+        contentType: "font/woff2",
+        headers: { "access-control-allow-origin": "*" },
+      }),
+    );
+    await page.route(
+      "**/api/admin/invitations/campaigns/campaign/assets*",
+      async (route) => {
+        if (route.request().method() === "POST") {
+          uploads++;
+          expect(route.request().headers()["content-type"]).toContain(
+            "multipart/form-data",
+          );
+          await ok(route, asset);
+        } else {
+          listed = true;
+          expect(new URL(route.request().url()).searchParams.get("kind")).toBe(
+            "font",
+          );
+          await ok(route, { items: [asset], total: 1 });
+        }
+      },
+    );
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "视觉与分享", exact: true }).click();
+    await page.getByRole("tab", { name: "字体与字号", exact: true }).click();
+    await page
+      .getByRole("button", { name: "上传 / 选择字体", exact: true })
+      .click();
+    const fonts = page.locator(".invitation-font-editor");
+    await expect(
+      fonts.getByRole("button", { name: "上传", exact: true }),
+    ).toBeDisabled();
+    await fonts
+      .getByText("我已取得此字体的网页使用授权", { exact: true })
+      .click();
+    await expect(
+      fonts.getByRole("checkbox", { name: "我已取得此字体的网页使用授权" }),
+    ).toBeChecked();
+    await fonts.locator('input[type="file"]').setInputFiles({
+      name: "不支持.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("not a font"),
+    });
+    await expect(page.getByText(/请选择 5MB 以内/)).toBeVisible();
+    expect(uploads).toBe(0);
+    await fonts.locator('input[type="file"]').setInputFiles({
+      name: asset.name,
+      mimeType: "font/woff2",
+      buffer: await readFile(fontPath),
+    });
+    await expect(fonts.getByRole("textbox", { name: "字体名称" })).toHaveValue(
+      asset.name,
+    );
+    await expect(fonts.locator(".font-specimen strong")).toHaveCSS(
+      "font-family",
+      /InvitationFont/,
+    );
+    await expect(
+      fonts.getByRole("switch", { name: "一键统一全部字体" }),
+    ).toBeChecked();
+    expect(uploads).toBe(1);
+    await fonts.getByRole("button", { name: "素材库", exact: true }).click();
+    await page
+      .getByRole("button", { name: `选择素材 ${asset.name}`, exact: true })
+      .click();
+    expect(listed).toBe(true);
+    await fonts.locator(".font-unify .el-switch").click();
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    expect(campaign.draft.design).toMatchObject({
+      font: "custom",
+      fontUrl: asset.url,
+      fontName: asset.name,
+      replaceAllFonts: false,
+    });
+    await expect(
+      fonts.getByRole("button", { name: "上传", exact: true }),
+    ).toBeEnabled();
+    await expect(page.locator(".el-message")).toHaveCount(0);
+    await page.screenshot({
+      path: `output/playwright/invitation-font-controls-${width}.png`,
+      fullPage: true,
+    });
+    await page.getByRole("tab", { name: "封面设计", exact: true }).click();
+    await page
+      .locator(".el-select")
+      .filter({
+        has: page.getByRole("combobox", { name: "文字字体", exact: true }),
+      })
+      .click();
+    await page.getByRole("option", { name: asset.name, exact: true }).click();
+    await expect(
+      page.locator('.cover-stage-paper [data-layer-id="name"]'),
+    ).toHaveCSS("font-family", /InvitationFont/);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    const editor = page.locator(
+      ".invitation-rich-canvas [contenteditable=true]",
+    );
+    await editor.click();
+    await editor.press("Meta+a");
+    await page
+      .locator('.invitation-rich-toolbar [data-menu-key="fontFamily"]')
+      .click();
+    await page.getByText(asset.name, { exact: true }).click();
+    await expect
+      .poll(() => editor.innerHTML())
+      .toContain("var(--invite-custom-font)");
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    expect(campaign.draft.cover.layers[0].font).toBe("custom");
+    expect(JSON.stringify(campaign.draft.modules[0].body)).toContain(
+      "var(--invite-custom-font)",
+    );
+    await page.reload();
+    await page.getByRole("tab", { name: "视觉与分享", exact: true }).click();
+    await page.getByRole("tab", { name: "字体与字号", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "字体名称" })).toHaveValue(
+      asset.name,
+    );
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await expect
+      .poll(() => editor.innerHTML())
+      .toContain("var(--invite-custom-font)");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    expect(failures).toEqual([]);
+  });
+}
+
+test("organization layout controls save columns, size and name visibility", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 1000 });
+  const doc = document();
+  doc.content = applyInvitationBooklet(doc.content);
+  const campaign = await adminFixture(page, ["*"], doc);
+  await page.goto(`${origin}/#/invitations`);
+  await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+  await page
+    .getByRole("button", { name: /组织架构/ })
+    .first()
+    .click();
+  await page.locator(".organization-display-fields .el-select").click();
+  await page.getByRole("option", { name: "4 个", exact: true }).click();
+  const slider = page.locator(".organization-display-fields [role=slider]");
+  await slider.focus();
+  await slider.press("ArrowRight");
+  await page.locator(".organization-display-fields .el-switch").click();
+  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+  await expect(page.locator(".invite-editor-toolbar")).toContainText(
+    "草稿已保存",
+  );
+  const settings = campaign.draft.modules.find(
+    (module) => module.type === "organizations",
+  )!.settings!;
+  expect(settings).toMatchObject({
+    layout: "grid",
+    logoColumns: 4,
+    logoHeight: 60,
+    showOrganizationNames: false,
+  });
+  await page.screenshot({
+    path: "output/playwright/invitation-organization-controls-390.png",
+    fullPage: true,
+  });
+});
+
+for (const width of [320, 390, 1440]) {
+  test(`organization logos use equal slots and responsive rows at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const doc = document();
+    doc.content = applyInvitationBooklet(doc.content);
+    const org = doc.content.modules.find(
+      (module) => module.type === "organizations",
+    )!;
+    org.settings = { ...org.settings!, logoColumns: 4, logoHeight: 64 };
+    org.items = [
+      "booklet-cover.png",
+      "booklet-waves.png",
+      "booklet-pattern.jpg",
+      "jade-paper.jpg",
+    ].map((name, index) => ({
+      id: `logo-${index}`,
+      title: "联合主办",
+      description:
+        index === 0
+          ? "名称较长的示例主办单位名称需要完整换行"
+          : `示例单位${index}`,
+      imageUrl: `/invitation-art/${name}`,
+      href: index === 0 ? "https://example.com" : "",
+      icon: "link",
+      body: [],
+    }));
+    org.items.push({
+      id: "text-only",
+      title: "联合主办",
+      description: "纯文字单位",
+      imageUrl: "",
+      href: "",
+      icon: "link",
+      body: [],
+    });
+    await publicFixture(page, () => doc);
+    await page.goto(`${origin}/i/${token}`);
+    const group = page.locator(".invitation-organization-list");
+    await group.scrollIntoViewIfNeeded();
+    await expect(group.locator("dt")).toHaveText(["联合主办"]);
+    await expect(group.locator(".organization-identity img")).toHaveCount(4);
+    await expect
+      .poll(() =>
+        group
+          .locator("img")
+          .evaluateAll((images) =>
+            images.every(
+              (image) => (image as HTMLImageElement).naturalWidth > 0,
+            ),
+          ),
+      )
+      .toBe(true);
+    const boxes = await group.locator("img").evaluateAll((images) =>
+      images.map((image) => {
+        const r = image.getBoundingClientRect();
+        return {
+          width: r.width,
+          height: r.height,
+          y: r.y,
+          fit: getComputedStyle(image).objectFit,
+          cssHeight: getComputedStyle(image).height,
+        };
+      }),
+    );
+    expect(
+      boxes.every(
+        (box) =>
+          box.cssHeight === "64px" &&
+          Math.abs(box.height - 64) < 0.1 &&
+          box.fit === "contain",
+      ),
+    ).toBe(true);
+    expect(new Set(boxes.map((box) => Math.round(box.width))).size).toBe(1);
+    expect(boxes[0].y).toBeCloseTo(boxes[1].y, 0);
+    if (width < 600) expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
+    else
+      expect(boxes.every((box) => Math.abs(box.y - boxes[0].y) < 1)).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await group.screenshot({
+      path: `output/playwright/invitation-organization-logos-${width}.png`,
+    });
+    org.settings!.showOrganizationNames = false;
+    doc.revision++;
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(group.getByText("示例单位1", { exact: true })).toHaveCount(0);
+    await expect(group.getByText("纯文字单位", { exact: true })).toBeVisible();
+    org.settings!.layout = "list";
+    org.settings!.logoHeight = 80;
+    doc.revision++;
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(group).toHaveClass(/organization-layout-list/);
+    await expect(group.locator("img").first()).toHaveCSS("height", "80px");
+  });
+}
+
+test("custom cover and inline fonts remain independent of the page font and refit after loading", async ({
+  page,
+}) => {
+  const doc = document();
+  doc.content.cover = {
+    ...doc.content.cover,
+    mode: "artwork",
+    layers: [{ ...createInvitationLayer("name"), font: "custom" }],
+  };
+  doc.content.design = {
+    ...doc.content.design!,
+    font: "serif",
+    fontUrl: "/uploads/test-font.woff2",
+    replaceAllFonts: false,
+  };
+  doc.content.modules[0].body = [
+    {
+      tag: "p",
+      attrs: {},
+      children: [
+        {
+          tag: "span",
+          attrs: { style: "font-family:var(--invite-custom-font)" },
+          children: [{ text: "自定义字体正文" }],
+        },
+      ],
+    },
+  ];
+  await publicFixture(page, () => doc);
+  await page.route("**/uploads/test-font.woff2", async (route) =>
+    route.fulfill({ path: await testFontFile(), contentType: "font/woff2" }),
+  );
+  await page.goto(`${origin}/i/${token}`);
+  await expect(page.locator('[data-layer-id="name"]')).toHaveCSS(
+    "font-family",
+    /InvitationFont/,
+  );
+  await expect(page.getByText("自定义字体正文", { exact: true })).toHaveCSS(
+    "font-family",
+    /InvitationFont/,
+  );
+  await expect(page.locator(".invitation-document")).not.toHaveClass(
+    /invitation-unified-font/,
+  );
+  const fits = await page.locator('[data-layer-id="name"]').evaluate((el) => {
+    const span = el.firstElementChild!;
+    return (
+      span.scrollWidth <= el.clientWidth + 1 &&
+      span.scrollHeight <= el.clientHeight + 1
+    );
+  });
+  expect(fits).toBe(true);
+});
 
 for (const width of [320, 390, 1440])
   test(`booklet template renders nine readable chapters and live data at ${width}px`, async ({
@@ -111,12 +1076,10 @@ for (const width of [320, 390, 1440])
       path: `output/playwright/invitation-booklet-first-screen-${width}.png`,
       animations: "disabled",
     });
-    await page
-      .locator(".invitation-topic-list")
-      .screenshot({
-        path: `output/playwright/invitation-booklet-topics-${width}.png`,
-        animations: "disabled",
-      });
+    await page.locator(".invitation-topic-list").screenshot({
+      path: `output/playwright/invitation-booklet-topics-${width}.png`,
+      animations: "disabled",
+    });
     await page.getByRole("button", { name: "查看我的位置" }).click();
     await expect(page.locator('[data-roster-id="p24"]')).toBeFocused();
     doc.content.title = "后台更新后同步的会议名称";

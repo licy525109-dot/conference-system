@@ -7,6 +7,7 @@ export const INVITATION_FONTS = {
   kai: { label: "楷体", family: '"Kaiti SC", "STKaiti", "KaiTi", serif' },
 } as const;
 export type InvitationFont = keyof typeof INVITATION_FONTS;
+export const INVITATION_CUSTOM_FONT = "var(--invite-custom-font)";
 export interface InvitationTextLayer {
   id: string;
   label: string;
@@ -17,7 +18,7 @@ export interface InvitationTextLayer {
   width: number;
   height: number;
   fontSize: number;
-  font: InvitationFont;
+  font: InvitationFont | "custom";
   color: string;
   bold: boolean;
   italic: boolean;
@@ -103,6 +104,18 @@ export interface InvitationModuleSettings {
   ratio: "16/9" | "4/3" | "1/1" | "3/4";
   fit: "contain" | "cover";
   layout: "grid" | "list";
+  logoColumns: number;
+  logoHeight: number;
+  showOrganizationNames: boolean;
+  agendaTitleSize: number;
+  agendaMetaSize: number;
+  agendaLineHeight: number;
+  agendaWeight: number;
+  agendaPadding: number;
+  agendaLayout: "auto" | "tabs" | "continuous";
+  textPresentation: "auto" | "prose" | "keywords";
+  note: string;
+  showNote: boolean;
   latitude: number | null;
   longitude: number | null;
   zoom: number;
@@ -226,6 +239,24 @@ export function normalizeInvitationModuleSettings(
         : "16/9",
     fit: s.fit === "cover" ? "cover" : "contain",
     layout: s.layout === "list" ? "list" : "grid",
+    logoColumns: Math.round(num(s.logoColumns, 3, 2, 4)),
+    logoHeight: Math.round(num(s.logoHeight, 56, 32, 96)),
+    showOrganizationNames: s.showOrganizationNames !== false,
+    agendaTitleSize: Math.round(num(s.agendaTitleSize, 14, 12, 24)),
+    agendaMetaSize: Math.round(num(s.agendaMetaSize, 12, 10, 18)),
+    agendaLineHeight: num(s.agendaLineHeight, 1.7, 1.2, 2.2),
+    agendaWeight: Math.round(num(s.agendaWeight, 600, 400, 700) / 100) * 100,
+    agendaPadding: Math.round(num(s.agendaPadding, 18, 8, 28)),
+    agendaLayout:
+      s.agendaLayout === "tabs" || s.agendaLayout === "continuous"
+        ? s.agendaLayout
+        : "auto",
+    textPresentation:
+      s.textPresentation === "prose" || s.textPresentation === "keywords"
+        ? s.textPresentation
+        : "auto",
+    note: str(s.note, 2000),
+    showNote: s.showNote !== false,
     latitude:
       typeof s.latitude === "number" &&
       Number.isFinite(s.latitude) &&
@@ -359,7 +390,10 @@ export function normalizeInvitationCover(value: unknown): InvitationCover {
           x: num(a.x, d.x, 0, 100 - width),
           y: num(a.y, d.y, 0, 100 - height),
           fontSize: num(a.fontSize, 52, 12, 240),
-          font: a.font === "sans" || a.font === "kai" ? a.font : "serif",
+          font:
+            a.font === "sans" || a.font === "kai" || a.font === "custom"
+              ? a.font
+              : "serif",
           color: /^#[a-f0-9]{6}$/i.test(str(a.color)) ? str(a.color) : d.color,
           bold: a.bold === true,
           italic: a.italic === true,
@@ -480,11 +514,13 @@ export function invitationRichStyle(key: string, v: string): string {
     return `${Math.max(10, Math.min(72, parseFloat(v)))}px`;
   if (key === "font-family")
     return (
+      (v === INVITATION_CUSTOM_FONT ? v : "") ||
       Object.values(INVITATION_FONTS).find(
         (font) =>
           font.family.replace(/["'\s]/g, "").toLowerCase() ===
           v.replace(/["'\s]/g, "").toLowerCase(),
-      )?.family || ""
+      )?.family ||
+      ""
     );
   if (
     key === "text-align" &&

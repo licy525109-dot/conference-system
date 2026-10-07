@@ -113,6 +113,31 @@ export const createInvitationRecipient = (
       body: JSON.stringify({ name, salutation, publicInviteeId }),
     },
   );
+export interface InvitationBatchRecipient {
+  name: string;
+  salutation: string;
+  publicInviteeId?: string;
+}
+export interface InvitationBatchResult {
+  created: number;
+  reused: number;
+  items: Array<{
+    id: string;
+    name: string;
+    salutation: string;
+    shareUrl: string;
+    reused: boolean;
+  }>;
+}
+export const createInvitationBatch = (
+  id: string,
+  requestKey: string,
+  recipients: InvitationBatchRecipient[],
+) =>
+  apiRequest<InvitationBatchResult>(
+    `${base}/campaigns/${encodeURIComponent(id)}/recipients/batch`,
+    { method: "POST", body: JSON.stringify({ requestKey, recipients }) },
+  );
 export const updateInvitationRecipient = (
   id: string,
   body: {

@@ -6,11 +6,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { AuditAction, Prisma } from "@prisma/client";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   createInvitationContent,
   normalizeInvitationContent,
   matchInvitationInvitee,
+  invitationNameKey,
   applyInvitationPreset,
   normalizeInvitationRegistration,
   invitationRegistrationUrl,
@@ -386,6 +387,162 @@ export class InvitationsService {
       return item;
     });
     return ok({ id: invitation.id, shareUrl: invitationUrl(invitation.token) });
+  }
+  async createBatch(id: string, input: unknown, admin: CurrentAdmin) {
+    const campaign = await this.requireCampaign(id, admin);
+    if (!campaign.publishedRevision)
+      throw new ConflictException("请先发布会议邀请内容，再生成专属邀请函");
+    const body = readObject(input);
+    if (
+      typeof body.requestKey !== "string" ||
+      !/^[a-f0-9]{64}$/.test(body.requestKey)
+    )
+      throw new BadRequestException("批次标识不正确");
+    if (
+      !Array.isArray(body.recipients) ||
+      !body.recipients.length ||
+      body.recipients.length > 200
+    )
+      throw new BadRequestException("每批请选择 1–200 位受邀人");
+    const seen = new Set<string>();
+    const rows = body.recipients.map((input, index) => {
+      const row = readObject(input);
+      const name = boundedText(row.name, `第 ${index + 1} 行姓名`, 80);
+      const salutation = boundedText(
+        row.salutation ?? "老师",
+        `第 ${index + 1} 行称谓`,
+        40,
+        false,
+      );
+      if (/[\u0000-\u001f\u007f]/.test(name + salutation))
+        throw new BadRequestException(`第 ${index + 1} 行含有控制字符`);
+      const publicInviteeId = this.rosterBinding(
+        campaign.publishedJson,
+        name,
+        row.publicInviteeId,
+      );
+      const identity = JSON.stringify([
+        invitationNameKey(name),
+        publicInviteeId,
+      ]);
+      if (seen.has(identity))
+        throw new BadRequestException(
+          `第 ${index + 1} 行受邀人重复，请保留一条`,
+        );
+      seen.add(identity);
+      // A random client batch key makes retry tokens stable without storing a separate batch table.
+      const token = createHash("sha256")
+        .update(
+          JSON.stringify([
+            "invitation-batch",
+            id,
+            admin.id,
+            body.requestKey,
+            index,
+          ]),
+        )
+        .digest("base64url");
+      return {
+        campaignId: id,
+        createdBy: admin.id,
+        name,
+        salutation,
+        publicInviteeId,
+        token,
+      };
+    });
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        // Serialize this operator's batches so repeated imports can reuse existing invitations.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`invitation-batch:${id}:${admin.id}`}))`;
+        const current = await tx.invitationCampaign.findFirst({
+          where: { id, ...invitationCampaignScope(admin) },
+        });
+        if (!current) throw new NotFoundException("会议邀请函不存在或无权访问");
+        if (current.publishedRevision !== campaign.publishedRevision)
+          throw new ConflictException("会议内容已更新，请刷新后重新确认受邀人");
+        const existing = await tx.conferenceInvitation.findMany({
+          where: {
+            campaignId: id,
+            createdBy: admin.id,
+            OR: [
+              { token: { in: rows.map((row) => row.token) } },
+              ...rows.map(({ name, salutation, publicInviteeId }) => ({
+                name,
+                salutation,
+                publicInviteeId,
+                enabled: true,
+              })),
+            ],
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        });
+        const reused = new Map<number, (typeof existing)[number]>();
+        const incoming: typeof rows = [];
+        rows.forEach((row, index) => {
+          const retry = existing.find((item) => item.token === row.token);
+          if (
+            retry &&
+            (!retry.enabled ||
+              retry.name !== row.name ||
+              retry.salutation !== row.salutation ||
+              retry.publicInviteeId !== row.publicInviteeId)
+          )
+            throw new ConflictException(
+              `第 ${index + 1} 行对应邀请已修改或停用，请重新准备批次`,
+            );
+          const prior =
+            retry ||
+            existing.find(
+              (item) =>
+                item.enabled &&
+                item.name === row.name &&
+                item.salutation === row.salutation &&
+                item.publicInviteeId === row.publicInviteeId,
+            );
+          if (prior) reused.set(index, prior);
+          else incoming.push(row);
+        });
+        if (incoming.length) {
+          await tx.conferenceInvitation.createMany({ data: incoming });
+          await this.audit(
+            tx,
+            admin,
+            id,
+            `批量创建 ${incoming.length} 份专属邀请函，复用 ${reused.size} 份已有邀请`,
+          );
+        }
+        const created = incoming.length
+          ? await tx.conferenceInvitation.findMany({
+              where: {
+                campaignId: id,
+                createdBy: admin.id,
+                token: { in: incoming.map((row) => row.token) },
+              },
+            })
+          : [];
+        return {
+          created: incoming.length,
+          reused: reused.size,
+          items: rows.map((row, index) => {
+            const item =
+              reused.get(index) ||
+              created.find((item) => item.token === row.token);
+            if (!item)
+              throw new ConflictException("邀请批次未完整生成，请重试");
+            return {
+              id: item.id,
+              name: item.name,
+              salutation: item.salutation,
+              shareUrl: invitationUrl(item.token),
+              reused: reused.has(index),
+            };
+          }),
+        };
+      },
+      { timeout: 15000 },
+    );
+    return ok(result);
   }
   async update(id: string, input: unknown, admin: CurrentAdmin) {
     const invitation = await this.prisma.conferenceInvitation.findFirst({

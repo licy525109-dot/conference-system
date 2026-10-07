@@ -11,6 +11,8 @@ import {
 const paragraph = (text: string): InvitationRichNode[] => [
   { tag: "p", attrs: {}, children: [{ text }] },
 ];
+export const INVITATION_DISCUSSION_NOTE =
+  "本届小组讨论围绕以下 8 个共创候选话题 进行分组讨论，\n每位参会创始人最多选择 3 项，按总票数取前 6 项进入现场共创，\n最终以观点阐述 + 二次投票 + 重组深化的方式产出实验性的共创结果。";
 const topics = [
   [
     "AI实操应用与组织提效",
@@ -127,7 +129,12 @@ export function applyInvitationBooklet(
       ? discussion
       : {
           ...discussion,
-          settings: { ...discussion.settings!, layout: "list" },
+          settings: {
+            ...discussion.settings!,
+            layout: "list",
+            note: INVITATION_DISCUSSION_NOTE,
+            showNote: true,
+          },
           items: topics.map(([title, text], index) => ({
             id: `${discussion.id}-item-${index}`,
             title,

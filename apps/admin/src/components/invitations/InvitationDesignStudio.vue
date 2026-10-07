@@ -3,6 +3,8 @@
     <div class="studio-workspace-heading">
       <el-tabs v-model="studioTab"
         ><el-tab-pane label="封面设计" name="cover" /><el-tab-pane
+          label="字体与字号"
+          name="fonts" /><el-tab-pane
           label="视觉与动效"
           name="effects" /><el-tab-pane
           label="章节导航"
@@ -42,6 +44,7 @@
         :preview-name="previewName"
         :disabled="disabled"
         @update:model-value="$emit('update:modelValue', $event)"
+        @fonts="studioTab = 'fonts'"
       />
       <template v-else>
         <div class="studio-heading">
@@ -85,6 +88,12 @@
           </button>
         </div>
         <div class="studio-options">
+          <el-button
+            :icon="Upload"
+            :disabled="disabled"
+            @click="studioTab = 'fonts'"
+            >上传 / 选择字体</el-button
+          >
           <el-form-item label="标题字体"
             ><el-radio-group
               :model-value="modelValue.headingFont"
@@ -188,6 +197,14 @@
             /></el-form-item></div></el-collapse-item
       ></el-collapse>
     </section>
+    <InvitationFontEditor
+      v-else-if="studioTab === 'fonts'"
+      :model-value="modelValue"
+      :campaign-id="campaignId"
+      :preview-name="previewName"
+      :disabled="disabled"
+      @update:model-value="$emit('update:modelValue', $event)"
+    />
     <section v-else-if="studioTab === 'effects'" class="studio-effects">
       <InvitationThemeEditor
         :model-value="modelValue"
@@ -355,7 +372,13 @@
 </template>
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
-import { Check, Connection, Rank, Refresh } from "@element-plus/icons-vue";
+import {
+  Check,
+  Connection,
+  Rank,
+  Refresh,
+  Upload,
+} from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   applyInvitationPreset,
@@ -368,6 +391,7 @@ import {
 import InvitationImageField from "./InvitationImageField.vue";
 import InvitationCoverEditor from "./InvitationCoverEditor.vue";
 import InvitationThemeEditor from "./InvitationThemeEditor.vue";
+import InvitationFontEditor from "./InvitationFontEditor.vue";
 import InvitationNavigationEditor from "./InvitationNavigationEditor.vue";
 import { API_BASE_URL } from "../../config";
 const props = defineProps<{

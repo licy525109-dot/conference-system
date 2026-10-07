@@ -1,5 +1,11 @@
 <template>
   <div class="invitation-extra-module">
+    <p
+      v-if="module.type === 'tabs' && settings.showNote && settings.note.trim()"
+      class="invitation-discussion-note"
+    >
+      {{ settings.note }}
+    </p>
     <video
       v-if="module.type === 'video'"
       :key="settings.mediaUrl"
@@ -37,6 +43,11 @@
     <dl
       v-else-if="module.type === 'organizations'"
       class="invitation-organization-list"
+      :class="{ 'organization-layout-list': settings.layout === 'list' }"
+      :style="{
+        '--organization-columns': settings.logoColumns,
+        '--organization-logo-height': `${settings.logoHeight}px`,
+      }"
     >
       <div v-for="group in organizationGroups" :key="group.title">
         <dt>{{ group.title }}</dt>
@@ -56,7 +67,13 @@
               :alt="item.description || item.title"
               loading="lazy"
             />
-            <span v-if="item.description">{{ item.description }}</span>
+            <span
+              v-if="
+                item.description &&
+                (settings.showOrganizationNames || !item.imageUrl)
+              "
+              >{{ item.description }}</span
+            >
           </component>
         </dd>
       </div>
@@ -329,6 +346,17 @@ const results = computed(() => {
 });
 </script>
 <style scoped>
+.invitation-discussion-note {
+  margin: 0 0 32px;
+  padding: 4px 0 4px 16px;
+  border-left: 2px solid var(--invite-accent);
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.9;
+  font-weight: 500;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
 .invitation-extra-module {
   min-width: 0;
 }
@@ -526,26 +554,54 @@ const results = computed(() => {
 }
 .invitation-organization-list dd {
   margin: 0;
-  display: flex;
-  gap: 16px 24px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(var(--organization-columns), minmax(0, 1fr));
+  gap: 20px 16px;
   min-width: 0;
 }
 .organization-identity {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  max-width: 100%;
-  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  align-self: start;
+  text-align: center;
+  gap: 8px;
   font-size: 14px;
+  overflow-wrap: anywhere;
+  color: inherit;
+  text-decoration: none;
+}
+.organization-identity[href]:hover {
+  color: var(--invite-primary);
+  text-decoration: underline;
+}
+.organization-identity[href]:focus-visible {
+  outline: 2px solid var(--invite-primary);
+  outline-offset: 4px;
 }
 .organization-identity img {
   display: block;
-  max-width: 160px;
   width: 100%;
-  height: 48px;
+  height: var(--organization-logo-height);
   object-fit: contain;
-  object-position: left center;
+  object-position: center;
+}
+.organization-layout-list dd {
+  grid-template-columns: minmax(0, 1fr);
+}
+.organization-layout-list .organization-identity {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 16px;
+}
+.organization-layout-list .organization-identity img {
+  width: 120px;
+  max-width: 45%;
+  flex-shrink: 0;
 }
 .invitation-topic-list {
   display: grid;
@@ -592,8 +648,14 @@ const results = computed(() => {
 }
 @container (max-width: 600px) {
   .invitation-organization-list > div {
-    grid-template-columns: 78px minmax(0, 1fr);
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .invitation-organization-list dd {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .organization-layout-list dd {
+    grid-template-columns: minmax(0, 1fr);
   }
   .invitation-topic {
     padding: 16px 14px;

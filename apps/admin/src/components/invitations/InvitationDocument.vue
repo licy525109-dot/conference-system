@@ -52,6 +52,8 @@
         :role="rosterMatch.item?.role"
         :date="content.dateLabel"
         :location="content.location"
+        :custom-font="pageFont.customFamily.value"
+        :font-family="design.replaceAllFonts ? pageFont.family.value : ''"
       />
     </header>
     <header v-else class="invitation-hero">
@@ -196,7 +198,7 @@
           <h2>{{ module.title }}</h2>
         </div>
         <div
-          v-if="days.length > 1 && !isBooklet"
+          v-if="days.length > 1 && !continuousAgenda"
           class="invitation-days"
           role="tablist"
           aria-label="议程日期"
@@ -212,11 +214,11 @@
             {{ day || "会议当天" }}
           </button>
         </div>
-        <div class="invitation-agenda">
+        <div class="invitation-agenda" :style="agendaStyle">
           <template v-for="(item, index) in agenda" :key="item.id">
             <h3
               v-if="
-                isBooklet &&
+                continuousAgenda &&
                 (index === 0 || agenda[index - 1].date !== item.date)
               "
               class="invitation-agenda__day"
@@ -436,8 +438,12 @@
           }}</span>
           <h2>{{ module.title }}</h2>
         </div>
+        <InvitationKeywords
+          v-if="module.type === 'richtext' && keywordPresentation(module)"
+          :body="module.body"
+        />
         <div
-          v-if="module.type === 'richtext'"
+          v-else-if="module.type === 'richtext'"
           class="invitation-rich-body"
           v-html="richHtml(module)"
         />
@@ -537,11 +543,13 @@ import {
   type PublicInvitation,
   normalizeInvitationPageDesign,
   normalizeInvitationModuleStyle,
+  normalizeInvitationModuleSettings,
   invitationModuleRepeatable,
   sortInvitationInvitees,
 } from "@conference/shared";
 import InvitationCoverCanvas from "./InvitationCoverCanvas.vue";
 import InvitationExtraModule from "./InvitationExtraModule.vue";
+import InvitationKeywords from "./InvitationKeywords.vue";
 import { useInvitationFont } from "../../utils/invitation-font";
 import { API_BASE_URL } from "../../config";
 const props = defineProps<{ document: PublicInvitation; preview?: boolean }>();
@@ -555,7 +563,12 @@ const assetOrigin = computed(() =>
     ? new URL(API_BASE_URL).origin
     : window.location.origin,
 );
-const pageFont = useInvitationFont(design, assetOrigin);
+const customNeeded = computed(
+  () =>
+    content.value.cover.layers.some((layer) => layer.font === "custom") ||
+    JSON.stringify(content.value.modules).includes("var(--invite-custom-font)"),
+);
+const pageFont = useInvitationFont(design, assetOrigin, customNeeded);
 const cover = computed(() => normalizeInvitationCover(content.value.cover));
 const effects = computed(() => ({
   ...normalizeInvitationEffects(content.value.effects, content.value.motion),
@@ -579,6 +592,15 @@ const assetUrl = (url: string) =>
   url.startsWith("/uploads/") ? assetOrigin.value + url : url;
 const richHtml = (module: InvitationModule) =>
   invitationRichTextHtml(module.body, assetOrigin.value);
+function keywordPresentation(module: InvitationModule) {
+  const settings = normalizeInvitationModuleSettings(module.settings);
+  return (
+    settings.textPresentation === "keywords" ||
+    (settings.textPresentation === "auto" &&
+      (module.id.startsWith("booklet-keywords") ||
+        module.title.trim() === "会议关键词"))
+  );
+}
 const isBooklet = computed(() => content.value.visualPreset === "booklet");
 const venueOrganizers = computed(() => {
   const presented = new Set(
@@ -627,8 +649,25 @@ watch(
   },
   { immediate: true },
 );
+const agendaSettings = computed(() =>
+  normalizeInvitationModuleSettings(
+    content.value.modules.find((module) => module.type === "agenda")?.settings,
+  ),
+);
+const continuousAgenda = computed(
+  () =>
+    agendaSettings.value.agendaLayout === "continuous" ||
+    (agendaSettings.value.agendaLayout === "auto" && isBooklet.value),
+);
+const agendaStyle = computed(() => ({
+  "--invite-agenda-title-size": `${agendaSettings.value.agendaTitleSize}px`,
+  "--invite-agenda-meta-size": `${agendaSettings.value.agendaMetaSize}px`,
+  "--invite-agenda-line-height": agendaSettings.value.agendaLineHeight,
+  "--invite-agenda-weight": agendaSettings.value.agendaWeight,
+  "--invite-agenda-padding": `${agendaSettings.value.agendaPadding}px`,
+}));
 const agenda = computed(() =>
-  isBooklet.value
+  continuousAgenda.value
     ? days.value.flatMap((day) =>
         content.value.agenda.filter((item) => item.date === day),
       )
@@ -712,6 +751,7 @@ function moduleStyle(module: InvitationModule) {
       ? `url(${JSON.stringify(assetUrl(style.backgroundImage))})`
       : undefined,
     color: style.textColor || undefined,
+    "--invite-module-text": style.textColor || undefined,
     "--invite-paper": style.backgroundColor || content.value.backgroundColor,
     "--invite-primary": style.accentColor || content.value.primaryColor,
     "--invite-accent": style.accentColor || content.value.accentColor,
@@ -778,6 +818,9 @@ const themeStyle = computed(() => ({
     pageFont.family.value ||
     '-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif',
   "--invite-hero-text": content.value.heroTextColor || "#ffffff",
+  "--invite-custom-font":
+    pageFont.customFamily.value ||
+    '"PingFang SC", "Microsoft YaHei", sans-serif',
   "--invite-hero-overlay": (content.value.heroOverlayOpacity ?? 55) / 100,
   "--invite-heading":
     pageFont.family.value ||
@@ -1315,7 +1358,7 @@ const themeStyle = computed(() => ({
   display: grid;
   grid-template-columns: 105px minmax(0, 1fr);
   gap: 22px;
-  padding: 24px 0;
+  padding: var(--invite-agenda-padding, 18px) 0;
   border-bottom: 1px solid #e4e8e2;
 }
 .invitation-agenda__row:first-child {
@@ -1324,24 +1367,27 @@ const themeStyle = computed(() => ({
 .invitation-agenda__row time {
   color: var(--invite-accent);
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
+  font-size: var(--invite-agenda-meta-size, 12px);
+  line-height: var(--invite-agenda-line-height, 1.7);
   padding-top: 2px;
 }
 .invitation-agenda h3 {
-  font-size: 17px;
-  line-height: 1.65;
-  font-weight: 600;
+  font-size: var(--invite-agenda-title-size, 14px);
+  line-height: var(--invite-agenda-line-height, 1.7);
+  font-weight: var(--invite-agenda-weight, 600);
 }
 .invitation-agenda p {
-  font-size: 14px;
-  color: #5d6961;
+  font-size: var(--invite-agenda-meta-size, 12px);
+  line-height: var(--invite-agenda-line-height, 1.7);
+  color: var(--invite-module-text, #5d6961);
   margin-top: 8px;
 }
 .invitation-agenda small {
   display: block;
-  color: #737a75;
+  color: var(--invite-module-text, #737a75);
   margin-top: 4px;
-  font-size: 13px;
+  font-size: var(--invite-agenda-meta-size, 12px);
+  line-height: var(--invite-agenda-line-height, 1.7);
 }
 .invitation-footnote {
   color: #768077;
@@ -1619,13 +1665,13 @@ const themeStyle = computed(() => ({
   .invitation-agenda__row {
     grid-template-columns: 79px minmax(0, 1fr);
     gap: 16px;
-    padding: 20px 0;
+    padding: var(--invite-agenda-padding, 18px) 0;
   }
   .invitation-agenda__row time {
-    font-size: 12px;
+    font-size: var(--invite-agenda-meta-size, 12px);
   }
   .invitation-agenda h3 {
-    font-size: 16px;
+    font-size: var(--invite-agenda-title-size, 14px);
   }
   .invitation-guests {
     gap: 28px 18px;
@@ -1698,13 +1744,13 @@ const themeStyle = computed(() => ({
 .invitation-preview .invitation-agenda__row {
   grid-template-columns: 79px minmax(0, 1fr);
   gap: 16px;
-  padding: 20px 0;
+  padding: var(--invite-agenda-padding, 18px) 0;
 }
 .invitation-preview .invitation-agenda__row time {
-  font-size: 12px;
+  font-size: var(--invite-agenda-meta-size, 12px);
 }
 .invitation-preview .invitation-agenda h3 {
-  font-size: 16px;
+  font-size: var(--invite-agenda-title-size, 14px);
 }
 .invitation-preview .invitation-guests {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2182,7 +2228,7 @@ const themeStyle = computed(() => ({
   gap: 18px;
 }
 .invitation-document.invitation-preset--booklet .invitation-agenda__day {
-  font-size: 18px;
+  font-size: calc(var(--invite-agenda-title-size, 14px) + 2px);
   color: var(--invite-primary);
   font-weight: 600;
   padding: 12px 0;
@@ -2197,7 +2243,7 @@ const themeStyle = computed(() => ({
 .invitation-document.invitation-preset--booklet .invitation-agenda__row {
   grid-template-columns: 100px minmax(0, 1fr);
   gap: 18px;
-  padding: 18px 0;
+  padding: var(--invite-agenda-padding, 18px) 0;
 }
 .invitation-document.invitation-preset--booklet .invitation-roster thead th {
   color: var(--invite-primary);

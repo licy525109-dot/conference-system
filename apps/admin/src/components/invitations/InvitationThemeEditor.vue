@@ -47,52 +47,12 @@
     </div>
     <el-collapse v-model="openGroups">
       <el-collapse-item title="字体与字号" name="font">
-        <div class="theme-font-fields">
-          <el-form-item label="页面字体"
-            ><el-select
-              :model-value="design.font"
-              :disabled="disabled"
-              aria-label="页面字体"
-              @update:model-value="patch({ font: $event })"
-              ><el-option label="沿用原有排版" value="default" /><el-option
-                v-for="(font, key) in INVITATION_FONTS"
-                :key="key"
-                :label="font.label"
-                :value="key" /><el-option
-                label="自定义字体"
-                value="custom" /></el-select></el-form-item
-          ><el-form-item label="正文字号"
-            ><el-input-number
-              :model-value="design.bodySize"
-              :min="12"
-              :max="22"
-              :disabled="disabled"
-              @update:model-value="patch({ bodySize: Number($event) })"
-          /></el-form-item>
-        </div>
-        <template v-if="design.font === 'custom'"
-          ><el-checkbox v-model="fontLicensed" :disabled="disabled"
-            >我已取得此字体的网页使用授权</el-checkbox
-          ><InvitationAssetField
-            :model-value="design.fontUrl"
-            :campaign-id="campaignId"
-            kind="font"
-            label="自定义字体"
-            :disabled="disabled || !fontLicensed"
-            @update:model-value="patch({ fontUrl: $event })"
-            @asset="patch({ fontName: $event.name })"
-          />
-          <p v-if="design.fontName" class="theme-font-name">
-            {{ design.fontName }}
-          </p></template
-        >
-        <el-form-item class="theme-all-fonts" label="统一封面、正文与模块字体"
-          ><el-switch
-            :model-value="design.replaceAllFonts"
-            :disabled="disabled || design.font === 'default'"
-            aria-label="一键统一全部字体"
-            @update:model-value="patch({ replaceAllFonts: Boolean($event) })"
-        /></el-form-item>
+        <InvitationFontEditor
+          :model-value="modelValue"
+          :campaign-id="campaignId"
+          :disabled="disabled"
+          @update:model-value="$emit('update:modelValue', $event)"
+        />
       </el-collapse-item>
       <el-collapse-item title="背景与动态背景" name="background">
         <InvitationImageField
@@ -134,12 +94,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import {
-  INVITATION_FONTS,
   normalizeInvitationPageDesign,
   type InvitationContent,
   type InvitationPageDesign,
 } from "@conference/shared";
-import InvitationAssetField from "./InvitationAssetField.vue";
+import InvitationFontEditor from "./InvitationFontEditor.vue";
 import InvitationImageField from "./InvitationImageField.vue";
 const props = defineProps<{
   modelValue: InvitationContent;
@@ -150,8 +109,7 @@ const emit = defineEmits<{ "update:modelValue": [value: InvitationContent] }>();
 const design = computed(() =>
   normalizeInvitationPageDesign(props.modelValue.design),
 );
-const openGroups = ref(["font"]),
-  fontLicensed = ref(false);
+const openGroups = ref<string[]>([]);
 const palettes = [
   {
     name: "青玉朱砂",
@@ -247,18 +205,8 @@ function applyPalette(value: (typeof palettes)[number]) {
   gap: 32px;
   flex-wrap: wrap;
 }
-.theme-font-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 160px;
-  gap: 24px;
-}
-.theme-all-fonts,
 .theme-background-motion {
   margin-top: 20px;
-}
-.theme-font-name {
-  font-size: 12px;
-  color: #728076;
 }
 .theme-editor :deep(.el-collapse-item__header) {
   font-size: 14px;
@@ -274,10 +222,6 @@ function applyPalette(value: (typeof palettes)[number]) {
 @media (max-width: 600px) {
   .theme-palette-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .theme-font-fields {
-    grid-template-columns: 1fr;
-    gap: 0;
   }
   .theme-color-fields {
     gap: 22px;

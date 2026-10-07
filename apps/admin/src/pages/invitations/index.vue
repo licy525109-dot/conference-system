@@ -104,6 +104,12 @@
             >搜索</el-button
           ><el-button
             v-if="can('write')"
+            :icon="Files"
+            :disabled="!detail.publishedRevision"
+            @click="batchVisible = true"
+            >批量生成</el-button
+          ><el-button
+            v-if="can('write')"
             type="primary"
             :icon="Plus"
             :disabled="!detail.publishedRevision"
@@ -402,6 +408,14 @@
         ></template
       ></el-dialog
     >
+    <InvitationBatchDialog
+      v-if="can('write') && detail?.publishedRevision"
+      :key="selectedId"
+      v-model="batchVisible"
+      :campaign-id="selectedId"
+      :roster="detail.published?.invitees || []"
+      @generated="search"
+    />
     <InvitationWechatSettings
       v-if="can('settings')"
       v-model="wechatSettingsVisible"
@@ -518,6 +532,7 @@ import {
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   CopyDocument,
+  Files,
   Check,
   DocumentChecked,
   MoreFilled,
@@ -543,6 +558,7 @@ import {
 } from "@conference/shared";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import InvitationRuntime from "../../components/invitations/InvitationRuntime.vue";
+import InvitationBatchDialog from "../../components/invitations/InvitationBatchDialog.vue";
 import InvitationModulesEditor from "../../components/invitations/InvitationModulesEditor.vue";
 import InvitationDesignStudio from "../../components/invitations/InvitationDesignStudio.vue";
 import InvitationRosterEditor from "../../components/invitations/InvitationRosterEditor.vue";
@@ -583,6 +599,7 @@ const keyword = ref("");
 const page = ref(1);
 const total = ref(0);
 const tab = ref("recipients");
+const batchVisible = ref(false);
 const designStudio = ref<InstanceType<typeof InvitationDesignStudio>>();
 async function openCoverCanvas() {
   if (
