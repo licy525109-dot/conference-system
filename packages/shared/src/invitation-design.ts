@@ -53,6 +53,7 @@ export const INVITATION_MODULE_LABELS = {
   map: "地图导航",
   links: "图标与链接",
   search: "内容搜索",
+  organizations: "组织架构",
 } as const;
 export type InvitationModuleType = keyof typeof INVITATION_MODULE_LABELS;
 export interface InvitationModule {
@@ -290,7 +291,12 @@ export function createInvitationModule(
 }
 export function invitationAssetUrl(value: unknown): string {
   const url = str(value, 1500).trim();
-  if (/^\/invitation-art\/(tide-paper|jade-paper)\.jpg$/.test(url)) return url;
+  if (
+    /^\/invitation-art\/(?:(?:tide-paper|jade-paper|booklet-pattern)\.jpg|booklet-(?:cover|waves)\.png)$/.test(
+      url,
+    )
+  )
+    return url;
   if (
     /^\/uploads\/[A-Za-z0-9_./%\-]+$/.test(url) &&
     !/%2e|%2f|%5c|\.\./i.test(url)

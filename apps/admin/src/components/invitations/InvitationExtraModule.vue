@@ -34,6 +34,67 @@
       :settings="settings"
       :title="module.title"
     />
+    <dl
+      v-else-if="module.type === 'organizations'"
+      class="invitation-organization-list"
+    >
+      <div v-for="group in organizationGroups" :key="group.title">
+        <dt>{{ group.title }}</dt>
+        <dd>
+          <component
+            :is="item.href ? 'a' : 'span'"
+            v-for="item in group.items"
+            :key="item.id"
+            :href="item.href || undefined"
+            :target="item.href?.startsWith('https:') ? '_blank' : undefined"
+            rel="noopener noreferrer"
+            class="organization-identity"
+          >
+            <img
+              v-if="item.imageUrl"
+              :src="assetUrl(item.imageUrl)"
+              :alt="item.description || item.title"
+              loading="lazy"
+            />
+            <span v-if="item.description">{{ item.description }}</span>
+          </component>
+        </dd>
+      </div>
+    </dl>
+    <div
+      v-else-if="module.type === 'tabs' && settings.layout === 'list'"
+      class="invitation-topic-list"
+    >
+      <article
+        v-for="(item, index) in items"
+        :key="item.id"
+        class="invitation-topic"
+      >
+        <span class="invitation-topic-number">{{
+          String(index + 1).padStart(2, "0")
+        }}</span>
+        <div>
+          <h3>{{ item.title }}</h3>
+          <img
+            v-if="item.imageUrl"
+            :src="assetUrl(item.imageUrl)"
+            :alt="item.title"
+            loading="lazy"
+          />
+          <div
+            class="extra-rich-body"
+            v-html="invitationRichTextHtml(item.body, assetOrigin)"
+          />
+          <a
+            v-if="item.href"
+            :href="item.href"
+            target="_blank"
+            rel="noopener noreferrer"
+            >了解更多<ArrowRight
+          /></a>
+        </div>
+      </article>
+    </div>
     <div v-else-if="module.type === 'tabs'" class="invitation-content-tabs">
       <div
         role="tablist"
@@ -189,6 +250,17 @@ const icons: Record<string, unknown> = {
   star: Star,
 };
 const scope = `invite-tabs-${useId()}`;
+const organizationGroups = computed(() => {
+  const groups = new Map<string, typeof items.value>();
+  for (const item of items.value) {
+    if (!item.description && !item.imageUrl) continue;
+    const title = item.title || "组织单位";
+    const group = groups.get(title) || [];
+    group.push(item);
+    groups.set(title, group);
+  }
+  return Array.from(groups, ([title, items]) => ({ title, items }));
+});
 const assetUrl = (url: string) =>
   url.startsWith("/uploads/") ? props.assetOrigin + url : url;
 watch(items, () => {
@@ -435,6 +507,98 @@ const results = computed(() => {
 }
 .content-search-results svg {
   width: 16px;
+}
+.invitation-organization-list {
+  margin: 0;
+  display: grid;
+  gap: 20px;
+}
+.invitation-organization-list > div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+.invitation-organization-list dt {
+  color: var(--invite-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.invitation-organization-list dd {
+  margin: 0;
+  display: flex;
+  gap: 16px 24px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.organization-identity {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 100%;
+  gap: 4px;
+  font-size: 14px;
+}
+.organization-identity img {
+  display: block;
+  max-width: 160px;
+  width: 100%;
+  height: 48px;
+  object-fit: contain;
+  object-position: left center;
+}
+.invitation-topic-list {
+  display: grid;
+  gap: 14px;
+}
+.invitation-topic {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--invite-primary) 18%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--invite-primary) 4%, transparent);
+}
+.invitation-topic-number {
+  color: var(--invite-primary);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.invitation-topic h3 {
+  font-size: 16px;
+  line-height: 1.65;
+  font-weight: 650;
+  margin: 0 0 8px;
+}
+.invitation-topic img {
+  width: 100%;
+  display: block;
+  margin-bottom: 12px;
+}
+.invitation-topic .extra-rich-body {
+  font-size: inherit;
+  line-height: 1.85;
+}
+.invitation-topic .extra-rich-body :deep(p) {
+  margin: 0;
+}
+.invitation-topic a {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  color: var(--invite-accent);
+}
+@container (max-width: 600px) {
+  .invitation-organization-list > div {
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .invitation-topic {
+    padding: 16px 14px;
+    gap: 8px;
+  }
 }
 @media (max-width: 600px) {
   .invitation-link-list {

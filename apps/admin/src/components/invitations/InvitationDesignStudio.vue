@@ -70,7 +70,9 @@
             >
               <img :src="preset.image" alt="" /><span>诚挚相邀</span
               ><strong>{{ modelValue.title || "观潮会集" }}</strong
-              ><small>INVITATION</small>
+              ><small>{{
+                preset.id === "booklet" ? "九章 · 会议长卷" : "INVITATION"
+              }}</small>
               <el-icon v-if="modelValue.visualPreset === preset.id"
                 ><Check
               /></el-icon>
@@ -354,9 +356,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
 import { Check, Connection, Rank, Refresh } from "@element-plus/icons-vue";
-import { ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   applyInvitationPreset,
+  applyInvitationBooklet,
   invitationShare,
   INVITATION_PRESETS,
   createInvitationLayer,
@@ -446,7 +449,18 @@ function set(key: keyof InvitationContent, value: unknown) {
 }
 function apply(id: string) {
   if (props.disabled) return;
-  emit("update:modelValue", applyInvitationPreset(props.modelValue, id));
+  try {
+    emit(
+      "update:modelValue",
+      id === "booklet"
+        ? applyInvitationBooklet(props.modelValue)
+        : applyInvitationPreset(props.modelValue, id),
+    );
+  } catch (error) {
+    ElMessage.warning(
+      error instanceof Error ? error.message : "模板应用失败，现有内容未修改。",
+    );
+  }
 }
 function customCover(url: string) {
   if (props.disabled) return;
@@ -621,7 +635,7 @@ async function insertVariable(name: string) {
 }
 .studio-presets {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 24px;
 }
@@ -763,6 +777,11 @@ async function insertVariable(name: string) {
   height: 64px;
   object-fit: cover;
   flex-shrink: 0;
+}
+@media (max-width: 1000px) {
+  .studio-presets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 640px) {
   .studio-presets {

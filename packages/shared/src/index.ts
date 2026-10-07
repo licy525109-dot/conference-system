@@ -52,3 +52,4 @@ export * from "./cms-compositions";
 export * from "./cms-preview";
 export * from "./conference-detail";
 export * from "./invitations";
+export * from "./invitation-booklet";
