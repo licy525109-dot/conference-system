@@ -10,6 +10,7 @@ import {
   normalizeInvitationNavigation,
   type InvitationNavigation,
   INVITATION_MODULE_LABELS,
+  invitationAssetUrl,
 } from "./invitation-design";
 export * from "./invitation-design";
 export type InvitationTheme = "forest" | "ceremony" | "coral";
@@ -90,7 +91,7 @@ export interface InvitationContent {
   heroOverlayOpacity: number;
   headingFont: "serif" | "sans";
   heroLayout: "immersive" | "poster";
-  visualPreset: "custom" | "tide" | "jade" | "editorial";
+  visualPreset: "custom" | "tide" | "jade" | "editorial" | "booklet";
   motion: "elegant" | "none";
   cover: InvitationCover;
   modules: InvitationModule[];
@@ -201,7 +202,7 @@ function string(value: unknown, limit = 200): string {
 export function invitationImageUrl(value: unknown): string {
   const url = string(value, 1500);
   if (!url) return "";
-  if (/^\/invitation-art\/(tide-paper|jade-paper)\.jpg$/.test(url)) return url;
+  if (url.startsWith("/invitation-art/")) return invitationAssetUrl(url);
   if (/^\/uploads\/[A-Za-z0-9_./%\-]+$/.test(url) && !url.includes(".."))
     return url;
   try {
@@ -256,7 +257,7 @@ export function normalizeInvitationContent(input: unknown): InvitationContent {
       ? Math.max(0, Math.min(80, Math.round(source.heroOverlayOpacity)))
       : defaults.heroOverlayOpacity;
   result.heroLayout = source.heroLayout === "poster" ? "poster" : "immersive";
-  result.visualPreset = ["tide", "jade", "editorial"].includes(
+  result.visualPreset = ["tide", "jade", "editorial", "booklet"].includes(
     String(source.visualPreset),
   )
     ? (source.visualPreset as InvitationContent["visualPreset"])
@@ -354,6 +355,16 @@ export interface InvitationRecord {
 
 export const INVITATION_PRESETS = [
   {
+    id: "booklet",
+    name: "观潮·会议长卷",
+    image: "/invitation-art/booklet-cover.png",
+    theme: "ceremony",
+    primaryColor: "#8b6b3d",
+    accentColor: "#a33236",
+    backgroundColor: "#fffef5",
+    headingFont: "sans",
+  },
+  {
     id: "tide",
     name: "潮汐朱红",
     image: "/invitation-art/tide-paper.jpg",
@@ -408,6 +419,12 @@ export function invitationVisibleModules(
             module.settings?.longitude != null),
       );
     if (module.type === "search") return true;
+    if (module.type === "organizations")
+      return Boolean(
+        module.items?.some((item) => item.description || item.imageUrl),
+      );
+    if (module.type === "invitees" && content.visualPreset === "booklet")
+      return true;
     if (module.type === "venue")
       return Boolean(
         content.dateLabel ||
@@ -464,7 +481,7 @@ export function applyInvitationPreset(
     coverImageUrl: preset.image,
     heroLayout: "immersive",
     heroPosition: "center",
-    heroTextColor: "#26322f",
+    heroTextColor: preset.id === "booklet" ? "#292a2c" : "#26322f",
     heroOverlayOpacity: 0,
     motion: "elegant",
   };

@@ -13,12 +13,176 @@ import {
   normalizeInvitationNavigation,
   type PublicInvitation,
 } from "../../packages/shared/src/invitations";
+import { applyInvitationBooklet } from "../../packages/shared/src/invitation-booklet";
 const token = "a".repeat(43);
 const origin =
   process.env.INVITATION_TEST_ADMIN_ORIGIN || "http://localhost:5174";
 const artworkPath =
   process.env.INVITATION_ARTWORK_PATH ||
   "apps/admin/public/invitation-art/tide-paper.jpg";
+
+for (const width of [320, 390, 1440])
+  test(`booklet template renders nine readable chapters and live data at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const doc = document();
+    doc.content.guests = [];
+    doc.content.highlights = [];
+    doc.content = applyInvitationBooklet(doc.content);
+    doc.content.agenda.push({
+      id: "third-day",
+      date: "12月20日",
+      time: "下午",
+      title: "第三天共创讨论",
+      speaker: "",
+      location: "",
+    });
+    doc.recipient.name = "演示嘉宾25";
+    const org = doc.content.modules.find(
+      (module) => module.type === "organizations",
+    )!;
+    org.items![0].description = "示例指导单位";
+    org.items![0].imageUrl = "/invitation-art/booklet-waves.png";
+    const failures: string[] = [];
+    page.on("pageerror", (error) => failures.push(error.message));
+    await publicFixture(page, () => doc);
+    await page.goto(`${origin}/i/${token}`);
+    await expect(page.locator(".invitation-document")).toHaveClass(
+      /invitation-preset--booklet/,
+    );
+    await expect(page.locator(".invitation-section__heading")).toHaveCount(9);
+    await expect(
+      page.locator(".invitation-section__heading > span"),
+    ).toHaveText(["01", "02", "03", "04", "05", "06", "07", "08", "09"]);
+    await expect(page.locator(".invitation-hero h1")).toHaveText(
+      doc.content.title,
+    );
+    await expect(page.locator(".invitation-hero__recipient strong")).toHaveText(
+      doc.recipient.name,
+    );
+    await expect(page.locator(".invitation-agenda__day")).toHaveText([
+      "12月18日",
+      "12月19日",
+      "12月20日",
+    ]);
+    await expect(page.locator(".invitation-days")).toHaveCount(0);
+    await expect(page.locator(".invitation-topic")).toHaveCount(8);
+    await expect(page.locator(".invitation-organization-list dt")).toHaveText([
+      "指导单位",
+      "主办单位",
+    ]);
+    await expect(page.locator(".organization-identity img")).toHaveJSProperty(
+      "naturalWidth",
+      5032,
+    );
+    await expect(page.locator(".invitation-hero__image")).toHaveJSProperty(
+      "naturalWidth",
+      1826,
+    );
+    const geometry = await page
+      .locator(".invitation-section, .invitation-hero__copy, .invitation-topic")
+      .evaluateAll((elements) =>
+        elements.map((element) => ({
+          width: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+        })),
+      );
+    expect(geometry.every((item) => item.scrollWidth <= item.width + 1)).toBe(
+      true,
+    );
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.evaluate(() => {
+      document
+        .querySelectorAll(".invitation-reveal")
+        .forEach((element) => element.classList.remove("invitation-reveal"));
+      window.scrollTo(0, 0);
+    });
+    await page.screenshot({
+      path: `output/playwright/invitation-booklet-${width}.png`,
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.screenshot({
+      path: `output/playwright/invitation-booklet-first-screen-${width}.png`,
+      animations: "disabled",
+    });
+    await page
+      .locator(".invitation-topic-list")
+      .screenshot({
+        path: `output/playwright/invitation-booklet-topics-${width}.png`,
+        animations: "disabled",
+      });
+    await page.getByRole("button", { name: "查看我的位置" }).click();
+    await expect(page.locator('[data-roster-id="p24"]')).toBeFocused();
+    doc.content.title = "后台更新后同步的会议名称";
+    doc.revision++;
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.locator(".invitation-hero h1")).toHaveText(
+      doc.content.title,
+    );
+    expect(failures).toEqual([]);
+  });
+
+test("booklet template applies and publishes from editor without changing registration or extra content", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1512, height: 1000 });
+  const doc = document();
+  doc.content.registration = {
+    mode: "external",
+    conferenceId: "",
+    url: "https://example.com/registration",
+    label: "填写报名表",
+  };
+  const campaign = await adminFixture(page, ["*"], doc);
+  const before = normalizeInvitationContent(campaign.draft);
+  await page.goto(`${origin}/#/invitations`);
+  await page.getByRole("tab", { name: "视觉与分享" }).click();
+  await page.getByRole("button", { name: /观潮·会议长卷/ }).click();
+  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+  await expect(page.locator(".invite-editor-toolbar")).toContainText(
+    "草稿已保存",
+  );
+  expect(campaign.draft.visualPreset).toBe("booklet");
+  expect(campaign.draft.title).toBe(before.title);
+  expect(campaign.draft.registration).toEqual(before.registration);
+  expect(campaign.draft.agenda).toEqual(before.agenda);
+  expect(campaign.draft.invitees).toEqual(before.invitees);
+  await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+  await page
+    .getByRole("button", { name: /组织架构/ })
+    .first()
+    .click();
+  await page
+    .locator(".extra-module-editor .el-collapse-item__header")
+    .first()
+    .click();
+  await expect(
+    page.getByText("角色 / 分组", { exact: true }).first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /小组讨论话题/ }).click();
+  await expect(page.getByText("议题列表", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "发布更新", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "发布会议邀请函" })
+    .getByRole("button", { name: "发布更新", exact: true })
+    .click();
+  await expect(
+    page.getByText("已发布，所有专属链接已同步", { exact: true }),
+  ).toBeVisible();
+  expect(campaign.published.visualPreset).toBe("booklet");
+  await page.getByRole("tab", { name: "视觉与分享" }).click();
+  await page.screenshot({
+    path: "output/playwright/invitation-booklet-editor.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+});
 function document(): PublicInvitation {
   const content = applyInvitationPreset(createInvitationContent(), "tide");
   Object.assign(content, {

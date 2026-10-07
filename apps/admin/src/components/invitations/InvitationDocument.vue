@@ -22,7 +22,13 @@
     <div
       v-if="design.backgroundImage"
       class="invitation-page-background"
-      :class="`background-${design.backgroundMotion}`"
+      :class="[
+        `background-${design.backgroundMotion}`,
+        {
+          'background-wave-pattern':
+            design.backgroundImage === '/invitation-art/booklet-pattern.jpg',
+        },
+      ]"
       :style="{
         backgroundImage: `url(${JSON.stringify(assetUrl(design.backgroundImage))})`,
         opacity: design.backgroundOpacity / 100,
@@ -68,7 +74,7 @@
       </div>
       <div class="invitation-hero__copy">
         <div class="invitation-hero__recipient">
-          <span>诚挚相邀</span
+          <span>{{ isBooklet ? "诚挚邀请" : "诚挚相邀" }}</span
           ><strong>{{ document.recipient.name || "嘉宾" }}</strong
           ><span>{{ document.recipient.salutation }}</span>
         </div>
@@ -126,7 +132,11 @@
         <span class="invitation-letter__eyebrow">{{
           module.title || "诚挚相邀"
         }}</span>
-        <h2>
+        <div v-if="isBooklet" class="invitation-section__heading">
+          <span>{{ sectionNumbers.letter }}</span>
+          <h2>{{ module.title }}</h2>
+        </div>
+        <h2 v-else>
           尊敬的<span>{{ document.recipient.name || "嘉宾" }}</span
           >{{ document.recipient.salutation }}：
         </h2>
@@ -144,7 +154,7 @@
             {{ paragraph }}
           </p></template
         >
-        <div class="invitation-letter__signature">
+        <div v-if="!isBooklet" class="invitation-letter__signature">
           <span>期待与您相见</span
           ><strong>{{ content.host || "观潮会集" }}</strong>
         </div>
@@ -186,7 +196,7 @@
           <h2>{{ module.title }}</h2>
         </div>
         <div
-          v-if="days.length > 1"
+          v-if="days.length > 1 && !isBooklet"
           class="invitation-days"
           role="tablist"
           aria-label="议程日期"
@@ -203,30 +213,36 @@
           </button>
         </div>
         <div class="invitation-agenda">
-          <div
-            v-for="item in agenda"
-            :key="item.id"
-            :data-agenda-id="item.id"
-            class="invitation-agenda__row"
-          >
-            <time>{{ item.time }}</time>
-            <div>
-              <h3>{{ item.title }}</h3>
-              <div
-                v-if="item.speaker || item.imageUrl"
-                class="invitation-agenda__speaker"
-              >
-                <img
-                  v-if="item.imageUrl"
-                  :src="assetUrl(item.imageUrl)"
-                  :alt="item.speaker || '嘉宾头像'"
-                  loading="lazy"
-                />
-                <p v-if="item.speaker">{{ item.speaker }}</p>
+          <template v-for="(item, index) in agenda" :key="item.id">
+            <h3
+              v-if="
+                isBooklet &&
+                (index === 0 || agenda[index - 1].date !== item.date)
+              "
+              class="invitation-agenda__day"
+            >
+              {{ item.date || "会议当天" }}
+            </h3>
+            <div :data-agenda-id="item.id" class="invitation-agenda__row">
+              <time>{{ item.time }}</time>
+              <div>
+                <h3>{{ item.title }}</h3>
+                <div
+                  v-if="item.speaker || item.imageUrl"
+                  class="invitation-agenda__speaker"
+                >
+                  <img
+                    v-if="item.imageUrl"
+                    :src="assetUrl(item.imageUrl)"
+                    :alt="item.speaker || '嘉宾头像'"
+                    loading="lazy"
+                  />
+                  <p v-if="item.speaker">{{ item.speaker }}</p>
+                </div>
+                <small v-if="item.location">{{ item.location }}</small>
               </div>
-              <small v-if="item.location">{{ item.location }}</small>
             </div>
-          </div>
+          </template>
         </div>
         <p class="invitation-footnote">议程及嘉宾安排以最新公布为准</p>
       </section>
@@ -284,7 +300,7 @@
           <h2>{{ module.title }}</h2>
           <small>{{ content.invitees.length }} 位</small>
         </div>
-        <div class="invitation-roster-tools">
+        <div v-if="content.invitees.length" class="invitation-roster-tools">
           <label class="invitation-search"
             ><Search /><input
               v-model="keyword"
@@ -300,7 +316,7 @@
             <Aim />查看我的位置
           </button>
         </div>
-        <table class="invitation-roster">
+        <table v-if="content.invitees.length" class="invitation-roster">
           <caption class="invitation-sr-only">
             公开拟邀嘉宾名单
           </caption>
@@ -339,7 +355,11 @@
           </tbody>
         </table>
         <p v-if="!filteredInvitees.length" class="invitation-footnote">
-          没有找到相关嘉宾
+          {{
+            content.invitees.length
+              ? "没有找到相关嘉宾"
+              : "拟邀嘉宾名单持续更新中。"
+          }}
         </p>
         <div v-if="rosterPages > 1" class="invitation-roster-pages">
           <span aria-live="polite"
@@ -393,9 +413,9 @@
               </dd>
             </div>
           </dl>
-          <div v-if="content.organizers.length" class="invitation-organizers">
+          <div v-if="venueOrganizers.length" class="invitation-organizers">
             <span>组织单位</span>
-            <p v-for="organizer in content.organizers" :key="organizer">
+            <p v-for="organizer in venueOrganizers" :key="organizer">
               {{ organizer }}
             </p>
           </div>
@@ -438,6 +458,7 @@
             'map',
             'links',
             'search',
+            'organizations',
           ].includes(module.type)
         "
         :id="moduleAnchor(module)"
@@ -468,7 +489,10 @@
       >
         <Share /><span>分享</span>
       </button>
-      <div v-if="document.registrationMode !== 'none'" class="invitation-register">
+      <div
+        v-if="document.registrationMode !== 'none'"
+        class="invitation-register"
+      >
         <button
           :disabled="!document.registrationOpen"
           @click="$emit('register')"
@@ -555,10 +579,21 @@ const assetUrl = (url: string) =>
   url.startsWith("/uploads/") ? assetOrigin.value + url : url;
 const richHtml = (module: InvitationModule) =>
   invitationRichTextHtml(module.body, assetOrigin.value);
+const isBooklet = computed(() => content.value.visualPreset === "booklet");
+const venueOrganizers = computed(() => {
+  const presented = new Set(
+    modules.value
+      .filter((module) => module.type === "organizations")
+      .flatMap((module) =>
+        (module.items || []).map((item) => item.description),
+      ),
+  );
+  return content.value.organizers.filter((name) => !presented.has(name));
+});
 const sectionNumbers = computed(() =>
   Object.fromEntries(
     modules.value
-      .filter((module) => module.type !== "letter")
+      .filter((module) => isBooklet.value || module.type !== "letter")
       .map((module, index) => [
         invitationModuleRepeatable(module.type) ? module.id : module.type,
         String(index + 1).padStart(2, "0"),
@@ -593,7 +628,11 @@ watch(
   { immediate: true },
 );
 const agenda = computed(() =>
-  content.value.agenda.filter((item) => item.date === selectedDay.value),
+  isBooklet.value
+    ? days.value.flatMap((day) =>
+        content.value.agenda.filter((item) => item.date === day),
+      )
+    : content.value.agenda.filter((item) => item.date === selectedDay.value),
 );
 const paragraphs = computed(() =>
   content.value.introduction.split(/\n+/).filter(Boolean),
@@ -1987,6 +2026,230 @@ const themeStyle = computed(() => ({
   }
   .invitation-document:not(.invitation-preset--custom) .invitation-letter {
     padding-top: 28px;
+  }
+}
+.background-wave-pattern {
+  filter: invert(1);
+  mix-blend-mode: multiply;
+  background-size: 720px auto;
+  background-repeat: repeat;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero {
+  min-height: 520px;
+  background: var(--invite-paper);
+  justify-content: flex-start;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero__image {
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.5;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero__brand {
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 32px 36px;
+  color: var(--invite-primary);
+  font-size: 24px;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero__brand img {
+  max-width: 190px;
+  height: 44px;
+  object-fit: contain;
+  object-position: left;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero__label {
+  font-size: 12px;
+  border: 0;
+  padding: 0;
+  font-weight: 500;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero__copy {
+  width: 100%;
+  max-width: 820px;
+  padding: 40px 36px 32px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  color: var(--invite-hero-text);
+}
+.invitation-document.invitation-preset--booklet .invitation-hero__copy > p {
+  order: 0;
+  color: var(--invite-primary);
+  margin: 0 0 14px;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero h1 {
+  order: 1;
+  font-size: 36px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero__recipient {
+  order: 2;
+  margin: 44px 0 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.invitation-document.invitation-preset--booklet
+  .invitation-hero__recipient
+  > span:first-child {
+  width: 100%;
+  font-size: 18px;
+  color: var(--invite-hero-text);
+  margin-bottom: 10px;
+}
+.invitation-document.invitation-preset--booklet
+  .invitation-hero__recipient
+  strong {
+  font-size: 40px;
+  line-height: 1.4;
+  font-weight: 650;
+  max-width: 100%;
+  border-bottom: 1px solid var(--invite-primary);
+  padding-bottom: 4px;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero__facts {
+  order: 3;
+  font-size: 13px;
+  margin-top: 24px;
+  gap: 8px 24px;
+}
+.invitation-document.invitation-preset--booklet .invitation-hero__scroll {
+  display: none;
+}
+.invitation-document.invitation-preset--booklet .invitation-section {
+  max-width: 820px;
+  padding: var(--module-padding, 38px) 36px;
+}
+.invitation-document.invitation-preset--booklet .invitation-section__heading {
+  position: relative;
+  gap: 10px;
+  padding-bottom: 14px;
+  margin-bottom: 26px;
+}
+.invitation-document.invitation-preset--booklet
+  .invitation-section__heading::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 112px;
+  height: 3px;
+  background: var(--invite-primary);
+}
+.invitation-document.invitation-preset--booklet
+  .invitation-section__heading
+  > span {
+  font-size: 27px;
+  font-weight: 300;
+  color: var(--invite-primary);
+}
+.invitation-document.invitation-preset--booklet
+  .invitation-section__heading
+  h2 {
+  font-size: 26px;
+  font-weight: 550;
+  margin: 0;
+}
+.invitation-document.invitation-preset--booklet .invitation-letter__eyebrow {
+  display: none;
+}
+.invitation-document.invitation-preset--booklet .invitation-letter__paragraph {
+  line-height: 2;
+  margin-bottom: 16px !important;
+}
+.invitation-document.invitation-preset--booklet .invitation-highlights {
+  gap: 22px;
+}
+.invitation-document.invitation-preset--booklet .invitation-highlight {
+  grid-template-columns: minmax(0, 1fr);
+}
+.invitation-document.invitation-preset--booklet .invitation-highlight__index {
+  display: none;
+}
+.invitation-document.invitation-preset--booklet .invitation-highlight h3 {
+  color: var(--invite-primary);
+  font-size: 18px;
+}
+.invitation-document.invitation-preset--booklet .invitation-highlight p {
+  color: inherit;
+  font-size: inherit;
+  line-height: 1.9;
+}
+.invitation-document.invitation-preset--booklet .invitation-facts {
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+.invitation-document.invitation-preset--booklet .invitation-agenda__day {
+  font-size: 18px;
+  color: var(--invite-primary);
+  font-weight: 600;
+  padding: 12px 0;
+  margin-top: 22px;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--invite-primary) 25%, transparent);
+}
+.invitation-document.invitation-preset--booklet
+  .invitation-agenda__day:first-child {
+  margin-top: 0;
+}
+.invitation-document.invitation-preset--booklet .invitation-agenda__row {
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px 0;
+}
+.invitation-document.invitation-preset--booklet .invitation-roster thead th {
+  color: var(--invite-primary);
+  background: color-mix(in srgb, var(--invite-primary) 6%, transparent);
+}
+.invitation-document.invitation-preset--booklet .invitation-footer {
+  color: var(--invite-primary);
+  background: url("/invitation-art/booklet-waves.png") center bottom / cover
+    no-repeat;
+  padding: 60px 24px 110px;
+}
+@container (max-width: 600px) {
+  .invitation-document.invitation-preset--booklet .invitation-hero__brand {
+    padding: 24px;
+    font-size: 22px;
+  }
+  .invitation-document.invitation-preset--booklet .invitation-hero__copy {
+    padding: 20px 24px 28px;
+  }
+  .invitation-document.invitation-preset--booklet .invitation-hero h1 {
+    font-size: 27px;
+  }
+  .invitation-document.invitation-preset--booklet .invitation-hero__recipient {
+    margin-top: 36px;
+  }
+  .invitation-document.invitation-preset--booklet
+    .invitation-hero__recipient
+    strong {
+    font-size: 36px;
+  }
+  .invitation-document.invitation-preset--booklet .invitation-section {
+    padding: var(--module-padding, 30px) 24px;
+  }
+  .invitation-document.invitation-preset--booklet
+    .invitation-section__heading
+    h2 {
+    font-size: 24px;
+  }
+  .invitation-document.invitation-preset--booklet
+    .invitation-section__heading
+    > span {
+    font-size: 26px;
+  }
+  .invitation-document.invitation-preset--booklet .invitation-agenda__row {
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 14px;
+  }
+}
+@media (max-width: 600px) {
+  .invitation-document.invitation-preset--booklet .invitation-hero {
+    min-height: 0;
   }
 }
 </style>

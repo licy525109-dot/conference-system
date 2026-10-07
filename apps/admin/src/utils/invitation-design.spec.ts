@@ -15,7 +15,170 @@ import {
   normalizeInvitationNavigation,
   invitationNavigationLinks,
   invitationVisibleModules,
+  applyInvitationBooklet,
+  invitationAssetUrl,
 } from "@conference/shared";
+
+test("booklet arranges nine chapters without replacing authored facts or extra modules", () => {
+  let content = createInvitationContent({
+    title: "真实会议",
+    location: "真实会场",
+  });
+  content.dateLabel = "真实日期";
+  content.registration = {
+    mode: "external",
+    conferenceId: "",
+    url: "https://example.com/register",
+    label: "填写表单",
+  };
+  content.invitees = [
+    { id: "real-person", name: "真实嘉宾", organization: "真实机构" },
+  ];
+  content.agenda = [
+    {
+      id: "real-agenda",
+      date: "第二天",
+      time: "10:00",
+      title: "已有议程",
+      speaker: "",
+      location: "",
+    },
+  ];
+  content.organizers = ["真实协作单位"];
+  content.modules[0].body = normalizeInvitationRichText([
+    { tag: "p", children: [{ text: "工作人员已编辑的正文" }] },
+  ]);
+  const custom = createInvitationModule("richtext", "custom-note");
+  custom.body = normalizeInvitationRichText([
+    { tag: "p", children: [{ text: "必须保留的附加内容" }] },
+  ]);
+  content.modules.push(custom);
+  content = normalizeInvitationContent(content);
+  const before = structuredClone(content),
+    result = applyInvitationBooklet(content);
+  assert.deepEqual(content, before);
+  for (const key of [
+    "title",
+    "dateLabel",
+    "location",
+    "introduction",
+    "registration",
+    "invitees",
+    "agenda",
+    "shareTitle",
+    "shareDescription",
+    "inviteeSort",
+  ] as const)
+    assert.deepEqual(result[key], content[key]);
+  assert.deepEqual(result.modules[0].body, content.modules[0].body);
+  assert.deepEqual(
+    result.modules.find((module) => module.id === custom.id),
+    custom,
+  );
+  assert.deepEqual(
+    result.modules.slice(0, 9).map((module) => module.title),
+    [
+      "会议背景",
+      "会议关键词",
+      "会议亮点",
+      "时间地点",
+      "组织架构",
+      "会议议程",
+      "小组讨论话题",
+      "拟邀嘉宾",
+      "参会方式",
+    ],
+  );
+  assert.deepEqual(normalizeInvitationContent(result), result);
+  assert.equal(
+    result.modules
+      .find((module) => module.type === "organizations")
+      ?.items?.some((item) => item.description === "真实协作单位"),
+    true,
+  );
+});
+test("booklet reapplication keeps edits, visibility, navigation and topic presentation", () => {
+  const content = applyInvitationBooklet(
+    createInvitationContent({ title: "模板会议" }),
+  );
+  const topic = content.modules.find(
+    (module) => module.id === "booklet-discussion",
+  )!;
+  topic.items![0].title = "我已修改的讨论";
+  topic.enabled = false;
+  const keywords = content.modules.find(
+    (module) => module.id === "booklet-keywords",
+  )!;
+  keywords.body = [];
+  content.navigation = normalizeInvitationNavigation(
+    {
+      enabled: false,
+      sticky: false,
+      items: [{ moduleId: topic.id, label: "自定义导航", visible: false }],
+    },
+    content.modules,
+  );
+  const again = applyInvitationBooklet(content);
+  assert.deepEqual(again, content);
+  assert.equal(topic.settings!.layout, "list");
+});
+test("booklet creates editable examples but no fixed real recipient, date or venue", () => {
+  const content = applyInvitationBooklet(
+    createInvitationContent({ title: "外部会议", location: "自主选择会场" }),
+  );
+  content.dateLabel = "自主选择日期";
+  assert.equal(invitationVisibleModules(content).length, 9);
+  assert.equal(content.invitees.length, 0);
+  assert.deepEqual(
+    [...new Set(content.agenda.map((item) => item.date))],
+    ["第一天", "第二天", "第三天"],
+  );
+  assert.equal(
+    content.modules.find((module) => module.id === "booklet-discussion")?.items
+      ?.length,
+    8,
+  );
+  assert.equal(JSON.stringify(content).includes("鲁锡章"), false);
+  assert.equal(JSON.stringify(content).includes("江门"), false);
+  assert.equal(JSON.stringify(content).includes("2026年10月20"), false);
+});
+test("booklet rejects module overflow without dropping any authored content", () => {
+  const content = createInvitationContent();
+  content.modules = Array.from({ length: 24 }, (_, index) =>
+    createInvitationModule("richtext", `custom-${index}`),
+  );
+  const before = structuredClone(content);
+  assert.throws(() => applyInvitationBooklet(content), RangeError);
+  assert.deepEqual(content, before);
+});
+test("booklet handles reserved ID collisions and restricts bundled asset URLs", () => {
+  const content = createInvitationContent();
+  const custom = createInvitationModule("image", "booklet-discussion");
+  custom.imageUrl = "https://example.com/image.png";
+  content.modules.push(custom);
+  const result = applyInvitationBooklet(content);
+  assert.equal(
+    result.modules.find((module) => module.type === "tabs")?.id,
+    "booklet-discussion-1",
+  );
+  assert.deepEqual(
+    result.modules.find((module) => module.id === custom.id),
+    custom,
+  );
+  for (const url of [
+    "/invitation-art/booklet-cover.png",
+    "/invitation-art/booklet-waves.png",
+    "/invitation-art/booklet-pattern.jpg",
+  ])
+    assert.equal(invitationAssetUrl(url), url);
+  for (const url of [
+    "/invitation-art/../secret.png",
+    "/invitation-art/booklet-cover.svg",
+    "/invitation-art/booklet-cover.png?x=1",
+    "javascript:alert(1)",
+  ])
+    assert.equal(invitationAssetUrl(url), "");
+});
 
 test("old invitation payloads acquire compatible presentation defaults", () => {
   const content = normalizeInvitationContent({

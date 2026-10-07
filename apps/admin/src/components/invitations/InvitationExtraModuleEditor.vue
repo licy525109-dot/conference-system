@@ -136,15 +136,35 @@
         ></el-form-item
       >
     </div>
-    <template v-if="['carousel', 'tabs', 'links'].includes(module.type)">
+    <el-form-item v-if="module.type === 'tabs'" label="展示形式">
+      <el-radio-group
+        :model-value="settings.layout"
+        :disabled="disabled"
+        @update:model-value="
+          patchSettings({ layout: $event === 'list' ? 'list' : 'grid' })
+        "
+      >
+        <el-radio-button value="grid">标签切换</el-radio-button>
+        <el-radio-button value="list">议题列表</el-radio-button>
+      </el-radio-group>
+    </el-form-item>
+    <template
+      v-if="
+        ['carousel', 'tabs', 'links', 'organizations'].includes(module.type)
+      "
+    >
       <div class="extra-items-heading">
         <h3>
           {{
-            module.type === "tabs"
-              ? "标签页"
-              : module.type === "links"
-                ? "链接项目"
-                : "轮播图片"
+            module.type === "organizations"
+              ? "组织单位"
+              : module.type === "tabs"
+                ? settings.layout === "list"
+                  ? "讨论议题"
+                  : "标签页"
+                : module.type === "links"
+                  ? "链接项目"
+                  : "轮播图片"
           }}
         </h3>
         <el-button
@@ -183,7 +203,10 @@
               @click="setItems(items.filter((_, i) => i !== index))"
             />
           </div>
-          <el-form-item label="项目标题"
+          <el-form-item
+            :label="
+              module.type === 'organizations' ? '角色 / 分组' : '项目标题'
+            "
             ><el-input
               :model-value="item.title"
               :disabled="disabled"
@@ -218,7 +241,13 @@
             :disabled="disabled"
             @update:model-value="patchItem(index, { body: $event })"
           />
-          <el-form-item v-else label="说明（选填）"
+          <el-form-item
+            v-else
+            :label="
+              module.type === 'organizations'
+                ? '单位名称（选填）'
+                : '说明（选填）'
+            "
             ><el-input
               :model-value="item.description"
               :disabled="disabled"
