@@ -11,6 +11,8 @@ import {
   type InvitationNavigation,
   INVITATION_MODULE_LABELS,
   invitationAssetUrl,
+  invitationLinkUrl,
+  type InvitationModuleItem,
 } from "./invitation-design";
 export * from "./invitation-design";
 export type InvitationTheme = "forest" | "ceremony" | "coral";
@@ -396,6 +398,51 @@ export const INVITATION_PRESETS = [
   },
 ] as const;
 
+export function invitationVenueItems(
+  content: InvitationContent,
+  module: InvitationModule,
+): InvitationModuleItem[] {
+  if (module.settings?.venueMode === "custom")
+    return (module.items || [])
+      .map((item) => ({ ...item, href: invitationLinkUrl(item.href) }))
+      .filter((item) => item.description.trim() || item.href);
+  const presented = new Set(
+    content.modules
+      .filter((item) => item.type === "organizations" && item.enabled)
+      .flatMap((item) => (item.items || []).map((unit) => unit.description)),
+  );
+  const organizers = content.organizers.filter((name) => !presented.has(name));
+  return [
+    { title: "时间", description: content.dateLabel, icon: "calendar" },
+    {
+      title: "地点",
+      description: [content.location, content.address]
+        .filter(Boolean)
+        .join("\n"),
+      icon: "location",
+    },
+    {
+      title: "会务",
+      description: [content.contactName, content.contactPhone]
+        .filter(Boolean)
+        .join("\n"),
+      icon: "phone",
+      href: invitationLinkUrl(
+        `tel:${content.contactPhone.replace(/[^+\d]/g, "")}`,
+      ),
+    },
+    { title: "组织单位", description: organizers.join("\n"), icon: "document" },
+  ]
+    .filter((item) => item.description.trim())
+    .map((item, index) => ({
+      id: `${module.id}-meeting-${index}`,
+      imageUrl: "",
+      body: [],
+      href: "",
+      ...item,
+    }));
+}
+
 export function invitationVisibleModules(
   content: InvitationContent,
 ): InvitationModule[] {
@@ -419,13 +466,32 @@ export function invitationVisibleModules(
             module.settings?.longitude != null),
       );
     if (module.type === "search") return true;
+    if (module.type === "contacts")
+      return Boolean(
+        module.contacts?.some((contact) =>
+          [
+            contact.name,
+            contact.role,
+            contact.phone,
+            contact.wechat,
+            contact.note,
+            contact.imageUrl,
+          ].some((value) => value.trim()),
+        ),
+      );
     if (module.type === "organizations")
       return Boolean(
-        module.items?.some((item) => item.description || item.imageUrl),
+        module.items?.some((item) => item.description || item.imageUrl) ||
+          (module.settings?.organizationLayout === "canvas" &&
+            module.organizationCanvas?.labels.some(
+              (label) => label.enabled && label.text.trim(),
+            )),
       );
     if (module.type === "invitees" && content.visualPreset === "booklet")
       return true;
-    if (module.type === "venue")
+    if (module.type === "venue") {
+      if (module.settings?.venueMode === "custom")
+        return invitationVenueItems(content, module).length > 0;
       return Boolean(
         content.dateLabel ||
           content.location ||
@@ -434,6 +500,7 @@ export function invitationVisibleModules(
           content.contactPhone ||
           content.organizers.length,
       );
+    }
     return content[module.type].length > 0;
   });
 }

@@ -23,16 +23,16 @@ self.onmessage = (
       raw: true,
     });
     if (workbook.SheetNames.length > 20)
-      throw new Error("工作簿超过 20 个工作表，请仅保留名单工作表");
+      throw new Error("工作簿超过 20 个工作表，请仅保留需要导入的工作表");
     const sheets: RosterSheet[] = workbook.SheetNames.map((name) => {
       const sheet = workbook.Sheets[name]!;
       const range = utils.decode_range(sheet["!ref"] || "A1");
       if (range.e.c > 49)
-        throw new Error("表格超过 50 列，请只保留公开名单相关列");
+        throw new Error("表格超过 50 列，请只保留需要导入的列");
       const rows = utils
         .sheet_to_json<unknown[]>(sheet, {
-        header: 1,
-        range: 0,
+          header: 1,
+          range: 0,
           raw: false,
           defval: "",
           blankrows: true,

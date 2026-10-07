@@ -11,6 +11,7 @@ import {
   createInvitationModule,
   normalizeInvitationContent,
   normalizeInvitationNavigation,
+  arrangeInvitationOrganizations,
   type PublicInvitation,
 } from "../../packages/shared/src/invitations";
 import {
@@ -23,6 +24,530 @@ const origin =
 const artworkPath =
   process.env.INVITATION_ARTWORK_PATH ||
   "apps/admin/public/invitation-art/tide-paper.jpg";
+
+for (const format of ["xlsx", "xls", "csv"] as const) {
+  test(`agenda imports ${format} and replaces only the selected day after confirmation`, async ({
+    page,
+  }) => {
+    const campaign = await adminFixture(page, ["*"]);
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /会议议程/ })
+      .first()
+      .click();
+    await page.getByRole("button", { name: "批量录入", exact: true }).click();
+    const dialog = page.getByRole("dialog", {
+      name: "批量录入议程",
+      exact: true,
+    });
+    await dialog
+      .getByRole("textbox", { name: "粘贴议程表格" })
+      .fill("时间\t议题\n上午\t\n下午\t有效议题");
+    await dialog.getByRole("button", { name: "识别粘贴内容" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("缺少议题");
+    await expect(
+      dialog.getByRole("button", { name: "导入议程", exact: true }),
+    ).toBeDisabled();
+    const XLSX = createRequire(resolve("apps/admin/package.json"))("xlsx"),
+      workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["议题", "时间", "嘉宾"],
+        ["表格议题\n第二行", "09:00", "示例嘉宾"],
+      ]),
+      "会议议程",
+    );
+    await dialog.locator('input[type="file"]').setInputFiles({
+      name: `agenda.${format}`,
+      mimeType: "application/octet-stream",
+      buffer: XLSX.write(workbook, {
+        type: "buffer",
+        bookType: format === "xls" ? "biff8" : format,
+      }),
+    });
+    await expect(dialog.locator(".agenda-import-count")).toHaveText("1 条议程");
+    await expect(
+      dialog.getByRole("button", { name: "导入议程", exact: true }),
+    ).toBeEnabled();
+    await dialog.getByText("替换当前日期", { exact: true }).click();
+    await dialog.getByRole("button", { name: "导入议程", exact: true }).click();
+    await page.getByRole("button", { name: "替换", exact: true }).click();
+    await expect(page.locator(".agenda-quick-row")).toHaveCount(1);
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    expect(campaign.draft.agenda.map((row) => row.date)).toEqual([
+      "12月18日",
+      "12月19日",
+    ]);
+    expect(campaign.draft.agenda[0].title).toBe("表格议题\n第二行");
+    expect(campaign.draft.agenda[1].title).toBe("专题圆桌");
+  });
+}
+test("organization captions load an independent uploaded font and fit their frame", async ({
+  page,
+}) => {
+  const doc = document(),
+    org = createInvitationModule("organizations", "font-canvas");
+  org.settings!.organizationLayout = "canvas";
+  org.organizationCanvas = {
+    width: 750,
+    height: 400,
+    labels: [
+      {
+        ...createInvitationLayer("caption", "HOST ORGANIZERS"),
+        font: "custom",
+        x: 4,
+        y: 4,
+        width: 30,
+        height: 10,
+        fontSize: 140,
+      },
+    ],
+  };
+  doc.content.modules = [org];
+  doc.content.design = {
+    ...doc.content.design!,
+    font: "default",
+    fontUrl: "/uploads/canvas-font.woff2",
+    replaceAllFonts: false,
+  };
+  await publicFixture(page, () => doc);
+  await page.route("**/uploads/canvas-font.woff2", (route) =>
+    testFontFile().then((path) =>
+      route.fulfill({ path, contentType: "font/woff2" }),
+    ),
+  );
+  await page.goto(`${origin}/i/${token}`);
+  await expect(page.locator(".organization-canvas-label")).toHaveCSS(
+    "font-family",
+    /InvitationFont/,
+  );
+  await expect
+    .poll(() =>
+      page.locator(".organization-canvas-label > span").evaluate((el) => {
+        const r = el.getBoundingClientRect(),
+          p = el.parentElement!.getBoundingClientRect();
+        return r.width <= p.width + 1 && r.height <= p.height + 1;
+      }),
+    )
+    .toBe(true);
+  expect(
+    await page
+      .locator(".organization-canvas-label > span")
+      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+  ).toBeLessThan(140);
+});
+
+for (const width of [390, 1440]) {
+  test(`quick agenda editing and table import preserve details at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const campaign = await adminFixture(page, ["*"]);
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /会议议程/ })
+      .first()
+      .click();
+    await expect(page.locator(".agenda-quick-row")).toHaveCount(1);
+    await expect(page.locator(".agenda-detail-fields")).toHaveCount(0);
+    await page
+      .getByRole("textbox", { name: "第1条议程议题", exact: true })
+      .fill("快速改好的议题");
+    await page
+      .getByRole("button", { name: "第1条议程详情", exact: true })
+      .click();
+    await page
+      .getByRole("textbox", { name: "第1条议程嘉宾", exact: true })
+      .fill("测试分享嘉宾");
+    await page
+      .getByRole("button", { name: "复制第1条议程", exact: true })
+      .click();
+    await expect(page.locator(".agenda-quick-row")).toHaveCount(2);
+    await page.getByRole("button", { name: "批量录入", exact: true }).click();
+    const dialog = page.getByRole("dialog", {
+      name: "批量录入议程",
+      exact: true,
+    });
+    await dialog
+      .getByRole("textbox", { name: "粘贴议程表格" })
+      .fill("议题\t时间\t嘉宾\n批量交流\t下午\t示例嘉宾\n晚间交流\t晚间\t");
+    await dialog.getByRole("button", { name: "识别粘贴内容" }).click();
+    await expect(dialog.locator(".agenda-import-count")).toHaveText("2 条议程");
+    await dialog.getByRole("button", { name: "导入议程", exact: true }).click();
+    await expect(page.locator(".agenda-quick-row")).toHaveCount(4);
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    expect(campaign.draft.agenda).toHaveLength(5);
+    expect(
+      campaign.draft.agenda.filter((row) => row.speaker === "测试分享嘉宾"),
+    ).toHaveLength(2);
+    expect(campaign.draft.agenda.find((row) => row.id === "a2")!.title).toBe(
+      "专题圆桌",
+    );
+    await page.screenshot({
+      path: `output/playwright/invitation-quick-agenda-${width}.png`,
+      fullPage: true,
+    });
+    await page.reload();
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /会议议程/ })
+      .first()
+      .click();
+    await expect(page.locator(".agenda-quick-row")).toHaveCount(4);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+  test(`custom venue editing and empty state round trip at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const campaign = await adminFixture(page, ["*"]);
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /赴约信息/ })
+      .first()
+      .click();
+    await page
+      .locator(".invitation-venue-editor")
+      .getByText("自定义条目", { exact: true })
+      .click();
+    await expect(page.locator(".venue-edit-row")).toHaveCount(2);
+    await page.getByRole("button", { name: "添加条目", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "第3项标题", exact: true })
+      .fill("签到安排");
+    await page
+      .getByRole("textbox", { name: "第3项内容", exact: true })
+      .fill("上午 08:30\n酒店一层接待台");
+    await page.getByRole("button", { name: "第3项上移", exact: true }).click();
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    let venue = campaign.draft.modules.find(
+      (module) => module.type === "venue",
+    )!;
+    expect(venue.items![1].title).toBe("签到安排");
+    expect(campaign.draft.dateLabel).toBe("2026年12月18日");
+    await page.reload();
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /赴约信息/ })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("textbox", { name: "第2项内容", exact: true }),
+    ).toHaveValue("上午 08:30\n酒店一层接待台");
+    for (let i = 0; i < 3; i++)
+      await page
+        .getByRole("button", { name: "删除第1项", exact: true })
+        .click();
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    venue = campaign.draft.modules.find((module) => module.type === "venue")!;
+    expect(venue.items).toHaveLength(0);
+    await expect(
+      page.locator(".module-live-preview #invitation-venue"),
+    ).toHaveCount(0);
+  });
+  test(`organization canvas drag resize undo and persistence at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1100 });
+    const doc = document(),
+      org = createInvitationModule("organizations", "canvas-org");
+    org.items = [
+      {
+        id: "logo",
+        title: "主办单位",
+        description: "测试单位",
+        imageUrl: "/invitation-art/tide-paper.jpg",
+        href: "",
+        body: [],
+        icon: "link",
+      },
+    ];
+    doc.content.modules.push(org);
+    const campaign = await adminFixture(page, ["*"], doc);
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /组织架构/ })
+      .first()
+      .click();
+    await page.getByText("自由画布", { exact: true }).click();
+    const editor = page.locator(".organization-canvas-editor"),
+      logo = editor.locator(".organization-canvas-logo").first();
+    await expect(logo).toBeVisible();
+    await logo.scrollIntoViewIfNeeded();
+    const bounds = (await logo.boundingBox())!;
+    const before = await logo.getAttribute("style");
+    await page.mouse.move(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      bounds.x + bounds.width / 2 + 18,
+      bounds.y + bounds.height / 2 + 12,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+    await expect(logo).not.toHaveAttribute("style", before!);
+    await editor
+      .getByRole("button", { name: "撤销画布调整", exact: true })
+      .click();
+    await expect(logo).toHaveAttribute("style", before!);
+    await editor
+      .getByRole("button", { name: "重做画布调整", exact: true })
+      .click();
+    await logo.click();
+    const handle = editor.getByRole("button", {
+      name: "调整Logo 测试单位大小",
+      exact: true,
+    });
+    const h = (await handle.boundingBox())!;
+    const moved = await logo.getAttribute("style");
+    await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(h.x + h.width / 2 + 12, h.y + h.height / 2 + 12, {
+      steps: 4,
+    });
+    await page.mouse.up();
+    await expect(logo).not.toHaveAttribute("style", moved!);
+    await editor.getByRole("button", { name: "添加文字", exact: true }).click();
+    await editor
+      .getByRole("textbox", { name: "画布文字内容" })
+      .fill("自定义组织标题");
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    const saved = campaign.draft.modules.find(
+      (module) => module.type === "organizations",
+    )!;
+    expect(saved.settings!.organizationLayout).toBe("canvas");
+    expect(saved.items![0].frame).toBeTruthy();
+    expect(saved.organizationCanvas!.labels.at(-1)!.text).toBe(
+      "自定义组织标题",
+    );
+    await editor.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `output/playwright/invitation-organization-editor-${width}.png`,
+      fullPage: true,
+    });
+    await page.reload();
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page
+      .getByRole("button", { name: /组织架构/ })
+      .first()
+      .click();
+    await expect(editor.locator(".organization-canvas-label")).toContainText([
+      "主办单位",
+      "自定义组织标题",
+    ]);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+  test(`contact module add reorder hide and save at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const campaign = await adminFixture(page, ["*"]);
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page.getByRole("button", { name: "添加模块", exact: true }).click();
+    await page
+      .getByRole("menuitem", { name: "联系会务组", exact: true })
+      .click();
+    await page.getByRole("button", { name: "添加联系人", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "联系人1姓名", exact: true })
+      .fill("接待联系人");
+    await page
+      .getByRole("textbox", { name: "联系人1电话", exact: true })
+      .fill("010-12345678");
+    await page
+      .getByRole("textbox", { name: "联系人1微信号", exact: true })
+      .fill("codex-test-contact");
+    await page
+      .getByRole("textbox", { name: "联系人1备注", exact: true })
+      .fill("测试备注\n第二行");
+    await page.getByRole("button", { name: "添加联系人", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "联系人2姓名", exact: true })
+      .fill("交通联系人");
+    await page
+      .getByRole("button", { name: "上移联系人2", exact: true })
+      .click();
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    const saved = campaign.draft.modules.find(
+      (module) => module.type === "contacts",
+    )!;
+    expect(saved.contacts!.map((contact) => contact.name)).toEqual([
+      "交通联系人",
+      "接待联系人",
+    ]);
+    await page.locator(".invitation-module-toolbar .el-switch").click();
+    await expect(
+      page.locator(".module-live-preview .invitation-contacts"),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    expect(
+      campaign.draft.modules.find((module) => module.type === "contacts")!
+        .enabled,
+    ).toBe(false);
+  });
+}
+for (const width of [320, 390, 1440]) {
+  test(`custom venue canvas and contacts render responsively and refresh at ${width}px`, async ({
+    page,
+    context,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width, height: 1000 });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    const doc = document();
+    doc.content = normalizeInvitationContent(
+      applyInvitationBooklet(doc.content),
+    );
+    const venue = doc.content.modules.find(
+      (module) => module.type === "venue",
+    )!;
+    venue.settings!.venueMode = "custom";
+    venue.items = [
+      {
+        id: "v",
+        title: "接待安排",
+        description: "上午 08:30\n酒店一层接待台",
+        imageUrl: "",
+        href: "https://example.com/meeting",
+        icon: "location",
+        body: [],
+      },
+    ];
+    const org = doc.content.modules.find(
+      (module) => module.type === "organizations",
+    )!;
+    org.items = [
+      {
+        id: "o",
+        title: "主办单位",
+        description: "测试组织单位",
+        imageUrl: "/invitation-art/tide-paper.jpg",
+        href: "",
+        icon: "link",
+        body: [],
+      },
+    ];
+    Object.assign(org, arrangeInvitationOrganizations(org));
+    org.settings!.organizationLayout = "canvas";
+    const contacts = createInvitationModule("contacts", "contacts");
+    contacts.contacts = [
+      {
+        id: "c",
+        name: "合成测试联系人",
+        role: "交通与住宿咨询",
+        phone: "010-12345678",
+        wechat: "codex-test-contact",
+        note: "合成测试备注，不是真实会务资料\n第二行",
+        imageUrl: "/invitation-art/tide-paper.jpg",
+      },
+    ];
+    doc.content.modules.push(contacts);
+    await publicFixture(page, () => doc);
+    await page.goto(`${origin}/i/${token}`);
+    await expect(page.locator(".invitation-facts--custom")).toContainText(
+      "接待安排",
+    );
+    await expect(page.locator(".invitation-facts--custom a")).toHaveAttribute(
+      "href",
+      "https://example.com/meeting",
+    );
+    await page.locator(".organization-canvas").scrollIntoViewIfNeeded();
+    await expect(page.locator(".organization-canvas-logo img")).toBeVisible();
+    await expect
+      .poll(() =>
+        page
+          .locator(".organization-canvas-logo img")
+          .evaluate(
+            (el: HTMLImageElement) => el.complete && el.naturalWidth > 0,
+          ),
+      )
+      .toBe(true);
+    const geometry = await page
+      .locator(".organization-canvas-logo")
+      .evaluate((el) => {
+        const r = el.getBoundingClientRect(),
+          p = el.closest(".organization-canvas")!.getBoundingClientRect();
+        return {
+          x: (r.x - p.x) / p.width,
+          width: r.width / p.width,
+          inside: r.bottom <= p.bottom + 1,
+        };
+      });
+    expect(geometry.x).toBeCloseTo(org.items![0].frame!.x / 100, 2);
+    expect(geometry.inside).toBe(true);
+    await page.locator(".invitation-contacts").scrollIntoViewIfNeeded();
+    await expect(page.locator(".contact-actions a")).toHaveAttribute(
+      "href",
+      "tel:01012345678",
+    );
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page
+      .getByRole("button", { name: "复制合成测试联系人微信号" })
+      .click();
+    await expect(page.locator(".contact-copy-status")).toHaveText(
+      "微信号已复制",
+    );
+    await page.screenshot({
+      path: `output/playwright/invitation-custom-contact-${width}.png`,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    expect(errors).toEqual([]);
+    contacts.contacts[0].note = "发布后实时更新的会务备注";
+    doc.revision++;
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.locator(".contact-note")).toHaveText(
+      "发布后实时更新的会务备注",
+    );
+    contacts.enabled = false;
+    venue.items = [];
+    doc.revision++;
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.locator(".invitation-contacts")).toHaveCount(0);
+    await expect(page.locator("#invitation-venue")).toHaveCount(0);
+  });
+}
 
 async function testFontFile() {
   const dir = resolve(
