@@ -300,7 +300,6 @@
         <div class="invitation-section__heading">
           <span>{{ sectionNumbers.invitees }}</span>
           <h2>{{ module.title }}</h2>
-          <small>{{ content.invitees.length }} 位</small>
         </div>
         <div v-if="content.invitees.length" class="invitation-roster-tools">
           <label class="invitation-search"
@@ -365,8 +364,7 @@
         </p>
         <div v-if="rosterPages > 1" class="invitation-roster-pages">
           <span aria-live="polite"
-            >{{ rosterPage }} / {{ rosterPages }} 页 ·
-            {{ filteredInvitees.length }} 位</span
+            >{{ rosterPage }} / {{ rosterPages }} 页</span
           ><button
             :disabled="rosterPage <= 1"
             aria-label="名单上一页"
@@ -1327,11 +1325,6 @@ const themeStyle = computed(() => ({
   line-height: 1.4;
   font-weight: 600;
   color: var(--invite-primary);
-}
-.invitation-section__heading small {
-  margin-left: auto;
-  color: #66746a;
-  font-size: 13px;
 }
 .invitation-letter__eyebrow {
   font-size: 13px;

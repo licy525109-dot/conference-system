@@ -3298,6 +3298,47 @@ test("public roster locates a recipient on another page and does not guess dupli
   });
 });
 
+for (const preset of ["classic", "booklet"] as const) {
+  for (const width of [320, 1440]) {
+    test(`public roster hides invitee totals in ${preset} at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const doc = document();
+      if (preset === "booklet")
+        doc.content = applyInvitationBooklet(doc.content);
+      doc.recipient.name = "演示嘉宾45";
+      await publicFixture(page, () => doc);
+      await page.goto(`${origin}/i/${token}`);
+
+      const section = page.locator("#invitation-list");
+      await expect(
+        section.locator(".invitation-section__heading h2"),
+      ).toBeVisible();
+      await expect(
+        section.locator(".invitation-section__heading h2"),
+      ).not.toHaveText(/^\s*$/);
+      await expect(
+        section.locator(".invitation-section__heading small"),
+      ).toHaveCount(0);
+      await expect(section.locator(".invitation-roster")).toBeVisible();
+      await expect(section.locator(".invitation-roster-pages")).toContainText(
+        "1 / 3 页",
+      );
+      await expect(
+        section.locator(".invitation-roster-pages"),
+      ).not.toContainText(/\d+\s*位/);
+      await page.getByRole("button", { name: "查看我的位置" }).click();
+      await expect(section.locator(".invitation-roster-pages")).toContainText(
+        "3 / 3 页",
+      );
+      await expect(
+        section.locator(".invitation-roster .is-recipient"),
+      ).toContainText("演示嘉宾45");
+    });
+  }
+}
+
 test("CSV upload detects public columns, discards phone numbers and merges duplicates", async ({
   page,
 }) => {
