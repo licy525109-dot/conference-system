@@ -26,6 +26,41 @@ const artworkPath =
   "apps/admin/public/invitation-art/tide-paper.jpg";
 
 for (const width of [390, 1440]) {
+  test(`check-in time is editable, saved and shown in the invitation at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const doc = document();
+    doc.content = applyInvitationBooklet(doc.content);
+    const campaign = await adminFixture(page, ["*"], doc);
+    await publicFixture(page, () => ({
+      ...doc,
+      content: campaign.published,
+      revision: campaign.publishedRevision,
+    }));
+    await page.goto(`${origin}/#/invitations`);
+    await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+    await page.getByRole("button", { name: /时间地点/ }).first().click();
+    const checkinTime = page.getByRole("textbox", {
+      name: "签到时间（选填）",
+      exact: true,
+    });
+    await checkinTime.fill("2026年11月24日 09:00-09:30");
+    await expect(
+      page.locator(".module-live-preview #invitation-venue"),
+    ).toContainText("2026年11月24日 09:00-09:30");
+    await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    await expect(page.locator(".invite-editor-toolbar")).toContainText(
+      "草稿已保存",
+    );
+    expect(campaign.draft.checkinTime).toBe("2026年11月24日 09:00-09:30");
+    campaign.published = campaign.draft;
+    await page.goto(`${origin}/i/${token}`);
+    const venue = page.locator("#invitation-venue");
+    await expect(venue).toContainText("签到时间");
+    await expect(venue).toContainText("2026年11月24日 09:00-09:30");
+  });
+
   test(`roster note shares both editors, persists and publishes at ${width}px`, async ({
     page,
   }) => {

@@ -110,10 +110,35 @@ test("replacing a day retains the relative day order and untouched details", () 
 test("custom venue entries do not fall back when empty and preserve legacy meeting fields", () => {
   const content = createInvitationContent();
   content.dateLabel = "原会议日期";
+  content.checkinTime = "09:00-09:30";
   const module = content.modules.find((module) => module.type === "venue")!;
   assert.equal(
     invitationVenueItems(content, module)[0].description,
     "原会议日期",
+  );
+  assert.equal(
+    invitationVenueItems(content, module).find(
+      (item) => item.title === "签到时间",
+    )?.description,
+    "09:00-09:30",
+  );
+  const customItems = invitationVenueItems(content, {
+    ...module,
+    settings: {
+      ...normalizeInvitationModuleSettings(module.settings),
+      venueMode: "custom",
+    },
+    items: invitationVenueItems(content, module),
+  });
+  assert.equal(
+    customItems.find((item) => item.title === "签到时间")?.description,
+    "09:00-09:30",
+  );
+  const checkinOnly = createInvitationContent();
+  checkinOnly.checkinTime = "09:00-09:30";
+  assert.equal(
+    invitationVisibleModules(checkinOnly).some((item) => item.type === "venue"),
+    true,
   );
   module.settings = {
     ...normalizeInvitationModuleSettings(module.settings),
@@ -136,6 +161,7 @@ test("custom venue entries do not fall back when empty and preserve legacy meeti
   ];
   const normalized = normalizeInvitationContent(content);
   assert.equal(normalized.dateLabel, "原会议日期");
+  assert.equal(normalized.checkinTime, "09:00-09:30");
   assert.equal(
     invitationVenueItems(
       normalized,
