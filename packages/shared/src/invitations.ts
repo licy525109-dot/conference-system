@@ -78,6 +78,7 @@ export interface InvitationContent {
   host: string;
   introduction: string;
   dateLabel: string;
+  checkinTime: string;
   location: string;
   address: string;
   contactName: string;
@@ -160,6 +161,7 @@ export function createInvitationContent(conference?: {
           day: "numeric",
         })
       : "",
+    checkinTime: "",
     location: conference?.location || "",
     address: "",
     contactName: "",
@@ -225,6 +227,7 @@ export function normalizeInvitationContent(input: unknown): InvitationContent {
     "subtitle",
     "host",
     "dateLabel",
+    "checkinTime",
     "location",
     "address",
     "contactName",
@@ -415,6 +418,11 @@ export function invitationVenueItems(
   return [
     { title: "时间", description: content.dateLabel, icon: "calendar" },
     {
+      title: "签到时间",
+      description: content.checkinTime,
+      icon: "calendar",
+    },
+    {
       title: "地点",
       description: [content.location, content.address]
         .filter(Boolean)
@@ -494,6 +502,7 @@ export function invitationVisibleModules(
         return invitationVenueItems(content, module).length > 0;
       return Boolean(
         content.dateLabel ||
+          content.checkinTime ||
           content.location ||
           content.address ||
           content.contactName ||

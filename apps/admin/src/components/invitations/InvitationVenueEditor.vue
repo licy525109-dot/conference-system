@@ -169,6 +169,7 @@ const mode = computed(
 const items = computed(() => props.module.items || []);
 const meetingFields = {
   dateLabel: "会议时间（选填）",
+  checkinTime: "签到时间（选填）",
   location: "会场（选填）",
   address: "详细地址（选填）",
   contactName: "会务联系人（选填）",

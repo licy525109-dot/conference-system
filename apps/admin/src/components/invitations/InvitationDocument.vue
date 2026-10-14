@@ -428,6 +428,10 @@
               <dt><Calendar />时间</dt>
               <dd>{{ content.dateLabel }}</dd>
             </div>
+            <div v-if="content.checkinTime">
+              <dt><Calendar />签到时间</dt>
+              <dd>{{ content.checkinTime }}</dd>
+            </div>
             <div v-if="content.location || content.address">
               <dt><Location />地点</dt>
               <dd>
