@@ -25,6 +25,50 @@ export function escapeInvitationHtml(value: string): string {
       ]!,
   );
 }
+export function invitationShareMetadata(
+  share: ReturnType<typeof invitationShare>,
+): string {
+  const pageUrl = new URL(share.url);
+  const parsedImage = share.imageUrl
+    ? new URL(share.imageUrl, pageUrl)
+    : undefined;
+  const validImage =
+    parsedImage &&
+    ["http:", "https:"].includes(parsedImage.protocol) &&
+    !parsedImage.username &&
+    !parsedImage.password
+      ? parsedImage.href
+      : "";
+  const title = escapeInvitationHtml(share.title);
+  const description = escapeInvitationHtml(share.description);
+  const image = validImage ? escapeInvitationHtml(validImage) : "";
+  const secureImage = parsedImage?.protocol === "https:" ? image : "";
+  const url = escapeInvitationHtml(pageUrl.href);
+  return [
+    `<title>${title}</title>`,
+    `<meta name="description" content="${description}">`,
+    '<meta property="og:type" content="website">',
+    '<meta property="og:site_name" content="观潮会集">',
+    '<meta property="og:locale" content="zh_CN">',
+    `<meta property="og:title" content="${title}">`,
+    `<meta property="og:description" content="${description}">`,
+    ...(image
+      ? [
+          `<meta property="og:image" content="${image}">`,
+          `<meta property="og:image:alt" content="${title}">`,
+          ...(secureImage
+            ? [`<meta property="og:image:secure_url" content="${secureImage}">`]
+            : []),
+        ]
+      : []),
+    `<meta property="og:url" content="${url}">`,
+    `<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">`,
+    `<meta name="twitter:title" content="${title}">`,
+    `<meta name="twitter:description" content="${description}">`,
+    ...(image ? [`<meta name="twitter:image" content="${image}">`] : []),
+    '<meta name="robots" content="noindex,nofollow">',
+  ].join("");
+}
 @Controller("i")
 export class InvitationPageController {
   constructor(private readonly service: InvitationsService) {}
@@ -43,7 +87,7 @@ export class InvitationPageController {
     try {
       const { data } = await this.service.publicInvitation(token);
       const share = invitationShare(data);
-      meta = `<title>${escapeInvitationHtml(share.title)}</title><meta name="description" content="${escapeInvitationHtml(share.description)}"><meta property="og:title" content="${escapeInvitationHtml(share.title)}"><meta property="og:description" content="${escapeInvitationHtml(share.description)}"><meta property="og:image" content="${escapeInvitationHtml(share.imageUrl)}"><meta property="og:url" content="${escapeInvitationHtml(share.url)}"><meta name="robots" content="noindex,nofollow">`;
+      meta = invitationShareMetadata(share);
     } catch (error) {
       const unavailable =
         error instanceof HttpException &&

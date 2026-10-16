@@ -9,7 +9,10 @@ import {
   arrangeInvitationOrganizations,
 } from "@conference/shared";
 import { InvitationsService } from "./invitations.service";
-import { escapeInvitationHtml } from "./invitation-page.controller";
+import {
+  escapeInvitationHtml,
+  invitationShareMetadata,
+} from "./invitation-page.controller";
 import {
   assertInvitationOwner,
   invitationCampaignScope,
@@ -147,6 +150,34 @@ test("personalized titles remain escaped in server-rendered HTML", () => {
     escapeInvitationHtml("张<老师>\"&'专属邀请函"),
     "张&lt;老师&gt;&quot;&amp;&#39;专属邀请函",
   );
+});
+test("share metadata keeps personalized text and an absolute image URL in one card payload", () => {
+  const metadata = invitationShareMetadata({
+    title: "李明专属邀请函",
+    description: "诚邀李明老师赴约观潮交流会",
+    imageUrl: "/uploads/invitation-cover.png",
+    url: `https://guanchaohuiji.com/i/${token}`,
+  });
+  assert.match(metadata, /<title>李明专属邀请函<\/title>/);
+  assert.match(metadata, /property="og:title" content="李明专属邀请函"/);
+  assert.match(
+    metadata,
+    /property="og:description" content="诚邀李明老师赴约观潮交流会"/,
+  );
+  assert.match(
+    metadata,
+    /property="og:image" content="https:\/\/guanchaohuiji\.com\/uploads\/invitation-cover\.png"/,
+  );
+  assert.match(metadata, /property="og:image:secure_url"/);
+  assert.match(metadata, /name="twitter:card" content="summary_large_image"/);
+  const localMetadata = invitationShareMetadata({
+    title: "本地预览",
+    description: "测试",
+    imageUrl: "http://localhost:3001/uploads/cover.png",
+    url: `http://localhost:3001/i/${token}`,
+  });
+  assert.match(localMetadata, /property="og:image"/);
+  assert.doesNotMatch(localMetadata, /property="og:image:secure_url"/);
 });
 test("invitation image upload rejects a forged image MIME type", async () => {
   const controller = new AdminInvitationsController(

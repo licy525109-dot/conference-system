@@ -192,6 +192,7 @@ test("share variables are literal, one pass, personalized and used by both WeCha
     content: {
       ...createInvitationContent({ title: "观潮交流会" }),
       shareDescription: "诚邀{姓名}{称谓}赴约{会议名称}",
+      shareImageUrl: "/uploads/invitation-share.png",
     },
     recipient: { name: "李明", salutation: "老师" },
     shareUrl: "https://guanchaohuiji.com/i/example",
@@ -199,20 +200,34 @@ test("share variables are literal, one pass, personalized and used by both WeCha
   const resolved = invitationShare(document);
   assert.equal(resolved.title, "李明专属邀请函");
   assert.equal(resolved.description, "诚邀李明老师赴约观潮交流会");
-  const calls: Record<string, unknown>[] = [];
+  const calls: Record<string, Record<string, unknown>> = {};
   updateInvitationShare(
     {
       updateAppMessageShareData: (data: Record<string, unknown>) =>
-        calls.push(data),
+        (calls.app = data),
       updateTimelineShareData: (data: Record<string, unknown>) =>
-        calls.push(data),
+        (calls.timeline = data),
+      onMenuShareAppMessage: (data: Record<string, unknown>) =>
+        (calls.legacyApp = data),
+      onMenuShareTimeline: (data: Record<string, unknown>) =>
+        (calls.legacyTimeline = data),
     } as never,
     document as never,
   );
-  assert.deepEqual(
-    calls.map((call) => call.title),
-    ["李明专属邀请函", "李明专属邀请函"],
-  );
+  const expected = {
+    title: "李明专属邀请函",
+    desc: "诚邀李明老师赴约观潮交流会",
+    link: "https://guanchaohuiji.com/i/example",
+    imgUrl: "https://guanchaohuiji.com/uploads/invitation-share.png",
+  };
+  assert.deepEqual(calls.app, expected);
+  assert.deepEqual(calls.legacyApp, expected);
+  assert.deepEqual(calls.timeline, {
+    title: expected.title,
+    link: expected.link,
+    imgUrl: expected.imgUrl,
+  });
+  assert.deepEqual(calls.legacyTimeline, calls.timeline);
 });
 test("visual preset changes presentation without changing conference facts or roster", () => {
   const content = createInvitationContent({
