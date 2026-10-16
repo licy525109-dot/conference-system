@@ -490,6 +490,26 @@ test(
       assert.match(html.headers.get("cache-control") || "", /no-store/);
       const text = await html.text();
       assert.match(text, /property="og:title"/);
+      assert.match(text, /property="og:type" content="website"/);
+      assert.match(text, /property="og:site_name" content="观潮会集"/);
+      assert.match(
+        text,
+        /property="og:title" content="演示嘉宾甲专属邀请函"/,
+      );
+      assert.match(
+        text,
+        /property="og:description" content="邀请函功能演示，不代表正式会议信息。"/,
+      );
+      const shareImage = text.match(
+        /property="og:image" content="([^\"]+)"/,
+      )?.[1];
+      assert.match(
+        shareImage || "",
+        /^https?:\/\/[^/]+\/uploads\/invitation-demo-cover\.png$/,
+      );
+      if (shareImage?.startsWith("https://"))
+        assert.match(text, /property="og:image:secure_url"/);
+      else assert.doesNotMatch(text, /property="og:image:secure_url"/);
       assert.match(text, /\/invitation-assets\//);
       assert.match(text, /<title>演示嘉宾甲专属邀请函<\/title>/);
       assert.match(

@@ -356,6 +356,9 @@
           alt="分享封面"
         />
       </div>
+      <p class="studio-share-hint">
+        标题按上方预览姓名替换变量；发布后的邀请链接与微信分享共用这套标题、摘要和封面。
+      </p>
       <el-collapse class="studio-advanced"
         ><el-collapse-item title="独立分享封面" name="share"
           ><InvitationImageField
@@ -536,6 +539,12 @@ async function insertVariable(name: string) {
 }
 .studio-share-section {
   max-width: 720px;
+}
+.studio-share-hint {
+  margin: 10px 0 20px;
+  color: var(--admin-color-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 .studio-effect-options {
   display: grid;

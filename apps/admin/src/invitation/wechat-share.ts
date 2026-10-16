@@ -4,8 +4,10 @@ interface WechatSdk {
   config(config: Record<string, unknown>): void;
   ready(callback: () => void): void;
   error(callback: () => void): void;
-  updateAppMessageShareData(config: Record<string, unknown>): void;
-  updateTimelineShareData(config: Record<string, unknown>): void;
+  updateAppMessageShareData?(config: Record<string, unknown>): void;
+  updateTimelineShareData?(config: Record<string, unknown>): void;
+  onMenuShareAppMessage?(config: Record<string, unknown>): void;
+  onMenuShareTimeline?(config: Record<string, unknown>): void;
 }
 declare global {
   interface Window {
@@ -71,7 +73,12 @@ export async function configureInvitationShare(
       timestamp: payload.data.timestamp,
       nonceStr: payload.data.nonceStr,
       signature: payload.data.signature,
-      jsApiList: ["updateAppMessageShareData", "updateTimelineShareData"],
+      jsApiList: [
+        "updateAppMessageShareData",
+        "updateTimelineShareData",
+        "onMenuShareAppMessage",
+        "onMenuShareTimeline",
+      ],
       openTagList: ["wx-open-launch-weapp"],
     });
   });
@@ -83,14 +90,36 @@ export function updateInvitationShare(
   invitation: PublicInvitation,
 ): void {
   const resolved = invitationShare(invitation);
+  const pageUrl = new URL(resolved.url);
+  let imageUrl = "";
+  if (resolved.imageUrl) {
+    try {
+      const image = new URL(resolved.imageUrl, pageUrl);
+      if (
+        ["http:", "https:"].includes(image.protocol) &&
+        !image.username &&
+        !image.password &&
+        (pageUrl.protocol !== "https:" || image.protocol === "https:")
+      )
+        imageUrl = image.href;
+    } catch {
+      imageUrl = "";
+    }
+  }
   const share = {
     title: resolved.title,
     desc: resolved.description,
-    link: resolved.url,
-    imgUrl: resolved.imageUrl,
+    link: pageUrl.href,
+    imgUrl: imageUrl,
   };
-  wx.updateAppMessageShareData(share);
-  wx.updateTimelineShareData({
+  wx.updateAppMessageShareData?.(share);
+  wx.updateTimelineShareData?.({
+    title: share.title,
+    link: share.link,
+    imgUrl: share.imgUrl,
+  });
+  wx.onMenuShareAppMessage?.(share);
+  wx.onMenuShareTimeline?.({
     title: share.title,
     link: share.link,
     imgUrl: share.imgUrl,

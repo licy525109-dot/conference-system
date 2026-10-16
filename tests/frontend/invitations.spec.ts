@@ -3474,6 +3474,15 @@ test("save-and-publish writes the draft before publishing its exact revision", a
   await page
     .getByRole("textbox", { name: "分享标题", exact: true })
     .fill("{姓名}，邀您共赴{会议名称}");
+  await page
+    .getByRole("textbox", { name: "预览受邀人姓名" })
+    .fill("鲁锡章");
+  await expect(page.locator(".studio-share-card")).toContainText(
+    "鲁锡章，邀您共赴观潮会集",
+  );
+  await expect(page.locator(".studio-share-hint")).toContainText(
+    "微信分享共用这套标题、摘要和封面",
+  );
   await page.getByRole("button", { name: "保存并发布" }).click();
   await page
     .getByRole("dialog", { name: "发布会议邀请函" })
@@ -3485,7 +3494,7 @@ test("save-and-publish writes the draft before publishing its exact revision", a
       .getByRole("button", { name: "发布更新", exact: true }),
   ).toBeDisabled();
   await expect(page.locator(".studio-share-card")).toContainText(
-    "受邀嘉宾，邀您共赴观潮会集",
+    "鲁锡章，邀您共赴观潮会集",
   );
   await expect(page.locator(".invite-campaign-bar")).toContainText("已发布");
 });
