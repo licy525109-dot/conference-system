@@ -278,7 +278,19 @@
         </h3>
         <el-button
           :icon="Plus"
-          :disabled="disabled || items.length >= 20"
+          :disabled="
+            disabled ||
+            items.length >=
+              (module.type === 'organizations'
+                ? INVITATION_ORGANIZATION_LIMIT
+                : 20)
+          "
+          :title="
+            module.type === 'organizations' &&
+            items.length >= INVITATION_ORGANIZATION_LIMIT
+              ? `组织单位最多添加 ${INVITATION_ORGANIZATION_LIMIT} 个`
+              : undefined
+          "
           @click="addItem"
           >{{
             module.type === "organizations" ? "添加单位" : "添加项目"
@@ -397,6 +409,7 @@ import { computed, ref } from "vue";
 import { Plus, Delete, Top, Bottom, Document } from "@element-plus/icons-vue";
 import {
   INVITATION_DISCUSSION_NOTE,
+  INVITATION_ORGANIZATION_LIMIT,
   arrangeInvitationOrganizations,
   normalizeInvitationModuleSettings,
   type InvitationModule,

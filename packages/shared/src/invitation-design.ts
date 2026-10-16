@@ -108,6 +108,7 @@ export interface InvitationModuleItem {
   body: InvitationRichNode[];
   frame?: InvitationCanvasFrame;
 }
+export const INVITATION_ORGANIZATION_LIMIT = 100;
 export interface InvitationCanvasFrame {
   x: number;
   y: number;
@@ -583,7 +584,10 @@ export function normalizeInvitationModules(value: unknown): InvitationModule[] {
             }
           : {}),
         items: (Array.isArray(s.items) ? s.items : [])
-          .slice(0, 20)
+          .slice(
+            0,
+            type === "organizations" ? INVITATION_ORGANIZATION_LIMIT : 20,
+          )
           .map((item, index) => {
             const a = record(item);
             return {
