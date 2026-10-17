@@ -1729,6 +1729,7 @@ model RegistrationSku {
   name          String
   description   String?
   priceCent     Int
+  groupPricingJson Json?
   stock         Int                    @default(0)
   lockedStock   Int                    @default(0)
   soldCount     Int                    @default(0)

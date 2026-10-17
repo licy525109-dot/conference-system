@@ -1,3 +1,4 @@
+import type { GroupTicketPricing } from "@conference/shared";
 import { ensureLogin } from "./auth";
 import { request } from "./request";
 import type { CreateOrderResponse, RegistrationOrderAttendee } from "./registration";
@@ -14,6 +15,7 @@ export interface CartRegistrationSku {
   id: string;
   name: string;
   priceCent: number;
+  groupPricingJson?: GroupTicketPricing | null;
   stock: number;
   soldCount: number;
   status: string;
@@ -25,6 +27,7 @@ export interface CartRegistrationItem {
   couponCode: string | null;
   attendees: unknown[];
   subtotalCent: number;
+  pricingError?: string | null;
   conference: CartConference;
   sku: CartRegistrationSku;
   createdAt: string;

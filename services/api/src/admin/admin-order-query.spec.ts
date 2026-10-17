@@ -39,6 +39,13 @@ describe("admin order filters and snapshots", () => {
     assert.deepEqual(orderTicketItems({ skuId: "sku", sku: { name: "改名后" }, originAmountCent: 24000, items }), items);
     assert.equal(orderTicketItems({ skuId: "sku", sku: { name: "旧订单票种" }, originAmountCent: 12000, items: [] })[0].quantity, 1);
   });
+  it("labels package totals from the order snapshot rather than the mutable SKU", () => {
+    const items = [{ id: "item", skuId: "sku", skuName: "三人套餐", unitPriceCent: 3333, quantity: 3, totalAmountCent: 10000 }];
+    const order = { skuId: "sku", sku: { name: "已改普通票" }, originAmountCent: 10000, items,
+      registrationSnapshotJson: { items: [{ skuId: "sku", groupPricingSnapshot: { rules: { mode: "PACKAGE" } } }] }
+    };
+    assert.deepEqual(orderTicketItems(order), [{ ...items[0], pricingMode: "PACKAGE" }]);
+  });
   it("aggregates all filtered orders inside a consistent snapshot, not the page or payment attempts", async () => {
     const calls: Array<{ method: string; args: any }> = [];
     const tx = {
@@ -140,6 +147,13 @@ describe("order export safety", () => {
     assert.ok(html.includes("<td>账号本人</td>"));
     assert.ok(html.includes("<td>10000.00</td><td>500.00</td><td>9500.00</td>"));
     assert.ok(!html.includes("已改名"));
+    Object.assign(row, {
+      items: [{ id: "a", skuId: "sku-a", skuName: "三人套餐", quantity: 3, unitPriceCent: 3333, totalAmountCent: 10000 }],
+      registrationSnapshotJson: { items: [{ skuId: "sku-a", groupPricingSnapshot: { rules: { mode: "PACKAGE" } } }] }
+    });
+    const packageHtml = await new AdminExportsService(prisma).exportOrdersExcel({}, admin);
+    assert.ok(packageHtml.includes("三人套餐（3 人套餐，整团 ¥100.00）"));
+    assert.ok(!packageHtml.includes("单价 ¥33.33"));
   });
 
   it("uses the same SKU/recycle filters and refuses silently truncated exports", async () => {

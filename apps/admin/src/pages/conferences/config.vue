@@ -113,7 +113,8 @@
         <el-table :data="skus" empty-text="暂无票种">
           <AdminTableIndex />
           <el-table-column prop="name" label="名称" min-width="160" />
-          <el-table-column label="价格" width="120"><template #default="{ row }">¥{{ formatCent(row.priceCent) }}</template></el-table-column>
+          <el-table-column label="价格" min-width="170"><template #default="{ row }">{{ skuPriceText(row) }}</template></el-table-column>
+          <el-table-column label="计价方式" min-width="145"><template #default="{ row }"><AdminStatusBadge :label="skuPricingText(row)" :tone="row.groupPricingJson ? 'warning' : 'neutral'" /></template></el-table-column>
           <el-table-column prop="stock" label="库存" width="100" />
           <el-table-column prop="lockedStock" label="待支付占用" width="110" />
           <el-table-column prop="soldCount" label="已售" width="100" />
@@ -231,15 +232,25 @@
       <p class="muted-text">暂无会议，请先创建会议。</p>
     </section>
 
-    <el-dialog v-model="skuDialogVisible" :title="skuForm.id ? '编辑票种' : '新增票种'" width="560px">
-      <el-form :model="skuForm" label-width="100px">
-        <el-form-item label="名称"><el-input v-model="skuForm.name" /></el-form-item>
+    <el-dialog v-model="skuDialogVisible" :title="skuForm.id ? '编辑票种' : '新增票种'" width="min(620px, calc(100vw - 24px))" class="sku-dialog" :close-on-click-modal="false" :close-on-press-escape="!savingSku" :show-close="!savingSku" destroy-on-close>
+      <el-form :model="skuForm" label-position="top" :disabled="savingSku" class="sku-form">
+        <el-form-item label="名称" :error="skuNameError"><el-input v-model="skuForm.name" /></el-form-item>
         <el-form-item label="说明"><el-input v-model="skuForm.description" /></el-form-item>
-        <el-form-item label="价格(元)"><el-input-number v-model="skuForm.priceYuan" :min="0" :precision="2" /></el-form-item>
+        <GroupTicketPricingEditor
+          v-if="skuDialogVisible"
+          ref="skuPricingEditor"
+          :price-cent="skuForm.priceCent"
+          :model-value="skuForm.groupPricingJson"
+          :group-registration-enabled="conference?.groupRegistrationEnabled ?? false"
+          :max-tickets-per-order="conference?.maxTicketsPerOrder ?? null"
+          :disabled="savingSku"
+          @configure-conference="configureGroupRegistration"
+        />
         <el-form-item label="库存"><el-input-number v-model="skuForm.stock" :min="0" /></el-form-item>
         <el-form-item label="状态"><el-select v-model="skuForm.status"><el-option label="启用" value="ACTIVE" /><el-option label="停用" value="INACTIVE" /></el-select></el-form-item>
       </el-form>
-      <template #footer><el-button @click="skuDialogVisible = false">取消</el-button><el-button type="primary" @click="saveSku">保存</el-button></template>
+      <el-alert v-if="skuSaveError" :title="skuSaveError" type="error" :closable="false" show-icon />
+      <template #footer><el-button :disabled="savingSku" @click="skuDialogVisible = false">取消</el-button><el-button type="primary" :loading="savingSku" @click="saveSku">保存</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="fieldDialogVisible" :title="fieldForm.id ? '编辑字段' : '新增字段'" width="620px">
@@ -306,6 +317,7 @@ import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import ConferenceCoverPicker from "../../components/conference/ConferenceCoverPicker.vue";
 import FormFieldImportDialog from "../../components/conference/FormFieldImportDialog.vue";
+import GroupTicketPricingEditor from "../../components/conference/GroupTicketPricingEditor.vue";
 import ConferenceDetailRichTextEditor from "../../components/conference/ConferenceDetailRichTextEditor.vue";
 import FieldHelp from "../../components/FieldHelp.vue";
 import CouponsPage from "../coupons/index.vue";
@@ -335,7 +347,8 @@ import {
   normalizeConferenceDetailContent,
   normalizeConferenceDetailRichText,
   normalizeConferenceDetailSections,
-  serializeConferenceDetailSections
+  serializeConferenceDetailSections,
+  type GroupTicketPricing
 } from "@conference/shared";
 import {
   conferenceDetailBlocksToEditorHtml,
@@ -352,6 +365,10 @@ const skus = ref<Sku[]>([]);
 const fields = ref<FormField[]>([]);
 const activeTab = ref("basic");
 const skuDialogVisible = ref(false);
+const savingSku = ref(false);
+const skuSaveError = ref("");
+const skuNameError = ref("");
+const skuPricingEditor = ref<InstanceType<typeof GroupTicketPricingEditor> | null>(null);
 const fieldDialogVisible = ref(false);
 const fieldImportVisible = ref(false);
 const detailMaterialVisible = ref(false);
@@ -391,7 +408,7 @@ const conferenceForm = reactive({
 });
 const detailImage = reactive(createEmptyDetailImage());
 const detailSections = ref<DetailSectionDraft[]>([]);
-const skuForm = reactive({ id: "", name: "", description: "", priceYuan: 0, stock: 0, status: "ACTIVE" });
+const skuForm = reactive({ id: "", name: "", description: "", priceCent: 0, groupPricingJson: null as GroupTicketPricing | null, stock: 0, status: "ACTIVE" });
 const fieldForm = reactive({
   id: "",
   label: "",
@@ -551,31 +568,76 @@ function validateConferenceTimes(): boolean {
   return true;
 }
 
+function skuPriceText(row: Sku): string {
+  if (row.groupPricingJson?.mode === "PACKAGE") {
+    const first = row.groupPricingJson.packages?.[0];
+    return first ? `${first.quantity} 人团 ¥${formatCent(first.totalAmountCent)}` : "套餐未配置";
+  }
+  return `¥${formatCent(row.priceCent)}${row.groupPricingJson ? ' /人' : ''}`;
+}
+
+function skuPricingText(row: Sku): string {
+  const rules = row.groupPricingJson;
+  if (rules?.mode === "PACKAGE") return `套餐 · ${rules.packages?.length ?? 0} 档`;
+  return rules ? `团体 · ${rules.minQuantity} 人起` : "普通票";
+}
+
 function openSku(row?: Sku) {
+  if (savingSku.value) return;
+  skuSaveError.value = "";
+  skuNameError.value = "";
   Object.assign(skuForm, row ? {
     id: row.id,
     name: row.name,
     description: row.description ?? "",
-    priceYuan: row.priceCent / 100,
+    priceCent: row.priceCent,
+    groupPricingJson: row.groupPricingJson ?? null,
     stock: row.stock,
     status: row.status
-  } : { id: "", name: "", description: "", priceYuan: 0, stock: 0, status: "ACTIVE" });
+  } : { id: "", name: "", description: "", priceCent: 0, groupPricingJson: null, stock: 0, status: "ACTIVE" });
   skuDialogVisible.value = true;
 }
 
 async function saveSku() {
-  if (!conferenceId.value) return;
+  if (!conferenceId.value || savingSku.value) return;
+  skuSaveError.value = "";
+  skuNameError.value = skuForm.name.trim() ? "" : "请填写票种名称";
+  const pricing = skuPricingEditor.value?.validate();
+  if (!pricing || skuNameError.value) {
+    skuSaveError.value = "请检查票种名称、价格及团体票规则中的提示后再保存。";
+    return;
+  }
+  const targetId = conferenceId.value;
   const payload = {
-    name: skuForm.name,
+    name: skuForm.name.trim(),
     description: skuForm.description,
-    priceCent: Math.round(skuForm.priceYuan * 100),
+    ...pricing,
     stock: skuForm.stock,
     status: skuForm.status
   };
-  if (skuForm.id) await updateSku(skuForm.id, payload);
-  else await createSku(conferenceId.value, payload);
+  savingSku.value = true;
+  try {
+    if (skuForm.id) await updateSku(skuForm.id, payload);
+    else await createSku(targetId, payload);
+    skuDialogVisible.value = false;
+    ElMessage.success("票种已保存");
+    try {
+      const response = await listSkus(targetId);
+      if (conferenceId.value === targetId) skus.value = response.items;
+    } catch {
+      ElMessage.warning("票种已保存，但列表刷新失败，请刷新页面查看，勿重复创建。");
+    }
+  } catch (cause) {
+    skuSaveError.value = cause instanceof Error ? cause.message : "票种保存失败，请重试";
+  } finally {
+    savingSku.value = false;
+  }
+}
+
+function configureGroupRegistration() {
+  if (savingSku.value) return;
   skuDialogVisible.value = false;
-  skus.value = (await listSkus(conferenceId.value)).items;
+  activeTab.value = "basic";
 }
 
 function applyImportedFields(id: string, importedFields: FormField[]) {
@@ -944,6 +1006,9 @@ interface DetailImageState {
 </script>
 
 <style scoped>
+.sku-form :deep(.el-form-item__error) { position: static; line-height: 1.5; }
+.sku-form :deep(.el-form-item__content) { min-width: 0; }
+
 .discount-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

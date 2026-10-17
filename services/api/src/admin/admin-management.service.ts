@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
+import { parseGroupTicketPricing, type GroupTicketPricing } from "@conference/shared";
 import {
   AuditAction,
   CheckInStatus,
@@ -329,12 +330,15 @@ export class AdminManagementService {
     const name = ensureDefined(request.name, "name");
     const priceCent = ensureDefined(request.priceCent, "priceCent");
     const stock = ensureDefined(request.stock, "stock");
+    const groupPricing = readGroupPricing(readObject(input).groupPricingJson, priceCent);
+    if (groupPricing) await this.ensureGroupConference(conferenceId, groupPricing);
     const sku = await this.prisma.registrationSku.create({
       data: {
         conferenceId,
         name,
         description: request.description,
         priceCent,
+        groupPricingJson: groupPricing ? groupPricing as unknown as Prisma.InputJsonValue : Prisma.DbNull,
         stock,
         status: request.status ?? RegistrationSkuStatus.ACTIVE,
         saleStartAt: request.saleStartAt,
@@ -355,19 +359,28 @@ export class AdminManagementService {
   async updateSku(id: string, input: unknown, admin: CurrentAdmin): Promise<ApiResponse<unknown>> {
     const existing = await this.prisma.registrationSku.findUnique({
       where: { id },
-      select: { id: true, soldCount: true, lockedStock: true }
+      select: { id: true, conferenceId: true, priceCent: true, groupPricingJson: true, soldCount: true, lockedStock: true }
     });
     if (!existing) {
       throw new NotFoundException("Registration SKU not found");
     }
 
     const request = parseSkuInput(input, true, existing.soldCount + existing.lockedStock);
+    const body = readObject(input);
+    const groupPricing = readGroupPricing(Object.hasOwn(body, "groupPricingJson") ? body.groupPricingJson : existing.groupPricingJson, request.priceCent ?? existing.priceCent);
+    if (groupPricing) await this.ensureGroupConference(existing.conferenceId, groupPricing);
+    const changesPricing = request.priceCent !== undefined || Object.hasOwn(body, "groupPricingJson");
     const sku = await this.prisma.registrationSku.update({
-      where: { id },
+      where: {
+        id,
+        ...(changesPricing ? { priceCent: existing.priceCent, groupPricingJson: { equals: existing.groupPricingJson ?? Prisma.DbNull } } : {}),
+        ...(request.stock !== undefined ? { soldCount: existing.soldCount, lockedStock: existing.lockedStock } : {})
+      },
       data: {
         ...(typeof request.name !== "undefined" ? { name: request.name } : {}),
         ...(typeof request.description !== "undefined" ? { description: request.description } : {}),
         ...(typeof request.priceCent !== "undefined" ? { priceCent: request.priceCent } : {}),
+        ...(Object.hasOwn(body, "groupPricingJson") ? { groupPricingJson: groupPricing ? groupPricing as unknown as Prisma.InputJsonValue : Prisma.DbNull } : {}),
         ...(typeof request.stock !== "undefined" ? { stock: request.stock } : {}),
         ...(typeof request.status !== "undefined" ? { status: request.status } : {}),
         ...(typeof request.saleStartAt !== "undefined" ? { saleStartAt: request.saleStartAt } : {}),
@@ -375,6 +388,11 @@ export class AdminManagementService {
         ...(typeof request.sortOrder !== "undefined" ? { sortOrder: request.sortOrder } : {})
       },
       select: skuSelect
+    }).catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "P2025") {
+        throw new ConflictException("票种价格、团体规则或库存已被更新，请刷新后重新保存");
+      }
+      throw error;
     });
 
     await this.writeAudit(admin, AuditAction.UPDATE, "RegistrationSku", sku.id, "Update registration SKU", {
@@ -382,6 +400,18 @@ export class AdminManagementService {
     });
 
     return ok(sku);
+  }
+
+  private async ensureGroupConference(conferenceId: string, rules: GroupTicketPricing) {
+    const conference = await this.prisma.conference.findUnique({
+      where: { id: conferenceId }, select: { groupRegistrationEnabled: true, maxTicketsPerOrder: true }
+    });
+    if (!conference) throw new NotFoundException("Conference not found");
+    if (!conference.groupRegistrationEnabled) throw new BadRequestException("请先在会议基础配置中启用团体报名");
+    const requiredCapacity = rules.mode === "PACKAGE" ? rules.packages!.at(-1)!.quantity : rules.minQuantity;
+    if (conference.maxTicketsPerOrder !== null && conference.maxTicketsPerOrder < requiredCapacity) {
+      throw new BadRequestException("团体票最低人数不能超过会议单笔最大票数，请先调整会议配置");
+    }
   }
 
   async listFormFields(conferenceId: string): Promise<ApiResponse<unknown>> {
@@ -1701,6 +1731,7 @@ const skuSelect = {
   name: true,
   description: true,
   priceCent: true,
+  groupPricingJson: true,
   stock: true,
   lockedStock: true,
   soldCount: true,
@@ -1741,6 +1772,7 @@ const adminUserProfileSelect = {
 } satisfies Prisma.UserSelect;
 
 const orderListSelect = {
+  registrationSnapshotJson: true,
   id: true,
   orderNo: true,
   conferenceId: true,
@@ -2546,6 +2578,11 @@ function validateCheckInBindings(
       throw new BadRequestException(`核验字段 ${missing} 不属于当前会议报名表单`);
     }
   }
+}
+
+function readGroupPricing(value: unknown, priceCent: number): GroupTicketPricing | null {
+  try { return parseGroupTicketPricing(value, priceCent); }
+  catch (error) { throw new BadRequestException(error instanceof Error ? error.message : "团体票规则不正确"); }
 }
 
 function parseSkuInput(input: unknown, partial: boolean, allocatedStock = 0) {

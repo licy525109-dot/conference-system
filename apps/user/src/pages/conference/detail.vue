@@ -77,7 +77,7 @@
     <CustomTabbar active-page-key="conference-detail" />
     <ConferenceTicketSelector
       :visible="ticketSheetVisible"
-      :skus="registrationSkus"
+      :skus="ticketSelectorSkus"
       :selected-sku-id="selectedSkuId"
       @close="ticketSheetVisible = false"
       @select="selectSku"
@@ -131,6 +131,7 @@ import { formatDateTime } from "@/utils/date";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
 import { remainingRegistrationStock } from "@/utils/registration-stock";
+import { ticketPriceLabel, ticketSelectorDisplaySku } from "@/utils/group-ticket-ui";
 
 const conferenceId = ref("");
 const couponCode = ref("");
@@ -172,12 +173,19 @@ const registrationSkus = computed(() => {
   const skus = conference.value?.skus;
   return Array.isArray(skus) ? skus : [];
 });
+const ticketSelectorSkus = computed(() => registrationSkus.value.map(sku => ticketSelectorDisplaySku(sku, conference.value?.maxTicketsPerOrder)));
 const priceRangeText = computed(() => {
+  const packages = registrationSkus.value.filter(sku => sku.groupPricingJson?.mode === "PACKAGE");
+  if (packages.length) {
+    if (registrationSkus.value.length === 1) return `${ticketPriceLabel(packages[0])}${(packages[0].groupPricingJson?.packages?.length ?? 0) > 1 ? ' 起' : ''}`;
+    return packages.length === registrationSkus.value.length ? "固定人数套餐，按团计价" : "人均票 / 固定人数套餐";
+  }
   const prices = registrationSkus.value.map((sku) => sku.priceCent).filter(Number.isFinite);
   if (prices.length === 0) return "暂无票种";
   const min = Math.min(...prices);
   const max = Math.max(...prices);
-  return min === max ? `¥${formatCent(min)}` : `¥${formatCent(min)} 起`;
+  const unit = registrationSkus.value.some(sku => sku.groupPricingJson) ? "元每人" : "";
+  return min === max ? `${unit ? '' : '¥'}${formatCent(min)}${unit}` : `${unit ? '' : '¥'}${formatCent(min)}${unit} 起`;
 });
 const registrationAvailability = computed<"OPEN" | "NOT_STARTED" | "ENDED">(() => getRegistrationAvailability(conference.value));
 const registrationStatus = computed<{ label: string; tone: "success" | "warning" | "neutral" }>(() => {

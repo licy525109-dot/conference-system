@@ -96,6 +96,8 @@ export class ConferencesService {
         registrationEndsAt: true,
         showRegistrationCount: true,
         showRemainingSeats: true,
+        groupRegistrationEnabled: true,
+        maxTicketsPerOrder: true,
         page: {
           select: {
             contentJson: true
@@ -109,6 +111,7 @@ export class ConferencesService {
             name: true,
             description: true,
             priceCent: true,
+            groupPricingJson: true,
             stock: true,
             lockedStock: true,
             soldCount: true
@@ -142,6 +145,7 @@ export class ConferencesService {
         ? { registrationCount: conference._count?.registrations ?? 0 }
         : {}),
       showRemainingSeats: conference.showRemainingSeats,
+      maxTicketsPerOrder: conference.groupRegistrationEnabled === false ? 1 : conference.maxTicketsPerOrder ?? null,
       appointmentCount: conference._count?.appointments ?? 0,
       contentJson: conference.page?.contentJson ?? null,
       skus: conference.skus
@@ -360,6 +364,7 @@ export interface ConferenceDetailResponse {
   registrationEndsAt: string | null;
   registrationCount?: number;
   showRemainingSeats: boolean;
+  maxTicketsPerOrder: number | null;
   appointmentCount: number;
   contentJson: Prisma.JsonValue | null;
   skus: Array<{
@@ -367,6 +372,7 @@ export interface ConferenceDetailResponse {
     name: string;
     description: string | null;
     priceCent: number;
+    groupPricingJson?: Prisma.JsonValue | null;
     stock: number;
     lockedStock: number;
     soldCount: number;
