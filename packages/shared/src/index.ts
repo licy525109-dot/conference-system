@@ -53,3 +53,4 @@ export * from "./cms-preview";
 export * from "./conference-detail";
 export * from "./invitations";
 export * from "./invitation-booklet";
+export * from "./group-ticket-pricing";

@@ -1,3 +1,4 @@
+import type { GroupTicketPricing } from "@conference/shared";
 import { stringifyQuery } from "@/utils/query";
 import { request } from "./request";
 
@@ -22,12 +23,15 @@ export interface RegistrationSku {
   name: string;
   description: string | null;
   priceCent: number;
+  groupPricingJson?: GroupTicketPricing | null;
+  maxQuantity?: number | null;
   stock: number;
   lockedStock?: number;
   soldCount: number;
 }
 
 export interface ConferenceDetail extends ConferenceListItem {
+  maxTicketsPerOrder?: number | null;
   registrationStartsAt: string | null;
   registrationEndsAt: string | null;
   contentJson: unknown;

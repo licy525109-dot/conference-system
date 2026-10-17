@@ -1,3 +1,5 @@
+import type { GroupTicketPricing } from "@conference/shared";
+
 export interface ApiList<T> {
   items: T[];
   total: number;
@@ -49,6 +51,7 @@ export interface Sku {
   name: string;
   description: string | null;
   priceCent: number;
+  groupPricingJson?: GroupTicketPricing | null;
   stock: number;
   lockedStock: number;
   soldCount: number;
@@ -130,6 +133,7 @@ export interface AdminOrder {
 
 export interface AdminOrderTicket {
   id: string; skuId: string; skuName: string; unitPriceCent: number; quantity: number; totalAmountCent: number;
+  pricingMode?: "PACKAGE";
 }
 
 export interface AdminOrderSummary {

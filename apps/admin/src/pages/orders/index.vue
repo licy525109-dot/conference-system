@@ -71,7 +71,7 @@
           <template #default="{ row }">
             <div v-for="ticket in row.items" :key="ticket.id" class="ticket-item">
               <strong class="ticket-heading"><span>{{ ticket.skuName }}</span><span class="ticket-quantity">× {{ ticket.quantity }}</span></strong>
-              <span class="muted-text">单价 ¥{{ formatCent(ticket.unitPriceCent) }}</span>
+              <span class="muted-text">{{ ticket.pricingMode === 'PACKAGE' ? '整团' : '单价' }} ¥{{ formatCent(ticket.pricingMode === 'PACKAGE' ? ticket.totalAmountCent : ticket.unitPriceCent) }}</span>
             </div>
           </template>
         </el-table-column>
@@ -151,7 +151,7 @@
           <AdminTableIndex />
           <el-table-column prop="skuName" label="票种（下单时）" min-width="220" />
           <el-table-column prop="quantity" label="数量" width="80" />
-          <el-table-column label="单价" width="110"><template #default="{ row }">¥{{ formatCent(row.unitPriceCent) }}</template></el-table-column>
+          <el-table-column label="计价" min-width="150"><template #default="{ row }">{{ row.pricingMode === 'PACKAGE' ? `${row.quantity} 人套餐` : `单价 ¥${formatCent(row.unitPriceCent)}` }}</template></el-table-column>
           <el-table-column label="优惠前小计" width="130"><template #default="{ row }">¥{{ formatCent(row.totalAmountCent) }}</template></el-table-column>
         </el-table>
         <div v-if="detail.registration" class="inline-actions">

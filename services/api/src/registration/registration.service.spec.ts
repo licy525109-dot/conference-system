@@ -762,6 +762,112 @@ describe("RegistrationService create order", () => {
   });
 });
 
+describe("RegistrationService group tickets", () => {
+  const rules = { version: 1, minQuantity: 3, minPayableAmountCent: 0, tiers: [{ minQuantity: 5, unitPriceCent: 80000 }] };
+  const request = (quantity: number) => ({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity }] });
+  const orderInput = (quantity: number) => ({ ...request(quantity), attendees: Array.from({ length: quantity }, () => ({ skuId: "active-sku", formData: validOrderInput().formData })) });
+  const mock = (pricing = rules, options: PrismaMockOptions = {}) => createPrismaMock({ ...options, skuOverrides: { "active-sku": { groupPricingJson: pricing } } });
+
+  it("charges the exact package total and snapshots indivisible cents", async () => {
+    const groupPricingJson = { version: 1, mode: "PACKAGE", minQuantity: 3, minPayableAmountCent: 0, tiers: [], packages: [{ quantity: 3, totalAmountCent: 10000 }, { quantity: 5, totalAmountCent: 15002 }] };
+    const prisma = createPrismaMock({ skuOverrides: { "active-sku": { priceCent: 3333, groupPricingJson } } });
+    const service = createService(prisma);
+    assert.equal((await service.quote(request(3))).data.payableAmountCent, 10000);
+    assert.equal((await service.quote(request(5))).data.payableAmountCent, 15002);
+    await assert.rejects(() => service.quote(request(4)), /套餐人数/);
+    const order = await service.createOrder(orderInput(5), currentUser);
+    assert.equal(order.data.payableAmountCent, 15002);
+    assert.equal(prisma.orderItems[0].totalAmountCent, 15002);
+    assert.equal(prisma.orderItems[0].quantity, 5);
+    assert.equal(prisma.registrations.length, 0);
+    assert.equal(prisma.payments.length, 0);
+  });
+
+  it("allocates package remainders before applying existing member rules", async () => {
+    const groupPricingJson = { version: 1, mode: "PACKAGE", minQuantity: 3, minPayableAmountCent: 0, tiers: [], packages: [{ quantity: 3, totalAmountCent: 10000 }] };
+    for (const [rule, payable] of [
+      [membershipPriceRule({ fixedPriceCent: 3000 }), 9000],
+      [membershipPriceRule({ discountType: "REDUCE", discountCent: 1 }), 9997],
+      [membershipPriceRule({ discountType: "DISCOUNT", discountPercent: 9000 }), 8998]
+    ] as const) {
+      const prisma = createPrismaMock({ skuOverrides: { "active-sku": { priceCent: 3333, groupPricingJson } }, userMemberships: [userMembership()], membershipPriceRules: [rule] });
+      const quote = (await createService(prisma).quote(request(3), currentUser)).data;
+      assert.equal(quote.payableAmountCent, payable);
+      assert.equal(quote.originAmountCent - quote.discountAmountCent, payable);
+      assert.equal(quote.items![0].memberSubtotalCent, payable);
+    }
+  });
+
+  it("checks the per-SKU minimum in both quote and order before money/stock is written", async () => {
+    const prisma = mock();
+    const service = createService(prisma);
+    await assert.rejects(() => service.quote(request(2)), /至少 3 人/);
+    await assert.rejects(() => service.createOrder(orderInput(2), currentUser), /至少 3 人/);
+    await assert.rejects(() => service.quote({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity: 2 }, { skuId: "active-sku-b", quantity: 10 }] }), /至少 3 人/);
+    assert.equal(prisma.orders.length, 0);
+    assert.equal(prisma.orderItems.length, 0);
+  });
+
+  it("uses database rules for a five-person quote and order snapshot", async () => {
+    const prisma = mock();
+    const service = createService(prisma);
+    const quote = await service.quote(request(5));
+    assert.equal(quote.data.payableAmountCent, 400000);
+    const order = await service.createOrder({ ...orderInput(5), groupPricingJson: { unitPriceCent: 1 }, unitPriceCent: 1 }, currentUser);
+    assert.equal(order.data.payableAmountCent, 400000);
+    assert.equal(prisma.orderItems[0].unitPriceCent, 80000);
+    assert.equal(prisma.orderItems[0].quantity, 5);
+    const snapshot = prisma.orders[0].registrationSnapshotJson.items as Array<{ groupPricingSnapshot: { rules: unknown; appliedMinQuantity: number } }>;
+    assert.deepEqual(snapshot[0].groupPricingSnapshot.rules, rules);
+    assert.equal(snapshot[0].groupPricingSnapshot.appliedMinQuantity, 5);
+    assert.equal(prisma.registrations.length, 0);
+    assert.equal(prisma.payments.length, 0);
+  });
+
+  it("recalculates instead of trusting a previously displayed quote", async () => {
+    const prisma = mock();
+    const service = createService(prisma);
+    assert.equal((await service.quote(request(5))).data.payableAmountCent, 400000);
+    const read = prisma.registrationSku.findFirst;
+    Object.assign(prisma.registrationSku, { findFirst: async (args: SkuFindFirstArgs) => {
+      const row = await read(args); assert.ok(row);
+      return { ...row, groupPricingJson: { ...rules, tiers: [{ minQuantity: 5, unitPriceCent: 90000 }] } };
+    } });
+    assert.equal((await service.createOrder(orderInput(5), currentUser)).data.payableAmountCent, 450000);
+  });
+
+  it("rejects a rule change between price calculation and transaction reservation", async () => {
+    const prisma = mock();
+    const read = prisma.registrationSku.findFirst;
+    let reads = 0;
+    Object.assign(prisma.registrationSku, { findFirst: async (args: SkuFindFirstArgs) => {
+      const row = await read(args); assert.ok(row);
+      return { ...row, groupPricingJson: ++reads === 1 ? rules : { ...rules, minPayableAmountCent: 900000 } };
+    } });
+    await assert.rejects(() => createService(prisma).createOrder(orderInput(5), currentUser), /规则已更新/);
+  });
+
+  it("checks order minimum after existing discounts, never tops up a payable amount", async () => {
+    const pricing = { ...rules, minPayableAmountCent: 400000 };
+    const service = createService(mock(pricing));
+    assert.equal((await service.quote(request(5))).data.payableAmountCent, 400000);
+    await assert.rejects(() => service.quote(request(3)), /本单实付不少于 4000.00/);
+    const discounted = createService(mock(pricing, { promotionRules: [promotionRule({ discountAmountCent: 100 })] }));
+    await assert.rejects(() => discounted.quote(request(5)), /本单实付不少于/);
+    await assert.rejects(() => discounted.createOrder(orderInput(5), currentUser), /本单实付不少于/);
+  });
+
+  it("keeps normal tickets, stock and the conference order cap authoritative", async () => {
+    const service = createService(mock());
+    assert.equal((await service.quote({ conferenceId: "published-conf", items: [{ skuId: "active-sku", quantity: 3 }, { skuId: "active-sku-b", quantity: 1 }] })).data.payableAmountCent, 370000);
+    await assert.rejects(() => service.quote(request(101)), /out of stock/);
+    const capped = mock(rules, { conferenceConfig: { maxTicketsPerOrder: 2 } });
+    await assert.rejects(() => createService(capped).quote(request(3)), /maxTicketsPerOrder/);
+    const disabled = mock(rules, { conferenceConfig: { groupRegistrationEnabled: false } });
+    await assert.rejects(() => createService(disabled).quote(request(3)), /未开放团体报名/);
+  });
+});
+
 function createService(prisma: PrismaService, orderNos: string[] = ["REG202606060001"]): RegistrationService {
   class TestRegistrationService extends RegistrationService {
     private orderNoIndex = 0;
@@ -837,7 +943,8 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
           ? {
               id: conference.id,
               groupRegistrationEnabled: true,
-              maxTicketsPerOrder: null
+              maxTicketsPerOrder: null,
+              ...options.conferenceConfig
             }
           : null;
       }
@@ -1270,9 +1377,10 @@ function getSku(id: string) {
 }
 
 interface PrismaMockOptions {
+  conferenceConfig?: { groupRegistrationEnabled?: boolean; maxTicketsPerOrder?: number | null };
   conflictingOrderNos?: string[];
   formFieldKeys?: string[];
-  skuOverrides?: Record<string, Partial<(typeof skus)[number]>>;
+  skuOverrides?: Record<string, Partial<(typeof skus)[number]> & { groupPricingJson?: unknown }>;
 	  promotionRules?: PromotionRuleRecord[];
 	  coupons?: CouponRecord[];
 	  couponRedemptions?: CouponRedemptionRecord[];

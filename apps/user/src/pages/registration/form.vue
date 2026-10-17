@@ -46,19 +46,26 @@
             <view class="sku-main">
               <text class="sku-name">{{ sku.name }}</text>
               <text class="sku-desc">{{ sku.description || "标准报名规格" }}</text>
+              <text v-for="label in skuRuleLabels(sku)" :key="label" class="sku-rule">{{ label }}</text>
               <text v-if="stockDisplayMode !== 'HIDDEN'" class="sku-stock">{{ stockLabel(sku) }}</text>
+              <text v-if="skuState(sku).unavailableMessage" class="sku-unavailable">{{ skuState(sku).unavailableMessage }}</text>
             </view>
             <view class="sku-side">
-              <text class="price">¥{{ formatCent(sku.priceCent) }}</text>
+              <text class="price">{{ skuPriceLabel(sku) }}</text>
               <view class="quantity-control">
-                <button class="qty-button" @click.stop="changeSkuQuantity(sku.id, -1)">-</button>
+                <button class="qty-button" :aria-label="`减少${sku.name}人数`" :disabled="submitting || addingToCart || skuQuantity(sku.id) === 0" @click.stop="changeSkuQuantity(sku.id, -1)">-</button>
                 <text class="qty-value">{{ skuQuantity(sku.id) }}</text>
-                <button class="qty-button" @click.stop="changeSkuQuantity(sku.id, 1)">+</button>
+                <button class="qty-button" :aria-label="`增加${sku.name}人数`" :disabled="submitting || addingToCart || Boolean(skuState(sku).unavailableMessage) || skuQuantity(sku.id) >= skuState(sku).maximum" @click.stop="changeSkuQuantity(sku.id, 1)">+</button>
               </view>
             </view>
           </view>
         </view>
       </FormSection>
+
+      <view v-if="quoteLoading || quoteError" class="quote-status" aria-live="polite">
+        <text :class="quoteError ? 'error-text' : 'hint'">{{ quoteLoading ? '正在更新报价...' : quoteError }}</text>
+        <button v-if="quoteError" class="ui-button-secondary ui-button-compact" :disabled="loading || submitting || addingToCart" @click="retryLoadPage">刷新价格与名额</button>
+      </view>
 
       <FormSection v-if="isRegistrationModuleVisible('attendeeForm')" :title="registrationModuleTitle('attendeeForm', '填写参会人信息')" :description="attendeeSectionDescription" step="2">
         <EmptyState v-if="attendeeForms.length === 0" title="请先选择报名票数" description="选择票数后，这里会自动生成参会人表单。" mark="人" />
@@ -142,14 +149,10 @@
 
       <FormSection v-if="isRegistrationModuleVisible('couponFee') && (usableCoupons.length > 0 || couponCode)" title="本次优惠" step="3">
         <view class="coupon-row">
-          <button v-if="usableCoupons.length" class="ui-button-secondary ui-button-compact coupon-button coupon-button--wide" :disabled="couponSelectorLoading" @click="selectMyCoupon">{{ couponCode ? '更换已领取优惠' : '使用已领取优惠' }}</button>
-          <button v-if="couponCode" class="ui-button-secondary ui-button-compact" @click="couponCode = ''; loadQuote()">不使用优惠</button>
+          <button v-if="usableCoupons.length" class="ui-button-secondary ui-button-compact coupon-button coupon-button--wide" :disabled="couponSelectorLoading || submitting || addingToCart" @click="selectMyCoupon">{{ couponCode ? '更换已领取优惠' : '使用已领取优惠' }}</button>
+          <button v-if="couponCode" class="ui-button-secondary ui-button-compact" :disabled="submitting || addingToCart" @click="couponCode = ''; loadQuote()">不使用优惠</button>
         </view>
-        <view v-if="quoteError" class="coupon-feedback is-error">
-          <wd-icon name="warning" size="16px" />
-          <text>{{ quoteError }}</text>
-        </view>
-        <view v-else-if="couponCode.trim() && (quote?.discountAmountCent ?? 0) > 0" class="coupon-feedback is-success">
+        <view v-if="couponCode.trim() && (quote?.discountAmountCent ?? 0) > 0" class="coupon-feedback is-success">
           <wd-icon name="check" size="16px" />
           <text>本次已优惠 ¥{{ formatCent(quote?.discountAmountCent ?? 0) }}</text>
         </view>
@@ -157,15 +160,17 @@
     </view>
     <WechatProfilePrompt />
     <FixedBottomActionBar
-      v-if="conference && form && !profileRequired && !error && isRegistrationModuleVisible('submitOrder')"
+      v-if="conference && form && !loading && !profileRequired && !error && isRegistrationModuleVisible('submitOrder')"
+      class="registration-action-bar"
       amount-label="合计"
-      :amount-value="`¥${formatCent(payableAmountCent)}`"
+      :amount-value="quote ? `¥${formatCent(quote.payableAmountCent)}` : '--'"
+      :note="quoteLoading ? '报价更新中' : quoteError ? '报价暂不可用' : totalTickets === 0 ? '请选择票数' : ''"
       :primary-text="registrationModuleContent('submitOrder', '提交订单')"
       :secondary-text="!invitationToken && isRegistrationModuleVisible('addCartButton') ? (addingToCart ? '加入中...' : registrationModuleContent('addCartButton', '加入购物车')) : ''"
       :loading="submitting"
       loading-text="提交中..."
-      :primary-disabled="submitting || addingToCart || quoteLoading || totalTickets === 0"
-      :secondary-disabled="submitting || addingToCart || quoteLoading || totalTickets === 0"
+      :primary-disabled="submitting || addingToCart || !quoteReady"
+      :secondary-disabled="submitting || addingToCart || !quoteReady"
       @primary="submitOrder"
       @secondary="addSelectedToCart"
     />
@@ -205,8 +210,9 @@ import { formatDateTime } from "@/utils/date";
 import { goHome } from "@/utils/navigation";
 import { remainingRegistrationStock } from "@/utils/registration-stock";
 import { getReusableProfiles } from "@/services/guest-profiles";
-import { attendeeMatchesSelf, preserveQuantities, registrationProfileReady, reuseAttendeeAnswers } from "@/utils/registration-identity";
+import { attendeeMatchesSelf, registrationProfileReady, reuseAttendeeAnswers } from "@/utils/registration-identity";
 import { couponFitsRegistration, readPendingRegistrationCoupon } from "@/utils/registration-coupons";
+import { groupTicketPayableError, groupTicketRuleLabels, initializeTicketQuantities, selectedTicketQuantityError, stepTicketQuantity, ticketCatalogAmountCent, ticketPriceLabel, ticketQuantityState } from "@/utils/group-ticket-ui";
 
 const conferenceId = ref("");
 const invitationToken = ref("");
@@ -216,6 +222,7 @@ const form = ref<ConferenceForm | null>(null);
 const cmsPage = ref<PublishedPage | null>(null);
 const quantities = ref<Record<string, number>>({});
 const attendeeForms = ref<AttendeeFormState[]>([]);
+const attendeeDrafts = new Map<string, AttendeeFormState>();
 const quote = ref<QuoteResponse | null>(null);
 const loading = ref(false);
 const quoteLoading = ref(false);
@@ -241,14 +248,9 @@ const selectedItems = computed<RegistrationOrderItem[]>(() =>
     .filter(([, quantity]) => quantity > 0)
     .map(([skuId, quantity]) => ({ skuId, quantity }))
 );
-const selectedAmountCent = computed(() =>
-  selectedItems.value.reduce((sum, item) => {
-    const sku = conference.value?.skus.find((entry) => entry.id === item.skuId);
-    return sum + (sku?.priceCent ?? 0) * item.quantity;
-  }, 0)
-);
 const totalTickets = computed(() => selectedItems.value.reduce((sum, item) => sum + item.quantity, 0));
-const payableAmountCent = computed(() => quote.value?.payableAmountCent ?? selectedAmountCent.value);
+const quantityError = computed(() => selectedTicketQuantityError(conference.value?.skus ?? [], quantities.value, conference.value?.maxTicketsPerOrder));
+const quoteReady = computed(() => !loading.value && !quoteLoading.value && Boolean(quote.value) && !quoteError.value && !quantityError.value && totalTickets.value > 0);
 const displaySettings = computed(() => normalizeDetailDisplay(conference.value?.contentJson, readCmsBusinessDisplay(cmsPage.value)));
 const stockDisplayMode = computed(() => displaySettings.value.inventoryDisplayMode);
 const attendeeSectionDescription = computed(() =>
@@ -286,13 +288,17 @@ function takePendingCoupon(): string {
 }
 
 async function loadPage() {
-  if (loading.value) return;
+  if (loading.value || submitting.value || addingToCart.value) return;
   if (!conferenceId.value) {
     error.value = "页面信息不完整，请返回首页重新进入";
     return;
   }
 
   loading.value = true;
+  ++quoteRequest;
+  quote.value = null;
+  quoteError.value = "";
+  quoteLoading.value = false;
   error.value = "";
   authRequired.value = false;
 
@@ -313,8 +319,8 @@ async function loadPage() {
       return;
     }
 
-    if (!selectedSkuId.value && detail.skus[0]) {
-      selectedSkuId.value = detail.skus[0].id;
+    if (!detail.skus.some(sku => sku.id === selectedSkuId.value)) {
+      selectedSkuId.value = detail.skus.find(sku => !ticketQuantityState(sku, detail.maxTicketsPerOrder).unavailableMessage)?.id ?? detail.skus[0]?.id ?? "";
     }
 
     if (!selectedSkuId.value) {
@@ -344,6 +350,7 @@ async function loadPage() {
 async function refreshCoupons() {
   try {
     claimedCoupons.value = (await getMyCoupons({ scope: "CONFERENCE" })).items;
+    if (submitting.value || addingToCart.value) return;
     const pending = takePendingCoupon();
     if (pending && !couponCode.value) { couponCode.value = pending; await loadQuote(); }
   } catch { claimedCoupons.value = []; }
@@ -386,29 +393,36 @@ async function fillPreviousGuest(key: string) {
 }
 
 function initializeQuantities(detail: ConferenceDetail) {
-  quantities.value = preserveQuantities(detail.skus, selectedSkuId.value, quantities.value, initialized);
+  quantities.value = initializeTicketQuantities(detail.skus, selectedSkuId.value, quantities.value, initialized, detail.maxTicketsPerOrder);
 }
 
 function syncAttendeeForms(fields: FormField[]) {
-  const existing = new Map(attendeeForms.value.map((item) => [item.key, item]));
+  // Keep removed rows in this page session so a stock refresh cannot erase typed answers.
+  const activeKeys = new Set(attendeeForms.value.map(item => item.key));
+  attendeeForms.value.forEach(item => attendeeDrafts.set(item.key, item));
   const next: AttendeeFormState[] = [];
   for (const sku of conference.value?.skus ?? []) {
     const quantity = skuQuantity(sku.id);
     for (let index = 0; index < quantity; index += 1) {
       const key = `${sku.id}-${index}`;
-      next.push(existing.get(key) ?? { key, skuId: sku.id, skuName: sku.name, index, isSelf: false, formData: createEmptyFormData(fields) });
+      const previous = attendeeDrafts.get(key);
+      const isSelf = activeKeys.has(key) && Boolean(previous?.isSelf);
+      next.push({ key, skuId: sku.id, skuName: sku.name, index, isSelf, formData: { ...createEmptyFormData(fields), ...previous?.formData } });
     }
   }
   attendeeForms.value = next;
 }
 
-async function changeSkuQuantity(skuId: string, delta: number) {
+async function changeSkuQuantity(skuId: string, delta: -1 | 1) {
+  if (loading.value || submitting.value || addingToCart.value) return;
   const current = skuQuantity(skuId);
   const sku = conference.value?.skus.find((item) => item.id === skuId);
-  const max = remainingRegistrationStock(sku ?? {});
+  if (!sku) return;
+  const next = stepTicketQuantity(sku, current, delta, skuOrderCapacity(skuId));
+  if (next === current) return;
   quantities.value = {
     ...quantities.value,
-    [skuId]: Math.min(max, Math.max(0, current + delta))
+    [skuId]: next
   };
   syncAttendeeForms(form.value?.fields ?? []);
   await loadQuote();
@@ -416,6 +430,25 @@ async function changeSkuQuantity(skuId: string, delta: number) {
 
 function skuQuantity(skuId: string): number {
   return quantities.value[skuId] ?? 0;
+}
+
+function skuOrderCapacity(skuId: string): number | undefined {
+  const max = conference.value?.maxTicketsPerOrder;
+  return max == null ? undefined : Math.max(0, max - totalTickets.value + skuQuantity(skuId));
+}
+
+function skuState(sku: RegistrationSku) {
+  return ticketQuantityState(sku, skuOrderCapacity(sku.id));
+}
+
+function skuRuleLabels(sku: RegistrationSku): string[] {
+  const snapshot = quote.value?.items?.find(item => item.skuId === sku.id)?.groupPricingSnapshot;
+  return snapshot ? groupTicketRuleLabels(snapshot.rules, snapshot.baseUnitPriceCent) : skuState(sku).labels;
+}
+
+function skuPriceLabel(sku: RegistrationSku): string {
+  const item = quote.value?.items?.find(item => item.skuId === sku.id);
+  return ticketPriceLabel(sku, skuQuantity(sku.id), item);
 }
 
 function stockLabel(sku: RegistrationSku): string {
@@ -427,9 +460,16 @@ function stockLabel(sku: RegistrationSku): string {
 
 async function loadQuote() {
   const requestId = ++quoteRequest;
+  quote.value = null;
+  quoteError.value = "";
+  quoteLoading.value = false;
   if (!conferenceId.value || selectedItems.value.length === 0) {
     quote.value = null;
     quoteLoading.value = false;
+    return;
+  }
+  if (quantityError.value) {
+    quoteError.value = quantityError.value;
     return;
   }
 
@@ -442,7 +482,13 @@ async function loadQuote() {
       items: selectedItems.value,
       couponCode: normalizedCouponCode()
     });
-    if (requestId === quoteRequest) quote.value = result;
+    if (requestId !== quoteRequest) return;
+    const floorError = groupTicketPayableError(selectedItems.value.map(item =>
+      result.items?.find(quoted => quoted.skuId === item.skuId)?.groupPricingSnapshot?.rules
+        ?? conference.value?.skus.find(sku => sku.id === item.skuId)?.groupPricingJson
+    ), result.payableAmountCent);
+    if (floorError) quoteError.value = floorError;
+    else quote.value = result;
   } catch (err) {
     if (requestId !== quoteRequest) return;
     console.error("[REGISTRATION_QUOTE_ERROR]", err);
@@ -455,6 +501,7 @@ async function loadQuote() {
 
 async function submitOrder() {
   if (submitting.value || addingToCart.value) return;
+  if (!ensureQuoteReady()) return;
   const availability = getRegistrationAvailability(conference.value);
   if (availability !== "OPEN") {
     uni.showToast({ title: availability === "NOT_STARTED" ? "报名尚未开始" : "报名已截止", icon: "none" });
@@ -475,6 +522,7 @@ async function submitOrder() {
   submitting.value = true;
   try {
     if (!(await requireProfile())) return;
+    if (!ensureQuoteReady()) return;
     const identityError = validateSelfDeclarations();
     if (identityError) { uni.showToast({ title: identityError, icon: "none" }); return; }
     const order = await createRegistrationOrder({
@@ -500,8 +548,10 @@ async function submitOrder() {
       return;
     }
 
+    quote.value = null;
+    quoteError.value = buildCreateOrderErrorMessage(err);
     uni.showToast({
-      title: buildCreateOrderErrorMessage(err),
+      title: quoteError.value,
       icon: "none"
     });
   } finally {
@@ -511,6 +561,7 @@ async function submitOrder() {
 
 async function addSelectedToCart() {
   if (submitting.value || addingToCart.value) return;
+  if (!ensureQuoteReady()) return;
   const availability = getRegistrationAvailability(conference.value);
   if (availability !== "OPEN") {
     uni.showToast({ title: availability === "NOT_STARTED" ? "报名尚未开始" : "报名已截止", icon: "none" });
@@ -531,6 +582,7 @@ async function addSelectedToCart() {
   addingToCart.value = true;
   try {
     if (!(await requireProfile())) return;
+    if (!ensureQuoteReady()) return;
     for (const item of selectedItems.value) {
       await addRegistrationCartItem({
         conferenceId: conferenceId.value,
@@ -557,11 +609,18 @@ async function addSelectedToCart() {
   }
 }
 
+function ensureQuoteReady(): boolean {
+  if (quoteReady.value) return true;
+  uni.showToast({ title: quoteLoading.value ? "价格更新中，请稍候" : quantityError.value || quoteError.value || "请先选择票数并获取报价", icon: "none" });
+  return false;
+}
+
 function setCouponCode(event: unknown) {
   couponCode.value = String(readEventValue(event) ?? "");
 }
 
 async function selectMyCoupon() {
+  if (submitting.value || addingToCart.value) return;
   couponSelectorLoading.value = true;
   try {
     await ensureAuthenticatedUser();
@@ -575,7 +634,7 @@ async function selectMyCoupon() {
       itemList: usable.map(formatCouponOption),
       success: async ({ tapIndex }) => {
         const selected = usable[tapIndex];
-        if (!selected) return;
+        if (!selected || submitting.value || addingToCart.value) return;
         couponCode.value = selected.coupon.code;
         await loadQuote();
       }
@@ -601,7 +660,14 @@ function promptLoginRetry(content: string, retry: () => void) {
 }
 
 function couponFitsSelectedSku(item: MyCouponItem) {
-  return couponFitsRegistration(item, conferenceId.value, selectedItems.value.map(entry => ({ ...entry, priceCent: conference.value?.skus.find(sku => sku.id === entry.skuId)?.priceCent ?? 0 })));
+  const items = selectedItems.value.map(entry => {
+    const sku = conference.value?.skus.find(sku => sku.id === entry.skuId);
+    return { ...entry, priceCent: sku?.priceCent ?? 0, amountCent: sku ? ticketCatalogAmountCent(sku, entry.quantity) : 0 };
+  });
+  const eligibleAmount = items.filter(entry => !item.coupon.allowedSkuIds?.length || item.coupon.allowedSkuIds.includes(entry.skuId))
+    .reduce((sum, entry) => sum + entry.amountCent, 0);
+  return eligibleAmount >= (item.coupon.minAmountCent ?? 0)
+    && couponFitsRegistration({ ...item, coupon: { ...item.coupon, minAmountCent: 0 } }, conferenceId.value, items);
 }
 
 function formatCouponOption(item: MyCouponItem) {
@@ -619,6 +685,8 @@ function normalizedCouponCode(): string | undefined {
 }
 
 function buildQuoteErrorMessage(err: unknown): string {
+  const ticketMessage = readTicketErrorMessage(err);
+  if (ticketMessage) return ticketMessage;
   const couponMessage = readCouponErrorMessage(err);
   if (couponMessage) {
     return couponMessage;
@@ -637,6 +705,8 @@ function buildQuoteErrorMessage(err: unknown): string {
 }
 
 function buildCreateOrderErrorMessage(err: unknown): string {
+  const ticketMessage = readTicketErrorMessage(err);
+  if (ticketMessage) return ticketMessage;
   const couponMessage = readCouponErrorMessage(err);
   if (couponMessage) {
     return couponMessage;
@@ -656,6 +726,13 @@ function buildCreateOrderErrorMessage(err: unknown): string {
   }
 
   return "创建订单失败，请稍后重试";
+}
+
+function readTicketErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiRequestError) || ![400, 409].includes(err.statusCode ?? 0)) return "";
+  const message = normalizeApiErrorMessage(err.responseMessage);
+  if (message.includes("maxTicketsPerOrder")) return "超出每笔订单可购人数，请减少人数后重试";
+  return /团体票|套餐|起购|实付|人数|库存/.test(message) ? message : "";
 }
 
 function readCouponErrorMessage(err: unknown): string {
@@ -1006,11 +1083,31 @@ interface AttendeeFormState {
   min-width: 0;
 }
 
+.sku-rule,
+.sku-unavailable {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sku-rule {
+  color: var(--ui-color-primary);
+}
+
+.sku-unavailable {
+  color: var(--ui-color-danger);
+}
+
 .sku-side {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 14rpx;
+  flex: 0 0 240rpx;
+  min-width: 0;
+  max-width: 46%;
 }
 
 .sku-name {
@@ -1025,6 +1122,9 @@ interface AttendeeFormState {
   color: var(--ui-color-primary);
   font-size: 30rpx;
   font-weight: 900;
+  text-align: right;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
 }
 
 .quantity-control {
@@ -1044,8 +1144,14 @@ interface AttendeeFormState {
   line-height: 54rpx;
 }
 
+.qty-button[disabled] {
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-muted);
+}
+
 .qty-value {
-  min-width: 42rpx;
+  width: 70rpx;
+  overflow-wrap: anywhere;
   color: var(--ui-color-text);
   text-align: center;
   font-size: 28rpx;
@@ -1072,6 +1178,54 @@ interface AttendeeFormState {
   flex-wrap: wrap;
   align-items: center;
   gap: 16rpx;
+}
+
+.quote-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12rpx;
+  padding: 0 24rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.quote-status button {
+  margin: 0;
+}
+
+@media (max-width: 420px) {
+  .page {
+    padding-bottom: calc(150px + env(safe-area-inset-bottom));
+  }
+
+  .registration-action-bar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .registration-action-bar :deep(.summary) {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .registration-action-bar :deep(.actions) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .registration-action-bar :deep(.button) {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .registration-action-bar :deep(.primary:only-child) {
+    grid-column: 1 / -1;
+  }
 }
 
 .coupon-input {

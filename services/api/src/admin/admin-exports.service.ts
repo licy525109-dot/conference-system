@@ -104,6 +104,7 @@ export class AdminExportsService {
       orderBy: [{ createdAt: "desc" }],
       take: 5001,
       select: {
+        registrationSnapshotJson: true,
         id: true,
         orderNo: true,
         skuId: true,
@@ -189,7 +190,9 @@ export class AdminExportsService {
         return [
           row.orderNo,
           row.conference.title,
-          orderTicketItems(row).map(item => `${item.skuName} × ${item.quantity}（单价 ¥${centsToYuan(item.unitPriceCent)}）`).join("；"),
+          orderTicketItems(row).map(item => "pricingMode" in item && item.pricingMode === "PACKAGE"
+            ? `${item.skuName}（${item.quantity} 人套餐，整团 ¥${centsToYuan(item.totalAmountCent)}）`
+            : `${item.skuName} × ${item.quantity}（单价 ¥${centsToYuan(item.unitPriceCent)}）`).join("；"),
           orderTicketItems(row).reduce((sum, item) => sum + item.quantity, 0),
           row.user?.realName || row.user?.nickname || row.user?.wechatNickname || "",
           row.phone ?? row.user?.phone ?? "",

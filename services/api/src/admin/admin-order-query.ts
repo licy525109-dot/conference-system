@@ -40,9 +40,22 @@ export async function resolveAdminOrderWhere(client: Pick<Prisma.TransactionClie
 
 export function orderTicketItems(order: {
   skuId: string; sku: { name: string }; originAmountCent: number;
+  registrationSnapshotJson?: Prisma.JsonValue;
   items: Array<{ id: string; skuId: string; skuName: string; unitPriceCent: number; quantity: number; totalAmountCent: number }>;
 }) {
-  return order.items.length ? order.items : [{
+  if (order.items.length) {
+    const snapshot = order.registrationSnapshotJson;
+    const entries = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot) && Array.isArray(snapshot.items) ? snapshot.items : [];
+    const packageIds = new Set(entries.flatMap(entry => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const pricing = entry.groupPricingSnapshot;
+      if (!pricing || typeof pricing !== "object" || Array.isArray(pricing)) return [];
+      const rules = pricing.rules;
+      return rules && typeof rules === "object" && !Array.isArray(rules) && rules.mode === "PACKAGE" ? [entry.skuId] : [];
+    }));
+    return order.items.map(item => packageIds.has(item.skuId) ? { ...item, pricingMode: "PACKAGE" as const } : item);
+  }
+  return [{
     id: "legacy", skuId: order.skuId, skuName: order.sku.name,
     unitPriceCent: order.originAmountCent, quantity: 1, totalAmountCent: order.originAmountCent
   }];

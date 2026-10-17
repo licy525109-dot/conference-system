@@ -1,3 +1,4 @@
+import type { GroupTicketPriceSnapshot } from "@conference/shared";
 import type { MyRegistrationItem, RegistrationCredential } from "./registration-types";
 import { ensureLogin } from "./auth";
 import { request } from "./request";
@@ -21,6 +22,7 @@ export interface QuoteResponse extends QuoteRequest {
     skuName: string;
     unitPriceCent: number;
     subtotalCent: number;
+    groupPricingSnapshot?: GroupTicketPriceSnapshot;
     memberUnitPriceCent?: number;
     memberSubtotalCent?: number;
     memberDiscountAmountCent?: number;

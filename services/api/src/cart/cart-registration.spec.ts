@@ -31,3 +31,36 @@ test("cart profile-validation failure preserves the saved cart", async () => {
   await assert.rejects(service.checkoutRegistration({ itemIds: ["cart"] }, { id: "account", openid: null, nickname: null }));
   assert.equal(removed, false);
 });
+
+test("cart displays exact package totals and marks obsolete party sizes unavailable", async () => {
+  const sku = { id: "sku", name: "套餐", priceCent: 3333, stock: 20, lockedStock: 0, soldCount: 0, status: "ACTIVE",
+    groupPricingJson: { version: 1, mode: "PACKAGE", minQuantity: 3, minPayableAmountCent: 0, tiers: [], packages: [{ quantity: 3, totalAmountCent: 10000 }] } };
+  const now = new Date();
+  const row = { id: "cart", quantity: 3, sku, conference: { id: "conf", startsAt: now }, createdAt: now, updatedAt: now, attendeesJson: [] };
+  const db: any = {
+    registrationCartItem: { findMany: async () => [row, { ...row, id: "obsolete", quantity: 4 }] },
+    cartItem: { findMany: async () => [] }
+  };
+  const data = (await new CartService(db, {} as any).list({ id: "account", openid: null, nickname: null })).data;
+  assert.equal(data.registrationItems[0].subtotalCent, 10000);
+  assert.equal(data.registrationItems[0].pricingError, null);
+  assert.equal(data.registrationItems[1].subtotalCent, 0);
+  assert.match(data.registrationItems[1].pricingError!, /重新选择/);
+});
+
+test("cart cannot bypass group party-size rules or alter registered party size", async () => {
+  let writes = 0;
+  const sku = { priceCent: 3333, stock: 20, lockedStock: 0, soldCount: 0, status: "ACTIVE", conference: { status: "PUBLISHED" },
+    groupPricingJson: { version: 1, mode: "PACKAGE", minQuantity: 3, minPayableAmountCent: 0, tiers: [], packages: [{ quantity: 3, totalAmountCent: 10000 }] } };
+  const db: any = { registrationSku: { findFirst: async () => sku }, registrationCartItem: {
+    findFirst: async () => ({ id: "cart", quantity: 3, sku }),
+    create: async () => { writes++; return { id: "cart" }; }, update: async () => { writes++; return { id: "cart" }; }
+  } };
+  const service = new CartService(db, {} as any);
+  const currentUser = { id: "account", openid: null, nickname: null };
+  await assert.rejects(() => service.addRegistrationItem({ conferenceId: "conf", skuId: "sku", quantity: 4 }, currentUser), /套餐人数/);
+  await assert.rejects(() => service.updateRegistrationItem("cart", { quantity: 4 }, currentUser), /重新填写参会人/);
+  assert.equal(writes, 0);
+  await service.addRegistrationItem({ conferenceId: "conf", skuId: "sku", quantity: 3 }, currentUser);
+  assert.equal(writes, 1);
+});

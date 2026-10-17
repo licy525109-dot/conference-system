@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
+import { calculateGroupTicketPrice } from "@conference/shared";
 import { CurrentUser } from "../auth/current-user";
 import { applyMallCoupon, type MallCouponPricedItem } from "../mall/mall-coupon-pricing";
 import { resolveMallPaymentRuntime } from "../mall/mall-payment.config";
@@ -24,7 +25,7 @@ export class CartService {
         orderBy: { updatedAt: "desc" },
         include: {
           conference: { select: { id: true, title: true, startsAt: true, location: true, status: true } },
-          sku: { select: { id: true, name: true, priceCent: true, stock: true, lockedStock: true, soldCount: true, status: true } }
+          sku: { select: { id: true, name: true, priceCent: true, groupPricingJson: true, stock: true, lockedStock: true, soldCount: true, status: true } }
         }
       }),
       this.prisma.cartItem.findMany({
@@ -43,12 +44,16 @@ export class CartService {
     return ok({
       registrationItems: registrationItems.map((item) => {
         const { startsAt, ...conference } = item.conference;
+        let subtotalCent = 0, pricingError: string | null = null;
+        try { subtotalCent = calculateGroupTicketPrice(item.sku.priceCent, item.quantity, item.sku.groupPricingJson).subtotalCent; }
+        catch { pricingError = "票种人数或价格规则已更新，请返回会议重新选择报名"; }
         return {
           id: item.id,
           quantity: item.quantity,
           couponCode: item.couponCode,
           attendees: Array.isArray(item.attendeesJson) ? item.attendeesJson : [],
-          subtotalCent: item.quantity * item.sku.priceCent,
+          subtotalCent,
+          pricingError,
           conference: { ...conference, startAt: startsAt.toISOString() },
           sku: item.sku,
           createdAt: item.createdAt.toISOString(),
@@ -92,6 +97,10 @@ export class CartService {
     if (sku.status !== "ACTIVE" || sku.conference.status !== "PUBLISHED") throw new ForbiddenException("当前报名规格暂不可加入购物车");
     if (sku.stock - sku.lockedStock - sku.soldCount < quantity) throw new BadRequestException("报名名额不足");
     if (attendees && attendees.length !== quantity) throw new BadRequestException("参会人数量必须等于票数");
+    if (sku.groupPricingJson) {
+      try { calculateGroupTicketPrice(sku.priceCent, quantity, sku.groupPricingJson); }
+      catch (error) { throw new BadRequestException(error instanceof Error ? error.message : "团体票规则无效"); }
+    }
 
     const item = await this.prisma.registrationCartItem.create({
       data: {
@@ -113,9 +122,12 @@ export class CartService {
     if (quantity && attendees && attendees.length !== quantity) throw new BadRequestException("参会人数量必须等于票数");
     const existing = await this.prisma.registrationCartItem.findFirst({
       where: { id, userId: currentUser.id },
-      select: { id: true, sku: { select: { stock: true, lockedStock: true, soldCount: true, status: true } } }
+      select: { id: true, quantity: true, sku: { select: { groupPricingJson: true, stock: true, lockedStock: true, soldCount: true, status: true } } }
     });
     if (!existing) throw new NotFoundException("购物车报名项不存在");
+    if (existing.sku.groupPricingJson && quantity !== undefined && quantity !== existing.quantity) {
+      throw new BadRequestException("团体票人数调整后需要重新填写参会人，请返回会议重新报名");
+    }
     if (quantity && (existing.sku.status !== "ACTIVE" || existing.sku.stock - existing.sku.lockedStock - existing.sku.soldCount < quantity)) {
       throw new BadRequestException("报名名额不足或票种已停用");
     }

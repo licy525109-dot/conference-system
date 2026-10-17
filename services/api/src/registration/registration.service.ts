@@ -19,6 +19,7 @@ import {
   RegistrationSkuStatus
 } from "@prisma/client";
 import { randomBytes } from "node:crypto";
+import { calculateGroupTicketPrice, type GroupTicketPriceSnapshot } from "@conference/shared";
 import { CurrentUser } from "../auth/current-user";
 import { requireRegistrationProfile } from "../auth/registration-profile";
 import { PrismaService } from "../prisma.service";
@@ -56,6 +57,7 @@ export interface RegistrationQuoteItem {
   quantity: number;
   unitPriceCent: number;
   subtotalCent: number;
+  groupPricingSnapshot?: GroupTicketPriceSnapshot;
   memberUnitPriceCent?: number;
   memberSubtotalCent?: number;
   memberDiscountAmountCent?: number;
@@ -179,8 +181,12 @@ export class RegistrationService {
       throw new ConflictException("0 元嘉宾报名请由后台使用“添加免支付嘉宾”，公开报名订单必须有应付金额");
     }
     const expiredAt = new Date(this.getCurrentTime().getTime() + ORDER_EXPIRES_IN_MS);
-    const snapshotItems = pricing.items.map((item) => ({ ...item })) as Prisma.InputJsonArray;
+    const snapshotItems = pricing.items.map(({ groupPricingSnapshot, ...item }) => ({
+      ...item,
+      ...(groupPricingSnapshot ? { groupPricingSnapshot: { ...groupPricingSnapshot, rules: { ...groupPricingSnapshot.rules } } } : {})
+    })) satisfies Prisma.InputJsonArray;
     const snapshotAttendees = attendees.map((attendee) => ({ ...attendee })) as Prisma.InputJsonArray;
+    const hasItemSnapshot = request.usesItemsShape || pricing.items.some(item => Boolean(item.groupPricingSnapshot));
     const snapshot = {
       conferenceId: request.conferenceId,
       skuId: primaryItem.skuId,
@@ -191,7 +197,7 @@ export class RegistrationService {
       fields: fields.map(field => ({ key: field.fieldKey, label: field.label, type: field.type })),
       pricing: serializePricingSnapshot(pricing),
       memberPricing: pricing.memberPricing ? serializeMemberPricingSnapshot(pricing.memberPricing) : null,
-      ...(request.usesItemsShape ? { items: snapshotItems, attendees: snapshotAttendees } : {})
+      ...(hasItemSnapshot ? { items: snapshotItems, attendees: snapshotAttendees } : {})
     } satisfies Prisma.InputJsonObject;
 
     const order = await this.createPendingOrderWithRetry({
@@ -203,7 +209,7 @@ export class RegistrationService {
       attendeeName,
       phone,
       expiredAt,
-      submittedFormJson: request.usesItemsShape ? { attendees: snapshotAttendees } : primaryAttendee.formData,
+      submittedFormJson: hasItemSnapshot ? { attendees: snapshotAttendees } : primaryAttendee.formData,
       registrationSnapshotJson: snapshot,
       originAmountCent: pricing.originAmountCent,
       discountAmountCent: pricing.discountAmountCent,
@@ -271,12 +277,14 @@ export class RegistrationService {
     const pricedItems: PricedRegistrationItem[] = [];
     for (const item of items) {
       const sku = await this.getOrderableSku(conferenceId, item.skuId, item.quantity);
+      let price: ReturnType<typeof calculateGroupTicketPrice>;
+      try { price = calculateGroupTicketPrice(sku.priceCent, item.quantity, sku.groupPricingJson); }
+      catch (error) { throw new BadRequestException(`${sku.name}：${error instanceof Error ? error.message : "团体票规则不正确"}`); }
       pricedItems.push({
         skuId: sku.id,
         skuName: sku.name,
         quantity: item.quantity,
-        unitPriceCent: sku.priceCent,
-        subtotalCent: sku.priceCent * item.quantity
+        ...price
       });
     }
 
@@ -293,6 +301,7 @@ export class RegistrationService {
         id: true,
         name: true,
         priceCent: true,
+        groupPricingJson: true,
         stock: true,
         lockedStock: true,
         soldCount: true,
@@ -393,10 +402,21 @@ export class RegistrationService {
       discounts.reduce((sum, discount) => sum + discount.amountCent, 0)
     );
 
+    const payableAmountCent = Math.max(0, originAmountCent - discountAmountCent);
+    const minPayableAmountCent = Math.max(0, ...input.items.map(item => item.groupPricingSnapshot?.rules.minPayableAmountCent ?? 0));
+    if (payableAmountCent < minPayableAmountCent) {
+      throw new BadRequestException(`团体票要求本单实付不少于 ${(minPayableAmountCent / 100).toFixed(2)} 元，请调整人数或优惠后重试`);
+    }
+    for (const item of input.items) {
+      if (item.groupPricingSnapshot) messages.push(item.groupPricingSnapshot.rules.mode === "PACKAGE"
+        ? `${item.skuName}：${item.quantity} 人套餐，整团 ${(item.subtotalCent / 100).toFixed(2)} 元`
+        : `${item.skuName}：${item.quantity} 人，每人 ${(item.unitPriceCent / 100).toFixed(2)} 元`);
+    }
+
     return {
       originAmountCent,
       discountAmountCent,
-      payableAmountCent: Math.max(0, originAmountCent - discountAmountCent),
+      payableAmountCent,
       memberBaseAmountCent: discountBaseAmountCent,
       items: pricedItems,
       discounts,
@@ -714,6 +734,8 @@ async function reserveRegistrationInventory(
       select: {
         id: true,
         name: true,
+        priceCent: true,
+        groupPricingJson: true,
         stock: true,
         lockedStock: true,
         soldCount: true,
@@ -723,6 +745,16 @@ async function reserveRegistrationInventory(
       }
     });
     if (!sku) throw new NotFoundException("Registration SKU not found");
+    if (sku.groupPricingJson || item.groupPricingSnapshot) {
+      let currentPrice: ReturnType<typeof calculateGroupTicketPrice>;
+      try { currentPrice = calculateGroupTicketPrice(sku.priceCent, item.quantity, sku.groupPricingJson); }
+      catch { throw new ConflictException("团体票价格或人数规则已更新，请刷新报价后重新下单"); }
+      if (currentPrice.unitPriceCent !== item.unitPriceCent
+        || currentPrice.subtotalCent !== item.subtotalCent
+        || JSON.stringify(currentPrice.groupPricingSnapshot) !== JSON.stringify(item.groupPricingSnapshot)) {
+        throw new ConflictException("团体票价格或人数规则已更新，请刷新报价后重新下单");
+      }
+    }
     if (sku.status !== RegistrationSkuStatus.ACTIVE) {
       throw new ConflictException(`${sku.name} 已停止销售`);
     }
@@ -867,6 +899,9 @@ function readRegistrationItems(input: Record<string, unknown>): RegistrationRequ
 
 function calculateAmount(items: PricedRegistrationItem[]) {
   const originAmountCent = items.reduce((sum, item) => sum + item.subtotalCent, 0);
+  if (!Number.isSafeInteger(originAmountCent) || originAmountCent > 2147483647) {
+    throw new BadRequestException("订单总金额超过支持上限，请分单购买");
+  }
   return {
     originAmountCent
   } as const;
@@ -1057,8 +1092,12 @@ function applyBestMemberRuleToItem(item: PricedRegistrationItem, rules: Membersh
     .filter((rule) => !rule.skuId || rule.skuId === item.skuId)
     .map((rule) => {
       const memberUnitPriceCent = calculateMemberUnitPrice(item.unitPriceCent, rule);
-      const discountAmountCent = Math.max(0, item.unitPriceCent - memberUnitPriceCent) * item.quantity;
-      return { rule, memberUnitPriceCent, discountAmountCent };
+      // Package totals can have a remainder: allocate one cent to that many people.
+      const remainder = item.groupPricingSnapshot?.perPersonRemainderCent ?? 0;
+      const memberSubtotalCent = memberUnitPriceCent * (item.quantity - remainder)
+        + calculateMemberUnitPrice(item.unitPriceCent + 1, rule) * remainder;
+      const discountAmountCent = Math.max(0, item.subtotalCent - memberSubtotalCent);
+      return { rule, memberUnitPriceCent, memberSubtotalCent, discountAmountCent };
     })
     .filter((candidate) => candidate.discountAmountCent > 0)
     .sort(
@@ -1074,7 +1113,7 @@ function applyBestMemberRuleToItem(item: PricedRegistrationItem, rules: Membersh
   return {
     ...item,
     memberUnitPriceCent: best.memberUnitPriceCent,
-    memberSubtotalCent: best.memberUnitPriceCent * item.quantity,
+    memberSubtotalCent: best.memberSubtotalCent,
     memberDiscountAmountCent: best.discountAmountCent
   };
 }
@@ -1177,6 +1216,9 @@ function ensureAttendeesMatchItems(items: RegistrationRequestItem[], attendees: 
 }
 
 function enforceTicketLimit(conference: PublishedConferenceConfig, totalQuantity: number): void {
+  if (!conference.groupRegistrationEnabled && totalQuantity > 1) {
+    throw new ConflictException("当前会议未开放团体报名");
+  }
   if (conference.maxTicketsPerOrder !== null && conference.maxTicketsPerOrder < totalQuantity) {
     throw new ConflictException("Ticket quantity exceeds maxTicketsPerOrder");
   }

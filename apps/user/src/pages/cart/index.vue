@@ -33,31 +33,35 @@
           <text class="section-count">{{ registrationItems.length }} 项</text>
         </view>
         <view v-for="item in registrationItems" :key="item.id" class="card registration-card selectable-card ui-card">
-          <view class="select-dot" :class="{ active: selectedRegistrationIds.includes(item.id) }" @click="toggleRegistration(item.id)">
+          <view class="select-dot" :class="{ active: selectedRegistrationIds.includes(item.id), 'is-disabled': !registrationCartState(item).canSelect }" :aria-disabled="!registrationCartState(item).canSelect" @click="toggleRegistration(item.id)">
             <text>{{ selectedRegistrationIds.includes(item.id) ? "✓" : "" }}</text>
           </view>
           <view class="card-head">
             <view class="card-main">
               <text class="card-title">{{ item.conference.title }}</text>
-              <text v-if="cartDisplay.registrationItems.showSku && cartDisplay.registrationItems.showQuantity" class="muted">{{ item.sku.name }} × {{ item.quantity }}</text>
+              <text v-if="registrationCartState(item).isGroup" class="muted">{{ cartDisplay.registrationItems.showSku ? `${item.sku.name} · ` : '' }}{{ registrationCartState(item).quantityLabel }}</text>
+              <text v-else-if="cartDisplay.registrationItems.showSku && cartDisplay.registrationItems.showQuantity" class="muted">{{ item.sku.name }} × {{ item.quantity }}</text>
               <text v-else-if="cartDisplay.registrationItems.showSku" class="muted">{{ item.sku.name }}</text>
               <text v-else-if="cartDisplay.registrationItems.showQuantity" class="muted">数量 × {{ item.quantity }}</text>
               <text class="muted" v-if="cartDisplay.registrationItems.showLocation && item.conference.location">{{ item.conference.location }}</text>
             </view>
-            <text class="price">¥{{ formatCent(item.subtotalCent) }}</text>
+            <text class="price">{{ registrationCartState(item).priceLabel }}</text>
           </view>
+          <text v-if="item.pricingError" class="registration-pricing-error" role="alert">{{ item.pricingError }}</text>
+          <text v-if="registrationCartState(item).isGroup" class="muted registration-adjustment-note">调整人数需重新填写参会人；重新报名后请删除原条目。</text>
           <view v-if="cartDisplay.registrationItems.showQuantity" class="quantity-row">
-            <text class="muted">数量</text>
-            <view v-if="cartDisplay.registrationItems.allowQuantityEdit" class="quantity-stepper">
+            <text class="muted">{{ registrationCartState(item).isGroup ? '参会人数' : '数量' }}</text>
+            <view v-if="cartDisplay.registrationItems.allowQuantityEdit && registrationCartState(item).canEditQuantity" class="quantity-stepper">
               <button @click="changeRegistrationQuantity(item, -1)">−</button>
               <text>{{ item.quantity }}</text>
               <button @click="changeRegistrationQuantity(item, 1)">＋</button>
             </view>
             <text v-else class="quantity-static">{{ item.quantity }}</text>
           </view>
-          <view v-if="showRegistrationCardActions" class="card-actions">
+          <view v-if="showRegistrationCardActions || registrationCartState(item).isGroup || item.pricingError" class="card-actions">
+            <button v-if="registrationCartState(item).isGroup || item.pricingError" class="text-button" @click="goRegistration(item)">返回报名</button>
             <button v-if="cartDisplay.registrationItems.showDeleteButton" class="ui-button-secondary action-button" :disabled="removingId === item.id" @click="removeRegistration(item.id)">删除</button>
-            <button v-if="cartDisplay.registrationItems.showSinglePayButton" class="ui-button-primary action-button" :disabled="checkoutId === item.id" @click="payRegistration(item.id)">
+            <button v-if="cartDisplay.registrationItems.showSinglePayButton" class="ui-button-primary action-button" :disabled="Boolean(checkoutId) || loading || Boolean(error) || !registrationCartState(item).canSelect" @click="payRegistration(item.id)">
               {{ checkoutId === item.id ? "处理中..." : "去付款" }}
             </button>
           </view>
@@ -181,7 +185,7 @@
         <text>{{ cartDisplay.checkoutBar.totalText }}：¥{{ formatCent(selectedTotalCent) }}</text>
         <text v-if="cartDisplay.checkoutBar.showDiscountDetail" class="muted">已选 {{ selectedCount }} 项</text>
       </view>
-      <button class="settlement-button" :class="`is-${cartDisplay.checkoutBar.style}`" :disabled="selectedCount === 0 || Boolean(checkoutId)" @click="checkoutSelected">{{ cartDisplay.checkoutBar.buttonText }}</button>
+      <button class="settlement-button" :class="`is-${cartDisplay.checkoutBar.style}`" :disabled="selectedCount === 0 || Boolean(checkoutId) || (selectedRegistrationIds.length > 0 && (loading || Boolean(error) || Boolean(registrationSelectionError)))" @click="checkoutSelected">{{ cartDisplay.checkoutBar.buttonText }}</button>
     </view>
 
     <CustomTabbar active-page-key="cart" />
@@ -220,6 +224,7 @@ import { ApiRequestError } from "@/services/request";
 import { getMyCoupons, type MyCouponItem } from "@/services/operations";
 import { formatCent } from "@/utils/money";
 import { goHome } from "@/utils/navigation";
+import { registrationCartSelectionError, registrationCartState } from "@/utils/registration-cart-ui";
 
 type CartCouponNoticeAction = "selectCoupon" | "couponPage" | "none";
 type CartDisplayAlign = "left" | "center" | "right";
@@ -436,13 +441,15 @@ const showShippingInfoCard = computed(() => cartDisplay.value.shippingInfo.visib
 const showRegistrationCardActions = computed(() => cartDisplay.value.registrationItems.showDeleteButton || cartDisplay.value.registrationItems.showSinglePayButton);
 const showMallCardActions = computed(() => showMallSection.value);
 const selectedCount = computed(() => selectedRegistrationIds.value.length + selectedProductIds.value.length);
+const selectableRegistrationItems = computed(() => registrationItems.value.filter(item => registrationCartState(item).canSelect));
+const registrationSelectionError = computed(() => registrationCartSelectionError(registrationItems.value, selectedRegistrationIds.value));
 const selectedTotalCent = computed(() => {
-  const registrations = registrationItems.value.filter((item) => selectedRegistrationIds.value.includes(item.id)).reduce((sum, item) => sum + item.subtotalCent, 0);
+  const registrations = selectableRegistrationItems.value.filter((item) => selectedRegistrationIds.value.includes(item.id)).reduce((sum, item) => sum + item.subtotalCent, 0);
   const products = productItems.value.filter((item) => selectedProductIds.value.includes(item.id)).reduce((sum, item) => sum + item.subtotalCent, 0);
   return registrations + products;
 });
 const allSelected = computed(() => {
-  const total = registrationItems.value.length + productItems.value.length;
+  const total = selectableRegistrationItems.value.length + productItems.value.length;
   return total > 0 && selectedCount.value === total;
 });
 const COMMON_PROFILE_STORAGE_KEY = "conference_user_common_profile";
@@ -666,17 +673,19 @@ async function loadCart() {
 }
 
 function syncSelections() {
-  const registrationIds = new Set(registrationItems.value.map((item) => item.id));
+  const registrationIds = new Set(selectableRegistrationItems.value.map((item) => item.id));
   const productIds = new Set(productItems.value.map((item) => item.id));
   selectedRegistrationIds.value = selectedRegistrationIds.value.filter((id) => registrationIds.has(id));
   selectedProductIds.value = selectedProductIds.value.filter((id) => productIds.has(id));
   if (selectedRegistrationIds.value.length === 0 && selectedProductIds.value.length === 0) {
-    selectedRegistrationIds.value = registrationItems.value.map((item) => item.id);
+    selectedRegistrationIds.value = [...registrationIds];
     selectedProductIds.value = productItems.value.map((item) => item.id);
   }
 }
 
 function toggleRegistration(id: string) {
+  const item = registrationItems.value.find(entry => entry.id === id);
+  if (!item || !registrationCartState(item).canSelect) return;
   selectedRegistrationIds.value = selectedRegistrationIds.value.includes(id) ? selectedRegistrationIds.value.filter((item) => item !== id) : [...selectedRegistrationIds.value, id];
 }
 
@@ -690,7 +699,7 @@ function toggleAll() {
     selectedProductIds.value = [];
     return;
   }
-  selectedRegistrationIds.value = registrationItems.value.map((item) => item.id);
+  selectedRegistrationIds.value = selectableRegistrationItems.value.map((item) => item.id);
   selectedProductIds.value = productItems.value.map((item) => item.id);
 }
 
@@ -725,6 +734,7 @@ async function removeProduct(id: string) {
 }
 
 async function changeRegistrationQuantity(item: CartRegistrationItem, delta: number) {
+  if (!registrationCartState(item).canEditQuantity) return;
   const next = item.quantity + delta;
   if (next <= 0) {
     await removeRegistration(item.id);
@@ -755,10 +765,11 @@ async function changeProductQuantity(item: CartProductItem, delta: number) {
 }
 
 async function payRegistration(id: string) {
-  if (checkoutId.value) return;
+  if (checkoutId.value || !validateRegistrationCheckout([id])) return;
   checkoutId.value = id;
   try {
     if (!(await ensureRegistrationProfile())) return;
+    if (!validateRegistrationCheckout([id])) return;
     const order = await checkoutRegistrationCart([id]);
     uni.navigateTo({ url: `/pages/payment/result?orderNo=${encodeURIComponent(order.orderNo)}` });
   } catch (err) {
@@ -803,15 +814,18 @@ async function checkoutProduct(id: string) {
 
 async function checkoutSelected() {
   if (checkoutId.value) return;
+  if (selectedRegistrationIds.value.length > 0 && !validateRegistrationCheckout(selectedRegistrationIds.value)) return;
   if (selectedRegistrationIds.value.length > 0 && selectedProductIds.value.length > 0) {
     uni.showToast({ title: "请分别结算报名和商品", icon: "none" });
     return;
   }
   if (selectedRegistrationIds.value.length > 0) {
+    const ids = [...selectedRegistrationIds.value];
     checkoutId.value = "selected-registration";
     try {
       if (!(await ensureRegistrationProfile())) return;
-      const order = await checkoutRegistrationCart(selectedRegistrationIds.value);
+      if (!validateRegistrationCheckout(ids)) return;
+      const order = await checkoutRegistrationCart(ids);
       uni.navigateTo({ url: `/pages/payment/result?orderNo=${encodeURIComponent(order.orderNo)}` });
     } catch (err) {
       console.error("[CART_CHECKOUT_SELECTED_REGISTRATION_ERROR]", err);
@@ -857,6 +871,18 @@ async function checkoutProductGroup(ids: string[]) {
   } finally {
     checkoutId.value = "";
   }
+}
+
+function validateRegistrationCheckout(ids: string[]): boolean {
+  if (loading.value || error.value) return false;
+  const message = registrationCartSelectionError(registrationItems.value, ids);
+  if (!message) return true;
+  uni.showToast({ title: message, icon: "none" });
+  return false;
+}
+
+function goRegistration(item: CartRegistrationItem) {
+  uni.navigateTo({ url: `/pages/registration/form?conferenceId=${encodeURIComponent(item.conference.id)}&skuId=${encodeURIComponent(item.sku.id)}` });
 }
 
 function goProductDetail(id: string) {
@@ -1139,6 +1165,47 @@ function checkoutMessage(err: unknown, fallback: string): string {
 .select-dot.active {
   border-color: var(--ui-color-primary);
   background: var(--ui-color-primary);
+}
+
+.registration-card > .select-dot.is-disabled {
+  opacity: 0.35;
+}
+
+.registration-card .card-head {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.registration-card .card-main {
+  flex-basis: 220rpx;
+  overflow-wrap: anywhere;
+}
+
+.registration-card .price {
+  white-space: nowrap;
+}
+
+.registration-card .card-actions {
+  flex-wrap: wrap;
+}
+
+.registration-card .action-button {
+  width: auto;
+  min-width: 132rpx;
+  margin: 0;
+}
+
+.registration-pricing-error {
+  display: block;
+  margin-top: 14rpx;
+  color: var(--ui-color-danger, #b42318);
+  font-size: 25rpx;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.registration-adjustment-note {
+  margin-top: 14rpx;
 }
 
 .receiver-card {
