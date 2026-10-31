@@ -13,8 +13,8 @@
       />
       <AdminFeatureBadge
         v-if="activeSection === 'wechat-bills'"
-        label="官方下载可选"
-        description="未配置微信账单下载时只允许手动导入，不伪造下载成功。"
+        label="手动导入"
+        description="自动下载尚未实现。"
         tone="info"
       />
       <template #actions>
@@ -90,9 +90,10 @@
       <div v-if="refundConfig" class="refund-config-grid">
         <article class="refund-config-card">
           <strong>报名退款</strong>
-          <span>{{ refundConfig.registration.enabled ? "允许申请" : "未启用" }} · {{ refundConfig.registration.wechatRefundEnabled ? "微信真实退款已配置" : "微信真实退款未配置" }}</span>
+          <span>{{ refundConfig.registration.enabled ? "允许申请" : "未启用" }} · 默认收款单位：{{ refundConfig.registration.wechatRefundEnabled ? "微信退款已配置" : "微信退款未配置" }}</span>
+          <span v-if="refundConfig.registration.managedMerchantRefundMode === 'ORIGINAL_ORDER'">指定收款单位：按订单原收款配置</span>
           <small>{{ refundConfig.registration.description }}</small>
-          <button type="button" @click="copyText(refundConfig.registration.callbackUrl)">复制报名退款回调地址</button>
+          <button type="button" @click="copyText(refundConfig.registration.callbackUrl)">复制默认报名退款回调地址</button>
         </article>
         <article class="refund-config-card">
           <strong>商城退款</strong>
@@ -133,6 +134,7 @@
         <AdminTableIndex :page="refundFilters.page" :page-size="refundFilters.pageSize" />
         <el-table-column label="来源" width="90"><template #default="{ row }">{{ sourceText(row.sourceType) }}</template></el-table-column>
         <el-table-column prop="refundNo" label="退款号" min-width="150" />
+        <el-table-column label="原收款单位" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.paymentCompanyName || (row.managedMerchant ? '指定收款单位' : '默认收款单位') }}</template></el-table-column>
         <el-table-column prop="orderNo" label="订单号" min-width="160" />
         <el-table-column prop="businessTitle" label="业务摘要" min-width="160" show-overflow-tooltip />
         <el-table-column label="金额" width="110"><template #default="{ row }">¥{{ formatCent(row.amountCent) }}</template></el-table-column>
@@ -198,22 +200,32 @@
       <el-pagination class="pager" background layout="prev, pager, next, total" :page-size="invoiceFilters.pageSize" :current-page="invoiceFilters.page" :total="invoiceTotal" @current-change="(page: number) => { invoiceFilters.page = page; void loadInvoices(); }" />
     </AdminSectionCard>
 
-    <AdminSectionCard v-if="activeSection === 'wechat-bills'" title="微信账单" subtitle="支持手动导入 CSV/TXT 账单并落库解析；官方下载未配置时只记录跳过原因。">
+    <AdminSectionCard v-if="activeSection === 'wechat-bills'" title="微信账单">
+      <AdminFilterBar>
+        <el-select v-model="billFilters.merchantKey" clearable placeholder="全部收款单位" style="width: 300px" @change="billFilters.page = 1; loadBills()">
+          <el-option v-for="merchant in merchantOptions" :key="merchant.merchantKey" :value="merchant.merchantKey" :label="merchantLabel(merchant.merchantKey)" />
+        </el-select>
+      </AdminFilterBar>
       <div class="inline-form">
+        <el-select v-model="billForm.merchantKey" aria-label="账单收款单位" placeholder="收款单位" style="width: 300px">
+          <el-option v-for="merchant in merchantOptions" :key="merchant.merchantKey" :value="merchant.merchantKey" :label="merchantLabel(merchant.merchantKey)" />
+        </el-select>
         <el-date-picker v-model="billForm.billDate" type="date" value-format="YYYY-MM-DD" placeholder="账单日期" />
         <el-select v-model="billForm.billType" style="width: 140px">
           <el-option label="交易账单" value="TRADE" />
           <el-option label="资金账单" value="FUND_FLOW" />
         </el-select>
-        <el-button type="primary" @click="createBill">创建账单批次</el-button>
+        <el-button type="primary" :disabled="!merchantOptions.length" @click="createBill">创建账单批次</el-button>
       </div>
       <el-input v-model="billImportText" type="textarea" :rows="5" placeholder="粘贴微信支付 CSV/TXT 账单内容，需包含商户订单号、微信支付订单号、金额、交易状态等字段。" />
       <div class="inline-actions">
-        <el-button :disabled="!selectedBillId" @click="importSelectedBill">导入到选中账单</el-button>
+        <el-button :disabled="!selectedBill" @click="importSelectedBill">导入到选中账单</el-button>
+        <span v-if="selectedBill">{{ merchantLabel(selectedBill.merchantKey) }} · {{ selectedBill.billDate }} · {{ selectedBill.billType }}</span>
       </div>
-      <el-table v-loading="billsLoading" :data="bills" highlight-current-row empty-text="暂无微信账单" @current-change="(row: any) => { selectedBillId = row?.id || ''; if (row?.billDate) billForm.billDate = row.billDate; if (row?.billType) billForm.billType = row.billType; }">
+      <el-table v-loading="billsLoading" :data="bills" highlight-current-row empty-text="暂无微信账单" @current-change="(row: MerchantWechatBill | null) => { selectedBillId = row?.id || ''; }">
         <AdminTableIndex :page="billFilters.page" :page-size="billFilters.pageSize" />
         <el-table-column prop="billDate" label="账单日期" width="130" />
+        <el-table-column label="收款单位" min-width="240" show-overflow-tooltip><template #default="{ row }">{{ merchantLabel(row.merchantKey) }}</template></el-table-column>
         <el-table-column prop="billType" label="类型" width="120" />
         <el-table-column label="状态" width="140"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="statusText(row.status)" /></template></el-table-column>
         <el-table-column prop="storagePath" label="文件 / 导入来源" min-width="220" show-overflow-tooltip />
@@ -221,7 +233,6 @@
         <el-table-column prop="createdAt" label="创建时间" width="190" />
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="downloadBill(row.id)">下载</el-button>
             <el-button size="small" type="primary" @click="reconcileBill(row.id)">对账</el-button>
           </template>
         </el-table-column>
@@ -231,6 +242,9 @@
 
     <AdminSectionCard v-if="activeSection === 'reconciliation'" title="财务对账" subtitle="对账只记录差异和核查备注，不自动改订单或支付状态。">
       <AdminFilterBar>
+        <el-select v-model="reconciliationFilters.merchantKey" clearable placeholder="全部收款单位" style="width: 260px" @change="reconciliationFilters.page = 1; loadReconciliationResults()">
+          <el-option v-for="merchant in merchantOptions" :key="merchant.merchantKey" :value="merchant.merchantKey" :label="merchantLabel(merchant.merchantKey)" />
+        </el-select>
         <el-input v-model="reconciliationFilters.keyword" clearable placeholder="订单号 / 商户单号 / 微信单号" style="width: 300px" @keyup.enter="loadReconciliationResults" />
         <el-select v-model="reconciliationFilters.status" placeholder="核查状态" style="width: 140px">
           <el-option label="全部" value="ALL" />
@@ -249,6 +263,7 @@
       <el-table v-loading="reconciliationLoading" :data="reconciliationResults" empty-text="暂无对账结果">
         <AdminTableIndex :page="reconciliationFilters.page" :page-size="reconciliationFilters.pageSize" />
         <el-table-column prop="billDate" label="账单日期" width="120" />
+        <el-table-column label="收款单位" min-width="240" show-overflow-tooltip><template #default="{ row }">{{ row.merchantKey ? merchantLabel(row.merchantKey) : '-' }}</template></el-table-column>
         <el-table-column prop="type" label="类型" min-width="150"><template #default="{ row }">{{ statusText(row.type) }}</template></el-table-column>
         <el-table-column label="状态" width="110"><template #default="{ row }"><AdminStatusBadge :status="row.status" :label="statusText(row.status)" /></template></el-table-column>
         <el-table-column prop="orderNo" label="订单号" min-width="160" />
@@ -312,15 +327,12 @@ import {
   createFinanceBatch,
   createRefund,
   createWechatBill,
-  downloadWechatBill,
   getFinanceOverview,
   getRefundConfig,
   importWechatBill,
   listFinancePayments,
   listInvoices,
-  listReconciliationResults,
   listRefunds,
-  listWechatBills,
   markInvoiceIssued,
   markReconciliationReviewed,
   queryRefund,
@@ -328,7 +340,9 @@ import {
   rejectInvoice,
   rejectRefund
 } from "../../services/admin";
-import type { FinanceInvoice, FinanceOverview, FinancePayment, FinanceRefund, FinanceRefundConfig, ReconciliationResult, WechatBill } from "../../services/types";
+import type { FinanceInvoice, FinanceOverview, FinancePayment, WechatBill } from "../../services/types";
+import { billImportTarget, listFinanceMerchantOptions, listMerchantReconciliationResults, listMerchantWechatBills, refundApprovalText } from "../../services/finance-merchants";
+import type { FinanceMerchantOption, MerchantFinanceRefund, MerchantReconciliationResult, MerchantRefundConfig, MerchantWechatBill } from "../../services/finance-merchants";
 
 const overview = ref<FinanceOverview | null>(null);
 const loading = ref(false);
@@ -338,28 +352,30 @@ const invoicesLoading = ref(false);
 const billsLoading = ref(false);
 const reconciliationLoading = ref(false);
 const payments = ref<FinancePayment[]>([]);
-const refunds = ref<FinanceRefund[]>([]);
-const refundConfig = ref<FinanceRefundConfig | null>(null);
+const refunds = ref<MerchantFinanceRefund[]>([]);
+const refundConfig = ref<MerchantRefundConfig | null>(null);
 const invoices = ref<FinanceInvoice[]>([]);
-const bills = ref<WechatBill[]>([]);
-const reconciliationResults = ref<ReconciliationResult[]>([]);
+const bills = ref<MerchantWechatBill[]>([]);
+const reconciliationResults = ref<MerchantReconciliationResult[]>([]);
+const merchantOptions = ref<FinanceMerchantOption[]>([]);
 const paymentTotal = ref(0);
 const refundTotal = ref(0);
 const invoiceTotal = ref(0);
 const billTotal = ref(0);
 const reconciliationTotal = ref(0);
 const selectedBillId = ref("");
+const selectedBill = computed(() => bills.value.find(bill => bill.id === selectedBillId.value) ?? null);
 const billImportText = ref("");
 
 const paymentFilters = reactive({ page: 1, pageSize: 20, keyword: "", sourceType: "ALL", status: "", provider: "" });
 const refundFilters = reactive({ page: 1, pageSize: 20, keyword: "", sourceType: "ALL", status: "" });
 const invoiceFilters = reactive({ page: 1, pageSize: 20, keyword: "", sourceType: "ALL", status: "" });
-const billFilters = reactive({ page: 1, pageSize: 20, status: "" });
-const reconciliationFilters = reactive({ page: 1, pageSize: 20, keyword: "", status: "ALL", type: "" });
+const billFilters = reactive({ page: 1, pageSize: 20, status: "", merchantKey: "" });
+const reconciliationFilters = reactive({ page: 1, pageSize: 20, keyword: "", status: "ALL", type: "", merchantKey: "" });
 const refundForm = reactive({ sourceType: "REGISTRATION", orderNo: "", amountYuan: 0, reason: "" });
-const billForm = reactive({ billDate: new Date().toISOString().slice(0, 10), billType: "TRADE" });
+const billForm = reactive({ billDate: new Date().toISOString().slice(0, 10), billType: "TRADE", merchantKey: "DEFAULT" });
 const issueDialog = reactive({ visible: false, id: "", issuedInvoiceNo: "", invoiceLink: "", remark: "" });
-const refundDetail = reactive<{ visible: boolean; row: FinanceRefund | null }>({ visible: false, row: null });
+const refundDetail = reactive<{ visible: boolean; row: MerchantFinanceRefund | null }>({ visible: false, row: null });
 
 const refundStatuses = ["REQUESTED", "APPROVED", "PROCESSING", "SUCCESS", "FAILED", "REJECTED"];
 const invoiceStatuses = ["REQUESTED", "APPROVED", "ISSUED", "REJECTED"];
@@ -380,7 +396,7 @@ const pageSubtitle = computed(() => {
     payments: "统一查询报名 Payment 与商城 MallPayment，只读展示，不允许人工改成功状态。",
     refunds: "统一处理报名和商城退款，mock 可完成，微信退款待配置和回调确认。",
     invoices: "用户基于已支付报名或商城订单申请发票，后台人工审核和开票。",
-    "wechat-bills": "支持手动导入微信账单并对账；官方下载无配置时明确跳过。",
+    "wechat-bills": "微信账单与商户对账记录。",
     reconciliation: "记录 MATCHED 与差异结果，人工核查只写备注，不改订单状态。",
     home: "财务管理汇总、支付流水和对账入口。"
   };
@@ -407,7 +423,7 @@ const financeEntries = [
   { title: "退款管理", path: "/finance/refunds", description: "退款审批、处理和失败原因" },
   { title: "发票申请", path: "/finance/invoices", description: "发票审核、驳回和开票记录" },
   { title: "财务对账", path: "/finance/reconciliation", description: "本地支付与微信账单差异核查" },
-  { title: "微信账单", path: "/finance/wechat-bills", description: "账单创建、导入和下载状态" }
+  { title: "微信账单", path: "/finance/wechat-bills", description: "分商户账单与导入记录" }
 ];
 
 onMounted(() => void load());
@@ -417,6 +433,9 @@ async function load() {
   loading.value = true;
   try {
     overview.value = await getFinanceOverview();
+    if (activeSection.value === "wechat-bills" || activeSection.value === "reconciliation") {
+      merchantOptions.value = (await listFinanceMerchantOptions()).items;
+    }
     if (activeSection.value === "payments") await loadPayments();
     if (activeSection.value === "refunds") await loadRefunds();
     if (activeSection.value === "invoices") await loadInvoices();
@@ -464,7 +483,7 @@ async function loadInvoices() {
 async function loadBills() {
   billsLoading.value = true;
   try {
-    const data = await listWechatBills(billFilters);
+    const data = await listMerchantWechatBills(billFilters);
     bills.value = data.items;
     billTotal.value = data.total;
   } finally {
@@ -475,7 +494,7 @@ async function loadBills() {
 async function loadReconciliationResults() {
   reconciliationLoading.value = true;
   try {
-    const data = await listReconciliationResults(reconciliationFilters);
+    const data = await listMerchantReconciliationResults(reconciliationFilters);
     reconciliationResults.value = data.items;
     reconciliationTotal.value = data.total;
   } finally {
@@ -505,8 +524,8 @@ async function createRefundRequest() {
   await loadRefunds();
 }
 
-async function approveRefundRow(row: FinanceRefund) {
-  await ElMessageBox.confirm(refundApproveConfirmText(row), "审核通过退款", { type: "warning" });
+async function approveRefundRow(row: MerchantFinanceRefund) {
+  await ElMessageBox.confirm(refundApprovalText(row, refundConfig.value), "审核通过退款", { type: "warning" });
   const next = await approveRefund(row.id);
   if (next.status === "SUCCESS") ElMessage.success("退款已完成");
   else ElMessage.warning(next.refundNotice || next.failedReason || "退款已进入处理中，请等待回调或线下处理");
@@ -521,7 +540,7 @@ async function queryRefundRow(id: string) {
   await loadRefunds();
 }
 
-function openRefundDetail(row: FinanceRefund) {
+function openRefundDetail(row: MerchantFinanceRefund) {
   refundDetail.row = row;
   refundDetail.visible = true;
 }
@@ -562,13 +581,14 @@ async function submitIssueInvoice() {
 }
 
 async function createBill() {
-  await createWechatBill({ billDate: billForm.billDate, billType: billForm.billType });
+  await createWechatBill({ billDate: billForm.billDate, billType: billForm.billType, merchantKey: billForm.merchantKey });
   ElMessage.success("账单批次已创建");
   await loadBills();
 }
 
 async function importSelectedBill() {
-  if (!selectedBillId.value) {
+  const target = selectedBill.value;
+  if (!target) {
     ElMessage.warning("请先在表格中选中账单批次");
     return;
   }
@@ -576,15 +596,10 @@ async function importSelectedBill() {
     ElMessage.warning("请粘贴账单文本");
     return;
   }
-  await importWechatBill({ billDate: billForm.billDate, billType: billForm.billType, text: billImportText.value });
+  await ElMessageBox.confirm(`确认导入 ${merchantLabel(target.merchantKey)} 的 ${target.billDate} ${target.billType} 账单？该批次原对账结果将清除。`, "导入账单", { type: "warning" });
+  await importWechatBill({ ...billImportTarget(target), text: billImportText.value });
   billImportText.value = "";
   ElMessage.success("账单已导入");
-  await loadBills();
-}
-
-async function downloadBill(id: string) {
-  const result = await downloadWechatBill(id);
-  ElMessage[result.skippedReason ? "warning" : "success"](result.skippedReason || "账单下载请求已记录");
   await loadBills();
 }
 
@@ -660,11 +675,10 @@ function goFinance(path: string) {
   navigateTo(path);
 }
 
-function refundApproveConfirmText(row: FinanceRefund) {
-  const config = row.sourceType === "MALL" ? refundConfig.value?.mall : refundConfig.value?.registration;
-  if (config?.mockEnabled) return "当前启用 mock 退款，审核通过后会立即标记退款成功，仅用于测试环境。";
-  if (config?.wechatRefundEnabled) return "确认审核通过并进入微信退款处理？系统会等待微信退款回调或查询结果，成功前不会改为已到账。";
-  return "当前未配置微信真实退款。审核通过后只会进入处理中/待线下处理，不会自动打款，也不会显示退款成功。";
+function merchantLabel(merchantKey: string) {
+  const merchant = merchantOptions.value.find(item => item.merchantKey === merchantKey);
+  if (!merchant) return merchantKey === "DEFAULT" ? "默认收款单位" : merchantKey;
+  return `${merchant.companyName}${merchantKey === "DEFAULT" ? "（默认）" : ""}${merchant.mchId ? ` · ${merchant.mchId}` : ""}${merchant.enabled ? "" : "（已停用）"}`;
 }
 
 async function copyText(value: string) {

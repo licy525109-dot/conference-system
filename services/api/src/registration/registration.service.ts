@@ -23,6 +23,7 @@ import { calculateGroupTicketPrice, type GroupTicketPriceSnapshot } from "@confe
 import { CurrentUser } from "../auth/current-user";
 import { requireRegistrationProfile } from "../auth/registration-profile";
 import { PrismaService } from "../prisma.service";
+import { PaymentMerchantService } from "../payments/payment-merchant.service";
 import { readInvitationToken, resolveOrderInvitation } from "../invitations/invitation-policy";
 
 export interface ApiResponse<TData> {
@@ -640,8 +641,10 @@ export class RegistrationService {
           const inventoryReservedAt = this.getCurrentTime();
           await validateRegistrationCouponReservation(tx, input, inventoryReservedAt);
           const invitationId = await resolveOrderInvitation(tx, input.invitationToken, input.conferenceId);
+          const merchantSnapshot = await new PaymentMerchantService(this.prisma).snapshotForConference(tx, input.conferenceId);
           const order = await tx.order.create({
             data: {
+              ...merchantSnapshot,
               orderNo,
               ...(invitationId ? { invitationId } : {}),
               userId: input.userId,

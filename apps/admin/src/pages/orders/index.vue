@@ -20,6 +20,9 @@
       <el-select v-model="skuId" aria-label="票种筛选" clearable filterable placeholder="全部票种" :loading="skusLoading" style="width: 240px">
         <el-option v-for="item in skuOptions" :key="item.id" :value="item.id" :label="conferenceId ? item.name : `${item.name} · ${item.conference.title}`" />
       </el-select>
+      <el-select v-model="paymentMerchantId" aria-label="收款单位筛选" clearable filterable placeholder="全部收款单位" style="width: 230px">
+        <el-option v-for="item in merchantOptions" :key="item.id" :label="item.companyName" :value="item.id" />
+      </el-select>
       <el-select v-model="status" clearable placeholder="订单状态" style="width: 150px">
         <el-option label="待支付" value="PENDING" />
         <el-option label="已支付" value="PAID" />
@@ -64,6 +67,7 @@
           <template #default="{ row }">
             <strong>{{ row.orderNo }}</strong>
             <div class="order-conference">{{ row.conferenceTitle }}</div>
+            <div class="muted-text">收款：{{ row.paymentCompanyName || '北京壹昂智创科技有限公司' }}</div>
             <div class="muted-text">{{ row.outTradeNo || "未生成商户单号" }}</div>
           </template>
         </el-table-column>
@@ -135,6 +139,7 @@
           <el-descriptions-item label="订单号">{{ detail.orderNo }}</el-descriptions-item>
           <el-descriptions-item label="订单状态"><AdminStatusBadge :status="detail.status" /></el-descriptions-item>
           <el-descriptions-item label="会议">{{ detail.conferenceTitle }}</el-descriptions-item>
+          <el-descriptions-item label="收款单位">{{ detail.paymentCompanyName || '北京壹昂智创科技有限公司' }}</el-descriptions-item>
           <el-descriptions-item label="姓名">{{ detail.attendeeName || "-" }}</el-descriptions-item>
           <el-descriptions-item label="下单账号" :span="2"><el-button v-if="detail.user && hasPermission('member:view')" link type="primary" @click="openAccount(detail.user.id)">{{ detail.user.realName || detail.user.nickname || detail.user.wechatNickname || '待完善姓名' }} · {{ hasPermission('member:write') ? '编辑账号' : '查看账号' }}</el-button><span v-else>未关联或无查看权限</span></el-descriptions-item>
           <el-descriptions-item label="原价">¥{{ formatCent(detail.originAmountCent) }}</el-descriptions-item>
@@ -219,6 +224,7 @@ import { navigateTo, routeQuery } from "../../router";
 import { closeOrder, closeOrdersByFilter, exportOrdersExcel, getOrder, listConferences, listOrders, reviewPaymentException, listOrderSkuOptions, recycleOrders, restoreOrder, type OrderFilters } from "../../services/admin";
 import { useAdminSession } from "../../stores/admin-session";
 import type { AdminOrder, AdminOrderDetail, AdminOrderSummary, Conference } from "../../services/types";
+import { listOrderMerchantOptions } from "../../services/admin";
 
 const items = ref<AdminOrder[]>([]);
 const page = ref(1);
@@ -229,6 +235,8 @@ const conferences = ref<Conference[]>([]);
 const detail = ref<AdminOrderDetail | null>(null);
 const keyword = ref("");
 const conferenceId = ref("");
+const paymentMerchantId = ref("");
+const merchantOptions = ref<Array<{ id: string; companyName: string }>>([]);
 const skuId = ref(''), deleted = ref(false), skusLoading = ref(false);
 const skuOptions = ref<Awaited<ReturnType<typeof listOrderSkuOptions>>['items']>([]);
 const summary = ref<AdminOrderSummary | null>(null);
@@ -253,7 +261,7 @@ let listRequest = 0;
 onMounted(async () => {
   if (routeQuery.value.orderNo) keyword.value = routeQuery.value.orderNo;
   appliedFilters.value = currentFilters();
-  await Promise.all([loadConferences(), loadSkuOptions(), load()]);
+  await Promise.all([loadConferences(), loadSkuOptions(), loadMerchants(), load()]);
   if (routeQuery.value.orderNo) await openDetail(routeQuery.value.orderNo);
 });
 
@@ -261,6 +269,11 @@ async function loadConferences() {
   if (!hasPermission('conference:view')) return;
   try { conferences.value = (await listConferences({ page: 1, pageSize: 100 })).items; }
   catch (e) { ElMessage.error(errorText(e, '会议筛选项加载失败')); }
+}
+
+async function loadMerchants() {
+  try { merchantOptions.value = (await listOrderMerchantOptions()).items; }
+  catch (e) { ElMessage.error(errorText(e, '收款单位筛选项加载失败')); }
 }
 
 let skuRequest = 0;
@@ -272,7 +285,7 @@ async function loadSkuOptions() {
   finally { if (request === skuRequest) skusLoading.value = false; }
 }
 function conferenceChanged() { skuId.value = ''; skuOptions.value = []; void loadSkuOptions(); }
-function currentFilters(): OrderFilters { return { keyword: keyword.value, conferenceId: conferenceId.value, skuId: skuId.value, status: status.value, paymentStatus: paymentStatus.value, onlyExceptions: onlyExceptions.value, deleted: deleted.value }; }
+function currentFilters(): OrderFilters { return { keyword: keyword.value, conferenceId: conferenceId.value, paymentMerchantId: paymentMerchantId.value, skuId: skuId.value, status: status.value, paymentStatus: paymentStatus.value, onlyExceptions: onlyExceptions.value, deleted: deleted.value }; }
 function openAccount(id: string) { accountId.value = id; accountVisible.value = true; }
 async function accountSaved() { await load(); if (detailVisible.value && detail.value) await openDetail(detail.value.orderNo); }
 

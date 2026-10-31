@@ -11,6 +11,7 @@ import { MallModule } from "./mall/mall.module";
 import { MemberModule } from "./member/member.module";
 import { OrderLifecycleModule } from "./order-lifecycle/order-lifecycle.module";
 import { PaymentsModule } from "./payments/payments.module";
+import { PaymentMerchantsModule } from "./payments/payment-merchants.module";
 import { PlatformModule } from "./platform/platform.module";
 import { PrismaModule } from "./prisma.module";
 import { RegistrationModule } from "./registration/registration.module";
@@ -19,7 +20,7 @@ import { WecomModule } from "./wecom/wecom.module";
 import { InvitationsModule } from "./invitations/invitations.module";
 
 @Module({
-  imports: [PrismaModule, AdminModule, AuthModule, CartModule, CheckinModule, CmsModule, ConferencesModule, GuestScheduleModule, InvitationsModule, MallModule, MemberModule, OrderLifecycleModule, PaymentsModule, PlatformModule, RegistrationModule, RegistrationsModule, WecomModule],
+  imports: [PrismaModule, PaymentMerchantsModule, AdminModule, AuthModule, CartModule, CheckinModule, CmsModule, ConferencesModule, GuestScheduleModule, InvitationsModule, MallModule, MemberModule, OrderLifecycleModule, PaymentsModule, PlatformModule, RegistrationModule, RegistrationsModule, WecomModule],
   controllers: [HealthController]
 })
 export class AppModule {}

@@ -3,6 +3,8 @@ export interface CurrentAdmin {
   username: string;
   displayName: string | null;
   permissions?: string[];
+  conferenceScopeMode?: "ALL" | "ASSIGNED";
+  conferenceIds?: string[];
 }
 
 export interface RequestWithCurrentAdmin {

@@ -10,6 +10,12 @@ import { RequireAdminPermissions } from "./require-permissions.decorator";
 export class AdminFinanceController {
   constructor(private readonly financeService: AdminFinanceService) {}
 
+  @Get("merchant-options")
+  @RequireAdminPermissions("finance:view")
+  merchantOptions() {
+    return this.financeService.merchantOptions();
+  }
+
   @Get("overview")
   @RequireAdminPermissions("finance:view")
   overview() {

@@ -4,6 +4,7 @@ import { BadRequestException, ConflictException, ForbiddenException, HttpExcepti
 import { AuditAction, InvoiceStatus, OrderStatus, PaymentProvider, PaymentStatus, Prisma, RefundStatus } from "@prisma/client";
 import { isMallMockRefundEnabled, isMallWechatRefundConfigured, readMallRefundMode } from "../mall/mall-payment.config";
 import { readWechatPayConfig } from "../payments/wechat-pay.config";
+import { DEFAULT_PAYMENT_COMPANY, PaymentMerchantService } from "../payments/payment-merchant.service";
 import { WechatPayRefundClient } from "../payments/wechat-pay.refund-client";
 import { WechatPaySigner } from "../payments/wechat-pay.signer";
 import { RegistrationRefundFinalizationService } from "../payments/registration-refund-finalization.service";
@@ -38,6 +39,7 @@ export type LocalPaymentRow = {
 const ACTIVE_REFUND_STATUSES: RefundStatus[] = [RefundStatus.REQUESTED, RefundStatus.APPROVED, RefundStatus.PROCESSING];
 const FINISHED_REFUND_STATUSES: RefundStatus[] = [RefundStatus.SUCCESS];
 const PAID_MALL_ORDER_STATUSES = ["PAID", "SHIPPED", "COMPLETED", "REFUNDING", "REFUNDED"] as const;
+const DEFAULT_MERCHANT_KEY = "DEFAULT";
 
 @Injectable()
 export class AdminFinanceService {
@@ -46,7 +48,8 @@ export class AdminFinanceService {
     private readonly wechatRefundClient: WechatPayRefundClient = new WechatPayRefundClient(new WechatPaySigner()),
     @Optional() private readonly notificationsService?: AdminNotificationsService,
     @Optional() private readonly registrationRefundFinalization: RegistrationRefundFinalizationService = new RegistrationRefundFinalizationService(prisma),
-    @Optional() private readonly mallRefundFinalization: MallRefundFinalizationService = new MallRefundFinalizationService(prisma)
+    @Optional() private readonly mallRefundFinalization: MallRefundFinalizationService = new MallRefundFinalizationService(prisma),
+    @Optional() private readonly paymentMerchants: PaymentMerchantService = new PaymentMerchantService(prisma)
   ) {}
 
   async overview() {
@@ -144,7 +147,7 @@ export class AdminFinanceService {
             where: registrationWhere,
             orderBy: [{ createdAt: "desc" }],
             take,
-            include: { order: { include: { conference: true, user: true, refunds: { orderBy: { createdAt: "desc" }, take: 1 } } } }
+            include: { order: { include: { conference: true, user: true, paymentMerchantRevision: { select: { merchantId: true } }, refunds: { orderBy: { createdAt: "desc" }, take: 1 } } } }
           }),
       sourceType === "MALL" ? this.prisma.payment.count({ where: { id: "__never__" } }) : this.prisma.payment.count({ where: registrationWhere }),
       sourceType === "REGISTRATION"
@@ -349,10 +352,11 @@ export class AdminFinanceService {
         requiresApproval: true,
         mockEnabled: isRegistrationMockRefundEnabled(),
         wechatRefundEnabled: registrationWechatConfigured,
+        managedMerchantRefundMode: "ORIGINAL_ORDER" as const,
         callbackUrl: process.env.WECHAT_PAY_REFUND_NOTIFY_URL?.trim() || `${publicBase}/payments/wechat/refund-notify`,
         autoRestoreQuota: true,
         deadlineText: process.env.REFUND_DEADLINE_TEXT || "退款截止时间未配置，请按运营规则人工核对。",
-        description: process.env.REFUND_DESCRIPTION || "未开启微信真实退款时，只记录退款申请和审核，不会自动打款。"
+        description: process.env.REFUND_DESCRIPTION || "指定收款单位的订单按原收款配置提交微信退款；默认收款单位使用默认退款配置。"
       },
       mall: {
         enabled: readMallRefundMode() !== "disabled" || process.env.MALL_MOCK_REFUND_ENABLED === "true" || process.env.MALL_WECHAT_REFUND_ENABLED === "true",
@@ -432,9 +436,9 @@ export class AdminFinanceService {
         if (registration.orderId) await this.registrationRefundFinalization.finalizeIfFullyRefunded(registration.orderId);
         return ok(formatRegistrationRefund(registration));
       }
-      if (registration.provider === PaymentProvider.WECHAT && isRegistrationWechatRefundConfigured() && registration.outRefundNo) {
+      if (registration.provider === PaymentProvider.WECHAT && (isManagedMerchantOrder(registration.order) || isRegistrationWechatRefundConfigured()) && registration.outRefundNo) {
         const result = await this.wechatRefundClient.queryRefund({
-          config: readWechatPayConfig(),
+          config: await this.paymentMerchants.configForOrder(registration.order ?? {}),
           outRefundNo: registration.outRefundNo
         });
         if (result.outRefundNo !== registration.outRefundNo) throw new ConflictException("微信退款查询返回的商户退款单号不一致");
@@ -449,8 +453,8 @@ export class AdminFinanceService {
           ? null
           : successTime && !Number.isNaN(successTime.getTime()) ? successTime : new Date();
         const updated = await this.prisma.$transaction(async (tx) => {
-          const refund = await tx.refund.update({
-            where: { id: registration.id },
+          await tx.refund.updateMany({
+            where: { id: registration.id, status: { not: RefundStatus.SUCCESS } },
             data: {
               providerRefundId: result.refundId,
               status,
@@ -458,9 +462,9 @@ export class AdminFinanceService {
               failedReason: status === RefundStatus.FAILED ? `微信退款状态：${result.status}` : null
             }
           });
-          return refund;
+          return tx.refund.findUniqueOrThrow({ where: { id: registration.id } });
         });
-        if (status === RefundStatus.SUCCESS && registration.orderId) {
+        if (updated.status === RefundStatus.SUCCESS && registration.orderId) {
           await this.registrationRefundFinalization.finalizeIfFullyRefunded(registration.orderId);
         }
         await this.notifyRegistrationRefund({ ...registration, ...updated });
@@ -489,8 +493,8 @@ export class AdminFinanceService {
           ? null
           : successTime && !Number.isNaN(successTime.getTime()) ? successTime : new Date();
         const updated = await this.prisma.$transaction(async (tx) => {
-          const refund = await tx.mallRefund.update({
-            where: { id: mall.id },
+          const changed = await tx.mallRefund.updateMany({
+            where: { id: mall.id, status: { not: RefundStatus.SUCCESS } },
             data: {
               providerRefundId: result.refundId,
               status,
@@ -498,18 +502,18 @@ export class AdminFinanceService {
               failedReason: status === RefundStatus.FAILED ? `微信退款状态：${result.status}` : null
             }
           });
-          if (mall.afterSaleId && status === RefundStatus.SUCCESS) {
+          if (changed.count && mall.afterSaleId && status === RefundStatus.SUCCESS) {
             await tx.mallAfterSale.update({ where: { id: mall.afterSaleId }, data: { status: "COMPLETED", handledAt: processedAt } });
           }
-          if (result.status === "CLOSED") {
+          if (changed.count && result.status === "CLOSED") {
             await tx.mallOrder.updateMany({
               where: { id: mall.mallOrderId, status: "REFUNDING" },
               data: { status: restoreMallOrderStatus(mall.previousOrderStatus) }
             });
           }
-          return refund;
+          return tx.mallRefund.findUniqueOrThrow({ where: { id: mall.id } });
         });
-        if (status === RefundStatus.SUCCESS) {
+        if (updated.status === RefundStatus.SUCCESS) {
           await this.mallRefundFinalization.finalizeIfFullyRefunded(mall.mallOrderId);
         }
         const merged = { ...mall, ...updated };
@@ -583,19 +587,32 @@ export class AdminFinanceService {
     const body = readObject(input);
     const billDate = readRequiredDate(body.billDate, "billDate");
     const billType = readOptionalString(body.billType) ?? "TRADE";
+    const merchantKey = await this.validateMerchantKey(body.merchantKey);
     const bill = await this.prisma.wechatBill.upsert({
-      where: { billDate_billType: { billDate, billType } },
+      where: { billDate_billType_merchantKey: { billDate, billType, merchantKey } },
       update: {},
-      create: { billDate, billType, createdBy: admin.id, status: "CREATED" }
+      create: { billDate, billType, merchantKey, createdBy: admin.id, status: "CREATED", summaryJson: { merchantKey } }
     });
-    await this.writeAudit(admin, AuditAction.CREATE, "WechatBill", bill.id, "Create WeChat bill batch", { billType, billDate: billDate.toISOString().slice(0, 10) });
+    await this.writeAudit(admin, AuditAction.CREATE, "WechatBill", bill.id, "Create WeChat bill batch", { merchantKey, billType, billDate: billDate.toISOString().slice(0, 10) });
     return ok(formatWechatBill(bill));
+  }
+
+  async merchantOptions() {
+    const merchants = await this.prisma.paymentMerchant.findMany({
+      orderBy: [{ createdAt: "asc" }],
+      select: { id: true, companyName: true, mchId: true, enabled: true }
+    });
+    return ok({ items: [
+      { merchantKey: DEFAULT_MERCHANT_KEY, companyName: DEFAULT_PAYMENT_COMPANY, mchId: process.env.WECHAT_PAY_MCH_ID?.trim() || null, enabled: true },
+      ...merchants.map(({ id, ...merchant }) => ({ merchantKey: id, ...merchant }))
+    ] });
   }
 
   async listWechatBills(query: Record<string, unknown> = {}) {
     const { page, pageSize, skip } = readPage(query);
     const status = readOptionalString(query.status);
-    const where: Prisma.WechatBillWhereInput = status ? { status } : {};
+    const merchantKey = query.merchantKey === undefined || query.merchantKey === "" ? undefined : await this.validateMerchantKey(query.merchantKey);
+    const where: Prisma.WechatBillWhereInput = { ...(status ? { status } : {}), ...(merchantKey ? { merchantKey } : {}) };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.wechatBill.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: pageSize }),
       this.prisma.wechatBill.count({ where })
@@ -607,76 +624,62 @@ export class AdminFinanceService {
     const body = readObject(input);
     const billDate = readRequiredDate(body.billDate, "billDate");
     const billType = readOptionalString(body.billType) ?? "TRADE";
+    const merchantKey = await this.validateMerchantKey(body.merchantKey);
     const text = readOptionalString(body.text) ?? readOptionalString(body.billText) ?? "";
     if (!text) throw new BadRequestException("账单文本不能为空，请粘贴微信账单 CSV/TXT 内容");
     const parsed = parseWechatBillRows(text);
     if (parsed.rows.length === 0) throw new BadRequestException("未解析到账单明细，请确认包含商户订单号、微信交易号、金额等字段");
-    const importRecord = await this.prisma.wechatBillImport.create({
-      data: {
-        fileName: readOptionalString(body.fileName) ?? `manual-${billDate.toISOString().slice(0, 10)}.${billType.toLowerCase()}.txt`,
-        status: "PARSED",
+    const { bill, importRecord } = await this.prisma.$transaction(async (tx) => {
+      const importRecord = await tx.wechatBillImport.create({
+        data: {
+          fileName: readOptionalString(body.fileName) ?? `manual-${billDate.toISOString().slice(0, 10)}.${billType.toLowerCase()}.txt`,
+          status: "PARSED",
+          rowCount: parsed.rows.length,
+          createdBy: admin.id,
+          errorJson: { merchantKey, warnings: parsed.warnings }
+        }
+      });
+      const summaryJson = {
+        source: "manual-import", merchantKey,
+        importId: importRecord.id,
+        importedAt: new Date().toISOString(),
         rowCount: parsed.rows.length,
-        createdBy: admin.id,
-        errorJson: parsed.warnings.length ? ({ warnings: parsed.warnings } as Prisma.InputJsonObject) : undefined
-      }
+        warnings: parsed.warnings,
+        rows: parsed.rows as unknown as Prisma.InputJsonArray
+      } as Prisma.InputJsonObject;
+      const bill = await tx.wechatBill.upsert({
+        where: { billDate_billType_merchantKey: { billDate, billType, merchantKey } },
+        update: { status: "IMPORTED", storagePath: `manual-import:${importRecord.id}`, summaryJson },
+        create: { billDate, billType, merchantKey, createdBy: admin.id, status: "IMPORTED", storagePath: `manual-import:${importRecord.id}`, summaryJson }
+      });
+      await tx.reconciliationResult.deleteMany({ where: { billId: bill.id } });
+      return { bill, importRecord };
     });
-    const summaryJson = {
-      source: "manual-import",
-      importId: importRecord.id,
-      importedAt: new Date().toISOString(),
-      rowCount: parsed.rows.length,
-      warnings: parsed.warnings,
-      rows: parsed.rows as unknown as Prisma.InputJsonArray
-    } as Prisma.InputJsonObject;
-    const bill = await this.prisma.wechatBill.upsert({
-      where: { billDate_billType: { billDate, billType } },
-      update: { status: "IMPORTED", storagePath: `manual-import:${importRecord.id}`, summaryJson },
-      create: { billDate, billType, createdBy: admin.id, status: "IMPORTED", storagePath: `manual-import:${importRecord.id}`, summaryJson }
-    });
-    await this.writeAudit(admin, AuditAction.SYSTEM, "WechatBill", bill.id, "Import WeChat bill rows", { rowCount: parsed.rows.length, importId: importRecord.id });
+    await this.writeAudit(admin, AuditAction.SYSTEM, "WechatBill", bill.id, "Import WeChat bill rows", { merchantKey, rowCount: parsed.rows.length, importId: importRecord.id });
     return ok({ ...formatWechatBill(bill), importId: importRecord.id, rowCount: parsed.rows.length, warnings: parsed.warnings });
   }
 
   async downloadWechatBill(id: string, admin?: CurrentAdmin) {
     const bill = await this.prisma.wechatBill.findUnique({ where: { id } });
     if (!bill) throw new NotFoundException("Wechat bill not found");
-    if (!isWechatBillDownloadEnabled()) {
-      const updated = await this.prisma.wechatBill.update({
-        where: { id },
-        data: {
-          status: "DOWNLOAD_SKIPPED",
-          summaryJson: mergeJsonObject(bill.summaryJson, {
-            downloadSkippedReason: "WECHAT_PAY_BILL_DOWNLOAD_ENABLED=false 或 WECHAT_PAY_BILL_STORAGE_PATH 未配置，未调用官方下载接口。",
-            downloadCheckedAt: new Date().toISOString()
-          })
-        }
-      });
-      if (admin) await this.writeAudit(admin, AuditAction.SYSTEM, "WechatBill", id, "Skip WeChat bill download", { reason: "download not configured" });
-      return ok({ ...formatWechatBill(updated), skippedReason: "微信账单官方下载未配置，未伪造下载成功。" });
-    }
-    const updated = await this.prisma.wechatBill.update({
-      where: { id },
-      data: {
-        status: "DOWNLOAD_REQUESTED",
-        storagePath: `${process.env.WECHAT_PAY_BILL_STORAGE_PATH}/${bill.billDate.toISOString().slice(0, 10)}-${bill.billType}.csv`,
-        summaryJson: mergeJsonObject(bill.summaryJson, {
-          downloadRequestedAt: new Date().toISOString(),
-          notice: "官方账单下载 provider 已启用；文件写入需由服务器任务完成后再导入解析。"
-        })
-      }
-    });
-    if (admin) await this.writeAudit(admin, AuditAction.SYSTEM, "WechatBill", id, "Request WeChat bill download", { billType: bill.billType });
-    return ok(formatWechatBill(updated));
+    if (admin) await this.writeAudit(admin, AuditAction.SYSTEM, "WechatBill", id, "Skip unimplemented WeChat bill download", { merchantKey: bill.merchantKey });
+    return ok({ ...formatWechatBill(bill), downloadImplemented: false, skippedReason: "微信账单自动下载尚未实现，请从对应商户平台获取账单后手动导入；未创建下载任务。" });
   }
 
   async reconcileWechatBill(id: string, admin: CurrentAdmin, input: unknown = {}) {
     const bill = await this.prisma.wechatBill.findUnique({ where: { id } });
     if (!bill) throw new NotFoundException("Wechat bill not found");
     const body = isRecord(input) ? input : {};
+    const merchantKey = await this.validateMerchantKey(bill.merchantKey);
+    if (body.merchantKey !== undefined && body.merchantKey !== merchantKey) throw new BadRequestException("对账商户与账单不一致");
+    const billSummary: unknown = bill.summaryJson;
+    if (isRecord(billSummary) && billSummary.merchantKey && billSummary.merchantKey !== merchantKey) throw new ConflictException("账单导入商户与账单不一致");
     const sourceType = readSourceType(body.sourceType);
+    if (merchantKey !== DEFAULT_MERCHANT_KEY && sourceType === "MALL") throw new BadRequestException("指定收款单位账单仅支持报名支付对账");
     const billRows = extractBillRows(bill.summaryJson);
+    if (!billRows.length) throw new BadRequestException("请先导入对应商户的微信账单");
     const dayRange = billDayRange(bill.billDate);
-    const localRows = await this.readLocalPayments({ sourceType, range: dayRange, includePending: true });
+    const localRows = await this.readLocalPayments({ sourceType, range: dayRange, includePending: true, merchantKey });
     const results = buildBillReconciliationResults(id, localRows, billRows);
     await this.prisma.$transaction([
       this.prisma.reconciliationResult.deleteMany({ where: { billId: id } }),
@@ -688,6 +691,7 @@ export class AdminFinanceService {
           summaryJson: mergeJsonObject(bill.summaryJson, {
             reconciledAt: new Date().toISOString(),
             sourceType,
+            merchantKey,
             localPaymentCount: localRows.length,
             billRowCount: billRows.length,
             resultCount: results.length,
@@ -696,7 +700,7 @@ export class AdminFinanceService {
         }
       })
     ]);
-    await this.writeAudit(admin, AuditAction.SYSTEM, "WechatBill", id, "Reconcile WeChat bill", { sourceType, resultCount: results.length });
+    await this.writeAudit(admin, AuditAction.SYSTEM, "WechatBill", id, "Reconcile WeChat bill", { merchantKey, sourceType, resultCount: results.length });
     const updated = await this.prisma.wechatBill.findUniqueOrThrow({ where: { id } });
     return ok({ ...formatWechatBill(updated), resultCount: results.length, resultSummary: summarizeReconciliationResults(results) });
   }
@@ -706,7 +710,9 @@ export class AdminFinanceService {
     const status = readOptionalString(query.status);
     const type = readOptionalString(query.type);
     const keyword = readOptionalString(query.keyword);
+    const merchantKey = query.merchantKey === undefined || query.merchantKey === "" ? undefined : await this.validateMerchantKey(query.merchantKey);
     const where: Prisma.ReconciliationResultWhereInput = {
+      ...(merchantKey ? { bill: { merchantKey } } : {}),
       ...(status && status !== "ALL" ? { status } : {}),
       ...(type ? { type } : {}),
       ...(keyword ? { OR: [{ orderNo: { contains: keyword, mode: "insensitive" } }, { outTradeNo: { contains: keyword, mode: "insensitive" } }, { transactionId: { contains: keyword, mode: "insensitive" } }] } : {})
@@ -838,7 +844,8 @@ export class AdminFinanceService {
     if (current.status === RefundStatus.PROCESSING) return ok(formatRegistrationRefund(current));
     if (!([RefundStatus.REQUESTED, RefundStatus.APPROVED] as RefundStatus[]).includes(current.status)) throw new ConflictException("当前退款状态不可批准");
     const now = new Date();
-    if (isRegistrationMockRefundEnabled()) {
+    const managedMerchantOrder = isManagedMerchantOrder(current.order);
+    if (!managedMerchantOrder && isRegistrationMockRefundEnabled()) {
       const refund = await this.prisma.$transaction(async (tx) => {
         const updated = await tx.refund.update({
           where: { id: current.id },
@@ -851,7 +858,7 @@ export class AdminFinanceService {
       await this.notifyRegistrationRefund(refund);
       return ok(formatRegistrationRefund(refund));
     }
-    if (isRegistrationWechatRefundConfigured()) {
+    if (managedMerchantOrder || isRegistrationWechatRefundConfigured()) {
       if (!current.order) throw new ConflictException("退款申请未关联报名订单");
       const payment = await this.prisma.payment.findFirst({
         where: { orderId: current.order.id, provider: PaymentProvider.WECHAT, status: PaymentStatus.SUCCESS },
@@ -864,16 +871,20 @@ export class AdminFinanceService {
       }
       if (current.amountCent > orderPaidAmountCent) throw new ConflictException("退款金额超过订单实付金额");
 
-      if (current.status === RefundStatus.REQUESTED) {
-        await this.prisma.refund.update({
-          where: { id: current.id },
+      const ready = await this.prisma.$transaction(async (tx) => {
+        await tx.refund.updateMany({
+          where: { id: current.id, status: RefundStatus.REQUESTED },
           data: { provider: PaymentProvider.WECHAT, status: RefundStatus.APPROVED, approvedAt: now, failedReason: null }
         });
+        return tx.refund.findUniqueOrThrow({ where: { id: current.id } });
+      });
+      if (ready.status !== RefundStatus.APPROVED) {
+        return ok(formatRegistrationRefund({ ...current, ...ready }));
       }
 
       try {
         const result = await this.wechatRefundClient.createRefund({
-          config: readWechatPayConfig(),
+          config: await this.paymentMerchants.configForOrder(current.order),
           outTradeNo: payment.outTradeNo,
           outRefundNo: current.outRefundNo || current.refundNo,
           amountCent: current.amountCent,
@@ -883,11 +894,12 @@ export class AdminFinanceService {
         if (result.outRefundNo !== (current.outRefundNo || current.refundNo)) {
           throw new ConflictException("微信退款响应的商户退款单号与本地不一致");
         }
+        mapVerifiedWechatRefundStatus(result.status);
         // The create-refund response only confirms that WeChat accepted the request.
         // A verified refund notification or an explicit provider query is required before success.
         const refund = await this.prisma.$transaction(async (tx) => {
-          const updated = await tx.refund.update({
-            where: { id: current.id },
+          await tx.refund.updateMany({
+            where: { id: current.id, status: RefundStatus.APPROVED },
             data: {
               provider: PaymentProvider.WECHAT,
               providerRefundId: result.refundId,
@@ -896,22 +908,28 @@ export class AdminFinanceService {
               failedReason: null
             }
           });
-          return updated;
+          return tx.refund.findUniqueOrThrow({ where: { id: current.id } });
         });
         await this.writeAudit(admin, AuditAction.UPDATE, "Refund", current.id, "Submit registration refund to WeChat", {
           provider: "WECHAT",
-          status: result.status,
+          status: refund.status,
+          providerStatus: result.status,
           outRefundNo: result.outRefundNo
         });
         await this.notifyRegistrationRefund(refund);
-        return ok(formatRegistrationRefund(refund));
+        return ok(formatRegistrationRefund({ ...current, ...refund }));
       } catch (error) {
         const failedReason = readableRefundFailure(error);
-        await this.prisma.refund.update({
-          where: { id: current.id },
-          data: { provider: PaymentProvider.WECHAT, status: RefundStatus.APPROVED, processedAt: null, failedReason }
+        const refund = await this.prisma.$transaction(async (tx) => {
+          await tx.refund.updateMany({
+            where: { id: current.id, status: RefundStatus.APPROVED },
+            data: { provider: PaymentProvider.WECHAT, processedAt: null, failedReason }
+          });
+          return tx.refund.findUniqueOrThrow({ where: { id: current.id } });
         });
-        await this.writeAudit(admin, AuditAction.UPDATE, "Refund", current.id, "Registration WeChat refund submission failed and remains retryable", { failedReason });
+        await this.writeAudit(admin, AuditAction.UPDATE, "Refund", current.id, "Registration WeChat refund submission error", { failedReason, status: refund.status });
+        await this.notifyRegistrationRefund(refund);
+        if (refund.status !== RefundStatus.APPROVED) return ok(formatRegistrationRefund({ ...current, ...refund }));
         throw error;
       }
     }
@@ -963,10 +981,14 @@ export class AdminFinanceService {
       }
       if (current.amountCent > orderPaidAmountCent) throw new ConflictException("商城退款金额超过订单实付金额");
 
-      await this.prisma.mallRefund.update({
-        where: { id: current.id },
-        data: { provider: PaymentProvider.WECHAT, status: RefundStatus.APPROVED, approvedAt: now, failedReason: null }
+      const ready = await this.prisma.$transaction(async (tx) => {
+        await tx.mallRefund.updateMany({
+          where: { id: current.id, status: RefundStatus.REQUESTED },
+          data: { provider: PaymentProvider.WECHAT, status: RefundStatus.APPROVED, approvedAt: now, failedReason: null }
+        });
+        return tx.mallRefund.findUniqueOrThrow({ where: { id: current.id } });
       });
+      if (ready.status !== RefundStatus.APPROVED) return ok(formatMallRefund({ ...current, ...ready }));
       try {
         const result = await this.wechatRefundClient.createRefund({
           config: readWechatPayConfig(),
@@ -979,9 +1001,10 @@ export class AdminFinanceService {
         if (result.outRefundNo !== current.outRefundNo) {
           throw new ConflictException("微信退款响应的商户退款单号与本地不一致");
         }
+        mapVerifiedWechatRefundStatus(result.status);
         const refund = await this.prisma.$transaction(async (tx) => {
-          const updated = await tx.mallRefund.update({
-            where: { id: current.id },
+          const changed = await tx.mallRefund.updateMany({
+            where: { id: current.id, status: RefundStatus.APPROVED },
             data: {
               provider: PaymentProvider.WECHAT,
               providerRefundId: result.refundId,
@@ -990,26 +1013,34 @@ export class AdminFinanceService {
               failedReason: null
             }
           });
-          await tx.mallOrder.update({ where: { id: current.mallOrderId }, data: { status: "REFUNDING" } });
-          if (current.afterSaleId) {
-            await tx.mallAfterSale.update({ where: { id: current.afterSaleId }, data: { status: "PROCESSING", handledAt: now } });
+          if (changed.count) {
+            await tx.mallOrder.update({ where: { id: current.mallOrderId }, data: { status: "REFUNDING" } });
+            if (current.afterSaleId) {
+              await tx.mallAfterSale.update({ where: { id: current.afterSaleId }, data: { status: "PROCESSING", handledAt: now } });
+            }
           }
-          return updated;
+          return tx.mallRefund.findUniqueOrThrow({ where: { id: current.id } });
         });
         await this.writeAudit(admin, AuditAction.UPDATE, "MallRefund", current.id, "Submit mall refund to WeChat", {
           provider: "WECHAT",
-          status: result.status,
+          status: refund.status,
+          providerStatus: result.status,
           outRefundNo: result.outRefundNo
         });
         await this.notifyMallRefund(refund, current.order.userId, current.order.orderNo);
-        return ok(formatMallRefund(refund));
+        return ok(formatMallRefund({ ...current, ...refund }));
       } catch (error) {
         const failedReason = readableRefundFailure(error);
-        await this.prisma.mallRefund.update({
-          where: { id: current.id },
-          data: { provider: PaymentProvider.WECHAT, status: RefundStatus.APPROVED, processedAt: null, failedReason }
+        const refund = await this.prisma.$transaction(async (tx) => {
+          await tx.mallRefund.updateMany({
+            where: { id: current.id, status: RefundStatus.APPROVED },
+            data: { provider: PaymentProvider.WECHAT, processedAt: null, failedReason }
+          });
+          return tx.mallRefund.findUniqueOrThrow({ where: { id: current.id } });
         });
-        await this.writeAudit(admin, AuditAction.UPDATE, "MallRefund", current.id, "Mall WeChat refund submission failed and remains retryable", { failedReason });
+        await this.writeAudit(admin, AuditAction.UPDATE, "MallRefund", current.id, "Mall WeChat refund submission error", { failedReason, status: refund.status });
+        await this.notifyMallRefund(refund, current.order.userId, current.order.orderNo);
+        if (refund.status !== RefundStatus.APPROVED) return ok(formatMallRefund({ ...current, ...refund }));
         throw error;
       }
     }
@@ -1083,29 +1114,48 @@ export class AdminFinanceService {
     if (outTradeNos.length === 0) return;
     const results = await this.prisma.reconciliationResult.findMany({
       where: { outTradeNo: { in: outTradeNos } },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
+      include: { bill: { select: { merchantKey: true } } }
     });
-    const latest = new Map<string, Prisma.ReconciliationResultGetPayload<Record<string, never>>>();
+    const latest = new Map<string, (typeof results)[number]>();
     for (const result of results) {
-      if (result.outTradeNo && !latest.has(result.outTradeNo)) latest.set(result.outTradeNo, result);
+      if (!result.outTradeNo || !result.bill) continue;
+      const key = JSON.stringify([result.bill.merchantKey, result.outTradeNo]);
+      if (!latest.has(key)) latest.set(key, result);
     }
     for (const item of items) {
-      const result = latest.get(String(item.outTradeNo || ""));
+      const result = item.provider === PaymentProvider.WECHAT ? latest.get(JSON.stringify([item.merchantKey, item.outTradeNo])) : undefined;
       item.reconciliationStatus = result ? result.type === "MATCHED" ? "MATCHED" : result.status : "UNRECONCILED";
       item.reconciliationType = result?.type ?? null;
     }
   }
 
-  private async readLocalPayments(input: { sourceType: FinanceSourceType; range: DateRange; includePending: boolean }): Promise<LocalPaymentRow[]> {
+  private async validateMerchantKey(value: unknown): Promise<string> {
+    const merchantKey = value === undefined ? DEFAULT_MERCHANT_KEY : typeof value === "string" ? value.trim() : "";
+    if (!merchantKey || merchantKey.length > 128) throw new BadRequestException("收款单位标识无效");
+    if (merchantKey !== DEFAULT_MERCHANT_KEY && !await this.prisma.paymentMerchant.findUnique({ where: { id: merchantKey }, select: { id: true } })) {
+      throw new BadRequestException("收款单位不存在");
+    }
+    return merchantKey;
+  }
+
+  private async readLocalPayments(input: { sourceType: FinanceSourceType; range: DateRange; includePending: boolean; merchantKey?: string }): Promise<LocalPaymentRow[]> {
     const whereBase = input.range.gte || input.range.lte ? { createdAt: input.range } : {};
     const paymentStatusWhere = input.includePending ? {} : { status: PaymentStatus.SUCCESS };
+    // Use the order's pinned revision, never the conference's current merchant.
+    const merchantWhere: Prisma.PaymentWhereInput = input.merchantKey === undefined ? {} : {
+      provider: PaymentProvider.WECHAT,
+      order: input.merchantKey === DEFAULT_MERCHANT_KEY
+        ? { paymentMerchantRevisionId: null }
+        : { paymentMerchantRevision: { merchantId: input.merchantKey } }
+    };
     const [registration, mall] = await this.prisma.$transaction([
       input.sourceType === "MALL"
         ? this.prisma.payment.findMany({ where: { id: "__never__" }, take: 0 })
-        : this.prisma.payment.findMany({ where: { ...whereBase, ...paymentStatusWhere }, include: { order: true }, take: 5000 }),
-      input.sourceType === "REGISTRATION"
+        : this.prisma.payment.findMany({ where: { ...whereBase, ...paymentStatusWhere, ...merchantWhere }, include: { order: true }, take: 5000 }),
+      input.sourceType === "REGISTRATION" || (input.merchantKey !== undefined && input.merchantKey !== DEFAULT_MERCHANT_KEY)
         ? this.prisma.mallPayment.findMany({ where: { id: "__never__" }, take: 0 })
-        : this.prisma.mallPayment.findMany({ where: { ...whereBase, ...paymentStatusWhere }, include: { order: true }, take: 5000 })
+        : this.prisma.mallPayment.findMany({ where: { ...whereBase, ...paymentStatusWhere, ...(input.merchantKey ? { provider: PaymentProvider.WECHAT } : {}) }, include: { order: true }, take: 5000 })
     ]);
     const registrationRows = registration as any[];
     const mallRows = mall as any[];
@@ -1150,6 +1200,7 @@ function formatRegistrationPayment(payment: any) {
   return {
     id: payment.id,
     sourceType: "REGISTRATION",
+    merchantKey: isManagedMerchantOrder(payment.order) ? payment.order.paymentMerchantRevision?.merchantId ?? null : DEFAULT_MERCHANT_KEY,
     sourceLabel: "报名",
     provider: payment.provider,
     status: payment.status,
@@ -1177,6 +1228,7 @@ function formatMallPayment(payment: any) {
   return {
     id: payment.id,
     sourceType: "MALL",
+    merchantKey: DEFAULT_MERCHANT_KEY,
     sourceLabel: "商城",
     provider: payment.provider,
     status: payment.status,
@@ -1207,6 +1259,9 @@ function formatRegistrationRefund(refund: any) {
   return {
     ...formatDateFields(refund),
     sourceType: "REGISTRATION",
+    managedMerchant: isManagedMerchantOrder(refund.order),
+    paymentMerchantRevisionId: refund.order?.paymentMerchantRevisionId ?? null,
+    paymentCompanyName: isRecord(refund.order?.paymentMerchantSnapshot) ? refund.order.paymentMerchantSnapshot.companyName ?? null : null,
     orderNo: refund.orderNo,
     businessTitle: refund.order?.conference?.title ?? "会议报名",
     userName: refund.user?.wechatNickname || refund.user?.nickname || refund.order?.attendeeName || null,
@@ -1280,14 +1335,15 @@ function formatBatch(batch: Prisma.FinanceReconciliationBatchGetPayload<{ includ
 
 function formatWechatBill(bill: Prisma.WechatBillGetPayload<Record<string, never>>) {
   const data = formatDateFields(bill);
-  return { ...data, billDate: bill.billDate.toISOString().slice(0, 10) };
+  return { ...data, id: bill.id, billDate: bill.billDate.toISOString().slice(0, 10), merchantKey: bill.merchantKey, summaryJson: bill.summaryJson };
 }
 
 function formatReconciliationResult(item: Prisma.ReconciliationResultGetPayload<{ include: { bill: true } }>) {
   return {
     ...formatDateFields(item),
     billDate: item.bill?.billDate.toISOString().slice(0, 10) ?? null,
-    billType: item.bill?.billType ?? null
+    billType: item.bill?.billType ?? null,
+    merchantKey: item.bill?.merchantKey ?? null
   };
 }
 
@@ -1313,7 +1369,7 @@ function mapVerifiedWechatRefundStatus(status: string): RefundStatus {
   if (status === "SUCCESS") return RefundStatus.SUCCESS;
   if (status === "PROCESSING") return RefundStatus.PROCESSING;
   if (status === "CLOSED" || status === "ABNORMAL") return RefundStatus.FAILED;
-  throw new ConflictException("微信退款查询返回未知状态，请人工核对商户平台");
+  throw new ConflictException("微信退款响应返回未知状态，请人工核对商户平台");
 }
 
 function buildLocalPaymentDifferences(payment: LocalPaymentRow): Prisma.FinanceReconciliationItemCreateWithoutBatchInput[] {
@@ -1650,8 +1706,8 @@ function readableRefundFailure(error: unknown): string {
   return "微信退款申请失败，请核对商户退款配置";
 }
 
-function isWechatBillDownloadEnabled(): boolean {
-  return process.env.WECHAT_PAY_BILL_DOWNLOAD_ENABLED === "true" && Boolean(process.env.WECHAT_PAY_BILL_STORAGE_PATH?.trim());
+function isManagedMerchantOrder(order: { paymentMerchantRevisionId?: string | null; paymentMerchantSnapshot?: unknown } | null | undefined): boolean {
+  return Boolean(order?.paymentMerchantRevisionId || (isRecord(order?.paymentMerchantSnapshot) && order.paymentMerchantSnapshot.source === "MANAGED"));
 }
 
 function resolvePublicApiBase(): string {

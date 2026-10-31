@@ -61,8 +61,9 @@ export class AdminRegistrationAlertService implements OnModuleInit, OnModuleDest
   onModuleDestroy() { if (this.timer) clearInterval(this.timer); this.timer = undefined; }
 
   private async authorized(adminUserId: string, db: Prisma.TransactionClient = this.prisma) {
-    const admin = await db.adminUser.findUnique({ where: { id: adminUserId }, select: { enabled: true, roles: { where: { role: { enabled: true } }, select: { role: { select: { code: true, permissions: { select: { permission: { select: { code: true } } } } } } } } } });
-    return Boolean(admin?.enabled && admin.roles.some(r => r.role.code === "super_admin" || r.role.permissions.some(p => p.permission.code === "registration:view")));
+    const admin = await db.adminUser.findUnique({ where: { id: adminUserId }, select: { enabled: true, conferenceScopeMode: true, roles: { where: { role: { enabled: true } }, select: { role: { select: { code: true, permissions: { select: { permission: { select: { code: true } } } } } } } } } });
+    // This channel sends all-conference alerts; restricted operators must not receive it.
+    return Boolean(admin?.enabled && admin.conferenceScopeMode === "ALL" && admin.roles.some(r => r.role.code === "super_admin" || r.role.permissions.some(p => p.permission.code === "registration:view")));
   }
 
   // Configuration, enqueue and claim use the same lock, including first-time configuration.
@@ -77,7 +78,7 @@ export class AdminRegistrationAlertService implements OnModuleInit, OnModuleDest
     const [recipients, integrations, admins, deliveries] = await this.prisma.$transaction([
       this.prisma.adminAlertRecipient.findMany({ orderBy: { createdAt: "asc" } }),
       this.prisma.wecomIntegration.findMany({ where: { enabled: true }, select: { id: true, name: true, agentId: true } }),
-      this.prisma.adminUser.findMany({ where: { enabled: true }, select: { id: true, displayName: true, username: true } }),
+      this.prisma.adminUser.findMany({ where: { enabled: true, conferenceScopeMode: "ALL" }, select: { id: true, displayName: true, username: true } }),
       this.prisma.adminRegistrationAlert.findMany({ orderBy: { createdAt: "desc" }, take: 50, select: { id: true, registrationId: true, recipientId: true, status: true, attempts: true, sentAt: true, lastError: true, createdAt: true } })
     ]);
     return ok({ recipients, integrations, admins, deliveries, workerEnabled: process.env.ADMIN_PAID_ALERT_WORKER_ENABLED === "true", adminUrlConfigured: Boolean(process.env.ADMIN_PUBLIC_URL) });

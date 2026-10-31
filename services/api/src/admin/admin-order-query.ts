@@ -10,6 +10,9 @@ export function parseAdminOrderWhere(query: Record<string, unknown>): Prisma.Ord
   if (paymentStatus && !Object.values(PaymentStatus).includes(paymentStatus as PaymentStatus)) throw new BadRequestException("支付状态无效");
   const criteria: Prisma.OrderWhereInput[] = [{ adminDeletedAt: query.deleted === true || query.deleted === "true" ? { not: null } : null }];
   if (text("conferenceId")) criteria.push({ conferenceId: text("conferenceId") });
+  if (text("paymentMerchantId")) criteria.push(text("paymentMerchantId") === "DEFAULT"
+    ? { paymentMerchantRevisionId: null }
+    : { paymentMerchantRevision: { merchantId: text("paymentMerchantId") } });
   if (status) criteria.push({ status: status as OrderStatus });
   if (paymentStatus) criteria.push({ payments: { some: { status: paymentStatus as PaymentStatus } } });
   if (text("skuId")) criteria.push({ OR: [

@@ -4,6 +4,7 @@ import { AdminNotificationsService } from "../admin/admin-notifications.service"
 import { CurrentUser } from "../auth/current-user";
 import { requireRegistrationProfile } from "../auth/registration-profile";
 import { PrismaService } from "../prisma.service";
+import { PaymentMerchantService } from "./payment-merchant.service";
 import { PaymentSuccessService } from "./payment-success.service";
 import { MallRefundFinalizationService } from "./mall-refund-finalization.service";
 import { RegistrationRefundFinalizationService } from "./registration-refund-finalization.service";
@@ -66,6 +67,7 @@ export class PaymentsService {
         userId: currentUser.id
       },
       select: {
+        paymentMerchantRevisionId: true,
         orderNo: true,
         payableAmountCent: true,
         status: true,
@@ -76,6 +78,7 @@ export class PaymentsService {
     if (!order) {
       throw new NotFoundException("Order not found");
     }
+    if (order.paymentMerchantRevisionId) throw new ForbiddenException("独立收款单位的订单不能使用模拟支付");
 
     if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAID) {
       throw new ConflictException("Only pending or paid orders can be confirmed");
@@ -184,12 +187,18 @@ export class PaymentsService {
     });
   }
 
-  async handleRefundNotify(input: { body: unknown; rawBody: Buffer; headers: WechatPayHeaders }): Promise<WechatRefundNotifySuccessResponse> {
-    const config = readWechatPayConfig();
-    this.refundNotifyVerifier.verifySignature({ headers: input.headers, rawBody: input.rawBody });
+  async handleRefundNotify(input: { body: unknown; rawBody: Buffer; headers: WechatPayHeaders; merchantRevisionId?: string }): Promise<WechatRefundNotifySuccessResponse> {
+    const merchants = new PaymentMerchantService(this.prisma);
     const body = readRefundNotifyBody(input.body);
-    const decrypted = this.refundNotifyVerifier.decryptResource(body.resource, config.apiV3Key);
+    const { config, decrypted } = await merchants.verifyCallback({ ...input, resource: body.resource }, this.refundNotifyVerifier);
     const refund = parseRefundNotifyResource(decrypted);
+    const registration = await this.prisma.refund.findFirst({ where: { OR: [{ outRefundNo: refund.outRefundNo }, { refundNo: refund.outRefundNo }] }, include: { order: true } });
+    if (registration?.order) {
+      merchants.assertCallbackOrder(registration.order, input.merchantRevisionId, decrypted, config, true);
+      await merchants.configForOrder(registration.order);
+    } else {
+      if (input.merchantRevisionId || decrypted.mchid !== config.mchId) throw new ConflictException("退款回调收款商户不匹配");
+    }
     await this.applyRefundNotify(refund);
     return { code: "SUCCESS", message: "OK" };
   }

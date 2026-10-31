@@ -34,6 +34,8 @@ describe("WechatPayTransactionClient", () => {
       );
       assert.equal(init?.method, "GET");
       return signedResponse({
+        mchid: "1900000001",
+        appid: "wx-app",
         out_trade_no: "ORDER_1",
         transaction_id: "wx-transaction-1",
         trade_state: "SUCCESS",

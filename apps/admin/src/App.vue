@@ -22,6 +22,7 @@
     </el-card>
   </main>
 
+  <ScopedConferenceWorkspace v-else-if="admin.conferenceScopeMode === 'ASSIGNED'" />
   <AdminLayout v-else />
 </template>
 
@@ -29,6 +30,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminLayout from "./layouts/AdminLayout.vue";
+import ScopedConferenceWorkspace from "./pages/conferences/ScopedConferenceWorkspace.vue";
 import { getTheme } from "./services/admin";
 import { useAdminSession } from "./stores/admin-session";
 
@@ -37,12 +39,16 @@ const loading = ref(false);
 const loginForm = reactive({ username: "admin", password: "" });
 const browserTitle = ref("会务运营平台");
 
-onMounted(() => {
-  void loadBrand();
-  void init();
+onMounted(async () => {
+  await init();
+  await loadBrand();
 });
 
 async function loadBrand() {
+  if (!admin.value || admin.value.conferenceScopeMode === "ASSIGNED") {
+    document.title = browserTitle.value;
+    return;
+  }
   try {
     const theme = await getTheme();
     const config = theme.config as Record<string, unknown>;
@@ -72,6 +78,7 @@ async function submitLogin() {
   loading.value = true;
   try {
     await login(loginForm.username, loginForm.password);
+    await loadBrand();
     ElMessage.success("登录成功");
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "登录失败");

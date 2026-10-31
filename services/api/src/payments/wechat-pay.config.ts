@@ -8,6 +8,8 @@ export interface WechatPayConfig {
   apiV3Key: string;
   privateKeyPem: string;
   notifyUrl: string;
+  refundNotifyUrl?: string;
+  verificationKey?: { id: string; pem: string };
 }
 
 export function isWechatPayEnabled(): boolean {

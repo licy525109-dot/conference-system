@@ -12,6 +12,8 @@ export interface AdminUser {
   username: string;
   displayName: string | null;
   permissions?: string[];
+  conferenceScopeMode?: "ALL" | "ASSIGNED";
+  conferenceIds?: string[];
 }
 
 export interface Conference {
@@ -105,6 +107,8 @@ export interface PaymentExceptionItem {
 
 export interface AdminOrder {
   id: string;
+  paymentCompanyName?: string;
+  paymentMerchantId?: string | null;
   orderNo: string;
   conferenceId: string;
   conferenceTitle: string;
@@ -615,6 +619,9 @@ export interface AdminAccount {
   username: string;
   displayName: string | null;
   enabled: boolean;
+  conferenceScopeMode?: "ALL" | "ASSIGNED";
+  conferenceIds?: string[];
+  conferenceGrants?: Array<{ conferenceId: string; conference: { title: string } }>;
   roles: Array<{
     id: string;
     code: string;

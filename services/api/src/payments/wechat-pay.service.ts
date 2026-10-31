@@ -12,6 +12,7 @@ import { OrderStatus, PaymentProvider, PaymentStatus, Prisma } from "@prisma/cli
 import { CurrentUser } from "../auth/current-user";
 import { requireRegistrationProfile } from "../auth/registration-profile";
 import { PrismaService } from "../prisma.service";
+import { PaymentMerchantService, merchantOrderSelect } from "./payment-merchant.service";
 import { PaymentSuccessService } from "./payment-success.service";
 import { isWechatPayEnabled, readWechatPayConfig, WechatPayConfig } from "./wechat-pay.config";
 import { buildWechatPayDescription } from "./wechat-pay.description";
@@ -65,6 +66,7 @@ export class WechatPayService {
         userId: currentUser.id
       },
       select: {
+        ...merchantOrderSelect,
         id: true,
         orderNo: true,
         payableAmountCent: true,
@@ -107,7 +109,7 @@ export class WechatPayService {
     const outTradeNo = toWechatOutTradeNo(order.orderNo);
     let config: WechatPayConfig;
     try {
-      config = readWechatPayConfig();
+      config = await new PaymentMerchantService(this.prisma).configForOrder(order, "PREPAY");
     } catch (error) {
       await this.recordPrepayFailure({
         orderId: order.id,
@@ -180,6 +182,7 @@ export class WechatPayService {
     body: unknown;
     rawBody: Buffer;
     headers: WechatPayHeaders;
+    merchantRevisionId?: string;
   }): Promise<WechatNotifySuccessResponse> {
     if (!isWechatPayEnabled()) {
       throw new ForbiddenException("Real WeChat Pay notify is disabled");
@@ -190,18 +193,13 @@ export class WechatPayService {
     };
 
     try {
-      const config = readWechatPayConfig();
-      this.notifyVerifier.verifySignature({
-        headers: input.headers,
-        rawBody: input.rawBody
-      });
-
+      const merchants = new PaymentMerchantService(this.prisma);
       const body = readNotifyBody(input.body);
       notifyContext.notifyId = body.id;
       notifyContext.eventType = body.eventType;
       notifyContext.resourceType = body.resourceType;
 
-      const decrypted = this.notifyVerifier.decryptResource(body.resource, config.apiV3Key);
+      const { config, decrypted } = await merchants.verifyCallback({ ...input, resource: body.resource }, this.notifyVerifier);
       const transaction = parseTransaction(decrypted);
       notifyContext.outTradeNo = transaction.outTradeNo;
       notifyContext.transactionId = transaction.transactionId;
@@ -218,6 +216,7 @@ export class WechatPayService {
           order: {
             select: {
               orderNo: true,
+              ...merchantOrderSelect,
               payableAmountCent: true
             }
           }
@@ -227,6 +226,9 @@ export class WechatPayService {
       if (!payment) {
         throw new NotFoundException("Payment out_trade_no not found");
       }
+
+      merchants.assertCallbackOrder(payment.order, input.merchantRevisionId, decrypted, config);
+      await merchants.configForOrder(payment.order);
 
       if (transaction.amountTotal !== payment.order.payableAmountCent) {
         throw new ConflictException("WeChat Pay amount does not match order payable amount");
@@ -330,6 +332,7 @@ export class WechatPayService {
       }
 
       this.notifyVerifier.verifySignature({
+        verificationKey: input.config.verificationKey,
         headers: {
           timestamp: response.headers.get("wechatpay-timestamp") ?? "",
           nonce: response.headers.get("wechatpay-nonce") ?? "",

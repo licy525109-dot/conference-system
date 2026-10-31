@@ -39,6 +39,7 @@ export class WechatPayPrepayClient {
       }
 
       this.responseVerifier.verifySignature({
+        verificationKey: input.config.verificationKey,
         headers: readSignatureHeaders(response.headers),
         rawBody
       });

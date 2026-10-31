@@ -60,7 +60,7 @@ function setup(t: TestContext) {
   const state = {
     recipient: { id: "recipient-1", adminUserId: "admin-1", integrationId: "app-1", wecomUserId: "admin.1", enabled: true, enabledSince: new Date(NOW - 60_000), createdAt: new Date(NOW - 60_000), updatedAt: new Date(NOW - 60_000) } as AdminAlertRecipient | null,
     integration: { id: "app-1", enabled: true, corpId: "corp-test", agentId: "1001", appSecretEnc: "test-only-encrypted-placeholder" } as WecomIntegration,
-    allowed: true, adminEnabled: true,
+    allowed: true, adminEnabled: true, conferenceScopeMode: "ALL",
     registrations: [{ id: "reg-1", registrationNo: "REG1", attendeeName: "Guest", paidAmountCent: 101, conference: { title: "Conference" }, status: "CONFIRMED", source: "PAYMENT", createdAt: new Date(NOW - 10_000), order: { status: "PAID", paidAt: new Date(NOW - 10_000) } }],
     alerts: [] as AdminRegistrationAlert[],
     audits: [] as unknown[], sql: [] as string[], operations: 0, failSentWrite: false,
@@ -92,7 +92,7 @@ function setup(t: TestContext) {
       return state.registrations.filter(r => r.source === "PAYMENT" && r.status === "CONFIRMED" && r.paidAmountCent > 0 && r.createdAt > since && r.order.status === "PAID" && r.order.paidAt > since && !state.alerts.some(a => a.registrationId === r.id && a.recipientId === recipientId)).slice(0, 50).map(r => ({ id: r.id }));
     },
     adminUser: {
-      findUnique: async () => { touch(); return { enabled: state.adminEnabled, roles: state.allowed ? [{ role: { code: "staff", permissions: [{ permission: { code: "registration:view" } }] } }] : [] }; },
+      findUnique: async () => { touch(); return { enabled: state.adminEnabled, conferenceScopeMode: state.conferenceScopeMode, roles: state.allowed ? [{ role: { code: "staff", permissions: [{ permission: { code: "registration:view" } }] } }] : [] }; },
       findMany: async () => [{ id: "admin-1", displayName: "Staff", username: "staff" }]
     },
     wecomIntegration: {
@@ -177,6 +177,66 @@ test("configuration routes require authenticated account managers with registrat
   assert.deepEqual(Reflect.getMetadata(GUARDS_METADATA, AdminRegistrationAlertController), [AdminJwtAuthGuard, AdminPermissionGuard]);
   assert.deepEqual(Reflect.getMetadata(REQUIRED_ADMIN_PERMISSIONS, AdminRegistrationAlertController.prototype.get), ["notification:view", "system:account", "registration:view"]);
   assert.deepEqual(Reflect.getMetadata(REQUIRED_ADMIN_PERMISSIONS, AdminRegistrationAlertController.prototype.put), ["notification:write", "system:account", "wecom:send", "registration:view"]);
+});
+
+test("ASSIGNED recipients cannot enable global alerts despite registration:view permission", { timeout: 2000 }, async t => {
+  const h = setup(t);
+  h.state.conferenceScopeMode = "ASSIGNED";
+  h.state.recipient = null;
+  assert.equal(h.state.allowed, true);
+  assert.equal(h.state.adminEnabled, true);
+
+  await assert.rejects(() => h.configure(), /权限/);
+
+  assert.equal(h.state.recipient, null);
+  assert.deepEqual(h.state.audits, []);
+  assert.deepEqual(h.state.alerts, []);
+  assert.deepEqual(h.tokenCalls, []);
+  assert.deepEqual(h.requests, []);
+});
+
+test("tick never enqueues or sends global alerts to an ASSIGNED recipient", { timeout: 2000 }, async t => {
+  const h = setup(t);
+  h.state.conferenceScopeMode = "ASSIGNED";
+  assert.equal(h.state.recipient!.enabled, true);
+  assert.equal(h.state.allowed, true);
+
+  await h.service.tick();
+
+  assert.deepEqual(h.state.alerts, []);
+  assert.equal(h.state.sql.some(sql => sql.includes("NOT EXISTS")), false);
+  assert.deepEqual(h.tokenCalls, []);
+  assert.deepEqual(h.requests, []);
+});
+
+test("tick cancels queued global alerts after a recipient becomes ASSIGNED", { timeout: 2000 }, async t => {
+  const h = setup(t);
+  const row = h.seed();
+  h.state.conferenceScopeMode = "ASSIGNED";
+
+  await h.service.tick();
+
+  assert.equal(h.state.alerts.length, 1);
+  assert.equal(row.status, "CANCELLED");
+  assert.equal(row.sentAt, null);
+  assert.equal(row.leaseToken, null);
+  assert.deepEqual(h.tokenCalls, []);
+  assert.deepEqual(h.requests, []);
+});
+
+test("send-time scope recheck blocks a downgrade to ASSIGNED while loading the token", { timeout: 2000 }, async t => {
+  const h = setup(t);
+  const row = h.seed();
+  h.state.tokenHook = async () => { h.state.conferenceScopeMode = "ASSIGNED"; };
+
+  await h.service.tick();
+
+  assert.deepEqual(h.tokenCalls, [{ refresh: false }]);
+  assert.equal(h.state.allowed, true);
+  assert.equal(row.status, "CANCELLED");
+  assert.equal(row.sentAt, null);
+  assert.equal(row.leaseToken, null);
+  assert.deepEqual(h.requests, []);
 });
 
 test("first enable only enqueues newly paid registrations, not historical paid imports", { timeout: 2000 }, async t => {

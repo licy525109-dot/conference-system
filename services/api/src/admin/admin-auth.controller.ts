@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Req, UseGuards } from "@nestjs/common";
 import { AdminAuthService } from "./admin-auth.service";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { RequestWithCurrentAdmin } from "./current-admin";
+import { AllowConferenceScopedAdmin } from "./conference-scope";
 
 @Controller("admin/auth")
 export class AdminAuthController {
@@ -13,6 +14,7 @@ export class AdminAuthController {
   }
 
   @Get("me")
+  @AllowConferenceScopedAdmin()
   @UseGuards(AdminJwtAuthGuard)
   me(@Req() request: RequestWithCurrentAdmin) {
     return {

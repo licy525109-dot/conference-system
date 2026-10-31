@@ -106,6 +106,10 @@
         </el-form>
       </el-tab-pane>
 
+      <el-tab-pane v-if="hasPermission('payment-merchant:manage')" label="支付设置" name="payment" lazy>
+        <ConferencePaymentSettings v-if="activeTab === 'payment' && conference.id === conferenceId" :key="conferenceId" :conference-id="conferenceId" />
+      </el-tab-pane>
+
       <el-tab-pane label="票种配置" name="skus">
         <div class="toolbar">
           <el-button type="primary" @click="openSku()">新增票种</el-button>
@@ -316,6 +320,7 @@ import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminSectionCard from "../../components/AdminSectionCard.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import ConferenceCoverPicker from "../../components/conference/ConferenceCoverPicker.vue";
+import ConferencePaymentSettings from "../../components/conference/ConferencePaymentSettings.vue";
 import FormFieldImportDialog from "../../components/conference/FormFieldImportDialog.vue";
 import GroupTicketPricingEditor from "../../components/conference/GroupTicketPricingEditor.vue";
 import ConferenceDetailRichTextEditor from "../../components/conference/ConferenceDetailRichTextEditor.vue";
