@@ -792,7 +792,7 @@ export class AdminOperationsService {
     const billDate = readRequiredDate(body.billDate, "billDate");
     const billType = readOptionalString(body.billType) ?? "TRADE";
     const bill = await this.prisma.wechatBill.upsert({
-      where: { billDate_billType: { billDate, billType } },
+      where: { billDate_billType_merchantKey: { billDate, billType, merchantKey: "DEFAULT" } },
       update: {},
       create: { billDate, billType, createdBy: admin.id, status: "CREATED" }
     });
@@ -810,7 +810,7 @@ export class AdminOperationsService {
     const billType = readOptionalString(body.billType) ?? "TRADE";
     const storagePath = readOptionalString(body.storagePath) ?? `manual-import:${billType}:${billDate.toISOString().slice(0, 10)}`;
     const bill = await this.prisma.wechatBill.upsert({
-      where: { billDate_billType: { billDate, billType } },
+      where: { billDate_billType_merchantKey: { billDate, billType, merchantKey: "DEFAULT" } },
       update: { status: "DOWNLOADED", storagePath, summaryJson: { source: "manual-import" } },
       create: { billDate, billType, createdBy: admin.id, status: "DOWNLOADED", storagePath, summaryJson: { source: "manual-import" } }
     });

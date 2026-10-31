@@ -1,4 +1,5 @@
-import { BadGatewayException, GatewayTimeoutException, Injectable } from "@nestjs/common";
+import { BadGatewayException, GatewayTimeoutException, Injectable, Optional } from "@nestjs/common";
+import { PaymentMerchantService } from "./payment-merchant.service";
 import { readWechatPayConfig, WechatPayConfig } from "./wechat-pay.config";
 import { WechatPayHeaders, WechatPayNotifyVerifier } from "./wechat-pay.notify-verifier";
 import { WechatPaySigner } from "./wechat-pay.signer";
@@ -18,17 +19,18 @@ export interface WechatPayTransactionResult {
 export class WechatPayTransactionClient {
   constructor(
     private readonly signer: WechatPaySigner,
-    private readonly verifier: WechatPayNotifyVerifier
+    private readonly verifier: WechatPayNotifyVerifier,
+    @Optional() private readonly merchants?: PaymentMerchantService
   ) {}
 
   async queryByOutTradeNo(outTradeNo: string): Promise<WechatPayTransactionResult> {
-    const config = readWechatPayConfig();
+    const config = this.merchants ? await this.merchants.configForOutTradeNo(outTradeNo) : readWechatPayConfig();
     const encodedOutTradeNo = encodeURIComponent(outTradeNo);
     const urlPathWithQuery = `/v3/pay/transactions/out-trade-no/${encodedOutTradeNo}?mchid=${encodeURIComponent(config.mchId)}`;
     const response = await this.request({ method: "GET", urlPathWithQuery, body: "", config });
 
     if (response.status === 404 && readResponseCode(response.payload) === "ORDER_NOT_EXIST") {
-      this.verifyResponse(response);
+      this.verifyResponse(response, config);
       return {
         outTradeNo,
         transactionId: null,
@@ -41,12 +43,15 @@ export class WechatPayTransactionClient {
       throw buildWechatPayGatewayError("查询微信支付订单失败", response);
     }
 
-    this.verifyResponse(response);
+    this.verifyResponse(response, config);
+    if (!isRecord(response.payload) || response.payload.mchid !== config.mchId || response.payload.appid !== config.appId) {
+      throw new BadGatewayException("微信支付查单商户或 AppID 不匹配");
+    }
     return parseTransactionResult(response.payload, outTradeNo);
   }
 
   async closeByOutTradeNo(outTradeNo: string): Promise<void> {
-    const config = readWechatPayConfig();
+    const config = this.merchants ? await this.merchants.configForOutTradeNo(outTradeNo) : readWechatPayConfig();
     const encodedOutTradeNo = encodeURIComponent(outTradeNo);
     const urlPathWithQuery = `/v3/pay/transactions/out-trade-no/${encodedOutTradeNo}/close`;
     const body = JSON.stringify({ mchid: config.mchId });
@@ -54,7 +59,7 @@ export class WechatPayTransactionClient {
     if (!response.ok) {
       throw buildWechatPayGatewayError("关闭微信支付订单失败", response);
     }
-    this.verifyResponse(response);
+    this.verifyResponse(response, config);
   }
 
   private async request(input: {
@@ -97,8 +102,9 @@ export class WechatPayTransactionClient {
     }
   }
 
-  private verifyResponse(response: SignedWechatPayResponse): void {
+  private verifyResponse(response: SignedWechatPayResponse, config: WechatPayConfig): void {
     this.verifier.verifySignature({
+      verificationKey: config.verificationKey,
       headers: response.headers,
       rawBody: response.rawBody
     });

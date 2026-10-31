@@ -38,6 +38,10 @@ const MAX_PAGE_SIZE = 100;
 
 @Injectable()
 export class AdminManagementService {
+  async paymentMerchantOptions() {
+    const items = await this.prisma.paymentMerchant.findMany({ orderBy: { companyName: "asc" }, select: { id: true, companyName: true } });
+    return ok({ items: [{ id: "DEFAULT", companyName: "北京壹昂智创科技有限公司" }, ...items] });
+  }
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly notificationsService?: AdminNotificationsService
@@ -1772,6 +1776,8 @@ const adminUserProfileSelect = {
 } satisfies Prisma.UserSelect;
 
 const orderListSelect = {
+  paymentMerchantSnapshot: true,
+  paymentMerchantRevisionId: true,
   registrationSnapshotJson: true,
   id: true,
   orderNo: true,
@@ -2152,7 +2158,10 @@ function formatConferenceDetail(conference: ConferenceDetailShape) {
 
 function formatOrderListItem(order: Prisma.OrderGetPayload<{ select: typeof orderListSelect }>) {
   const latestPayment = order.payments[0] ?? null;
+  const merchant = order.paymentMerchantSnapshot && typeof order.paymentMerchantSnapshot === "object" && !Array.isArray(order.paymentMerchantSnapshot) ? order.paymentMerchantSnapshot : {};
   return {
+    paymentMerchantId: typeof merchant.merchantId === "string" ? merchant.merchantId : null,
+    paymentCompanyName: typeof merchant.companyName === "string" ? merchant.companyName : "北京壹昂智创科技有限公司",
     id: order.id,
     orderNo: order.orderNo,
     conferenceId: order.conferenceId,

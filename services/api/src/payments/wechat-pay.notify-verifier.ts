@@ -21,6 +21,7 @@ export class WechatPayNotifyVerifier {
   verifySignature(input: {
     headers: WechatPayHeaders;
     rawBody: Buffer;
+    verificationKey?: { id: string; pem: string };
   }): void {
     const timestamp = input.headers.timestamp.trim();
     const nonce = input.headers.nonce.trim();
@@ -40,7 +41,7 @@ export class WechatPayNotifyVerifier {
       throw new UnauthorizedException("Expired WeChat Pay notify timestamp");
     }
 
-    const configuredKeyId = readWechatPayVerificationKeyId();
+    const configuredKeyId = input.verificationKey?.id ?? readWechatPayVerificationKeyId();
     if (!configuredKeyId) {
       throw new InternalServerErrorException("WECHAT_PAY_PLATFORM_PUBLIC_KEY_ID or WECHAT_PAY_PLATFORM_CERT_SERIAL_NO is not configured");
     }
@@ -49,13 +50,13 @@ export class WechatPayNotifyVerifier {
     }
 
     const publicKeyPath = process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH?.trim();
-    if (!publicKeyPath) {
+    if (!publicKeyPath && !input.verificationKey) {
       throw new InternalServerErrorException("WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH is not configured for notify signature verification");
     }
 
     let publicKey: string;
     try {
-      publicKey = readFileSync(publicKeyPath, "utf8");
+      publicKey = input.verificationKey?.pem ?? readFileSync(publicKeyPath!, "utf8");
     } catch {
       throw new InternalServerErrorException("WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH cannot be read");
     }

@@ -933,6 +933,7 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
     lastSkuFindFirstArgs: undefined as SkuFindFirstArgs | undefined,
     lastPromotionFindManyArgs: undefined as PromotionRuleFindManyArgs | undefined,
     conference: {
+      findUnique: async (args: { where: { id: string } }) => conferences.some(item => item.id === args.where.id) ? { paymentMerchantId: null } : null,
       findFirst: async (args: ConferenceFindFirstArgs) => {
         mock.lastConferenceFindFirstArgs = args;
         const conference = conferences.find(
@@ -1399,6 +1400,7 @@ interface PrismaMockShape {
   lastSkuFindFirstArgs: SkuFindFirstArgs | undefined;
   lastPromotionFindManyArgs: PromotionRuleFindManyArgs | undefined;
   conference: {
+    findUnique(args: { where: { id: string } }): Promise<{ paymentMerchantId: null } | null>;
     findFirst(args: ConferenceFindFirstArgs): Promise<{ id: string } | null>;
   };
   registrationSku: {

@@ -28,6 +28,7 @@ async function main() {
     },
     create: {
       username: "admin",
+      conferenceScopeMode: "ALL",
       passwordHash: hashPassword(bootstrapPassword!),
       displayName: "系统管理员",
       enabled: true

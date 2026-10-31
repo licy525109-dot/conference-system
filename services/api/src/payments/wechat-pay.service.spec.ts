@@ -493,6 +493,8 @@ class FakeWechatPayNotifyVerifier extends WechatPayNotifyVerifier {
 
     return {
       out_trade_no: "WECHAT_REG001",
+      mchid: "1900000001",
+      appid: "wx-real-app",
       transaction_id: "wx-transaction-1",
       trade_state: "SUCCESS",
       amount: {

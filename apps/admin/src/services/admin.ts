@@ -201,7 +201,11 @@ export function disableFormField(id: string) {
   });
 }
 
-export type OrderFilters = { keyword?: string; conferenceId?: string; skuId?: string; status?: string; paymentStatus?: string; onlyExceptions?: boolean; deleted?: boolean };
+export type OrderFilters = { keyword?: string; conferenceId?: string; paymentMerchantId?: string; skuId?: string; status?: string; paymentStatus?: string; onlyExceptions?: boolean; deleted?: boolean };
+
+export function listOrderMerchantOptions() {
+  return apiRequest<{ items: Array<{ id: string; companyName: string }> }>("/admin/orders/merchant-options");
+}
 
 export function listOrders(params: OrderFilters & { page?: number; pageSize?: number }) {
   return apiRequest<ApiList<AdminOrder> & { summary: import('./types').AdminOrderSummary }>(`/admin/orders${toQuery(params)}`);

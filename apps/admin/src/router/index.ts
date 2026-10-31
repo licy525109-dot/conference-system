@@ -34,6 +34,7 @@ const MemberBenefitsPage = defineAsyncComponent(() => import("../pages/members/b
 const MemberPricingRulesPage = defineAsyncComponent(() => import("../pages/members/pricing-rules.vue"));
 const AuditLogsPage = defineAsyncComponent(() => import("../pages/system/audit-logs.vue"));
 const AccountsPage = defineAsyncComponent(() => import("../pages/system/accounts.vue"));
+const PaymentMerchantsPage = defineAsyncComponent(() => import("../pages/system/payment-merchants.vue"));
 const RolesPage = defineAsyncComponent(() => import("../pages/system/roles.vue"));
 const PlatformPage = defineAsyncComponent(() => import("../pages/platform/index.vue"));
 
@@ -126,6 +127,7 @@ export const routes: AdminRoute[] = [
   { path: "/platform", title: "SaaS 平台控制台", menuTitle: "平台控制台", group: "平台运营", description: "租户、工作区、套餐、API 接入和生产能力就绪度", permission: "platform:view", component: PlatformPage },
   { path: "/system/audit-logs", title: "操作日志", menuTitle: "操作日志", group: "系统管理", description: "登录、编辑、导出、核销和异常处理记录", permission: "system:audit", component: AuditLogsPage },
   { path: "/system/accounts", title: "管理员账号", menuTitle: "管理员账号", group: "系统管理", description: "后台账号和角色分配", permission: "system:account", component: AccountsPage },
+  { path: "/system/payment-merchants", title: "收款单位", menuTitle: "收款单位", group: "系统管理", permission: "payment-merchant:manage", component: PaymentMerchantsPage },
   { path: "/system/roles", title: "角色权限", menuTitle: "角色权限", group: "系统管理", badge: "高级", description: "高级权限配置，谨慎调整", permission: "system:role", component: RolesPage }
 ];
 

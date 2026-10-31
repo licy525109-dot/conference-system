@@ -134,6 +134,12 @@ export class AdminManagementController {
     return this.adminManagementService.orderSkuOptions(query);
   }
 
+  @Get("orders/merchant-options")
+  @RequireAdminPermissions("order:view")
+  orderMerchantOptions() {
+    return this.adminManagementService.paymentMerchantOptions();
+  }
+
   @Post("orders/recycle")
   @RequireAdminPermissions("order:delete")
   recycleOrders(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {

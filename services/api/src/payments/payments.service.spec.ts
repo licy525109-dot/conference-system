@@ -14,6 +14,7 @@ import {
 import { CurrentUser } from "../auth/current-user";
 import { PrismaService } from "../prisma.service";
 import { PaymentsService } from "./payments.service";
+import { PaymentSuccessService } from "./payment-success.service";
 import { WechatPayNotifyVerifier } from "./wechat-pay.notify-verifier";
 
 const now = new Date("2026-06-06T14:50:00.000Z");
@@ -24,6 +25,55 @@ const currentUser: CurrentUser = {
 };
 
 describe("PaymentsService mock confirm", () => {
+  it("rejects managed merchant revisions before profile checks or mock payment side effects", async t => {
+    const envKeys = ["NODE_ENV", "PAYMENT_MODE", "WECHAT_PAY_MOCK"] as const;
+    const previousEnv = new Map(envKeys.map(key => [key, process.env[key]]));
+    t.after(() => {
+      for (const [key, value] of previousEnv) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    });
+    process.env.NODE_ENV = "test";
+    withMockPaymentMode();
+
+    for (const status of [OrderStatus.PENDING, OrderStatus.PAID]) {
+      let orderReads = 0;
+      let profileReads = 0;
+      let paymentSuccessCalls = 0;
+      const order = {
+        orderNo: "REG_MANAGED", paymentMerchantRevisionId: "merchant-revision-1",
+        payableAmountCent: 12500, status, expiredAt: new Date(now.getTime() + 60_000)
+      };
+      const prisma = {
+        order: { findFirst: async (args: { where: { orderNo: string; userId: string }; select: Record<string, unknown> }) => {
+          orderReads += 1;
+          assert.deepEqual(args.where, { orderNo: order.orderNo, userId: currentUser.id });
+          assert.equal(args.select.paymentMerchantRevisionId, true);
+          return { ...order };
+        } },
+        user: { findUnique: async () => {
+          profileReads += 1;
+          throw new Error("Managed mock payment must be rejected before checking the user profile");
+        } }
+      };
+      const paymentSuccess = { processPaymentSuccess: async () => {
+        paymentSuccessCalls += 1;
+        throw new Error("Managed orders must never reach mock payment finalization");
+      } };
+      const service = new PaymentsService(prisma as unknown as PrismaService,
+        paymentSuccess as unknown as PaymentSuccessService);
+
+      await assert.rejects(() => service.confirmMockPayment({ orderNo: order.orderNo }, currentUser), {
+        name: "ForbiddenException", message: "独立收款单位的订单不能使用模拟支付"
+      });
+      assert.equal(orderReads, 1);
+      assert.equal(profileReads, 0);
+      assert.equal(paymentSuccessCalls, 0);
+      assert.equal(order.status, status);
+    }
+  });
+
   it("confirms a pending order and creates payment and registration", async () => {
     withMockPaymentMode();
     const prisma = createPrismaMock();
@@ -572,7 +622,7 @@ class FakeRefundNotifyVerifier extends WechatPayNotifyVerifier {
   }
 
   override decryptResource(): Record<string, unknown> {
-    return this.payload;
+    return { mchid: "1900000001", ...this.payload };
   }
 }
 

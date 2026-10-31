@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, HttpCode, HttpException, HttpStatus, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Headers, HttpCode, HttpException, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { RequestWithCurrentUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PaymentsService } from "./payments.service";
@@ -6,6 +6,7 @@ import { WechatPayService } from "./wechat-pay.service";
 
 interface RequestWithRawBody {
   rawBody?: Buffer;
+  headers?: Record<string, string | string[] | undefined>;
 }
 
 @Controller("payments")
@@ -14,6 +15,18 @@ export class PaymentsController {
     private readonly paymentsService: PaymentsService,
     private readonly wechatPayService: WechatPayService
   ) {}
+
+  @Post("wechat/merchants/:revisionId/notify")
+  @HttpCode(200)
+  merchantNotify(@Param("revisionId") revisionId: string, @Body() body: unknown, @Req() request: RequestWithRawBody) {
+    return this.wechatPayService.handleNotify({ body, rawBody: request.rawBody ?? Buffer.from(JSON.stringify(body)), headers: notifyHeaders(request), merchantRevisionId: revisionId });
+  }
+
+  @Post("wechat/merchants/:revisionId/refund-notify")
+  @HttpCode(200)
+  merchantRefundNotify(@Param("revisionId") revisionId: string, @Body() body: unknown, @Req() request: RequestWithRawBody) {
+    return this.paymentsService.handleRefundNotify({ body, rawBody: request.rawBody ?? Buffer.from(JSON.stringify(body)), headers: notifyHeaders(request), merchantRevisionId: revisionId });
+  }
 
   @Post("mock/confirm")
   @UseGuards(JwtAuthGuard)
@@ -117,6 +130,11 @@ function normalizeWechatPrepayException(error: unknown): HttpException {
     },
     HttpStatus.INTERNAL_SERVER_ERROR
   );
+}
+
+function notifyHeaders(request: RequestWithRawBody) {
+  const header = (name: string) => typeof request.headers?.[name] === "string" ? request.headers[name] as string : "";
+  return { timestamp: header("wechatpay-timestamp"), nonce: header("wechatpay-nonce"), signature: header("wechatpay-signature"), serial: header("wechatpay-serial") };
 }
 
 function readResponseMessage(response: Record<string, unknown>): string | undefined {

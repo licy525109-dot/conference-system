@@ -46,10 +46,14 @@ import { GuestIdentityService } from "../registration/guest-identity.service";
 import { GuestClaimLinkController } from "../registration/guest-claim-link.controller";
 import { AdminCouponDistributionController, CouponDistributionController } from "./coupon-distribution.controller";
 import { CouponDistributionService } from "./coupon-distribution.service";
+import { AdminPaymentMerchantsController } from "./admin-payment-merchants.controller";
+import { AdminConferenceWorkspaceController } from "./admin-conference-workspace.controller";
+import { AdminConferenceWorkspaceService } from "./admin-conference-workspace.service";
 
 @Module({
   imports: [AuthModule],
   controllers: [
+    AdminPaymentMerchantsController, AdminConferenceWorkspaceController,
     AdminCouponDistributionController, CouponDistributionController,
     AdminGuestIdentityController, GuestIdentityController,
     GuestClaimLinkController,
@@ -73,6 +77,7 @@ import { CouponDistributionService } from "./coupon-distribution.service";
     AdminAuditLogController
   ],
   providers: [
+    AdminConferenceWorkspaceService,
     CouponDistributionService,
     GuestIdentityService,
     AdminUserActivityService,

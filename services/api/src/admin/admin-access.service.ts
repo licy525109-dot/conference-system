@@ -4,6 +4,7 @@ import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { ADMIN_PERMISSION_CODES, ADMIN_PERMISSIONS, SUPER_ADMIN_ROLE_CODE } from "./admin-permissions";
 import { CurrentAdmin } from "./current-admin";
+import { SCOPED_ADMIN_PERMISSIONS } from "./conference-scope";
 
 @Injectable()
 export class AdminAccessService {
@@ -66,6 +67,13 @@ export class AdminAccessService {
         }
       });
     }
+
+    const operatorPermissions = await this.prisma.permission.findMany({ where: { code: { in: SCOPED_ADMIN_PERMISSIONS.filter(code => code !== "registration:export") } }, select: { id: true } });
+    // Seed mutable operator permissions atomically on creation, never during later authentication.
+    await this.prisma.role.upsert({ where: { code: "CONFERENCE_OPERATOR" }, update: {}, create: {
+      code: "CONFERENCE_OPERATOR", name: "会议运营人员", description: "配合指定会议授权使用，不包含收款配置、退款及全局用户权限", system: true, enabled: true,
+      permissions: { create: operatorPermissions.map(permission => ({ permissionId: permission.id })) }
+    } });
 
   }
 
@@ -136,6 +144,7 @@ export class AdminAccessService {
     const displayName = readOptionalString(body, "displayName");
     const enabled = readOptionalBoolean(body, "enabled") ?? true;
     const roleIds = readStringArray(body.roleIds);
+    const scope = await this.parseConferenceScope(body, true);
 
     const account = await catchUniqueConstraint(
       this.prisma.adminUser.create({
@@ -144,6 +153,8 @@ export class AdminAccessService {
           passwordHash: hashPassword(password),
           displayName,
           enabled,
+          conferenceScopeMode: scope!.mode,
+          conferenceGrants: { create: scope!.ids.map(conferenceId => ({ conferenceId })) },
           roles: {
             create: roleIds.map((roleId) => ({ roleId }))
           }
@@ -161,6 +172,8 @@ export class AdminAccessService {
     await this.ensureBuiltInAccess();
     const body = readObject(input);
     const roleIds = typeof body.roleIds === "undefined" ? undefined : readStringArray(body.roleIds);
+    const scope = await this.parseConferenceScope(body, false);
+    if (id === admin.id && scope?.mode === "ASSIGNED") throw new BadRequestException("不能将当前登录账号改为会议授权账号");
     const data: Prisma.AdminUserUpdateInput = {
       ...(typeof body.displayName !== "undefined" ? { displayName: readNullableString(body.displayName) } : {}),
       ...(typeof body.enabled !== "undefined" ? { enabled: readRequiredBoolean(body.enabled, "enabled") } : {}),
@@ -178,11 +191,13 @@ export class AdminAccessService {
       if (roleIds) {
         await tx.adminUserRole.deleteMany({ where: { adminUserId: id } });
       }
+      if (scope) await tx.adminConferenceGrant.deleteMany({ where: { adminUserId: id } });
 
       return tx.adminUser.update({
         where: { id },
         data: {
           ...data,
+          ...(scope ? { conferenceScopeMode: scope.mode, conferenceGrants: { create: scope.ids.map(conferenceId => ({ conferenceId })) } } : {}),
           ...(roleIds
             ? {
                 roles: {
@@ -196,7 +211,8 @@ export class AdminAccessService {
     });
 
     await this.writeAudit(admin, AuditAction.UPDATE, "AdminUser", account.id, "Update admin account", {
-      username: account.username
+      username: account.username,
+      ...(scope ? { conferenceScopeMode: scope.mode, conferenceIds: scope.ids } : {})
     });
     return ok(formatAccount(account));
   }
@@ -214,6 +230,17 @@ export class AdminAccessService {
       }
     });
     return ok({ items });
+  }
+
+  private async parseConferenceScope(body: Record<string, unknown>, creating: boolean) {
+    if (!creating && body.conferenceScopeMode === undefined && body.conferenceIds === undefined) return null;
+    const mode = body.conferenceScopeMode ?? (creating ? "ASSIGNED" : undefined);
+    if (mode !== "ALL" && mode !== "ASSIGNED") throw new BadRequestException("请选择全部会议或指定会议权限范围");
+    if (body.conferenceIds !== undefined && (!Array.isArray(body.conferenceIds) || body.conferenceIds.some(id => typeof id !== "string" || !id.trim()))) throw new BadRequestException("授权会议列表无效");
+    const ids = mode === "ALL" ? [] : Array.from(new Set(readStringArray(body.conferenceIds)));
+    if (ids.length > 1000) throw new BadRequestException("授权会议数量超出限制");
+    if (ids.length && await this.prisma.conference.count({ where: { id: { in: ids } } }) !== ids.length) throw new BadRequestException("部分授权会议不存在");
+    return { mode, ids };
   }
 
   async listRoles(): Promise<unknown> {
@@ -320,6 +347,8 @@ const accountSelect = {
   username: true,
   displayName: true,
   enabled: true,
+  conferenceScopeMode: true,
+  conferenceGrants: { select: { conferenceId: true, conference: { select: { title: true } } } },
   createdAt: true,
   updatedAt: true,
   roles: {
@@ -362,6 +391,7 @@ function formatAccount(account: Prisma.AdminUserGetPayload<{ select: typeof acco
   return {
     ...account,
     roles: account.roles.map((item) => item.role),
+    conferenceIds: account.conferenceGrants?.map(item => item.conferenceId) ?? [],
     createdAt: account.createdAt.toISOString(),
     updatedAt: account.updatedAt.toISOString()
   };

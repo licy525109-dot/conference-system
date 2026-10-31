@@ -279,6 +279,8 @@ model AdminUser {
   passwordHash            String
   displayName             String?
   enabled                 Boolean                   @default(true)
+  conferenceScopeMode     String                    @default("ASSIGNED")
+  conferenceGrants        AdminConferenceGrant[]
   createdAt               DateTime                  @default(now())
   updatedAt               DateTime                  @updatedAt
   auditLogs               AuditLog[]
@@ -641,9 +643,59 @@ model CheckinStaffAssignment {
   @@map("checkin_staff_assignments")
 }
 
+model AdminConferenceGrant {
+  adminUserId String
+  conferenceId String
+  createdAt DateTime @default(now())
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@id([adminUserId, conferenceId])
+  @@index([conferenceId])
+  @@map("admin_conference_grants")
+}
+
+model PaymentMerchant {
+  id String @id @default(cuid())
+  companyName String
+  mchId String @unique
+  remark String?
+  enabled Boolean @default(false)
+  activeRevisionId String? @unique
+  activeRevision PaymentMerchantRevision? @relation("ActiveMerchantRevision", fields: [activeRevisionId], references: [id], onDelete: Restrict)
+  revisions PaymentMerchantRevision[] @relation("MerchantRevisions")
+  conferences Conference[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payment_merchants")
+}
+
+model PaymentMerchantRevision {
+  id String @id @default(cuid())
+  merchantId String
+  version Int
+  appId String
+  mchSerialNo String
+  platformKeyId String
+  credentialEnc String
+  checkedAt DateTime?
+  associationConfirmedAt DateTime?
+  createdAt DateTime @default(now())
+  merchant PaymentMerchant @relation("MerchantRevisions", fields: [merchantId], references: [id], onDelete: Restrict)
+  activeFor PaymentMerchant? @relation("ActiveMerchantRevision")
+  orders Order[]
+
+  @@unique([merchantId, version])
+  @@map("payment_merchant_revisions")
+}
+
 model Conference {
   id                       String                     @id @default(cuid())
   title                    String
+  paymentMerchantId        String?
+  paymentMerchant          PaymentMerchant?           @relation(fields: [paymentMerchantId], references: [id], onDelete: Restrict)
+  adminGrants              AdminConferenceGrant[]
   slug                     String                     @unique
   coverImageUrl            String?
   summary                  String?
@@ -688,6 +740,7 @@ model Conference {
   invitationCampaign       InvitationCampaign?
 
   @@index([status])
+  @@index([paymentMerchantId])
   @@index([createdAt])
   @@index([status, sortOrder])
   @@map("conferences")
@@ -1796,6 +1849,9 @@ model FormField {
 model Order {
   id                       String               @id @default(cuid())
   orderNo                  String               @unique
+  paymentMerchantRevisionId String?
+  paymentMerchantRevision PaymentMerchantRevision? @relation(fields: [paymentMerchantRevisionId], references: [id], onDelete: Restrict)
+  paymentMerchantSnapshot Json?
   userId                   String?
   businessOwnerUserId      String?
   conferenceId             String
@@ -1833,6 +1889,7 @@ model Order {
   invitation               ConferenceInvitation? @relation(fields: [invitationId], references: [id], onDelete: SetNull)
 
   @@index([invitationId])
+  @@index([paymentMerchantRevisionId])
 
   @@index([userId])
   @@index([conferenceId])
@@ -2813,6 +2870,7 @@ model WechatBill {
   id          String                 @id @default(cuid())
   billDate    DateTime
   billType    String                 @default("TRADE")
+  merchantKey String                 @default("DEFAULT")
   status      String                 @default("CREATED")
   downloadUrl String?
   storagePath String?
@@ -2822,7 +2880,7 @@ model WechatBill {
   updatedAt   DateTime               @updatedAt
   results     ReconciliationResult[]
 
-  @@unique([billDate, billType])
+  @@unique([billDate, billType, merchantKey])
   @@index([status])
   @@index([createdAt])
   @@map("wechat_bills")

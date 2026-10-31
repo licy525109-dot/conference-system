@@ -34,7 +34,7 @@ export class WechatPayRefundClient {
     totalAmountCent: number;
     reason: string | null;
   }): Promise<WechatPayRefundResult> {
-    const notifyUrl = readRefundNotifyUrl();
+    const notifyUrl = input.config.refundNotifyUrl ?? readRefundNotifyUrl();
     const body = {
       out_trade_no: input.outTradeNo,
       out_refund_no: input.outRefundNo,
@@ -62,12 +62,15 @@ export class WechatPayRefundClient {
       if (!response.ok) {
         throw new WechatRefundHttpError(response.status, payload, response.headers.get("request-id"));
       }
-      this.verifyResponse(response, rawBody);
+      this.verifyResponse(response, rawBody, input.config);
       const refundId = readString(payload.refund_id);
       const outRefundNo = readString(payload.out_refund_no);
       const status = readString(payload.status);
       if (!refundId || !outRefundNo || !status) {
         throw new WechatRefundHttpError(response.status, payload, response.headers.get("request-id"), "微信退款响应缺少必要字段");
+      }
+      if (!["SUCCESS", "PROCESSING", "CLOSED", "ABNORMAL"].includes(status)) {
+        throw new BadGatewayException({ code: "WECHAT_PAY_REFUND_FAILED", message: "微信退款响应包含不支持的状态" });
       }
       return { refundId, outRefundNo, status };
     } catch (error) {
@@ -107,7 +110,7 @@ export class WechatPayRefundClient {
       if (!response.ok) {
         throw new WechatRefundHttpError(response.status, payload, response.headers.get("request-id"));
       }
-      this.verifyResponse(response, rawBody);
+      this.verifyResponse(response, rawBody, input.config);
       const refundId = readString(payload.refund_id);
       const outRefundNo = readString(payload.out_refund_no);
       const status = readString(payload.status);
@@ -162,8 +165,9 @@ export class WechatPayRefundClient {
     });
   }
 
-  private verifyResponse(response: Response, rawBody: Buffer): void {
+  private verifyResponse(response: Response, rawBody: Buffer, config: WechatPayConfig): void {
     this.responseVerifier.verifySignature({
+      verificationKey: config.verificationKey,
       headers: {
         timestamp: response.headers.get("wechatpay-timestamp") ?? "",
         nonce: response.headers.get("wechatpay-nonce") ?? "",

@@ -1,11 +1,12 @@
 import { pbkdf2Sync, timingSafeEqual } from "node:crypto";
-import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, UnauthorizedException } from "@nestjs/common";
 import { AuditAction } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { CurrentUser } from "../auth/current-user";
 import { signJwt, verifyJwt } from "../auth/jwt";
 import { AdminAccessService } from "./admin-access.service";
 import { CurrentAdmin } from "./current-admin";
+import { SCOPED_ADMIN_PERMISSIONS } from "./conference-scope";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -58,12 +59,7 @@ export class AdminAuthService {
     });
 
     await this.access().ensureBuiltInAccess();
-    const admin: CurrentAdmin = {
-      id: adminUser.id,
-      username: adminUser.username,
-      displayName: adminUser.displayName,
-      permissions: await this.access().getAdminPermissions(adminUser.id)
-    };
+    const admin = await this.buildCurrentAdmin(adminUser);
 
     return ok({
       token: this.signAdminToken(admin),
@@ -96,6 +92,9 @@ export class AdminAuthService {
     if (!currentUser.openid) {
       throw new BadRequestException("当前微信用户缺少 openid，无法绑定管理员手机入口");
     }
+
+    const admin = await this.buildCurrentAdmin(adminUser);
+    if (admin.conferenceScopeMode !== "ALL") throw new ForbiddenException("会议授权账号请使用后台授权会议工作台，暂不开放小程序全局管理入口");
 
     const existingOpenidBinding = await this.prisma.adminWechatBinding.findUnique({
       where: { openid: currentUser.openid },
@@ -141,7 +140,6 @@ export class AdminAuthService {
       }
     });
 
-    const admin = await this.buildCurrentAdmin(adminUser);
     return ok({
       token: this.signAdminToken(admin, 2 * 60 * 60),
       admin,
@@ -180,12 +178,14 @@ export class AdminAuthService {
       throw new UnauthorizedException("当前微信用户未绑定管理员账号");
     }
 
+    const admin = await this.buildCurrentAdmin(binding.adminUser);
+    if (admin.conferenceScopeMode !== "ALL") throw new ForbiddenException("会议授权账号请使用后台授权会议工作台");
+
     await this.prisma.adminWechatBinding.update({
       where: { id: binding.id },
       data: { lastSessionAt: new Date() }
     });
 
-    const admin = await this.buildCurrentAdmin(binding.adminUser);
     return ok({
       token: this.signAdminToken(admin, 2 * 60 * 60),
       admin,
@@ -221,11 +221,16 @@ export class AdminAuthService {
   }
 
   private async buildCurrentAdmin(adminUser: { id: string; username: string; displayName: string | null }): Promise<CurrentAdmin> {
+    const scope = await this.prisma.adminUser.findUnique({ where: { id: adminUser.id }, select: { conferenceScopeMode: true, conferenceGrants: { select: { conferenceId: true } } } });
+    const conferenceScopeMode = scope?.conferenceScopeMode === "ALL" ? "ALL" : "ASSIGNED";
+    const permissions = await this.access().getAdminPermissions(adminUser.id);
     return {
       id: adminUser.id,
       username: adminUser.username,
       displayName: adminUser.displayName,
-      permissions: await this.access().getAdminPermissions(adminUser.id)
+      permissions: conferenceScopeMode === "ALL" ? permissions : permissions.filter(code => SCOPED_ADMIN_PERMISSIONS.includes(code)),
+      conferenceScopeMode,
+      conferenceIds: scope?.conferenceGrants?.map(item => item.conferenceId) ?? []
     };
   }
 

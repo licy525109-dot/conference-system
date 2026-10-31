@@ -142,7 +142,7 @@ function permissionMenuGroup(code: string): string {
   if (code.startsWith("finance:") || code.startsWith("refund:") || code.startsWith("invoice:") || code.startsWith("reconciliation:") || code.startsWith("wechat-bill:")) return "财务管理";
   if (code.startsWith("page:") || code.startsWith("theme:") || code.startsWith("tabbar:") || code.startsWith("material:")) return "页面装修";
   if (code.startsWith("platform:")) return "平台运营";
-  if (code.startsWith("system:")) return "系统管理";
+  if (code.startsWith("system:") || code.startsWith("payment-merchant:")) return "系统管理";
   return "其他权限";
 }
 

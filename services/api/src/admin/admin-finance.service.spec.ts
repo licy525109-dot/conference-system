@@ -483,6 +483,156 @@ describe("PublicOperationsService finance user scope", () => {
   });
 });
 
+describe("AdminFinanceService refund response races", () => {
+  for (const sourceType of ["REGISTRATION", "MALL"] as const) {
+    for (const response of ["PROCESSING", "SUCCESS", "ERROR", "UNKNOWN_STATE"]) {
+      it(`${sourceType} preserves callback SUCCESS when create returns ${response} later`, async () => {
+        const fixture = await refundRaceFixture(sourceType);
+        fixture.client.createRefund = async () => {
+          await fixture.persistCallback(RefundStatus.SUCCESS);
+          if (response === "ERROR") throw new Error("late submission timeout");
+          return { refundId: "stale-create-id", outRefundNo: fixture.refund.outRefundNo, status: response };
+        };
+
+        const result = await fixture.service.approveRefund(fixture.refund.id, admin);
+
+        await fixture.assertCallbackPreserved(result, RefundStatus.SUCCESS);
+        assert.equal(fixture.notifications.length, 1);
+      });
+    }
+
+    it(`${sourceType} does not reset a concurrent PROCESSING refund to APPROVED on timeout`, async () => {
+      const fixture = await refundRaceFixture(sourceType);
+      fixture.client.createRefund = async () => {
+        await fixture.persistCallback(RefundStatus.PROCESSING);
+        throw new Error("late submission timeout");
+      };
+
+      const result = await fixture.service.approveRefund(fixture.refund.id, admin);
+
+      await fixture.assertCallbackPreserved(result, RefundStatus.PROCESSING);
+    });
+
+    it(`${sourceType} preserves a concurrent terminal failure after create acceptance`, async () => {
+      const fixture = await refundRaceFixture(sourceType);
+      fixture.client.createRefund = async () => {
+        await fixture.persistCallback(RefundStatus.FAILED);
+        return { refundId: "stale-create-id", outRefundNo: fixture.refund.outRefundNo, status: "PROCESSING" };
+      };
+
+      const result = await fixture.service.approveRefund(fixture.refund.id, admin);
+
+      await fixture.assertCallbackPreserved(result, RefundStatus.FAILED);
+    });
+
+    it(`${sourceType} skips submission if SUCCESS is persisted before approval is claimed`, async () => {
+      const fixture = await refundRaceFixture(sourceType);
+      const paymentModel = sourceType === "REGISTRATION" ? fixture.prisma.payment : fixture.prisma.mallPayment;
+      const findFirst = paymentModel.findFirst;
+      paymentModel.findFirst = async (args: any) => {
+        await fixture.persistCallback(RefundStatus.SUCCESS);
+        return findFirst(args);
+      };
+      fixture.client.createRefund = async () => { assert.fail("a successful refund must not be resubmitted"); };
+
+      const result = await fixture.service.approveRefund(fixture.refund.id, admin);
+
+      await fixture.assertCallbackPreserved(result, RefundStatus.SUCCESS, false);
+    });
+
+    for (const status of ["PROCESSING", "CLOSED", "ABNORMAL", "SUCCESS"]) {
+      it(`${sourceType} preserves callback SUCCESS when an older query returns ${status}`, async () => {
+        const fixture = await refundRaceFixture(sourceType);
+        await fixture.model.update({ where: { id: fixture.refund.id }, data: { provider: PaymentProvider.WECHAT, status: RefundStatus.PROCESSING } });
+        fixture.client.queryRefund = async () => {
+          await fixture.persistCallback(RefundStatus.SUCCESS);
+          return {
+            refundId: "stale-query-id", outRefundNo: fixture.refund.outRefundNo, status,
+            amountCent: fixture.refund.amountCent, totalAmountCent: fixture.refund.amountCent,
+            successTime: "2026-06-18T11:00:00.000Z"
+          };
+        };
+
+        const result = await fixture.service.queryRefund(fixture.refund.id);
+
+        await fixture.assertCallbackPreserved(result, RefundStatus.SUCCESS);
+      });
+    }
+
+    it(`${sourceType} rejects an unknown create status and retries with the original refund number`, async () => {
+      const fixture = await refundRaceFixture(sourceType);
+      const submittedNumbers: string[] = [];
+      fixture.client.createRefund = async (input: any) => {
+        submittedNumbers.push(input.outRefundNo);
+        return { refundId: "provider-refund", outRefundNo: input.outRefundNo, status: submittedNumbers.length === 1 ? "UNKNOWN_STATE" : "PROCESSING" };
+      };
+
+      await assert.rejects(() => fixture.service.approveRefund(fixture.refund.id, admin), ConflictException);
+      const retryable = await fixture.model.findUnique({ where: { id: fixture.refund.id } });
+      assert.equal(retryable.status, RefundStatus.APPROVED);
+      assert.equal(retryable.providerRefundId, null);
+      assert.equal(retryable.processedAt, null);
+      assert.equal(fixture.notifications.at(-1)?.status, RefundStatus.APPROVED);
+      assert.notEqual(fixture.order.status, "REFUNDED");
+
+      const result = await fixture.service.approveRefund(fixture.refund.id, admin);
+      assert.equal((result.data as any).status, RefundStatus.PROCESSING);
+      assert.deepEqual(submittedNumbers, [fixture.refund.outRefundNo, fixture.refund.outRefundNo]);
+      assert.equal(fixture.notifications.at(-1)?.status, RefundStatus.PROCESSING);
+    });
+  }
+});
+
+async function refundRaceFixture(sourceType: "REGISTRATION" | "MALL") {
+  withMallWechatRefundConfig();
+  const prisma = createFinancePrismaMock({ seededRefunds: false, wechatPayment: true, mallWechatPayment: true });
+  const notifications: any[] = [];
+  const client = {
+    createRefund: async (_input?: any): Promise<any> => { throw new Error("create response not configured"); },
+    queryRefund: async (): Promise<any> => { throw new Error("query response not configured"); }
+  };
+  const service = new AdminFinanceService(prisma, client as unknown as WechatPayRefundClient, {
+    dispatchRefundStatus: async (input: any) => { notifications.push(input); }
+  } as any);
+  const order = sourceType === "REGISTRATION" ? prisma.orders[0] : prisma.mallOrders[0];
+  const created = await service.createRefund({
+    sourceType, orderNo: order.orderNo, amountCent: order.paidAmountCent, reason: "race regression",
+    ...(sourceType === "MALL" ? { afterSaleId: "after-sale-1" } : {})
+  }, admin);
+  const refund = created.data as any;
+  const model = sourceType === "REGISTRATION" ? prisma.refund : prisma.mallRefund;
+  const processedAt = new Date("2026-06-18T12:00:00.000Z");
+  notifications.length = 0;
+  async function persistCallback(status: RefundStatus) {
+    await model.update({ where: { id: refund.id }, data: {
+      status, provider: PaymentProvider.WECHAT, providerRefundId: "callback-refund-id",
+      processedAt: status === RefundStatus.PROCESSING ? null : processedAt,
+      failedReason: status === RefundStatus.FAILED ? "callback failure" : null
+    } });
+    if (status === RefundStatus.SUCCESS) {
+      order.status = "REFUNDED";
+      if (sourceType === "MALL") Object.assign(order.afterSales[0], { status: "COMPLETED", handledAt: processedAt });
+    }
+  }
+  async function assertCallbackPreserved(result: any, status: RefundStatus, checkNotification = true) {
+    const stored = await model.findUnique({ where: { id: refund.id } });
+    assert.equal(result.data.status, status);
+    assert.equal(stored.status, status);
+    assert.equal(stored.providerRefundId, "callback-refund-id");
+    assert.equal(stored.failedReason, status === RefundStatus.FAILED ? "callback failure" : null);
+    assert.equal(stored.processedAt?.toISOString() ?? null, status === RefundStatus.PROCESSING ? null : processedAt.toISOString());
+    if (checkNotification) assert.equal(notifications.at(-1)?.status, status);
+    if (status === RefundStatus.SUCCESS) {
+      assert.equal(order.status, "REFUNDED");
+      if (sourceType === "MALL") {
+        assert.equal(order.afterSales[0].status, "COMPLETED");
+        assert.equal(order.afterSales[0].handledAt.toISOString(), processedAt.toISOString());
+      }
+    }
+  }
+  return { prisma, service, model, order, client, notifications, refund, persistCallback, assertCallbackPreserved };
+}
+
 function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProbe?: boolean; wechatPayment?: boolean; mallWechatPayment?: boolean; registrationCheckedIn?: boolean; conferenceStarted?: boolean; mallOrderStatus?: "PAID" | "SHIPPED" | "COMPLETED" } = {}) {
   const now = new Date("2026-06-18T10:00:00.000Z");
   const orders = [
@@ -670,9 +820,10 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
       }
     },
     refund: {
+      ...conditionalRefundMethods(refunds),
       findUnique: async ({ where, include }: any) => {
         const refund = refunds.find((item) => item.id === where.id) ?? null;
-        return refund && include?.order ? { ...refund, order: orders.find((item) => item.id === refund.orderId) ?? null } : refund;
+        return refund ? { ...refund, ...(include?.order ? { order: orders.find((item) => item.id === refund.orderId) ?? null } : {}) } : null;
       },
       findFirst: async ({ where }: any) => refunds.find((item) => item.userId === where.userId || item.id === where.id) ?? null,
       findMany: async ({ where }: any = {}) => (where?.userId ? refunds.filter((item) => item.userId === where.userId) : refunds),
@@ -692,7 +843,11 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
       }
     },
     mallRefund: {
-      findUnique: async ({ where }: any) => mallRefunds.find((item) => item.id === where.id) ?? null,
+      ...conditionalRefundMethods(mallRefunds),
+      findUnique: async ({ where }: any) => {
+        const refund = mallRefunds.find((item) => item.id === where.id);
+        return refund ? { ...refund } : null;
+      },
       findFirst: async ({ where }: any) => mallRefunds.find((item) =>
         (!where.mallOrderId || item.mallOrderId === where.mallOrderId) &&
         (!where.status || item.status === where.status)
@@ -789,6 +944,22 @@ function createFinancePrismaMock(options: { seededRefunds?: boolean; revenueProb
     }
   };
   return prisma as PrismaService & typeof prisma;
+}
+
+function conditionalRefundMethods(refunds: any[]) {
+  return {
+    findUniqueOrThrow: async ({ where }: any) => {
+      const refund = refunds.find(item => item.id === where.id);
+      if (!refund) throw new Error("refund not found");
+      return { ...refund };
+    },
+    updateMany: async ({ where, data }: any) => {
+      const refund = refunds.find(item => item.id === where.id);
+      if (!refund || (typeof where.status === "string" ? refund.status !== where.status : refund.status === where.status?.not)) return { count: 0 };
+      Object.assign(refund, data);
+      return { count: 1 };
+    }
+  };
 }
 
 function withRegistrationWechatRefundConfig() {

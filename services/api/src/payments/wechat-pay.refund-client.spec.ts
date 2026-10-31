@@ -71,6 +71,25 @@ describe("WechatPayRefundClient", () => {
     );
   });
 
+  for (const status of ["UNKNOWN_STATE", "success", "PENDING"]) {
+    it(`rejects an unknown create status (${status}) even after response verification`, async () => {
+      process.env.WECHAT_PAY_REFUND_NOTIFY_URL = "https://example.com/api/payments/wechat/refund-notify";
+      const client = new TestRefundClient(new CapturingSigner(), new Response(JSON.stringify({
+        refund_id: "provider-refund", out_refund_no: "REFUND001", status
+      }), { status: 200 }));
+
+      await assert.rejects(
+        () => client.createRefund({ config, outTradeNo: "ORDER001", outRefundNo: "REFUND001", amountCent: 1, totalAmountCent: 100, reason: null }),
+        (error: unknown) => {
+          assert.ok(error instanceof BadGatewayException);
+          assert.deepEqual(error.getResponse(), { code: "WECHAT_PAY_REFUND_FAILED", message: "微信退款响应包含不支持的状态" });
+          return true;
+        }
+      );
+      assert.equal(client.verifier.calls, 1);
+    });
+  }
+
   it("queries a refund by merchant refund number and returns verified amount fields", async () => {
     const signer = new CapturingSigner();
     const client = new TestRefundClient(signer, new Response(JSON.stringify({

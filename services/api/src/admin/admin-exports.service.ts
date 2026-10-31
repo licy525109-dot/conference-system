@@ -104,6 +104,7 @@ export class AdminExportsService {
       orderBy: [{ createdAt: "desc" }],
       take: 5001,
       select: {
+        paymentMerchantSnapshot: true,
         registrationSnapshotJson: true,
         id: true,
         orderNo: true,
@@ -166,6 +167,7 @@ export class AdminExportsService {
       [
         "订单号",
         "会议名称",
+        "收款单位（下单快照）",
         "票种明细（下单快照）",
         "票数",
         "下单账号",
@@ -187,9 +189,11 @@ export class AdminExportsService {
       ...filteredRows.map((row) => {
         const latestPayment = row.payments[0] ?? null;
         const exceptions = detectPaymentExceptions(row);
+        const merchant = row.paymentMerchantSnapshot && typeof row.paymentMerchantSnapshot === "object" && !Array.isArray(row.paymentMerchantSnapshot) ? row.paymentMerchantSnapshot : {};
         return [
           row.orderNo,
           row.conference.title,
+          typeof merchant.companyName === "string" ? merchant.companyName : "北京壹昂智创科技有限公司",
           orderTicketItems(row).map(item => "pricingMode" in item && item.pricingMode === "PACKAGE"
             ? `${item.skuName}（${item.quantity} 人套餐，整团 ¥${centsToYuan(item.totalAmountCent)}）`
             : `${item.skuName} × ${item.quantity}（单价 ¥${centsToYuan(item.unitPriceCent)}）`).join("；"),
