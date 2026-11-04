@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { certificateEligible, defaultCertificateConfig, normalizeCertificateLookup, validateCertificateConfig } from "./certificates";
+import { certificateEligible, certificatePreviewPerson, defaultCertificateConfig, normalizeCertificateLookup, validateCertificateConfig } from "./certificates";
+
+test("certificate preview uses the complete real number or the configured numbering format", () => {
+  const c = defaultCertificateConfig(); c.numberPrefix = "XZJYDH-";
+  assert.equal(certificatePreviewPerson(c).certificateNo, "XZJYDH-000000000001");
+  const actual = { name: "测试人员", organization: "", role: "", certificateNo: "XZJYDH-205F5D3ED5B8", custom: {} };
+  assert.equal(certificatePreviewPerson(c, actual), actual);
+  assert.equal(certificatePreviewPerson(c, actual).certificateNo, actual.certificateNo);
+});
+
+test("certificate validation names the exact setting, template and text field", () => {
+  const c = defaultCertificateConfig();
+  assert.throws(() => validateCertificateConfig({ ...c, numberPrefix: "" }), /基本信息 → 自动编号前缀：文字须为1 至 32 字符/);
+  assert.throws(() => validateCertificateConfig({ ...c, numberPrefix: "X".repeat(33) }), /自动编号前缀/);
+  c.templates[0].fields[2].label = "编号"; c.templates[0].fields[2].text = "X".repeat(1001);
+  assert.throws(() => validateCertificateConfig(c), /证书模板「参会证明」：文字「编号」：字段前缀：文字须为不超过 1000 字符/);
+  c.templates[0].fields[2].text = ""; c.templates[0].fields[0].text = "\u0001";
+  assert.throws(() => validateCertificateConfig(c), /文字「title」：固定文字/);
+  c.templates[0].fields[0].text = "参会证明"; c.queryFields[0].label = "";
+  assert.throws(() => validateCertificateConfig(c), /查询条件第 1 项：显示名称/);
+});
 
 test("certificate config preserves zero coordinates, false switches, and multiple templates", () => {
   const c = defaultCertificateConfig(); c.templates[0].fields[0].x = 0; c.templates[0].fields[0].y = 0; c.allowRepeatDownload = false;

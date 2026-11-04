@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, GoneException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type CertificateProject, type CertificateRecipient } from "@prisma/client";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { certificateEligible, certificateValue, defaultCertificateConfig, normalizeCertificateLookup, validateCertificateConfig, type CertificateConfig, type CertificatePerson } from "@conference/shared";
+import { certificateEligible, certificatePreviewPerson, certificateValue, defaultCertificateConfig, normalizeCertificateLookup, validateCertificateConfig, type CertificateConfig, type CertificatePerson, type CertificateTextField } from "@conference/shared";
+import { isDeepStrictEqual } from "node:util";
 import type { CurrentAdmin } from "../admin/current-admin";
 import { requireConferenceGrant } from "../admin/conference-scope";
 import { PrismaService } from "../prisma.service";
@@ -229,18 +230,74 @@ export class CertificatesService {
     await this.transaction(async tx => { const p = await this.project(tx, id, admin); await this.change(tx, p, body.draftRevision); await tx.certificateProject.update({ where: { id }, data: { paused: body.paused as boolean, ...(body.archived !== undefined ? { archived: body.archived as boolean } : {}) } }); await this.audit(tx, admin, id, body.archived !== undefined && body.archived !== p.archived ? body.archived ? "归档证书项目" : "取消证书项目归档" : body.paused ? "暂停证书领取" : "恢复证书领取"); });
     return this.detail(id, admin);
   }
+  // Operational repair only; intentionally not exposed as an HTTP endpoint.
+  // A new immutable publication retains its own roster, while pending draft edits stay pending.
+  async repairPublishedNumberLayout(id: string, change: {
+    draftRevision: number; publishedRevision: number; templateId: string; fieldId: string;
+    before: CertificateTextField; after: Pick<CertificateTextField, "x" | "align" | "text">;
+  }, admin: CurrentAdmin) {
+    if (["view", "write", "publish"].some(action => !admin.permissions?.includes("*") && !admin.permissions?.includes(`certificate:${action}`))) throw new ForbiddenException("缺少证书排版修复权限");
+    await this.transaction(async tx => {
+      const p = await this.project(tx, id, admin);
+      if (p.draftRevision !== revision(change.draftRevision) || p.publishedRevision !== revision(change.publishedRevision)) throw new ConflictException("证书版本已变化，请重新核对排版");
+      const old = await tx.certificateVersion.findUniqueOrThrow({ where: { projectId_revision: { projectId: id, revision: p.publishedRevision } }, include: { recipients: true } });
+      const published = config(old.configJson), draft = config(p.draftJson);
+      const publishedField = published.templates.find(t => t.id === change.templateId)?.fields.find(f => f.id === change.fieldId);
+      const draftField = draft.templates.find(t => t.id === change.templateId)?.fields.find(f => f.id === change.fieldId);
+      if (!publishedField || publishedField.key !== "certificateNo" || !isDeepStrictEqual(publishedField, change.before) || !isDeepStrictEqual(draftField, change.before)) throw new ConflictException("编号字段已变化，请重新核对排版");
+      const patch = { x: change.after.x, align: change.after.align, text: change.after.text };
+      Object.assign(publishedField, patch); Object.assign(draftField!, patch);
+      const fixedPublished = config(published), fixedDraft = config(draft);
+      await this.validateAssets(tx, id, fixedPublished); await this.validateAssets(tx, id, fixedDraft);
+      const template = fixedPublished.templates.find(t => t.id === change.templateId)!;
+      const sample = old.recipients.find(r => r.templateId === template.id && r.eligible);
+      await this.renderer.render(id, fixedPublished, template, certificatePreviewPerson(fixedPublished, sample?.dataJson as unknown as CertificatePerson | undefined));
+      const publishedRevision = p.draftRevision + 1, draftRevision = publishedRevision + 1;
+      revision(draftRevision);
+      const version = await tx.certificateVersion.create({ data: { projectId: id, revision: publishedRevision, configJson: json(fixedPublished), createdById: admin.id } });
+      await tx.certificatePublishedRecipient.createMany({ data: old.recipients.map(r => ({
+        versionId: version.id, sourceRecipientId: r.sourceRecipientId, templateId: r.templateId, certificateNo: r.certificateNo,
+        dataJson: r.dataJson as Prisma.InputJsonValue, lookupJson: r.lookupJson as Prisma.InputJsonValue,
+        eligible: r.eligible, approved: r.approved, claimCodeHash: r.claimCodeHash,
+      })) });
+      await tx.certificateProject.update({ where: { id }, data: { publishedRevision, draftRevision, draftJson: json(fixedDraft) } });
+      await this.audit(tx, admin, id, "修正已发布证书编号排版，保留未发布草稿与历史图片", { from: p.publishedRevision, revision: publishedRevision, templateId: template.id, fieldId: publishedField.id });
+    });
+    return this.detail(id, admin);
+  }
   async restoreVersion(id: string, raw: unknown, admin: CurrentAdmin) {
     const body = certificateObject(raw), target = revision(body.version);
     await this.transaction(async tx => { const p = await this.project(tx, id, admin); const v = await tx.certificateVersion.findUnique({ where: { projectId_revision: { projectId: id, revision: target } }, include: { recipients: true } }); if (!v) throw new NotFoundException("版本不存在"); await this.change(tx, p, body.draftRevision); await tx.certificateProject.update({ where: { id }, data: { name: config(v.configJson).name, draftJson: v.configJson as Prisma.InputJsonValue } }); await tx.certificateRecipient.deleteMany({ where: { projectId: id } }); for (const r of v.recipients) { const lookup = r.lookupJson as Record<string, string>; await tx.certificateRecipient.create({ data: { id: r.sourceRecipientId, projectId: id, templateId: r.templateId, certificateNo: r.certificateNo, dataJson: r.dataJson as Prisma.InputJsonValue, claimCodeHash: r.claimCodeHash, eligible: r.approved } }); } await this.audit(tx, admin, id, "将历史证书版本复制到草稿", { revision: target }); });
     return this.detail(id, admin);
   }
   async preview(id: string, raw: unknown, admin: CurrentAdmin) {
-    const body = certificateObject(raw), p = await this.project(this.prisma, id, admin); let draft = config(p.draftJson);
-    let person: CertificatePerson = { name: "预览姓名", organization: "预览单位", role: "", certificateNo: "PREVIEW-001", custom: {} };
-    if (body.version) { const v = await this.prisma.certificateVersion.findUnique({ where: { projectId_revision: { projectId: id, revision: revision(body.version) } } }); if (!v) throw new NotFoundException("发布版本不存在"); draft = config(v.configJson); }
-    else if (body.config) { draft = config(body.config); await this.validateAssets(this.prisma, id, draft); }
-    if (body.recipientId) { const row = body.version ? await this.prisma.certificatePublishedRecipient.findFirst({ where: { sourceRecipientId: String(body.recipientId), version: { projectId: id, revision: Number(body.version) } } }) : await this.prisma.certificateRecipient.findFirst({ where: { id: String(body.recipientId), projectId: id } }); if (!row) throw new NotFoundException("名单记录不存在"); person = row.dataJson as unknown as CertificatePerson; }
-    const template = draft.templates.find(t => t.id === (body.templateId || draft.templates[0].id)); if (!template) throw new BadRequestException("证书类型不存在");
+    const body = certificateObject(raw), p = await this.project(this.prisma, id, admin);
+    if (body.sample !== undefined && typeof body.sample !== "boolean") throw new BadRequestException("预览数据类型不正确");
+    let draft = config(p.draftJson), versionId: string | undefined;
+    if (body.version) {
+      const v = await this.prisma.certificateVersion.findUnique({ where: { projectId_revision: { projectId: id, revision: revision(body.version) } } });
+      if (!v) throw new NotFoundException("发布版本不存在");
+      draft = config(v.configJson); versionId = v.id;
+    } else if (body.config) { draft = config(body.config); await this.validateAssets(this.prisma, id, draft); }
+    let row = body.recipientId
+      ? versionId
+        ? await this.prisma.certificatePublishedRecipient.findFirst({ where: { sourceRecipientId: text(body.recipientId, 64), versionId } })
+        : await this.prisma.certificateRecipient.findFirst({ where: { id: text(body.recipientId, 64), projectId: id } })
+      : null;
+    if (body.recipientId && !row) throw new NotFoundException("名单记录不存在");
+    const template = draft.templates.find(t => t.id === (body.templateId || row?.templateId || draft.templates[0].id));
+    if (!template) throw new BadRequestException("证书类型不存在");
+    if (row && row.templateId !== template.id) throw new BadRequestException("人员证书类型与预览模板不一致");
+    if (!row && body.sample !== true) {
+      row = versionId
+        ? await this.prisma.certificatePublishedRecipient.findFirst({ where: { versionId, templateId: template.id, eligible: true }, orderBy: { id: "asc" } })
+        : await this.prisma.certificateRecipient.findFirst({ where: { projectId: id, templateId: template.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+    }
+    if (versionId && row && "sourceRecipientId" in row) {
+      const issue = await this.prisma.certificateIssue.findUnique({ where: { versionId_sourceRecipientId: { versionId, sourceRecipientId: row.sourceRecipientId } }, select: { image: true } });
+      if (issue) return Buffer.from(issue.image);
+    }
+    const person = certificatePreviewPerson(draft, row ? row.dataJson as unknown as CertificatePerson : undefined);
     return this.renderer.render(id, draft, template, person);
   }
   async upload(id: string, file: { buffer: Buffer; originalname: string; mimetype: string; size: number } | undefined, admin: CurrentAdmin) {
