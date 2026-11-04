@@ -6,7 +6,7 @@ import { CurrentUser } from "../auth/current-user";
 import { signJwt, verifyJwt } from "../auth/jwt";
 import { AdminAccessService } from "./admin-access.service";
 import { CurrentAdmin } from "./current-admin";
-import { SCOPED_ADMIN_PERMISSIONS } from "./conference-scope";
+import { SCOPED_ADMIN_PERMISSIONS, SCOPED_CERTIFICATE_PERMISSIONS } from "./conference-scope";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -228,7 +228,7 @@ export class AdminAuthService {
       id: adminUser.id,
       username: adminUser.username,
       displayName: adminUser.displayName,
-      permissions: conferenceScopeMode === "ALL" ? permissions : permissions.filter(code => SCOPED_ADMIN_PERMISSIONS.includes(code)),
+      permissions: conferenceScopeMode === "ALL" ? permissions : permissions.filter(code => [...SCOPED_ADMIN_PERMISSIONS, ...SCOPED_CERTIFICATE_PERMISSIONS].includes(code)),
       conferenceScopeMode,
       conferenceIds: scope?.conferenceGrants?.map(item => item.conferenceId) ?? []
     };

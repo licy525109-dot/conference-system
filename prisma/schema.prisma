@@ -738,12 +738,136 @@ model Conference {
   guestScheduleAssignments GuestScheduleAssignment[]
   smartSheetConnection     WecomSmartSheetConnection?
   invitationCampaign       InvitationCampaign?
+  certificateProjects      CertificateProject[]
 
   @@index([status])
   @@index([paymentMerchantId])
   @@index([createdAt])
   @@index([status, sortOrder])
   @@map("conferences")
+}
+
+model CertificateProject {
+  id                String @id @default(cuid())
+  publicId          String @unique
+  name              String
+  conferenceId      String?
+  ownerAdminId      String
+  draftJson         Json
+  draftRevision     Int @default(1)
+  publishedRevision Int?
+  paused            Boolean @default(false)
+  archived          Boolean @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  conference        Conference? @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
+  recipients        CertificateRecipient[]
+  versions          CertificateVersion[]
+  assets            CertificateAsset[]
+  issues            CertificateIssue[]
+
+  @@index([conferenceId])
+  @@index([ownerAdminId])
+  @@map("certificate_projects")
+}
+
+model CertificateRecipient {
+  id            String @id @default(cuid())
+  projectId     String
+  templateId    String
+  certificateNo String
+  dataJson      Json
+  claimCodeHash String?
+  eligible      Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  project       CertificateProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, templateId, certificateNo])
+  @@index([projectId])
+  @@map("certificate_recipients")
+}
+
+model CertificateVersion {
+  id            String @id @default(cuid())
+  projectId     String
+  revision      Int
+  configJson    Json
+  createdById   String
+  createdAt     DateTime @default(now())
+  project       CertificateProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  recipients    CertificatePublishedRecipient[]
+  issues        CertificateIssue[]
+
+  @@unique([projectId, revision])
+  @@map("certificate_versions")
+}
+
+model CertificatePublishedRecipient {
+  id                String @id @default(cuid())
+  versionId         String
+  sourceRecipientId String
+  templateId        String
+  certificateNo     String
+  dataJson          Json
+  lookupJson        Json
+  eligible          Boolean
+  approved          Boolean
+  claimCodeHash     String?
+  version           CertificateVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+
+  @@unique([versionId, sourceRecipientId])
+  @@index([versionId])
+  @@map("certificate_published_recipients")
+}
+
+model CertificateAsset {
+  id        String @id @default(cuid())
+  projectId String
+  name      String
+  kind      String
+  mime      String
+  width     Int?
+  height    Int?
+  bytes     Bytes
+  sha256    String
+  createdAt DateTime @default(now())
+  project   CertificateProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@index([projectId])
+  @@map("certificate_assets")
+}
+
+model CertificateIssue {
+  id                String @id @default(cuid())
+  projectId         String
+  versionId         String
+  sourceRecipientId String
+  certificateNo     String
+  name              String
+  image             Bytes
+  downloadCount     Int @default(0)
+  revokedAt         DateTime?
+  createdAt         DateTime @default(now())
+  project           CertificateProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  version           CertificateVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  grants            CertificateGrant[]
+
+  @@unique([versionId, sourceRecipientId])
+  @@index([projectId, createdAt])
+  @@map("certificate_issues")
+}
+
+model CertificateGrant {
+  id        String @id @default(cuid())
+  tokenHash String @unique
+  issueId   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  issue     CertificateIssue @relation(fields: [issueId], references: [id], onDelete: Restrict)
+
+  @@index([expiresAt])
+  @@map("certificate_grants")
 }
 
 model WecomIntegration {

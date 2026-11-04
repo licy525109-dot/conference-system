@@ -39,11 +39,12 @@ export default defineConfig(({ mode }) => {
       configureServer(server) {
         server.middlewares.use((req, _res, next) => {
           if (/^\/i\/[A-Za-z0-9_-]+(?:\?.*)?$/.test(req.url || "")) req.url = "/invitation.html";
+          if (/^\/c\/[A-Za-z0-9_-]+(?:\?.*)?$/.test(req.url || "")) req.url = "/certificate.html";
           next();
         });
       }
     }],
-    build: { rollupOptions: { input: { admin: resolve(configDir, "index.html"), invitation: resolve(configDir, "invitation.html") } } },
+    build: { rollupOptions: { input: { admin: resolve(configDir, "index.html"), invitation: resolve(configDir, "invitation.html"), certificate: resolve(configDir, "certificate.html") } } },
     server: {
       port: 5174
     }

@@ -56,10 +56,17 @@ async function bootstrap() {
     parseInvitationJson(request, response, next);
   });
   app.use(createSensitiveEndpointRateLimiter());
+  const parseCertificateJson = express.json({ limit: "4mb" });
+  app.use("/api/admin/certificates", (request: unknown, response: { setHeader(name: string, value: string): void }, next: () => void) => {
+    response.setHeader("Cache-Control", "private, no-store");
+    parseCertificateJson(request, response, next);
+  });
+  app.use("/certificate-assets", express.static(resolve(inferProjectRoot(process.cwd()), "apps/admin/dist/assets")));
   app.use("/invitation-assets", express.static(resolve(inferProjectRoot(process.cwd()), "apps/admin/dist/assets")));
   app.use("/invitation-art", express.static(resolve(inferProjectRoot(process.cwd()), "apps/admin/dist/invitation-art")));
   app.setGlobalPrefix("api", { exclude: [
     { path: "i/:token", method: RequestMethod.GET },
+    { path: "c/:publicId", method: RequestMethod.GET },
     { path: "MP_verify_:code.txt", method: RequestMethod.GET },
   ] });
 

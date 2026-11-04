@@ -145,6 +145,7 @@ function permissionMenuGroup(permission: Permission): string {
   if (permission.code.startsWith("dashboard:")) return "控制台";
   if (
     permission.code.startsWith("conference:") ||
+    permission.code.startsWith("certificate:") ||
     permission.code.startsWith("registration:") ||
     permission.code.startsWith("guest-schedule:") ||
     permission.code.startsWith("checkin:") ||
