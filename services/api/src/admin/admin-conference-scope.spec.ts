@@ -19,7 +19,7 @@ import { AdminManagementController } from "./admin-management.controller";
 import { AdminPaymentMerchantsController } from "./admin-payment-merchants.controller";
 import { AdminPermissionGuard } from "./admin-permission.guard";
 import { ADMIN_PERMISSION_CODES } from "./admin-permissions";
-import { AllowConferenceScopedAdmin, CONFERENCE_SCOPED_ACCESS, requireConferenceGrant, SCOPED_ADMIN_PERMISSIONS } from "./conference-scope";
+import { AllowConferenceScopedAdmin, CONFERENCE_SCOPED_ACCESS, requireConferenceGrant, SCOPED_ADMIN_PERMISSIONS, SCOPED_CERTIFICATE_PERMISSIONS } from "./conference-scope";
 import { CurrentAdmin, RequestWithCurrentAdmin } from "./current-admin";
 
 const admin: CurrentAdmin = {
@@ -142,7 +142,8 @@ describe("AdminAuthService conference scope hydration", { concurrency: false }, 
     const current = await auth.getCurrentAdminFromToken(token);
     assert.equal(current.conferenceScopeMode, "ASSIGNED");
     assert.deepEqual(current.conferenceIds, ["granted"]);
-    assert.deepEqual(current.permissions, state.permissions.filter(permission => SCOPED_ADMIN_PERMISSIONS.includes(permission)));
+    assert.deepEqual(current.permissions, state.permissions.filter(permission => [...SCOPED_ADMIN_PERMISSIONS, ...SCOPED_CERTIFICATE_PERMISSIONS].includes(permission)));
+    assert.equal(current.permissions!.includes("certificate:view"), true);
     for (const forbidden of ["*", "payment-merchant:manage", "finance:view", "refund:write", "system:account", "order:delete"]) {
       assert.equal(current.permissions!.includes(forbidden), false, `${forbidden} must not survive scope hydration`);
     }

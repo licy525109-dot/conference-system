@@ -22,19 +22,26 @@
     </el-card>
   </main>
 
+  <div v-else-if="admin.conferenceScopeMode === 'ASSIGNED' && currentRoute.path === '/certificates'" class="scoped-certificate-page">
+    <el-button @click="navigateTo('/dashboard')">返回授权会议工作台</el-button>
+    <CertificatesPage v-if="hasPermission('certificate:view')" />
+    <el-result v-else icon="warning" title="无证书管理权限" />
+  </div>
   <ScopedConferenceWorkspace v-else-if="admin.conferenceScopeMode === 'ASSIGNED'" />
   <AdminLayout v-else />
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { defineAsyncComponent, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminLayout from "./layouts/AdminLayout.vue";
 import ScopedConferenceWorkspace from "./pages/conferences/ScopedConferenceWorkspace.vue";
+const CertificatesPage = defineAsyncComponent(() => import("./pages/certificates/index.vue"));
+import { currentRoute, navigateTo } from "./router";
 import { getTheme } from "./services/admin";
 import { useAdminSession } from "./stores/admin-session";
 
-const { admin, ready, init, login } = useAdminSession();
+const { admin, ready, init, login, hasPermission } = useAdminSession();
 const loading = ref(false);
 const loginForm = reactive({ username: "admin", password: "" });
 const browserTitle = ref("会务运营平台");

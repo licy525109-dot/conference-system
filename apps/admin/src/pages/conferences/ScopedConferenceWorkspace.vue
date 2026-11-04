@@ -3,6 +3,7 @@
     <header class="workspace-header">
       <div class="brand"><strong>观潮会集</strong><span>会议工作台</span></div>
       <div class="account">
+        <el-button v-if="session.hasPermission('certificate:view')" @click="navigateTo('/certificates')">证书管理</el-button>
         <span>{{ session.admin.value?.displayName || session.admin.value?.username }}</span>
         <el-tooltip content="退出登录" placement="bottom">
           <el-button :icon="SwitchButton" aria-label="退出登录" :disabled="busy" @click="session.logout" />
@@ -352,6 +353,7 @@ import type { GroupTicketPricing } from "@conference/shared";
 import GroupTicketPricingEditor from "../../components/conference/GroupTicketPricingEditor.vue";
 import AdminTableIndex from "../../components/AdminTableIndex.vue";
 import { useAdminSession } from "../../stores/admin-session";
+import { navigateTo } from "../../router";
 import { conferenceWorkspace as api, WorkspaceRequestError } from "../../services/conference-workspace";
 import type { ConferenceContentInput, OrderFilters, RegistrationFilters, ScopedConferenceSummary, WorkspaceFieldInput, WorkspaceOrder, WorkspaceOrderDetail, WorkspaceRegistration, WorkspaceRegistrationDetail } from "../../services/conference-workspace";
 import type { AdminOrderSummary, AdminRegistrationAttendee, Conference, FormField, Sku } from "../../services/types";

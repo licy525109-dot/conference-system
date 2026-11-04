@@ -1,4 +1,9 @@
 export const ADMIN_PERMISSIONS = [
+  { code: "certificate:view", name: "查看证书项目与名单", group: "会议管理" },
+  { code: "certificate:write", name: "配置证书模板和规则", group: "会议管理" },
+  { code: "certificate:import", name: "导入证书名单", group: "会议管理" },
+  { code: "certificate:publish", name: "发布、暂停与撤销证书", group: "会议管理" },
+  { code: "certificate:export", name: "导出证书名单", group: "会议管理" },
   { code: "payment-merchant:manage", name: "配置收款单位和会议收款", group: "财务管理" },
   { code: "registration:export", name: "导出授权会议报名名单", group: "会议管理" },
   { code: "invitation:view", name: "查看专属邀请函", group: "专属邀请函" },

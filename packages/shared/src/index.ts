@@ -54,3 +54,5 @@ export * from "./conference-detail";
 export * from "./invitations";
 export * from "./invitation-booklet";
 export * from "./group-ticket-pricing";
+export * from "./certificates";
+export * from "./certificates-legacy";

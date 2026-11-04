@@ -2,6 +2,7 @@ import { ForbiddenException, SetMetadata } from "@nestjs/common";
 import { CurrentAdmin } from "./current-admin";
 
 export const CONFERENCE_SCOPED_ACCESS = "conference-scoped-admin-access";
+export const SCOPED_CERTIFICATE_PERMISSIONS = ["certificate:view", "certificate:write", "certificate:import", "certificate:publish", "certificate:export"];
 export const AllowConferenceScopedAdmin = () => SetMetadata(CONFERENCE_SCOPED_ACCESS, true);
 export const SCOPED_ADMIN_PERMISSIONS = ["conference:view", "conference:write", "registration:view", "registration:write", "registration:export", "order:view", "checkin:view", "checkin:write"];
 

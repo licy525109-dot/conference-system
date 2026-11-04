@@ -10,6 +10,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  certificate-api:
+    name: Certificate API and publication isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: certificate_test
+          POSTGRES_DB: certificate_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U certificate_test -d certificate_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://certificate_test@127.0.0.1:5432/certificate_test
+      CERTIFICATE_TEST_DATABASE_URL: postgresql://certificate_test@127.0.0.1:5432/certificate_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update -qq && sudo apt-get install -y fonts-noto-cjk
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @conference/api exec prisma generate --schema ../../prisma/schema.prisma
+      - run: pnpm --filter @conference/api exec prisma migrate deploy --schema ../../prisma/schema.prisma
+      - run: pnpm build:api
+      - run: pnpm exec tsx --test packages/shared/src/certificates.spec.ts packages/shared/src/certificates-legacy.spec.ts tests/e2e/certificates.integration.ts
+
   validate:
     name: Types, tests and builds
     runs-on: ubuntu-latest
