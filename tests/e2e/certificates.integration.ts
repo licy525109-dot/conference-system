@@ -25,6 +25,7 @@ test("certificate real API: isolation, publication, import, permissions, grants 
     const r = await fetch(`${origin}/api/certificates/${publicId}/image`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, download }) }); assert.equal(r.status, expected); return Buffer.from(await r.arrayBuffer());
   }
   try {
+    await app.get(req("./dist/admin/admin-access.service.js").AdminAccessService).ensureBuiltInAccess();
     for (const label of ["A", "B"]) { const c = await db.conference.create({ data: { title: `证书接口测试 ${label}`, slug: `cert-${label}-${suffix}`, startsAt: new Date(), endsAt: new Date(Date.now()+86400000) } }); conferenceIds.push(c.id); }
     const permissions = [...["view", "write", "import", "publish", "export"].map(x => `certificate:${x}`), "registration:view"];
     const role = await db.role.create({ data: { code: `cert-role-${suffix}`, name: "证书测试管理员", permissions: { create: permissions.map(code => ({ permission: { connect: { code } } })) } } }); roleIds.push(role.id);
