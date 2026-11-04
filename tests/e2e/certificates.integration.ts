@@ -24,6 +24,10 @@ test("certificate real API: isolation, publication, import, permissions, grants 
   async function image(publicId: string, token: string, download = false, expected = 201) {
     const r = await fetch(`${origin}/api/certificates/${publicId}/image`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, download }) }); assert.equal(r.status, expected); return Buffer.from(await r.arrayBuffer());
   }
+  async function preview(projectId: string, token: string, body: unknown) {
+    const r = await fetch(`${origin}/api/admin/certificates/${projectId}/preview`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    assert.equal(r.status, 201); return Buffer.from(await r.arrayBuffer());
+  }
   try {
     await app.get(req("./dist/admin/admin-access.service.js").AdminAccessService).ensureBuiltInAccess();
     for (const label of ["A", "B"]) { const c = await db.conference.create({ data: { title: `证书接口测试 ${label}`, slug: `cert-${label}-${suffix}`, startsAt: new Date(), endsAt: new Date(Date.now()+86400000) } }); conferenceIds.push(c.id); }
@@ -61,6 +65,9 @@ test("certificate real API: isolation, publication, import, permissions, grants 
     const claim = { values: { name: "同名人员", claimCode: "code-A-001" } };
     const found = await call(`/certificates/${a.publicId}/search`, undefined, claim);
     const firstImage = await image(a.publicId, found.token); assert.equal(firstImage.subarray(1,4).toString(), "PNG");
+    const firstRecipient = await db.certificateRecipient.findFirstOrThrow({ where: { projectId: a.id, certificateNo: "A-001" } });
+    assert.deepEqual(await preview(a.id, manager, { recipientId: firstRecipient.id }), firstImage);
+    assert.deepEqual(await preview(a.id, manager, { version: originalRevision, recipientId: firstRecipient.id }), firstImage);
     async function upload(projectId: string, token: string | undefined, bytes: Buffer, status: number) {
       const form = new FormData(); form.set("file", new Blob([new Uint8Array(bytes)], { type: "image/png" }), "template.png");
       const response = await fetch(`${origin}/api/admin/certificates/${projectId}/assets`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
@@ -82,6 +89,25 @@ test("certificate real API: isolation, publication, import, permissions, grants 
     a = await call(`/admin/certificates/${a.id}`, manager, { config: savedConfig, draftRevision: a.draftRevision }, 200, "PATCH");
     assert.equal((await call(`/certificates/${a.publicId}`)).title, firstMeta.title);
     assert.equal(createHash("sha256").update(await image(a.publicId, found.token)).digest("hex"), createHash("sha256").update(firstImage).digest("hex"));
+    a = await call(`/admin/certificates/${a.id}/recipients`, manager, { draftRevision: a.draftRevision, record: { name: "未发布新增人员", organization: "草稿单位", certificateNo: "A-003", claimCode: "code-A-003", eligible: true, templateId: "default", custom: {}, role: "" } });
+    const { CertificatesService } = req("./dist/certificates/certificates.service.js"), service = app.get(CertificatesService);
+    const admin = { id: adminIds[0], username: "manager", displayName: null, permissions, conferenceScopeMode: "ALL" };
+    const repair = { draftRevision: a.draftRevision, publishedRevision: a.publishedRevision, templateId: "default", fieldId: "number", before: structuredClone(a.draft.templates[0].fields.find((f: any) => f.id === "number")), after: { x: 20, align: "start", text: "" } };
+    const beforeDraft = structuredClone(a.draft), beforeRoster = await db.certificateRecipient.findMany({ where: { projectId: a.id }, orderBy: { id: "asc" } });
+    await assert.rejects(service.repairPublishedNumberLayout(a.id, repair, { ...admin, permissions: ["certificate:view"] }), /权限/);
+    await assert.rejects(service.repairPublishedNumberLayout(a.id, { ...repair, draftRevision: a.draftRevision - 1 }, admin), /版本已变化/);
+    a = await service.repairPublishedNumberLayout(a.id, repair, admin);
+    assert.ok(a.draftRevision > a.publishedRevision); assert.equal(a.draft.title, savedConfig.title);
+    Object.assign(beforeDraft.templates[0].fields.find((f: any) => f.id === "number"), repair.after);
+    assert.deepEqual(a.draft, beforeDraft);
+    assert.deepEqual(await db.certificateRecipient.findMany({ where: { projectId: a.id }, orderBy: { id: "asc" } }), beforeRoster);
+    assert.equal(await db.certificatePublishedRecipient.count({ where: { version: { projectId: a.id, revision: a.publishedRevision } } }), 2);
+    assert.equal((await call(`/certificates/${a.publicId}`)).title, firstMeta.title);
+    const repairedGrant = await call(`/certificates/${a.publicId}/search`, undefined, claim), repairedImage = await image(a.publicId, repairedGrant.token);
+    assert.notDeepEqual(repairedImage, firstImage);
+    assert.deepEqual(await preview(a.id, manager, { version: a.publishedRevision, recipientId: firstRecipient.id }), repairedImage);
+    assert.deepEqual(await preview(a.id, manager, { version: originalRevision, recipientId: firstRecipient.id }), firstImage);
+    await call(`/certificates/${a.publicId}/search`, undefined, { values: { name: "未发布新增人员", claimCode: "code-A-003" } }, 404);
     b = await importRows(b, [{ ...rows[0], certificateNo: "B-001", claimCode: "code-B-001" }]);
     b = await call(`/admin/certificates/${b.id}/publish`, manager, { draftRevision: b.draftRevision });
     assert.equal((await call(`/certificates/${a.publicId}`)).title, firstMeta.title);

@@ -23,6 +23,9 @@ export interface CertificatePerson {
   name: string; organization: string; role: string; certificateNo: string;
   custom: Record<string, string>;
 }
+export function certificatePreviewPerson(config: Pick<CertificateConfig, "numberPrefix">, person?: CertificatePerson): CertificatePerson {
+  return person ?? { name: "预览姓名", organization: "预览单位", role: "", certificateNo: `${config.numberPrefix}000000000001`, custom: {} };
+}
 export const CERTIFICATE_QUERY_FIELDS = [
   { key: "name", label: "姓名" }, { key: "organization", label: "单位" },
   { key: "certificateNo", label: "证书编号" }, { key: "claimCode", label: "领取码" },
@@ -69,27 +72,32 @@ export function validateCertificateConfig(raw: unknown): CertificateConfig {
   const nullableId = (v: unknown) => v == null || v === "" ? null : id(v);
   const date = (v: unknown) => { if (v == null || v === "") return null; const s = text(v, 40); if (!/T.*(?:Z|[+-]\d\d:\d\d)$/.test(s) || !Number.isFinite(Date.parse(s))) throw new Error("时间必须包含时区"); return new Date(s).toISOString(); };
   const unique = (values: string[]) => { if (new Set(values).size !== values.length) throw new Error("标识或字段重复"); };
+  const at = <T,>(label: string, read: () => T): T => { try { return read(); } catch (e) { throw new Error(`${label}：${e instanceof Error ? e.message : "配置不正确"}`); } };
+  const namedText = (label: string, v: unknown, max = 200, optional = false) => at(label, () => text(v, max, optional));
   const r = obj(raw);
-  const customFields = array(r.customFields, 0, 20).map(v => { const x = obj(v); return { key: id(x.key), label: text(x.label, 40) }; });
+  const customFields = array(r.customFields, 0, 20).map((v, i) => at(`自定义名单字段第 ${i + 1} 项`, () => { const x = obj(v); return { key: at("字段标识", () => id(x.key)), label: namedText("字段名称", x.label, 40) }; }));
   unique(customFields.map(f => f.key));
   unique([...CERTIFICATE_QUERY_FIELDS.map(f => f.label), "职务", "发证资格", "唯一外部标识", "证书类型", ...customFields.map(f => f.label)]);
   const dataKeys = new Set(["name", "organization", "role", "certificateNo", ...customFields.map(f => `custom.${f.key}`)]);
   const queryKeys = new Set([...dataKeys, "claimCode"]);
-  const queryFields = array(r.queryFields, 1, 12).map(v => { const x = obj(v), key = text(x.key, 80); if (!queryKeys.has(key)) throw new Error("不支持的查询字段"); return { key, label: text(x.label, 40), required: bool(x.required) }; });
+  const queryFields = array(r.queryFields, 1, 12).map((v, i) => at(`查询条件第 ${i + 1} 项`, () => { const x = obj(v), key = namedText("查询字段", x.key, 80); if (!queryKeys.has(key)) throw new Error("不支持的查询字段"); return { key, label: namedText("显示名称", x.label, 40), required: bool(x.required) }; }));
   unique(queryFields.map(f => f.key));
   const er = obj(r.eligibility);
   if (!["approved", "all", "conditions"].includes(String(er.mode)) || !["all", "any"].includes(String(er.match))) throw new Error("获证规则不正确");
-  const conditions = array(er.conditions, er.mode === "conditions" ? 1 : 0, 20).map(v => { const x = obj(v), field = text(x.field, 80); if (!dataKeys.has(field) || !["equals", "in", "notEmpty"].includes(String(x.operator))) throw new Error("获证条件不正确"); return { field, operator: x.operator as "equals" | "in" | "notEmpty", value: text(x.value, 1000, x.operator === "notEmpty") }; });
-  const templates = array(r.templates, 1, 10).map(v => {
-    const t = obj(v); const fontFamily = text(t.fontFamily, 100);
+  const conditions = array(er.conditions, er.mode === "conditions" ? 1 : 0, 20).map((v, i) => at(`获证条件第 ${i + 1} 项`, () => { const x = obj(v), field = namedText("条件字段", x.field, 80); if (!dataKeys.has(field) || !["equals", "in", "notEmpty"].includes(String(x.operator))) throw new Error("获证条件不正确"); return { field, operator: x.operator as "equals" | "in" | "notEmpty", value: namedText("条件值", x.value, 1000, x.operator === "notEmpty") }; }));
+  const templates = array(r.templates, 1, 10).map((v, i) => {
+    const t = obj(v), name = namedText(`证书模板第 ${i + 1} 项 → 类型名称`, t.name, 100);
+    return at(`证书模板「${name}」`, () => {
+    const fontFamily = namedText("默认字体", t.fontFamily, 100);
     if (!fontFamily.split(",").every(f => /^[\p{L}\p{N} _-]+$/u.test(f.trim()) && f.trim())) throw new Error("字体名称不正确，可用逗号分隔候选字体");
-    const tf = array(t.fields, 1, 40).map(v => { const f = obj(v), key = text(f.key, 80); if (!dataKeys.has(key) && !["literal", "issueDate"].includes(key)) throw new Error("模板字段不正确"); if (!["start", "middle", "end"].includes(String(f.align)) || ![400, 700].includes(Number(f.weight))) throw new Error("排版格式不正确"); return { id: id(f.id), key: key as CertificateFieldKey, label: text(f.label, 40), text: text(f.text, 1000, true), x: num(f.x, 0, 100), y: num(f.y, 0, 100), size: num(f.size, 8, 300), color: color(f.color), align: f.align as "start" | "middle" | "end", weight: f.weight as 400 | 700, maxWidth: num(f.maxWidth, 1, 100), maxLines: Math.floor(num(f.maxLines, 1, 10)), lineHeight: num(f.lineHeight, 1, 3) }; });
+    const tf = array(t.fields, 1, 40).map((v, i) => { const f = obj(v), label = namedText(`文字字段第 ${i + 1} 项 → 字段名称`, f.label, 40); return at(`文字「${label}」`, () => { const key = namedText("文字来源", f.key, 80); if (!dataKeys.has(key) && !["literal", "issueDate"].includes(key)) throw new Error("模板字段不正确"); if (!["start", "middle", "end"].includes(String(f.align)) || ![400, 700].includes(Number(f.weight))) throw new Error("排版格式不正确"); return { id: id(f.id), key: key as CertificateFieldKey, label, text: namedText(key === "literal" ? "固定文字" : "字段前缀", f.text, 1000, true), x: num(f.x, 0, 100), y: num(f.y, 0, 100), size: num(f.size, 8, 300), color: color(f.color), align: f.align as "start" | "middle" | "end", weight: f.weight as 400 | 700, maxWidth: num(f.maxWidth, 1, 100), maxLines: Math.floor(num(f.maxLines, 1, 10)), lineHeight: num(f.lineHeight, 1, 3) }; }); });
     unique(tf.map(f => f.id));
-    return { id: id(t.id), name: text(t.name, 100), width: Math.floor(num(t.width, 400, 4000)), height: Math.floor(num(t.height, 300, 4000)), assetId: nullableId(t.assetId), fontAssetId: nullableId(t.fontAssetId), fontFamily, fields: tf };
+    return { id: id(t.id), name, width: Math.floor(num(t.width, 400, 4000)), height: Math.floor(num(t.height, 300, 4000)), assetId: nullableId(t.assetId), fontAssetId: nullableId(t.fontAssetId), fontFamily, fields: tf };
+    });
   });
   unique(templates.map(t => t.id));
   unique(templates.map(t => t.name));
   const startsAt = date(r.startsAt), endsAt = date(r.endsAt);
   if (startsAt && endsAt && startsAt >= endsAt) throw new Error("截止时间必须晚于开放时间");
-  return { schemaVersion: 1, name: text(r.name), title: text(r.title), description: text(r.description, 2000, true), contact: text(r.contact, 500, true), numberPrefix: text(r.numberPrefix ?? "CERT-", 32), primaryColor: color(r.primaryColor), backgroundAssetId: nullableId(r.backgroundAssetId), issueDate: text(r.issueDate, 60, true), customFields, queryFields, eligibility: { mode: er.mode as "approved" | "all" | "conditions", match: er.match as "all" | "any", conditions }, startsAt, endsAt, allowRepeatDownload: bool(r.allowRepeatDownload), notFoundMessage: text(r.notFoundMessage, 500), templates };
+  return { schemaVersion: 1, name: namedText("项目名称", r.name), title: namedText("查询页面标题", r.title), description: namedText("页面说明", r.description, 2000, true), contact: namedText("联系方式与资料更正说明", r.contact, 500, true), numberPrefix: namedText("基本信息 → 自动编号前缀", r.numberPrefix ?? "CERT-", 32), primaryColor: at("页面主题色", () => color(r.primaryColor)), backgroundAssetId: at("查询页主视觉", () => nullableId(r.backgroundAssetId)), issueDate: namedText("发证日期", r.issueDate, 60, true), customFields, queryFields, eligibility: { mode: er.mode as "approved" | "all" | "conditions", match: er.match as "all" | "any", conditions }, startsAt, endsAt, allowRepeatDownload: bool(r.allowRepeatDownload), notFoundMessage: namedText("未查询到时的提示", r.notFoundMessage, 500), templates };
 }
