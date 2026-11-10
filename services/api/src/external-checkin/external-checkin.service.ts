@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
 import { AuditAction, type ExternalCheckinEvent, Prisma } from "@prisma/client";
-import { externalCheckinIdentity, parseExternalCheckinFields, parseExternalCheckinValues, planExternalCheckinImport, type ExternalCheckinField, type ExternalCheckinValues } from "@conference/shared";
+import { externalCheckinIdentity, parseExternalCheckinFields, parseExternalCheckinValues, parseExternalCheckinAppearance, planExternalCheckinImport, type ExternalCheckinField, type ExternalCheckinValues } from "@conference/shared";
 import { PrismaService } from "../prisma.service";
 import type { CurrentAdmin } from "../admin/current-admin";
+import { imageDimensions } from "../certificates/certificate-renderer";
 
 const MAX_ATTENDEES = 20_000;
 type Tx = Prisma.TransactionClient;
@@ -24,7 +25,7 @@ export class ExternalCheckinService {
       this.prisma.externalCheckinEvent.findMany({ orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize, include: { _count: { select: { attendees: true } } } }),
       this.prisma.externalCheckinEvent.count()
     ]);
-    return { items: items.map(event => ({ ...event, publicPath: publicPath(event) })), total, page, pageSize };
+    return { items: items.map(event => ({ ...event, appearance: parseExternalCheckinAppearance(event.appearance), publicPath: publicPath(event) })), total, page, pageSize };
   }
 
   async create(input: unknown, admin: CurrentAdmin) {
@@ -90,6 +91,51 @@ export class ExternalCheckinService {
     }, { timeout: 30_000 });
   }
 
+  async saveAppearance(id: string, input: unknown, admin: CurrentAdmin) {
+    access(admin, true);
+    const body = object(input), appearance = checked(() => parseExternalCheckinAppearance(body.appearance));
+    return this.prisma.$transaction(async tx => {
+      const event = await lockEvent(tx, id); revision(event, body);
+      const assetIds = [...new Set([appearance.logoAssetId, appearance.coverAssetId].filter(Boolean))];
+      if (await tx.externalCheckinAsset.count({ where: { eventId: id, id: { in: assetIds } } }) !== assetIds.length) throw new BadRequestException("图片不属于当前会议或已不存在，请重新上传");
+      const next = await tx.externalCheckinEvent.update({ where: { id }, data: { appearance: { ...appearance }, revision: { increment: 1 } } });
+      await audit(tx, admin, id, "更新签到页外观与文案");
+      return detail(tx, next);
+    });
+  }
+
+  async uploadImage(id: string, file: { buffer: Buffer; originalname: string; mimetype: string } | undefined, admin: CurrentAdmin) {
+    access(admin, true);
+    if (!file?.buffer.length || file.buffer.length > 5 * 1024 * 1024) throw new BadRequestException("请选择不超过 5 MB 的 PNG 或 JPG 图片");
+    const dimensions = imageDimensions(file.buffer, file.mimetype);
+    const sha256 = createHash("sha256").update(file.buffer).digest("hex");
+    return this.prisma.$transaction(async tx => {
+      await lockEvent(tx, id);
+      const select = { id: true, name: true, mime: true, width: true, height: true };
+      const existing = await tx.externalCheckinAsset.findUnique({ where: { eventId_sha256: { eventId: id, sha256 } }, select });
+      if (existing) return existing;
+      if (await tx.externalCheckinAsset.count({ where: { eventId: id } }) >= 30) throw new BadRequestException("单场会议最多保留 30 张页面图片");
+      const asset = await tx.externalCheckinAsset.create({ data: { eventId: id, name: file.originalname.slice(0, 120), mime: file.mimetype, ...dimensions, bytes: new Uint8Array(file.buffer), sha256 }, select });
+      await audit(tx, admin, id, "上传签到页图片");
+      return asset;
+    });
+  }
+
+  async adminImage(id: string, assetId: string, admin: CurrentAdmin) {
+    access(admin);
+    const asset = await this.prisma.externalCheckinAsset.findFirst({ where: { id: assetId, eventId: id }, select: { bytes: true, mime: true } });
+    if (!asset) throw new NotFoundException("图片不存在");
+    return asset;
+  }
+
+  async publicImage(token: string, assetId: string) {
+    const event = await publicEvent(this.prisma, token), ui = parseExternalCheckinAppearance(event.appearance);
+    if (![ui.logoAssetId, ui.coverAssetId].includes(assetId)) throw new NotFoundException("图片不存在");
+    const asset = await this.prisma.externalCheckinAsset.findFirst({ where: { id: assetId, eventId: event.id }, select: { bytes: true, mime: true } });
+    if (!asset) throw new NotFoundException("图片不存在");
+    return asset;
+  }
+
   async attendees(id: string, query: Record<string, unknown>, admin: CurrentAdmin, exporting = false) {
     access(admin);
     const event = await findEvent(this.prisma, id), page = pageNumber(query.page, 1), pageSize = 50;
@@ -113,7 +159,7 @@ export class ExternalCheckinService {
 
   async publicMeta(token: string) {
     const event = await publicEvent(this.prisma, token), fields = okFields(event).filter(field => field.input);
-    return { title: event.title, description: event.description, fields: fields.map(({ key, label, required }) => ({ key, label, required })), formVersion: formVersion(fields), ...availability(event), startsAt: event.startsAt, endsAt: event.endsAt };
+    return { title: event.title, description: event.description, appearance: parseExternalCheckinAppearance(event.appearance), fields: fields.map(({ key, label, required }) => ({ key, label, required })), formVersion: formVersion(fields), ...availability(event), startsAt: event.startsAt, endsAt: event.endsAt };
   }
 
   async submit(token: string, input: unknown) {
@@ -126,11 +172,12 @@ export class ExternalCheckinService {
       if (body.formVersion !== formVersion(fields)) throw new ConflictException("签到字段已更新，请刷新页面后重新填写");
       const values = checked(() => parseExternalCheckinValues(body.values, fields, true));
       const attendee = await tx.externalCheckinAttendee.findUnique({ where: { eventId_matchKey: { eventId: event.id, matchKey: hash(externalCheckinIdentity(values, fields)) } }, select: { id: true } });
-      if (!attendee) return { success: false, alreadyCheckedIn: false, checkedInAt: null, message: "签到失败，未查询到匹配名单，请核对填写内容或联系现场工作人员" };
+      const ui = parseExternalCheckinAppearance(event.appearance);
+      if (!attendee) return { success: false, alreadyCheckedIn: false, checkedInAt: null, message: ui.failureMessage };
       const updated = await tx.externalCheckinAttendee.updateMany({ where: { id: attendee.id, checkedInAt: null }, data: { checkedInAt: new Date(), submittedValues: values } });
       const result = await tx.externalCheckinAttendee.findUniqueOrThrow({ where: { id: attendee.id }, select: { checkedInAt: true } });
       if (updated.count) await tx.auditLog.create({ data: { action: AuditAction.UPDATE, entityType: "ExternalCheckinAttendee", entityId: attendee.id, summary: "外部嘉宾自助签到成功", metadataJson: { eventId: event.id } } });
-      return { success: true, alreadyCheckedIn: !updated.count, checkedInAt: result.checkedInAt, message: updated.count ? "签到成功，欢迎参会" : "您已签到，无需重复签到" };
+      return { success: true, alreadyCheckedIn: !updated.count, checkedInAt: result.checkedInAt, message: updated.count ? ui.successMessage : "您已签到，无需重复签到" };
     });
   }
 }
@@ -163,6 +210,6 @@ export function availability(event: Pick<ExternalCheckinEvent, "enabled" | "star
 }
 async function detail(tx: Tx, event: ExternalCheckinEvent) {
   const [{ total, checkedIn }] = await tx.$queryRaw<{ total: number; checkedIn: number }[]>`SELECT COUNT(*)::integer AS "total", COUNT("checkedInAt")::integer AS "checkedIn" FROM "external_checkin_attendees" WHERE "eventId" = ${event.id}`;
-  return { ...event, publicPath: publicPath(event), statistics: { total, checkedIn, pending: total - checkedIn } };
+  return { ...event, appearance: parseExternalCheckinAppearance(event.appearance), publicPath: publicPath(event), statistics: { total, checkedIn, pending: total - checkedIn } };
 }
 async function audit(tx: Tx, admin: CurrentAdmin, eventId: string, summary: string) { await tx.auditLog.create({ data: { adminUserId: admin.id, action: AuditAction.UPDATE, entityType: "ExternalCheckinEvent", entityId: eventId, summary } }); }

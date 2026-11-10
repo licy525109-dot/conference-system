@@ -133,6 +133,52 @@ test("external check-in real API and PostgreSQL", { skip: !process.env.EXTERNAL_
       assert.equal((await call(`/external-checkins/${a.publicToken}/submit`, undefined, { values: { name: "错误姓名", code: "001" }, formVersion: nextMeta.formVersion })).success, false);
       assert.equal((await call(`/external-checkins/${a.publicToken}/submit`, undefined, { values: { name: "测试同名", code: "001" }, formVersion: nextMeta.formVersion })).alreadyCheckedIn, true);
     });
+    await t.test("appearance edits retain links, active guest forms and per-event isolation", async () => {
+      const before = await call(`/external-checkins/${a.publicToken}`), originalPath = a.publicPath, originalFields = a.fields;
+      const body = { revision: a.revision, appearance: { ...a.appearance, pageTitle: "甲会议现场", successTitle: "欢迎莅临", successMessage: "请前往主会场", failureTitle: "未能核验", failureMessage: "请到服务台核对报名编号" } };
+      await call(`${base}/${a.id}/appearance`, undefined, body, 401, "PATCH");
+      await call(`${base}/${a.id}/appearance`, viewer, body, 403, "PATCH");
+      await call(`${base}/${a.id}/appearance`, scoped, body, 403, "PATCH");
+      await call(`${base}/${a.id}/appearance`, manager, { ...body, appearance: { primaryColor: "red;display:none" } }, 400, "PATCH");
+      a = await call(`${base}/${a.id}/appearance`, manager, body, 200, "PATCH");
+      await call(`${base}/${a.id}/appearance`, manager, body, 409, "PATCH");
+      assert.equal(a.publicPath, originalPath); assert.equal(a.enabled, true); assert.deepEqual(a.fields, originalFields);
+      const after = await call(`/external-checkins/${a.publicToken}`);
+      assert.equal(after.formVersion, before.formVersion); assert.equal(after.appearance.pageTitle, "甲会议现场");
+      assert.equal((await call(`/external-checkins/${b.publicToken}`)).appearance.pageTitle, "");
+      const failure = await call(`/external-checkins/${a.publicToken}/submit`, undefined, { values: { name: "无人", code: "404" }, formVersion: before.formVersion });
+      assert.equal(failure.success, false); assert.equal(failure.message, body.appearance.failureMessage);
+      a = await importRows(a, [{ ...rows[0], name: "外观测试", code: "003" }]);
+      const success = await call(`/external-checkins/${a.publicToken}/submit`, undefined, { values: { name: "外观测试", code: "003" }, formVersion: before.formVersion });
+      assert.equal(success.success, true); assert.equal(success.alreadyCheckedIn, false); assert.equal(success.message, body.appearance.successMessage);
+      const list = await call(base, viewer); assert.equal(list.items.find((event: any) => event.id === a.id).publicPath, originalPath);
+    });
+    await t.test("image uploads are authenticated and isolated; only saved images are public", async () => {
+      const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=", "base64");
+      async function upload(token: string, bytes = png, type = "image/png", status = 201) {
+        const form = new FormData(); form.append("file", new Blob([bytes], { type }), "logo.png");
+        const res = await fetch(`${origin}/api${base}/${a.id}/images`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
+        assert.equal(res.status, status); return (await res.json()).data;
+      }
+      await upload("", png, "image/png", 401); await upload(viewer, png, "image/png", 403); await upload(scoped, png, "image/png", 403);
+      await upload(manager, Buffer.from("<svg onload='alert(1)'/>"), "image/svg+xml", 400);
+      await upload(manager, png, "image/jpeg", 400);
+      await upload(manager, Buffer.alloc(5 * 1024 * 1024 + 1), "image/png", 413);
+      const asset = await upload(manager); assert.equal((await upload(manager)).id, asset.id);
+      const adminImage = `${origin}/api${base}/${a.id}/images/${asset.id}`, image = `${origin}/api/external-checkins/${a.publicToken}/images/${asset.id}`;
+      assert.equal((await fetch(adminImage)).status, 401);
+      assert.equal((await fetch(adminImage, { headers: { Authorization: `Bearer ${scoped}` } })).status, 403);
+      assert.equal((await fetch(adminImage, { headers: { Authorization: `Bearer ${viewer}` } })).status, 200);
+      assert.equal((await fetch(`${origin}/api${base}/${b.id}/images/${asset.id}`, { headers: { Authorization: `Bearer ${manager}` } })).status, 404);
+      assert.equal((await fetch(image)).status, 404);
+      await call(`${base}/${b.id}/appearance`, manager, { revision: b.revision, appearance: { logoAssetId: asset.id } }, 400, "PATCH");
+      a = await call(`${base}/${a.id}/appearance`, manager, { revision: a.revision, appearance: { ...a.appearance, logoAssetId: asset.id } }, 200, "PATCH");
+      const publicImage = await fetch(image); assert.equal(publicImage.status, 200); assert.equal(publicImage.headers.get("content-type"), "image/png"); assert.equal(publicImage.headers.get("cache-control"), "no-store");
+      assert.deepEqual(Buffer.from(await publicImage.arrayBuffer()), png);
+      assert.equal((await fetch(`${origin}/api/external-checkins/${b.publicToken}/images/${asset.id}`)).status, 404);
+      a = await call(`${base}/${a.id}/appearance`, manager, { revision: a.revision, appearance: { ...a.appearance, logoAssetId: "" } }, 200, "PATCH");
+      assert.equal((await fetch(image)).status, 404);
+    });
     await t.test("no payment, order, user or registration records were created", async () => {
       assert.equal(await db.order.count(), 0); assert.equal(await db.payment.count(), 0); assert.equal(await db.user.count(), 0); assert.equal(await db.registration.count(), 0);
     });

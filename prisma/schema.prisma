@@ -2334,6 +2334,7 @@ model ExternalCheckinEvent {
   title       String
   description String   @default("")
   fields      Json
+  appearance  Json @default("{}")
   enabled     Boolean  @default(false)
   startsAt    DateTime?
   endsAt      DateTime?
@@ -2341,8 +2342,25 @@ model ExternalCheckinEvent {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   attendees   ExternalCheckinAttendee[]
+  assets      ExternalCheckinAsset[]
 
   @@map("external_checkin_events")
+}
+
+model ExternalCheckinAsset {
+  id        String   @id @default(cuid())
+  eventId   String
+  name      String
+  mime      String
+  width     Int
+  height    Int
+  bytes     Bytes
+  sha256    String
+  createdAt DateTime @default(now())
+  event     ExternalCheckinEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, sha256])
+  @@map("external_checkin_assets")
 }
 
 model ExternalCheckinAttendee {

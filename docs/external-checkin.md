@@ -28,7 +28,7 @@
 
 部署需要数据库迁移、API 和后台重新构建；公众签到页随 API 提供。代码完成并不代表已经发布或完成真实微信扫码验收。
 
-## 已执行验证（2026-11-10）
+## 名单与核验初版验证（2026-11-10）
 
 - 独立本地 PostgreSQL `external_checkin_test` 中成功执行全部 58 个迁移，包含本次新增的两张表；未访问生产数据库。
 - API 单元测试 785/785、后台 50/50、共享模块 34/34 通过；API、后台类型检查和生产构建通过。
@@ -53,3 +53,37 @@
 - `tests/e2e/external-checkin.integration.ts`、`scripts/external-checkin-local-preview.ts`：独立数据库验收和本地预览。
 
 后台入口为 `#/external-checkins`，接口为 `/api/admin/external-checkins`；嘉宾入口为 `/api/external-checkins/:token/page`。公开页面与资源都在既有 `/api/` 代理路径下，不需要新增域名或小程序页面。
+
+## 每场会议的链接与签到页外观（2026-11-10 追加需求）
+
+- 在会议列表和详情页直接显示独立签到链接，提供复制、打开及二维码入口，保存 UI 不改变链接。
+- 每场会议单独保存配色、布局、Logo、封面、页眉、页面标题、说明、按钮和签到结果文案；使用现场明亮环境下可清楚阅读的手机表单，后台采用左侧配置、右侧实时手机预览。
+- 外观编辑与字段/签到开关分开保存，使用版本检查。外观修改不改变核验规则，正在使用旧表单的嘉宾仍可正常签到。
+- Logo/封面仅允许 PNG/JPEG 图片，每张最多 5 MB、1600 万像素，验证格式头和尺寸；每场会议隔离素材，公开接口仅提供该会议当前启用的图片。
+- 保存前仅编辑本地草稿，明确显示未保存状态；可预览填写、成功、失败三种状态。成功/失败的事实由接口返回，UI 文案不能修改签到记录。
+- 已有会议自动使用默认外观。更新本地预览时复用既有管理员账号和会议，不重新生成密码或清空名单。
+
+### 使用与人工验收
+
+1. 进入“外部会议签到”，每一行都有只读签到链接，以及“复制”“打开”“签到页 UI”入口。新建会议后，详情顶部也可复制链接、打开页面或下载二维码。
+2. 进入“签到页 UI”，配置颜色、卡片/简洁布局、文字大小、圆角、Logo/封面和各项文案。图片每场最多保留 30 张，同一文件重复上传复用素材；外观草稿中移除图片后，保存即可停止公开该图片。
+3. 切换右侧“填写 / 成功 / 失败”预览，预览不会提交签到。点击“保存外观”，原链接和原二维码继续有效；重新进入编辑器或打开签到页检查配置持久化。
+4. 使用测试名单分别提交错误和正确核验信息，检查失败不改变人数，成功只写入一次，其他填写内容单独保存。保存 UI 后再试之前已打开的表单，应能继续正常签到。
+
+### 外观与链接追加验证（2026-11-10）
+
+- 本地独立 PostgreSQL 已完成第 59 个迁移，既有账号、会议、名单和签到状态保留。预览进程重启会更新本地登录令牌，使用原用户名/密码重新登录即可。
+- 共享模块 37/37、后台 50/50、API 786/786 单元测试通过；API 和后台类型检查/生产构建通过。新增颜色格式、对比度、文案边界、素材标识与图片请求限流验证。
+- 真实 NestJS + PostgreSQL 集成测试 10/10 通过，新增外观保存的鉴权/只读/会议范围、版本冲突、固定链接、旧表单兼容、自定义结果文案、会议隔离，以及图片上传鉴权、格式/大小、去重、未保存图片不可公开、跨会议图片拒绝、移除图片不再公开。
+- Playwright 验证列表复制链接、进入编辑器、修改海蓝配色及文案、上传 Logo 和封面、成功/失败实时预览、未保存离开提示、保存并重新进入，以及 390px 手机页面真实失败/成功提交和后台人数/现场填写资料。公开签到页控制台无错误；后台原有 favicon 404 不影响功能。
+- 截图位于 `output/playwright/external-checkin-links.png`、`external-checkin-ui-editor.png`、`external-checkin-ui-mobile-{form,failure,success}.png`、`external-checkin-ui-admin-results.png`，均为本地测试素材，不提交。
+- 仅更新本地预览，未部署线上；真实手机微信扫码和正式会议名单仍需现场验收。生产发布需应用本次迁移，并同时构建 API 与后台。
+
+### 外观功能修改文件
+
+- `packages/shared/src/external-checkin-appearance.ts`、对应 `.spec.ts` 和 `index.ts`：外观契约、默认值、预设配色、文本/颜色/对比度校验。
+- `prisma/schema.prisma`、`prisma/migrations/20261110110000_external_checkin_appearance/migration.sql`：每场会议外观与独立图片存储。
+- `services/api/src/external-checkin/{external-checkin.service.ts,external-checkin.controller.ts}`：外观保存、图片权限与公开访问、签到结果文案；`services/api/src/security/request-rate-limit{,.spec}.ts`：图片请求限流。
+- `apps/admin/src/components/external-checkin/{CheckinAppearanceEditor.vue,CheckinExperience.vue}`：外观编辑器与预览/公开页面共用渲染组件。
+- `apps/admin/src/pages/external-checkin/index.vue`、`apps/admin/src/services/external-checkin.ts`、`apps/admin/src/external-checkin/page.vue`：链接入口、配置接口和实际嘉宾页面。
+- `tests/e2e/external-checkin.integration.ts`、`scripts/external-checkin-local-preview.ts`：端到端验收及保留既有本地账号/会议的预览启动。

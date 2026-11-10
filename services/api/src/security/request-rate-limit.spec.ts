@@ -3,6 +3,15 @@ import { describe, it } from "node:test";
 import { createSensitiveEndpointRateLimiter } from "./request-rate-limit";
 
 describe("sensitive endpoint rate limiter", () => {
+  it("shares the public check-in image quota across assets without consuming the submit quota", () => {
+    const limiter = createSensitiveEndpointRateLimiter();
+    let accepted = 0, status = 0;
+    const response = { setHeader: () => undefined, status: (code: number) => ({ json: () => { status = code; } }) };
+    for (let index = 0; index < 601; index++) limiter({ method: "GET", path: `/API/EXTERNAL-CHECKINS/${index}/IMAGES/${index}/`, ip: "203.0.113.44", socket: {} }, response, () => { accepted++; });
+    assert.equal(accepted, 600); assert.equal(status, 429);
+    limiter({ method: "POST", path: "/api/external-checkins/example/submit", ip: "203.0.113.44", socket: {} }, response, () => { accepted++; });
+    assert.equal(accepted, 601);
+  });
   it("limits external check-in across token, case and trailing-slash variations", () => {
     const limiter = createSensitiveEndpointRateLimiter();
     let accepted = 0, status = 0;
