@@ -62,13 +62,15 @@ export function parseExternalCheckinAppearance(input: unknown): ExternalCheckinA
   for (const key of ["formTitle", "submitText", "successTitle", "successMessage", "failureTitle", "failureMessage"] as const) if (!result[key]) throw new Error("表单标题、按钮及签到结果文案不能为空");
   for (const key of ["primaryColor", "backgroundColor", "surfaceColor", "textColor"] as const) {
     if (!Object.hasOwn(source, key)) continue;
-    if (typeof source[key] !== "string" || !/^#[0-9a-f]{6}$/i.test(source[key])) throw new Error("颜色需要使用六位十六进制色值，如 #205c42");
-    result[key] = (source[key] as string).toLowerCase();
+    const value = source[key];
+    if (typeof value !== "string" || !/^#[0-9a-f]{6}$/i.test(value)) throw new Error("颜色需要使用六位十六进制色值，如 #205c42");
+    result[key] = value.toLowerCase();
   }
   for (const key of ["logoAssetId", "coverAssetId"] as const) {
     if (!Object.hasOwn(source, key)) continue;
-    if (typeof source[key] !== "string" || !/^([a-z0-9]{1,64})?$/.test(source[key])) throw new Error("图片标识无效，请重新上传图片");
-    result[key] = source[key] as string;
+    const value = source[key];
+    if (typeof value !== "string" || !/^([a-z0-9]{1,64})?$/.test(value)) throw new Error("图片标识无效，请重新上传图片");
+    result[key] = value;
   }
   if (source.layout !== undefined) { if (typeof source.layout !== "string" || !["card", "plain"].includes(source.layout)) throw new Error("页面布局无效"); result.layout = source.layout as ExternalCheckinAppearance["layout"]; }
   if (source.titleAlign !== undefined) { if (typeof source.titleAlign !== "string" || !["left", "center"].includes(source.titleAlign)) throw new Error("标题对齐方式无效"); result.titleAlign = source.titleAlign as ExternalCheckinAppearance["titleAlign"]; }
