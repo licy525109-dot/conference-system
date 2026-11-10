@@ -81,7 +81,7 @@
 
 ### 外观功能修改文件
 
-- `packages/shared/src/external-checkin-appearance.ts`、对应 `.spec.ts` 和 `index.ts`：外观契约、默认值、预设配色、文本/颜色/对比度校验。
+- `packages/shared/src/external-checkin-appearance.ts`、对应 `.spec.ts` 和 `index.ts`：外观契约、默认值、预设配色、文本/颜色格式校验及按钮文字配色。正文与背景颜色由管理员自行决定，不限制对比度。
 - `prisma/schema.prisma`、`prisma/migrations/20261110110000_external_checkin_appearance/migration.sql`：每场会议外观与独立图片存储。
 - `services/api/src/external-checkin/{external-checkin.service.ts,external-checkin.controller.ts}`：外观保存、图片权限与公开访问、签到结果文案；`services/api/src/security/request-rate-limit{,.spec}.ts`：图片请求限流。
 - `apps/admin/src/components/external-checkin/{CheckinAppearanceEditor.vue,CheckinExperience.vue}`：外观编辑器与预览/公开页面共用渲染组件。

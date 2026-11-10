@@ -76,7 +76,6 @@ export function parseExternalCheckinAppearance(input: unknown): ExternalCheckinA
   if (source.titleAlign !== undefined) { if (typeof source.titleAlign !== "string" || !["left", "center"].includes(source.titleAlign)) throw new Error("标题对齐方式无效"); result.titleAlign = source.titleAlign as ExternalCheckinAppearance["titleAlign"]; }
   if (source.fontSize !== undefined) { if (typeof source.fontSize !== "string" || !["normal", "large"].includes(source.fontSize)) throw new Error("字号设置无效"); result.fontSize = source.fontSize as ExternalCheckinAppearance["fontSize"]; }
   if (source.cornerRadius !== undefined) { if (!Number.isInteger(source.cornerRadius) || Number(source.cornerRadius) < 0 || Number(source.cornerRadius) > 28) throw new Error("圆角应为 0–28 的整数"); result.cornerRadius = Number(source.cornerRadius); }
-  if (checkinContrast(result.textColor, result.backgroundColor) < 4.5 || checkinContrast(result.textColor, result.surfaceColor) < 4.5) throw new Error("文字与背景颜色过于接近，请调整颜色以保证嘉宾能看清内容");
   return result;
 }
 
