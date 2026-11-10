@@ -2328,6 +2328,38 @@ model AdminRegistrationAlert {
   @@map("admin_registration_alerts")
 }
 
+model ExternalCheckinEvent {
+  id          String   @id @default(cuid())
+  publicToken String   @unique
+  title       String
+  description String   @default("")
+  fields      Json
+  enabled     Boolean  @default(false)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  revision    Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  attendees   ExternalCheckinAttendee[]
+
+  @@map("external_checkin_events")
+}
+
+model ExternalCheckinAttendee {
+  id          String   @id @default(cuid())
+  eventId     String
+  values      Json
+  matchKey    String
+  checkedInAt DateTime?
+  submittedValues Json?
+  createdAt   DateTime @default(now())
+  event       ExternalCheckinEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, matchKey])
+  @@index([eventId, checkedInAt])
+  @@map("external_checkin_attendees")
+}
+
 model AuditLog {
   id           String      @id @default(cuid())
   adminUserId  String?

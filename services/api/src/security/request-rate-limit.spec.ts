@@ -3,6 +3,15 @@ import { describe, it } from "node:test";
 import { createSensitiveEndpointRateLimiter } from "./request-rate-limit";
 
 describe("sensitive endpoint rate limiter", () => {
+  it("limits external check-in across token, case and trailing-slash variations", () => {
+    const limiter = createSensitiveEndpointRateLimiter();
+    let accepted = 0, status = 0;
+    const response = { setHeader: () => undefined, status: (code: number) => ({ json: () => { status = code; } }) };
+    for (let index = 0; index < 121; index++) limiter({ method: "POST", path: index % 2 ? `/API/EXTERNAL-CHECKINS/${index}/SUBMIT/` : `/api/external-checkins/${index}/submit`, ip: "203.0.113.41", socket: {} }, response, () => { accepted++; });
+    assert.equal(accepted, 120); assert.equal(status, 429);
+    limiter({ method: "POST", path: "/api/external-checkins/example/submit", ip: "203.0.113.42", socket: {} }, response, () => { accepted++; });
+    assert.equal(accepted, 121);
+  });
   it("shares the invitation signing quota across tokens to prevent token rotation bypass", () => {
     const limiter = createSensitiveEndpointRateLimiter();
     let accepted = 0;

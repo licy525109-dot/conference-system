@@ -11,6 +11,7 @@ const RegistrationDetailPage = defineAsyncComponent(() => import("../pages/regis
 const GuestSchedulesPage = defineAsyncComponent(() => import("../pages/guest-schedules/index.vue"));
 const InvitationsPage = defineAsyncComponent(() => import("../pages/invitations/index.vue"));
 const CertificatesPage = defineAsyncComponent(() => import("../pages/certificates/index.vue"));
+const ExternalCheckinPage = defineAsyncComponent(() => import("../pages/external-checkin/index.vue"));
 const CouponsPage = defineAsyncComponent(() => import("../pages/coupons/index.vue"));
 const CouponCampaignsPage = defineAsyncComponent(() => import("../pages/coupon-campaigns/index.vue"));
 const PromotionsPage = defineAsyncComponent(() => import("../pages/promotions/index.vue"));
@@ -52,6 +53,7 @@ export interface AdminRoute {
 }
 
 export const routes: AdminRoute[] = [
+  { path: "/external-checkins", title: "外部会议签到", menuTitle: "外部会议签到", group: "会议管理", permission: "external-checkin:view", component: ExternalCheckinPage },
   { path: "/certificates", title: "证书管理", menuTitle: "证书管理", group: "会议管理", permission: "certificate:view", component: CertificatesPage },
   { path: "/invitations", title: "专属邀请函", menuTitle: "专属邀请函", group: "会议管理", permission: "invitation:view", component: InvitationsPage },
   { path: "/users/detail", title: "用户详情", menuTitle: "用户详情", group: "用户中心", permission: "member:view", component: UserDetailPage, hidden: true },
