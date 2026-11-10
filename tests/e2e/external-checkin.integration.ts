@@ -29,11 +29,12 @@ test("external check-in real API and PostgreSQL", { skip: !process.env.EXTERNAL_
     const payload = await response.json(); assert.equal(response.status, expected, `${method} ${path}: ${payload.message}`); return payload.data;
   }
   const base = "/admin/external-checkins";
-  let manager = "", viewer = "", scoped = "", a: any, b: any, meta: any;
+  let manager = "", viewer = "", scoped = "", a: any, b: any, c: any, meta: any;
   const rows = [{ name: "测试同名", code: "001", company: "原单位甲", internal: "A01" }, { name: "测试同名", code: "002", company: "原单位乙", internal: "A02" }];
   async function importRows(event: any, records: unknown[]) {
     const body = { rows: records, revision: event.revision }, plan = await call(`${base}/${event.id}/import/preview`, manager, body);
-    assert.equal(plan.errors.length, 0); return call(`${base}/${event.id}/import`, manager, { ...body, digest: plan.digest });
+    const decisions = plan.duplicates.map((group: any) => ({ groupId: group.id, keepCandidateId: (group.candidates.find((candidate: any) => candidate.source === "existing") || group.candidates[0]).id }));
+    assert.equal(plan.errors.length, 0); return call(`${base}/${event.id}/import`, manager, { ...body, decisions, digest: plan.digest });
   }
   try {
     await app.get(req("./dist/admin/admin-access.service.js").AdminAccessService).ensureBuiltInAccess();
@@ -56,18 +57,120 @@ test("external check-in real API and PostgreSQL", { skip: !process.env.EXTERNAL_
     });
     await t.test("atomic import, stale preview, digest validation, duplicates and ambiguity", async () => {
       const invalidRows = [rows[0], { ...rows[1], code: "001" }], body = { rows: invalidRows, revision: a.revision };
-      const invalid = await call(`${base}/${a.id}/import/preview`, manager, body); assert.equal(invalid.errors.length, 1);
+      const invalid = await call(`${base}/${a.id}/import/preview`, manager, body); assert.equal(invalid.errors.length, 0); assert.equal(invalid.unresolved, 1);
+      assert.deepEqual(invalid.duplicates[0].differingFields, ["company", "internal"]);
+      assert.deepEqual(invalid.duplicates[0].candidates.map((candidate: any) => candidate.row), [2, 3]);
       await call(`${base}/${a.id}/import`, manager, { ...body, digest: invalid.digest }, 400);
       assert.equal(await db.externalCheckinAttendee.count({ where: { eventId: a.id } }), 0);
       const good = { rows, revision: a.revision }, preview = await call(`${base}/${a.id}/import/preview`, manager, good);
       await call(`${base}/${a.id}/import`, manager, { ...good, rows: [rows[0]], digest: preview.digest }, 409);
       a = await importRows(a, rows);
       await call(`${base}/${a.id}/import`, manager, { ...good, digest: preview.digest }, 409);
-      const duplicates = await call(`${base}/${a.id}/import/preview`, manager, { rows, revision: a.revision }); assert.equal(duplicates.skipped, 2); assert.equal(duplicates.added, 0);
+      const duplicates = await call(`${base}/${a.id}/import/preview`, manager, { rows, revision: a.revision }); assert.equal(duplicates.skipped, 0); assert.equal(duplicates.added, 0); assert.equal(duplicates.unresolved, 2);
       a = await importRows(a, rows); assert.equal(a.statistics.total, 2);
       b = await importRows(b, [{ ...rows[0], code: "B01" }]);
       a = await call(`${base}/${a.id}`, manager, { ...a, enabled: true }, 200, "PATCH");
       b = await call(`${base}/${b.id}`, manager, { ...b, enabled: true }, 200, "PATCH");
+    });
+    await t.test("file duplicates expose all rows and columns; choices are explicit, validated and atomic", async () => {
+      c = await call(base, manager, { title: "【测试数据】名单重复处理与手动录入", fields }); eventIds.push(c.id);
+      const records = [
+        { ...rows[0], code: "D1", company: "第一条资料" },
+        { ...rows[0], code: "D1", company: "第二条资料" },
+        { ...rows[0], code: "D1", company: "管理员选中资料" },
+        { ...rows[1], code: "D2" }, { ...rows[1], code: "D2" },
+        { ...rows[0], code: "D3" }
+      ];
+      const body = { rows: records, rowNumbers: [2, 5, 8, 9, 10, 15], source: "file", revision: c.revision };
+      const plan = await call(`${base}/${c.id}/import/preview`, manager, body);
+      assert.deepEqual([plan.added, plan.updated, plan.skipped, plan.unresolved, plan.errors.length], [1, 0, 0, 2, 0]);
+      assert.deepEqual(plan.duplicates[0].candidates.map((candidate: any) => candidate.row), [2, 5, 8]);
+      assert.deepEqual(plan.duplicates[0].differingFields, ["company"]);
+      assert.deepEqual(plan.duplicates[0].candidates[2].values, records[2]);
+      assert.deepEqual(plan.duplicates[1].differingFields, []);
+      const first = { groupId: plan.duplicates[0].id, keepCandidateId: plan.duplicates[0].candidates[2].id };
+      const second = { groupId: plan.duplicates[1].id, keepCandidateId: plan.duplicates[1].candidates[0].id };
+      for (const decisions of [[], [first], [first, first], [{ ...first, keepCandidateId: second.keepCandidateId }, second], [{ ...first, keepCandidateId: "existing:foreign-attendee" }, second], [first, second, { groupId: "foreign-group", keepCandidateId: "incoming:0" }]]) {
+        await call(`${base}/${c.id}/import`, manager, { ...body, digest: plan.digest, decisions }, 400);
+      }
+      const decisions = [first, second];
+      await call(`${base}/${c.id}/import`, manager, { ...body, rowNumbers: [2, 4, 8, 9, 10, 15], digest: plan.digest, decisions }, 409);
+      const invalidBody = { ...body, rows: [...records, { code: "" }], rowNumbers: [...body.rowNumbers, 16] };
+      const invalid = await call(`${base}/${c.id}/import/preview`, manager, invalidBody);
+      assert.equal(invalid.errors[0].row, 16);
+      await call(`${base}/${c.id}/import`, manager, { ...invalidBody, digest: invalid.digest, decisions }, 400);
+      assert.equal(await db.externalCheckinAttendee.count({ where: { eventId: c.id } }), 0);
+      c = await call(`${base}/${c.id}/import`, manager, { ...body, digest: plan.digest, decisions });
+      assert.equal(c.statistics.total, 3);
+      const saved = await db.externalCheckinAttendee.findMany({ where: { eventId: c.id } });
+      assert.deepEqual(saved.find(row => (row.values as any).code === "D1")?.values, records[2]);
+    });
+    await t.test("manual entry uses configured roster fields, requires verification values and enforces permissions", async () => {
+      const body = { source: "manual", revision: c.revision, rows: [{ code: "M1", name: "手动测试嘉宾", company: "手动单位", internal: "M01" }], rowNumbers: [1] };
+      await call(`${base}/${c.id}/import/preview`, undefined, body, 401);
+      await call(`${base}/${c.id}/import/preview`, viewer, body, 403);
+      await call(`${base}/${c.id}/import/preview`, scoped, body, 403);
+      await call(`${base}/${c.id}/import/preview`, manager, { ...body, rows: [...body.rows, ...body.rows] }, 400);
+      await call(`${base}/${c.id}/import/preview`, manager, { ...body, source: "unknown" }, 400);
+      const invalid = await call(`${base}/${c.id}/import/preview`, manager, { ...body, rows: [{ name: "缺少核验信息" }] });
+      assert.equal(invalid.errors[0].message, "请填写报名编号");
+      await call(`${base}/${c.id}/import`, manager, { ...body, rows: [{ name: "缺少核验信息" }], digest: invalid.digest }, 400);
+      const minimal = await call(`${base}/${c.id}/import/preview`, manager, { ...body, rows: [{ code: "仅核验必填" }] });
+      assert.equal(minimal.errors.length, 0);
+      const plan = await call(`${base}/${c.id}/import/preview`, manager, body);
+      assert.equal(plan.added, 1); assert.equal(plan.unresolved, 0);
+      assert.equal(await db.externalCheckinAttendee.count({ where: { eventId: c.id } }), 3);
+      await call(`${base}/${c.id}/import`, viewer, { ...body, digest: plan.digest }, 403);
+      await call(`${base}/${c.id}/import`, manager, { ...body, source: "file", digest: plan.digest }, 409);
+      c = await call(`${base}/${c.id}/import`, manager, { ...body, digest: plan.digest });
+      assert.equal(c.statistics.total, 4);
+      const saved = await db.externalCheckinAttendee.findFirstOrThrow({ where: { eventId: c.id, values: { path: ["code"], equals: "M1" } } });
+      assert.deepEqual(saved.values, body.rows[0]); assert.equal(saved.checkedInAt, null);
+      assert.equal(await db.auditLog.count({ where: { entityId: c.id, summary: { startsWith: "手动录入外部名单" } } }), 1);
+    });
+    await t.test("keeping incoming duplicate updates in place and preserves first check-in, submitted values and historical fields", async () => {
+      c = await call(`${base}/${c.id}`, manager, { ...c, enabled: true }, 200, "PATCH");
+      const publicForm = await call(`/external-checkins/${c.publicToken}`);
+      const checked = await call(`/external-checkins/${c.publicToken}/submit`, undefined, { formVersion: publicForm.formVersion, values: { code: "D1", name: "现场填写姓名", company: "现场填写单位" } });
+      const original = await db.externalCheckinAttendee.findFirstOrThrow({ where: { eventId: c.id, values: { path: ["code"], equals: "D1" } } });
+      await db.externalCheckinAttendee.update({ where: { id: original.id }, data: { values: { ...(original.values as object), historical: "已移除字段的历史值" } } });
+      const incoming = { ...rows[0], code: "D1", company: "管理员手动修正", internal: "VIP01" };
+      const body = { source: "manual", revision: c.revision, rows: [incoming], rowNumbers: [1] };
+      const plan = await call(`${base}/${c.id}/import/preview`, manager, body), group = plan.duplicates[0];
+      assert.deepEqual(group.candidates.map((candidate: any) => candidate.source), ["existing", "incoming"]);
+      assert.equal(group.candidates[0].attendeeId, original.id); assert.equal(group.candidates[0].checkedInAt, checked.checkedInAt);
+      assert.deepEqual(group.differingFields, ["company", "internal"]);
+      const decisions = [{ groupId: group.id, keepCandidateId: group.candidates[1].id }];
+      c = await call(`${base}/${c.id}/import`, manager, { ...body, digest: plan.digest, decisions });
+      assert.deepEqual(c.statistics, { total: 4, checkedIn: 1, pending: 3 });
+      const saved = await db.externalCheckinAttendee.findUniqueOrThrow({ where: { id: original.id } });
+      assert.deepEqual(saved.values, { ...incoming, historical: "已移除字段的历史值" });
+      assert.equal(saved.checkedInAt?.toISOString(), checked.checkedInAt); assert.deepEqual(saved.submittedValues, original.submittedValues); assert.equal(saved.createdAt.toISOString(), original.createdAt.toISOString());
+      const identicalBody = { ...body, revision: c.revision }, identical = await call(`${base}/${c.id}/import/preview`, manager, identicalBody);
+      assert.deepEqual(identical.duplicates[0].differingFields, []); assert.equal(identical.unresolved, 1);
+      c = await call(`${base}/${c.id}/import`, manager, { ...identicalBody, digest: identical.digest, decisions });
+      assert.deepEqual((await db.externalCheckinAttendee.findUniqueOrThrow({ where: { id: original.id } })).values, saved.values);
+      const repeat = await call(`/external-checkins/${c.publicToken}/submit`, undefined, { formVersion: publicForm.formVersion, values: { code: "D1", name: "重复签到" } });
+      assert.equal(repeat.alreadyCheckedIn, true); assert.equal(repeat.checkedInAt, checked.checkedInAt);
+    });
+    await t.test("guest check-in invalidates reviewed candidates; re-preview and keeping existing retain all state", async () => {
+      const original = await db.externalCheckinAttendee.findFirstOrThrow({ where: { eventId: c.id, values: { path: ["code"], equals: "D2" } } });
+      const body = { source: "file", revision: c.revision, rows: [{ ...rows[1], code: "D2", company: "未选中更新" }, { ...rows[0], code: "D4" }], rowNumbers: [2, 3] };
+      const plan = await call(`${base}/${c.id}/import/preview`, manager, body), group = plan.duplicates[0];
+      assert.equal(group.candidates[0].checkedInAt, null);
+      const decisions = [{ groupId: group.id, keepCandidateId: group.candidates[0].id }];
+      const publicForm = await call(`/external-checkins/${c.publicToken}`);
+      const checked = await call(`/external-checkins/${c.publicToken}/submit`, undefined, { formVersion: publicForm.formVersion, values: { code: "D2", name: "预检后现场签到" } });
+      assert.equal((await call(`${base}/${c.id}`, manager)).revision, body.revision);
+      await call(`${base}/${c.id}/import`, manager, { ...body, digest: plan.digest, decisions }, 409);
+      assert.equal(await db.externalCheckinAttendee.count({ where: { eventId: c.id } }), 4);
+      const refreshed = await call(`${base}/${c.id}/import/preview`, manager, body);
+      assert.notEqual(refreshed.digest, plan.digest); assert.equal(refreshed.duplicates[0].candidates[0].checkedInAt, checked.checkedInAt);
+      c = await call(`${base}/${c.id}/import`, manager, { ...body, digest: refreshed.digest, decisions });
+      assert.deepEqual(c.statistics, { total: 5, checkedIn: 2, pending: 3 });
+      const saved = await db.externalCheckinAttendee.findUniqueOrThrow({ where: { id: original.id } });
+      assert.deepEqual(saved.values, original.values); assert.equal(saved.checkedInAt?.toISOString(), checked.checkedInAt);
+      assert.equal(await db.externalCheckinAttendee.count({ where: { eventId: b.id } }), 1);
     });
     await t.test("public metadata omits roster and internal fields; production HTML and assets work", async () => {
       meta = await call(`/external-checkins/${a.publicToken}`);
