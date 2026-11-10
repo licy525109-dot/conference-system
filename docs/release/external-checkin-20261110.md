@@ -6,6 +6,8 @@
 
 代码来自独立分支 `codex/external-conference-checkin`，不包含主工作区其他未提交改动。发布前公网 API readiness 与后台首页均正常。修正外部签到编辑权限在角色界面的分组，并在 PR 工作流新增独立 PostgreSQL 签到验收。
 
+发布检查发现用户端旧版 TypeScript 无法对动态键访问结果进行类型收窄，已改为读取局部变量后校验，用户端类型检查通过。另发现原 `macos-14` 页面回归任务被 GitHub 取消，注解为 `macos-14-arm64-us-default is not supported`；按 [官方镜像说明](https://github.com/actions/runner-images#available-images) 改用 `macos-15`，保留原测试及截图基线。
+
 ## 数据库与兼容性
 
 - `20261110090000_external_checkin`：新增外部会议、外部名单表与唯一索引。
