@@ -2,12 +2,19 @@ import type { ExternalCheckinField, ExternalCheckinValues } from "@conference/sh
 import { EXTERNAL_CHECKIN_MAX_ROWS } from "@conference/shared";
 
 export function mapExternalCheckinSheet(sheet: string[][], mapping: Record<string, string>, fields: ExternalCheckinField[]): ExternalCheckinValues[] {
+  return mapExternalCheckinSheetWithRows(sheet, mapping, fields).rows;
+}
+
+export function mapExternalCheckinSheetWithRows(sheet: string[][], mapping: Record<string, string>, fields: ExternalCheckinField[]): { rows: ExternalCheckinValues[]; rowNumbers: number[] } {
   const selected = fields.map(field => mapping[field.key]).filter(value => value !== undefined && value !== "");
   if (new Set(selected).size !== selected.length) throw new Error("同一列不能映射到多个字段");
   for (const field of fields) if (field.match && (mapping[field.key] === "" || mapping[field.key] === undefined)) throw new Error(`请选择“${field.label}”对应的名单列`);
-  const rows = sheet.slice(1).filter(row => row.some(value => value.trim()));
+  const rows = sheet.slice(1).map((values, index) => ({ values, row: index + 2 })).filter(row => row.values.some(value => value.trim()));
   if (!rows.length || rows.length > EXTERNAL_CHECKIN_MAX_ROWS) throw new Error(`每批名单需要 1–${EXTERNAL_CHECKIN_MAX_ROWS} 行`);
-  return rows.map(row => Object.fromEntries(fields.map(field => [field.key, mapping[field.key] === "" || mapping[field.key] === undefined ? "" : row[Number(mapping[field.key])] || ""])));
+  return {
+    rows: rows.map(row => Object.fromEntries(fields.map(field => [field.key, mapping[field.key] === "" || mapping[field.key] === undefined ? "" : row.values[Number(mapping[field.key])] || ""]))),
+    rowNumbers: rows.map(row => row.row)
+  };
 }
 
 export async function readExternalCheckinWorkbook(file: File) {
@@ -23,7 +30,7 @@ export async function readExternalCheckinWorkbook(file: File) {
   return workbook.SheetNames.map(name => {
     const sheet = workbook.Sheets[name], range = xlsx.utils.decode_range(sheet["!fullref"] || sheet["!ref"] || "A1");
     if (range.e.r >= EXTERNAL_CHECKIN_MAX_ROWS + 1 || range.e.c > 99) throw new Error(`工作表“${name}”超过 ${EXTERNAL_CHECKIN_MAX_ROWS} 行或 100 列，请拆分后导入`);
-    const rows = xlsx.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "", blankrows: false }).map(row => row.map(value => String(value ?? "")));
+    const rows = xlsx.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "", blankrows: true, range: 0 }).map(row => row.map(value => String(value ?? "")));
     return { name, rows };
   });
 }

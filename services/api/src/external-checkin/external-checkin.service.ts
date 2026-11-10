@@ -65,7 +65,7 @@ export class ExternalCheckinService {
         // The key includes the matching field keys, so changing the selection creates a new key namespace.
         for (const row of updates) await tx.externalCheckinAttendee.update({ where: { id: row.id }, data: { matchKey: row.key } });
       }
-      if (enabled && await tx.externalCheckinAttendee.count({ where: { eventId: id } }) === 0) throw new ConflictException("请先导入名单，再开启签到");
+      if (enabled && await tx.externalCheckinAttendee.count({ where: { eventId: id } }) === 0) throw new ConflictException("请先导入或手动添加名单，再开启签到");
       const next = await tx.externalCheckinEvent.update({ where: { id }, data: { ...config, fields: config.fields as unknown as Prisma.InputJsonValue, enabled, revision: { increment: 1 } } });
       await audit(tx, admin, id, enabled ? "保存并开启外部签到" : "保存外部签到配置（暂停）");
       return detail(tx, next);
@@ -75,18 +75,29 @@ export class ExternalCheckinService {
   async import(id: string, input: unknown, admin: CurrentAdmin, commit: boolean) {
     access(admin, true);
     const body = object(input);
+    const source = body.source ?? "file";
+    if (source !== "file" && source !== "manual") throw new BadRequestException("名单录入方式无效");
+    if (source === "manual" && (!Array.isArray(body.rows) || body.rows.length !== 1)) throw new BadRequestException("手动添加每次请填写一条名单");
     return this.prisma.$transaction(async tx => {
       const event = await lockEvent(tx, id); revision(event, body);
-      const fields = okFields(event), rows = await tx.externalCheckinAttendee.findMany({ where: { eventId: id }, select: { values: true } });
-      const plan = checked(() => planExternalCheckinImport(body.rows, fields, rows.map(row => row.values as ExternalCheckinValues)));
+      const fields = okFields(event), rows = await tx.externalCheckinAttendee.findMany({ where: { eventId: id }, select: { id: true, values: true, checkedInAt: true } });
+      const plan = checked(() => planExternalCheckinImport(body.rows, fields, rows.map(row => ({ id: row.id, values: row.values as ExternalCheckinValues, checkedInAt: row.checkedInAt?.toISOString() || null })), { rowNumbers: body.rowNumbers, decisions: commit ? body.decisions : undefined }));
       if (rows.length + plan.added > MAX_ATTENDEES) throw new BadRequestException(`单场会议最多 ${MAX_ATTENDEES} 人`);
-      const digest = hash(JSON.stringify({ id, revision: event.revision, rows: body.rows }));
-      if (!commit) return { added: plan.added, skipped: plan.skipped, errors: plan.errors, digest, revision: event.revision };
-      if (body.digest !== digest) throw new ConflictException("导入内容已变化，请重新预检");
+      // Bind the reviewed candidates (including check-in state), while allowing the
+      // administrator to choose a member locally without writing during preview.
+      const digest = hash(JSON.stringify({ version: 2, id, revision: event.revision, source, rows: body.rows, rowNumbers: body.rowNumbers ?? null, duplicates: plan.duplicates.map(group => ({ id: group.id, candidates: group.candidates })) }));
+      if (!commit) return { added: plan.added, updated: plan.updated, skipped: plan.skipped, unresolved: plan.unresolved, duplicates: plan.duplicates, errors: plan.errors, digest, revision: event.revision };
+      if (body.digest !== digest) throw new ConflictException("名单内容、重复记录或签到状态已变化，请重新预检并选择保留记录");
       if (plan.errors.length) throw new BadRequestException(`名单有 ${plan.errors.length} 个错误，请修正后重新预检`);
+      if (plan.unresolved) throw new BadRequestException(`还有 ${plan.unresolved} 组重复记录未选择保留哪条`);
       if (plan.additions.length) await tx.externalCheckinAttendee.createMany({ data: plan.additions.map(values => ({ eventId: id, values, matchKey: hash(externalCheckinIdentity(values, fields)) })) });
+      const previousValues = new Map(rows.map(row => [row.id, row.values as ExternalCheckinValues]));
+      for (const update of plan.updates) {
+        // Update roster fields only; historical fields and all check-in evidence survive.
+        await tx.externalCheckinAttendee.update({ where: { id: update.id, eventId: id }, data: { values: { ...previousValues.get(update.id), ...update.values } } });
+      }
       const next = await tx.externalCheckinEvent.update({ where: { id }, data: { revision: { increment: 1 } } });
-      await audit(tx, admin, id, `导入外部名单：新增 ${plan.added}，跳过 ${plan.skipped}`);
+      await audit(tx, admin, id, `${source === "manual" ? "手动录入" : "导入"}外部名单：新增 ${plan.added}，更新 ${plan.updated}，跳过 ${plan.skipped}`);
       return detail(tx, next);
     }, { timeout: 30_000 });
   }

@@ -2,12 +2,12 @@
   <el-config-provider :locale="zhCn">
   <main class="admin-page external-checkin" :class="{ 'is-editing': appearanceEditing }" v-loading="busy">
     <header class="page-header">
-      <div><p class="eyebrow">会议管理 / 外部协同</p><h1>{{ event?.title || '外部会议签到' }}</h1><p class="muted">{{ event ? '导入名单，配置嘉宾填写内容，扫码完成签到。' : '集中管理外部会议名单与现场签到。' }}</p></div>
+      <div><p class="eyebrow">会议管理 / 外部协同</p><h1>{{ event?.title || '外部会议签到' }}</h1><p class="muted">{{ event ? '导入或手动添加名单，配置嘉宾填写内容，扫码完成签到。' : '集中管理外部会议名单与现场签到。' }}</p></div>
       <div v-if="!appearanceEditing" class="toolbar"><el-button v-if="event" @click="back">返回会议列表</el-button><el-button v-if="canWrite" type="primary" @click="openConfig(!event)">{{ event ? '配置会议与字段' : '新建签到会议' }}</el-button></div>
     </header>
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
     <template v-if="!event">
-      <el-empty v-if="!events.length && !busy" description="还没有外部签到会议，创建后即可配置字段并导入名单" />
+      <el-empty v-if="!events.length && !busy" description="还没有外部签到会议，创建后即可配置字段、导入或手动添加名单" />
       <el-table v-else :data="events" @row-click="openEventRow" class="event-table">
         <el-table-column prop="title" label="会议名称" min-width="240" /><el-table-column label="名单人数" width="130"><template #default="{ row }">{{ row._count?.attendees || 0 }}</template></el-table-column>
         <el-table-column label="签到开关" width="130"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已开启' : '已暂停' }}</el-tag></template></el-table-column>
@@ -23,9 +23,9 @@
       <section class="checkin-overview">
         <div><el-tag :type="event.enabled ? 'success' : 'info'">{{ event.enabled ? '签到已开启' : '签到已暂停' }}</el-tag><h2>嘉宾需要填写</h2><p>{{ event.fields.filter(f => f.input).map(f => f.label).join('、') }}</p><p class="muted">仅核验：{{ event.fields.filter(f => f.match).map(f => f.label).join(' ＋ ') }}。其余填写内容作为现场补充资料保存。{{ event.startsAt || event.endsAt ? `签到时间：${formatTime(event.startsAt)} 至 ${formatTime(event.endsAt)}` : '未设置时间限制' }}</p><div class="toolbar"><el-button v-if="canWrite" :type="event.enabled ? 'default' : 'success'" @click="toggle">{{ event.enabled ? '暂停签到' : '开启签到' }}</el-button><el-button @click="showQr">签到二维码</el-button><el-button @click="refresh">刷新状态</el-button></div></div>
       </section>
-      <section class="roster"><div class="section-heading"><h2>嘉宾名单</h2><div class="toolbar"><el-button v-if="canWrite" type="primary" @click="openImport">导入名单</el-button><el-button @click="exportRoster">导出签到名单</el-button></div></div>
+      <section class="roster"><div class="section-heading"><h2>嘉宾名单</h2><div class="toolbar"><el-button v-if="canWrite" @click="rosterMode = 'manual'">手动添加</el-button><el-button v-if="canWrite" type="primary" @click="rosterMode = 'file'">导入名单</el-button><el-button @click="exportRoster">导出签到名单</el-button></div></div>
         <div class="toolbar filters"><el-input v-model="keyword" placeholder="搜索名单资料" clearable @keyup.enter="search" @clear="search" style="width:260px" /><el-select v-model="status" aria-label="签到状态" placeholder="全部状态" style="width:150px" @change="search"><el-option value="" label="全部状态" /><el-option value="PENDING" label="未签到" /><el-option value="CHECKED_IN" label="已签到" /></el-select><el-button @click="search">查询</el-button></div>
-        <el-table :data="attendees" empty-text="暂无名单，请先导入外部会议名单" stripe><el-table-column v-for="field in event.fields" :key="field.key" :label="field.label" min-width="150"><template #default="{ row }">{{ row.values[field.key] || '—' }}</template></el-table-column><el-table-column v-for="field in event.fields.filter(f => f.input && !f.match)" :key="`submitted-${field.key}`" :label="`${field.label}（现场填写）`" min-width="170"><template #default="{ row }">{{ row.submittedValues?.[field.key] || '—' }}</template></el-table-column><el-table-column label="签到状态" width="110"><template #default="{ row }"><el-tag :type="row.checkedInAt ? 'success' : 'info'">{{ row.checkedInAt ? '已签到' : '未签到' }}</el-tag></template></el-table-column><el-table-column label="首次签到时间（北京时间）" min-width="210"><template #default="{ row }">{{ formatTime(row.checkedInAt) }}</template></el-table-column></el-table>
+        <el-table :data="attendees" empty-text="暂无名单，请导入文件或手动添加嘉宾" stripe><el-table-column v-for="field in event.fields" :key="field.key" :label="field.label" min-width="150"><template #default="{ row }">{{ row.values[field.key] || '—' }}</template></el-table-column><el-table-column v-for="field in event.fields.filter(f => f.input && !f.match)" :key="`submitted-${field.key}`" :label="`${field.label}（现场填写）`" min-width="170"><template #default="{ row }">{{ row.submittedValues?.[field.key] || '—' }}</template></el-table-column><el-table-column label="签到状态" width="110"><template #default="{ row }"><el-tag :type="row.checkedInAt ? 'success' : 'info'">{{ row.checkedInAt ? '已签到' : '未签到' }}</el-tag></template></el-table-column><el-table-column label="首次签到时间（北京时间）" min-width="210"><template #default="{ row }">{{ formatTime(row.checkedInAt) }}</template></el-table-column></el-table>
         <el-pagination v-if="attendeeTotal" v-model:current-page="page" :total="attendeeTotal" :page-size="50" layout="total, prev, pager, next" @current-change="loadAttendees" />
       </section>
       </template>
@@ -40,15 +40,7 @@
       </el-form><template #footer><el-button @click="configVisible = false">取消</el-button><el-button type="primary" :loading="busy" @click="saveConfig">{{ creating ? '创建会议' : '保存配置' }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="importVisible" title="导入外部会议名单" width="min(900px, calc(100vw - 24px))" :close-on-click-modal="false">
-      <el-alert v-if="dialogError" :title="dialogError" type="error" :closable="false" /><p class="muted">Excel / CSV 首行需为列名。每批最多 5,000 人、10 MB。手机号和编号请使用文本格式，保留前导零。</p>
-      <div class="toolbar"><label class="file-button">选择名单文件<input type="file" accept=".xlsx,.xls,.csv,.tsv" @change="readFile" /></label><el-button @click="downloadTemplate">下载当前字段模板</el-button><el-select v-if="sheets.length > 1" v-model="sheetIndex" aria-label="选择工作表" @change="mapHeaders"><el-option v-for="(sheet, index) in sheets" :key="index" :value="index" :label="sheet.name" /></el-select></div>
-      <template v-if="sheet.length"><p>读取 {{ Math.max(0, sheet.length - 1) }} 行资料，请确认对应关系。</p><div class="mapping-grid"><el-form-item v-for="field in event?.fields" :key="field.key" :label="field.label + (field.match ? '（需核对）' : '')"><el-select v-model="mapping[field.key]" clearable placeholder="选择名单列" @change="plan = null"><el-option v-for="(header, index) in sheet[0]" :key="index" :value="String(index)" :label="header || `第 ${index + 1} 列`" /></el-select></el-form-item></div>
-        <el-table :data="sheet.slice(1, 6)" max-height="220"><el-table-column v-for="(header, index) in sheet[0]" :key="index" :label="header || `第 ${index + 1} 列`" min-width="130"><template #default="{ row }">{{ row[index] }}</template></el-table-column></el-table><p class="muted">上方展示前 5 行。完全相同的记录会跳过，已有签到状态和时间会保留。</p><el-button :loading="busy" @click="previewImport">预检导入</el-button>
-      </template>
-      <section v-if="plan" class="import-result"><strong>新增 {{ plan.added }} 人 · 重复跳过 {{ plan.skipped }} 人 · 错误 {{ plan.errors.length }} 条</strong><el-table v-if="plan.errors.length" :data="plan.errors" max-height="230"><el-table-column prop="row" label="数据行" width="100" /><el-table-column prop="message" label="问题" /></el-table><p v-if="plan.errors.length" class="muted">存在错误时整批不写入，请修正文件后重新选择并预检。</p></section>
-      <template #footer><el-button @click="importVisible = false">取消</el-button><el-button type="primary" :loading="busy" :disabled="!plan || !!plan.errors.length" @click="commitImport">确认导入</el-button></template>
-    </el-dialog>
+    <CheckinRosterEntryDialog v-if="rosterMode && event" :key="rosterMode" :event="event" :mode="rosterMode" @close="rosterMode = null" @saved="rosterSaved" />
     <el-dialog v-model="qrVisible" title="现场签到二维码" width="min(440px, calc(100vw - 24px))"><div class="qr-content"><h3>{{ event?.title }}</h3><img v-if="qrImage" :src="qrImage" alt="嘉宾扫描此二维码填写信息并签到" width="280" height="280" /><p>微信或手机扫码，填写信息完成签到</p><p v-if="!event?.enabled" class="muted">当前已暂停，开启签到后嘉宾才可提交。</p><a :href="publicUrl" target="_blank" rel="noopener">打开签到页</a><el-input :model-value="publicUrl" readonly aria-label="签到链接" /></div><template #footer><el-button @click="qrVisible = false">关闭</el-button><el-button type="primary" @click="downloadQr">下载二维码</el-button></template></el-dialog>
   </main>
   </el-config-provider>
@@ -59,18 +51,18 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import zhCn from "element-plus/es/locale/lang/zh-cn";
 import type { ExternalCheckinField } from "@conference/shared";
-import { externalCheckins as api, type ExternalCheckinEvent, type ExternalCheckinAttendee, type ImportPlan } from "../../services/external-checkin";
+import { externalCheckins as api, type ExternalCheckinEvent, type ExternalCheckinAttendee } from "../../services/external-checkin";
 import { useAdminSession } from "../../stores/admin-session";
-import { downloadExternalCheckinSheet, mapExternalCheckinSheet, readExternalCheckinWorkbook } from "../../utils/external-checkin-sheet";
+import { downloadExternalCheckinSheet } from "../../utils/external-checkin-sheet";
 import CheckinAppearanceEditor from "../../components/external-checkin/CheckinAppearanceEditor.vue";
+import CheckinRosterEntryDialog from "../../components/external-checkin/CheckinRosterEntryDialog.vue";
 
 const session = useAdminSession(), canWrite = computed(() => session.hasPermission("external-checkin:write"));
 const busy = ref(false), error = ref(""), dialogError = ref(""), event = ref<ExternalCheckinEvent | null>(null), events = ref<ExternalCheckinEvent[]>([]), eventPage = ref(1), eventTotal = ref(0);
 const attendees = ref<ExternalCheckinAttendee[]>([]), page = ref(1), attendeeTotal = ref(0), keyword = ref(""), status = ref("");
 const configVisible = ref(false), creating = ref(false), startLocal = ref(""), endLocal = ref("");
 const draft = reactive({ title: "", description: "", fields: [] as ExternalCheckinField[] });
-const importVisible = ref(false), sheets = ref<{ name: string; rows: string[][] }[]>([]), sheetIndex = ref(0), mapping = reactive<Record<string, string>>({}), plan = ref<ImportPlan | null>(null);
-const sheet = computed(() => sheets.value[sheetIndex.value]?.rows || []), qrVisible = ref(false), qrImage = ref("");
+const rosterMode = ref<"file" | "manual" | null>(null), qrVisible = ref(false), qrImage = ref("");
 const publicUrl = computed(() => event.value ? api.publicUrl(event.value) : "");
 const appearanceEditing = ref(false);
 const message = (e: unknown) => e instanceof Error ? e.message : "操作失败，请重试";
@@ -91,13 +83,7 @@ function syncField(field: ExternalCheckinField, source: string) { if (source ===
 function addField() { draft.fields.push({ key: `f_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`, label: "", input: true, required: false, match: false }); }
 const saveConfig = () => run(async () => { const body = { ...draft, startsAt: startLocal.value ? `${startLocal.value}:00+08:00` : null, endsAt: endLocal.value ? `${endLocal.value}:00+08:00` : null, enabled: creating.value ? false : event.value?.enabled, revision: event.value?.revision }; event.value = creating.value ? await api.create(body) : await api.save(event.value!.id, body); configVisible.value = false; page.value = 1; await fetchAttendees(); ElMessage.success("配置已保存"); }, true);
 const toggle = () => run(async () => { if (event.value) event.value = await api.save(event.value.id, { ...event.value, enabled: !event.value.enabled }); });
-function openImport() { sheets.value = []; sheetIndex.value = 0; plan.value = null; dialogError.value = ""; importVisible.value = true; }
-function mapHeaders() { plan.value = null; for (const key of Object.keys(mapping)) delete mapping[key]; for (const field of event.value?.fields || []) { const index = sheet.value[0]?.findIndex(header => header.normalize("NFKC").trim() === field.label); mapping[field.key] = index === undefined || index < 0 ? "" : String(index); } }
-async function readFile(e: Event) { const input = e.target as HTMLInputElement, file = input.files?.[0]; if (!file) return; plan.value = null; sheets.value = []; await run(async () => { sheets.value = await readExternalCheckinWorkbook(file); sheetIndex.value = 0; mapHeaders(); }, true); input.value = ""; }
-function importBody() { const rows = mapExternalCheckinSheet(sheet.value, mapping, event.value!.fields); const body = { rows, revision: event.value!.revision }; if (new Blob([JSON.stringify(body)]).size > 3_900_000) throw new Error("名单内容较大，请拆分为更小批次导入"); return body; }
-const previewImport = () => run(async () => { plan.value = null; plan.value = await api.preview(event.value!.id, importBody()); }, true);
-const commitImport = () => run(async () => { event.value = await api.import(event.value!.id, { ...importBody(), digest: plan.value!.digest }); importVisible.value = false; page.value = 1; await fetchAttendees(); ElMessage.success("名单已导入"); }, true);
-const downloadTemplate = () => run(async () => { await downloadExternalCheckinSheet(`${event.value!.title}-名单模板`, [event.value!.fields.map(field => field.label)]); }, true);
+const rosterSaved = (saved: ExternalCheckinEvent) => run(async () => { event.value = saved; rosterMode.value = null; page.value = 1; await fetchAttendees(); });
 const exportRoster = () => run(async () => { const current = event.value!, result = await api.export(current.id); await downloadExternalCheckinSheet(`${current.title}-签到名单`, [current.fields.map(field => field.label).concat(current.fields.filter(field => field.input && !field.match).map(field => field.label + "（现场填写）"), "签到状态", "首次签到时间（北京时间）"), ...result.items.map(row => current.fields.map(field => row.values[field.key] || "").concat(current.fields.filter(field => field.input && !field.match).map(field => row.submittedValues?.[field.key] || ""), row.checkedInAt ? "已签到" : "未签到", row.checkedInAt ? formatTime(row.checkedInAt) : ""))]); });
 const showQr = () => run(async () => { const qr = await import("qrcode"); qrImage.value = await qr.toDataURL(publicUrl.value, { width: 840, margin: 4, errorCorrectionLevel: "M" }); qrVisible.value = true; });
 function downloadQr() { const a = document.createElement("a"); a.href = qrImage.value; a.download = `${event.value?.title || "会议"}-签到二维码.png`; a.click(); }
