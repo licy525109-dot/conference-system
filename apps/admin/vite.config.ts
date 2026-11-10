@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => {
         });
       }
     }],
-    build: { rollupOptions: { input: { admin: resolve(configDir, "index.html"), invitation: resolve(configDir, "invitation.html"), certificate: resolve(configDir, "certificate.html") } } },
+    build: { rollupOptions: { input: { admin: resolve(configDir, "index.html"), invitation: resolve(configDir, "invitation.html"), certificate: resolve(configDir, "certificate.html"), externalCheckin: resolve(configDir, "external-checkin.html") } } },
     server: {
       port: 5174
     }

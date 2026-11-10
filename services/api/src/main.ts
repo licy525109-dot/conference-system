@@ -56,6 +56,11 @@ async function bootstrap() {
     parseInvitationJson(request, response, next);
   });
   app.use(createSensitiveEndpointRateLimiter());
+  app.use("/api/admin/external-checkins", (request: unknown, response: { setHeader(name: string, value: string): void }, next: () => void) => {
+    response.setHeader("Cache-Control", "private, no-store");
+    express.json({ limit: "4mb" })(request, response, next);
+  });
+  app.use("/api/external-checkin-assets", express.static(resolve(inferProjectRoot(process.cwd()), "apps/admin/dist/assets")));
   const parseCertificateJson = express.json({ limit: "4mb" });
   app.use("/api/admin/certificates", (request: unknown, response: { setHeader(name: string, value: string): void }, next: () => void) => {
     response.setHeader("Cache-Control", "private, no-store");

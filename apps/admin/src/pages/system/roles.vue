@@ -149,6 +149,7 @@ function permissionMenuGroup(permission: Permission): string {
     permission.code.startsWith("registration:") ||
     permission.code.startsWith("guest-schedule:") ||
     permission.code.startsWith("checkin:") ||
+    permission.code.startsWith("external-checkin:") ||
     permission.code.startsWith("inventory:") ||
     permission.code.startsWith("inventory-alert:")
   ) return "会议管理";

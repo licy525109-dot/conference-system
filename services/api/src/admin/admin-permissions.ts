@@ -1,4 +1,6 @@
 export const ADMIN_PERMISSIONS = [
+  { code: "external-checkin:view", name: "查看和导出外部会议签到", group: "会议管理" },
+  { code: "external-checkin:write", name: "配置外部签到和导入名单", group: "会议管理" },
   { code: "certificate:view", name: "查看证书项目与名单", group: "会议管理" },
   { code: "certificate:write", name: "配置证书模板和规则", group: "会议管理" },
   { code: "certificate:import", name: "导入证书名单", group: "会议管理" },

@@ -26,6 +26,9 @@ interface Counter {
 }
 
 const RULES: RateLimitRule[] = [
+  { pattern: /^\/api\/external-checkins\/[^/]+\/images\/[^/]+\/?$/i, bucket: "external-checkin-image", methods: ["GET"], limit: 600, windowMs: 60_000 },
+  { pattern: /^\/api\/external-checkins\/[^/]+\/submit\/?$/i, bucket: "external-checkin-submit", methods: ["POST"], limit: 120, windowMs: 60_000 },
+  { pattern: /^\/api\/external-checkins\/[^/]+(?:\/page)?\/?$/i, bucket: "external-checkin-meta", methods: ["GET"], limit: 300, windowMs: 60_000 },
   { pattern: /^\/api\/certificates\/[^/]+\/search$/, bucket: "certificate-search", methods: ["POST"], limit: 30, windowMs: 60_000 },
   { pattern: /^\/api\/certificates\/[^/]+\/image$/, bucket: "certificate-image", methods: ["POST"], limit: 60, windowMs: 60_000 },
   { pattern: /^\/api\/admin\/certificates\/[^/]+\/preview$/, bucket: "certificate-preview", methods: ["POST"], limit: 60, windowMs: 60_000 },
