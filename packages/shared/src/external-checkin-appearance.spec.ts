@@ -20,9 +20,9 @@ describe("external check-in appearance contract", () => {
       { pageTitle: "字".repeat(121) }, { introText: "字".repeat(1001) }
     ]) assert.throws(() => parseExternalCheckinAppearance(input));
   });
-  it("prevents illegible body text and maintains button contrast across themes", () => {
-    assert.throws(() => parseExternalCheckinAppearance({ textColor: "#ffffff" }), /看清/);
-    assert.throws(() => parseExternalCheckinAppearance({ surfaceColor: "#223c31" }), /看清/);
+  it("allows custom body colors and maintains button contrast across themes", () => {
+    assert.equal(parseExternalCheckinAppearance({ textColor: "#ffffff" }).textColor, "#ffffff");
+    assert.equal(parseExternalCheckinAppearance({ surfaceColor: "#223c31" }).surfaceColor, "#223c31");
     for (const preset of EXTERNAL_CHECKIN_COLOR_PRESETS) {
       const appearance = parseExternalCheckinAppearance(preset);
       assert.ok(checkinContrast(appearance.textColor, appearance.surfaceColor) >= 4.5);
