@@ -49,11 +49,12 @@ export interface ExternalCheckinImportCandidate {
 }
 export interface ExternalCheckinDuplicateGroup {
   id: string; matchValues: ExternalCheckinValues; differingFields: string[];
-  candidates: ExternalCheckinImportCandidate[]; selectedCandidateId: string | null;
+  candidates: ExternalCheckinImportCandidate[]; selectedCandidateId: string | null; resolved: boolean;
 }
-export interface ExternalCheckinImportDecision { groupId: string; keepCandidateId: string }
+/** null discards incoming candidates while preserving any existing attendee. */
+export interface ExternalCheckinImportDecision { groupId: string; keepCandidateId: string | null }
 export interface ExternalCheckinImportPlan {
-  added: number; updated: number; skipped: number; unresolved: number;
+  added: number; updated: number; skipped: number; deduplicated: number; unresolved: number;
   duplicates: ExternalCheckinDuplicateGroup[]; errors: { row: number; message: string }[];
 }
 
@@ -63,21 +64,22 @@ const sameValues = (a: ExternalCheckinValues, b: ExternalCheckinValues, fields: 
 /** Pure resolution shared by the preview UI and authoritative server planner. */
 export function resolveExternalCheckinDuplicates(groups: ExternalCheckinDuplicateGroup[], fields: ExternalCheckinField[], input: unknown = []) {
   if (!Array.isArray(input) || input.length > EXTERNAL_CHECKIN_MAX_ROWS) throw new Error("重复记录的保留选择无效");
-  const decisions = new Map<string, string>(), byId = new Map(groups.map(group => [group.id, group]));
+  const decisions = new Map<string, string | null>(), byId = new Map(groups.map(group => [group.id, group]));
   for (const item of input) {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("重复记录的保留选择无效");
     const { groupId, keepCandidateId } = item as Record<string, unknown>;
-    if (typeof groupId !== "string" || typeof keepCandidateId !== "string" || decisions.has(groupId)) throw new Error("每组重复记录只能选择保留一条");
+    if (typeof groupId !== "string" || (typeof keepCandidateId !== "string" && keepCandidateId !== null) || decisions.has(groupId)) throw new Error("每组重复记录只能选择保留一条或全部不导入");
     const group = byId.get(groupId);
-    if (!group || !group.candidates.some(candidate => candidate.id === keepCandidateId)) throw new Error("保留的记录不属于当前重复组，请重新预检");
+    if (!group || (keepCandidateId !== null && !group.candidates.some(candidate => candidate.id === keepCandidateId))) throw new Error("保留的记录不属于当前重复组，请重新预检");
     decisions.set(groupId, keepCandidateId);
   }
   const additions: ExternalCheckinValues[] = [], updates: { id: string; values: ExternalCheckinValues }[] = [];
   let skipped = 0, unresolved = 0;
   const duplicates = groups.map(group => {
-    const selectedCandidateId = decisions.get(group.id) || null;
+    const resolved = decisions.has(group.id), selectedCandidateId = decisions.get(group.id) ?? null;
     const selected = group.candidates.find(candidate => candidate.id === selectedCandidateId);
-    if (!selected) unresolved++;
+    if (!resolved) unresolved++;
+    else if (!selected) skipped += group.candidates.filter(candidate => candidate.source === "incoming").length;
     else {
       const previous = group.candidates.find(candidate => candidate.source === "existing");
       const incomingCount = group.candidates.filter(candidate => candidate.source === "incoming").length;
@@ -85,7 +87,7 @@ export function resolveExternalCheckinDuplicates(groups: ExternalCheckinDuplicat
       else if (selected.source === "existing" || sameValues(previous.values, selected.values, fields)) skipped += incomingCount;
       else { updates.push({ id: previous.attendeeId!, values: selected.values }); skipped += incomingCount - 1; }
     }
-    return { ...group, selectedCandidateId };
+    return { ...group, selectedCandidateId, resolved };
   });
   return { added: additions.length, updated: updates.length, skipped, unresolved, duplicates, additions, updates };
 }
@@ -100,25 +102,30 @@ export function planExternalCheckinImport(input: unknown, fields: ExternalChecki
     if (known.has(identity)) throw new Error("现有名单存在重复核验信息，请检查核验字段配置");
     known.set(identity, { id: `existing:${record.id}`, source: "existing", attendeeId: record.id, row: null, values, checkedInAt: record.checkedInAt });
   }
-  const grouped = new Map<string, { firstIndex: number; candidates: ExternalCheckinImportCandidate[] }>();
+  const signature = (values: ExternalCheckinValues) => JSON.stringify(fields.map(field => values[field.key] || ""));
+  const grouped = new Map<string, { firstIndex: number; candidates: ExternalCheckinImportCandidate[]; signatures: Set<string> }>();
   const errors: ExternalCheckinImportPlan["errors"] = [];
+  let deduplicated = 0;
   input.forEach((row, index) => {
     try {
       const values = parseExternalCheckinValues(row, fields), identity = externalCheckinIdentity(values, fields);
-      const group = grouped.get(identity) || { firstIndex: index, candidates: known.has(identity) ? [known.get(identity)!] : [] };
-      group.candidates.push({ id: `incoming:${index}`, source: "incoming", row: rowNumbers[index], attendeeId: null, values, checkedInAt: null });
+      const previous = known.get(identity);
+      const group = grouped.get(identity) || { firstIndex: index, candidates: previous ? [previous] : [], signatures: new Set(previous ? [signature(previous.values)] : []) };
+      const key = signature(values);
+      if (group.signatures.has(key)) deduplicated++;
+      else { group.signatures.add(key); group.candidates.push({ id: `incoming:${index}`, source: "incoming", row: rowNumbers[index], attendeeId: null, values, checkedInAt: null }); }
       grouped.set(identity, group);
     } catch (error) { errors.push({ row: rowNumbers[index], message: error instanceof Error ? error.message : "名单格式无效" }); }
   });
   const singles: ExternalCheckinValues[] = [], duplicates: ExternalCheckinDuplicateGroup[] = [];
   for (const group of grouped.values()) {
-    if (group.candidates.length === 1) { singles.push(group.candidates[0].values); continue; }
+    if (group.candidates.length === 1) { if (group.candidates[0].source === "incoming") singles.push(group.candidates[0].values); continue; }
     duplicates.push({
-      id: `duplicate:${group.firstIndex}`, candidates: group.candidates, selectedCandidateId: null,
+      id: `duplicate:${group.firstIndex}`, candidates: group.candidates, selectedCandidateId: null, resolved: false,
       matchValues: Object.fromEntries(fields.filter(field => field.match).map(field => [field.key, group.candidates[0].values[field.key]])),
       differingFields: fields.filter(field => new Set(group.candidates.map(candidate => candidate.values[field.key] || "")).size > 1).map(field => field.key)
     });
   }
   const resolution = resolveExternalCheckinDuplicates(duplicates, fields, options.decisions);
-  return { ...resolution, added: singles.length + resolution.added, errors, additions: [...singles, ...resolution.additions] };
+  return { ...resolution, added: singles.length + resolution.added, skipped: deduplicated + resolution.skipped, deduplicated, errors, additions: [...singles, ...resolution.additions] };
 }

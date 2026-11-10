@@ -25,7 +25,7 @@
       </section>
       <section class="roster"><div class="section-heading"><h2>嘉宾名单</h2><div class="toolbar"><el-button v-if="canWrite" @click="rosterMode = 'manual'">手动添加</el-button><el-button v-if="canWrite" type="primary" @click="rosterMode = 'file'">导入名单</el-button><el-button @click="exportRoster">导出签到名单</el-button></div></div>
         <div class="toolbar filters"><el-input v-model="keyword" placeholder="搜索名单资料" clearable @keyup.enter="search" @clear="search" style="width:260px" /><el-select v-model="status" aria-label="签到状态" placeholder="全部状态" style="width:150px" @change="search"><el-option value="" label="全部状态" /><el-option value="PENDING" label="未签到" /><el-option value="CHECKED_IN" label="已签到" /></el-select><el-button @click="search">查询</el-button></div>
-        <el-table :data="attendees" empty-text="暂无名单，请导入文件或手动添加嘉宾" stripe><el-table-column v-for="field in event.fields" :key="field.key" :label="field.label" min-width="150"><template #default="{ row }">{{ row.values[field.key] || '—' }}</template></el-table-column><el-table-column v-for="field in event.fields.filter(f => f.input && !f.match)" :key="`submitted-${field.key}`" :label="`${field.label}（现场填写）`" min-width="170"><template #default="{ row }">{{ row.submittedValues?.[field.key] || '—' }}</template></el-table-column><el-table-column label="签到状态" width="110"><template #default="{ row }"><el-tag :type="row.checkedInAt ? 'success' : 'info'">{{ row.checkedInAt ? '已签到' : '未签到' }}</el-tag></template></el-table-column><el-table-column label="首次签到时间（北京时间）" min-width="210"><template #default="{ row }">{{ formatTime(row.checkedInAt) }}</template></el-table-column></el-table>
+        <el-table :data="attendees" empty-text="暂无名单，请导入文件或手动添加嘉宾" stripe><el-table-column v-for="field in event.fields" :key="field.key" :label="field.label" min-width="150"><template #default="{ row }">{{ row.values[field.key] || '—' }}</template></el-table-column><el-table-column v-for="field in event.fields.filter(f => f.input && !f.match)" :key="`submitted-${field.key}`" :label="`${field.label}（现场填写）`" min-width="170"><template #default="{ row }">{{ row.submittedValues?.[field.key] || '—' }}</template></el-table-column><el-table-column label="签到状态" width="110"><template #default="{ row }"><el-tag :type="row.checkedInAt ? 'success' : 'info'">{{ row.checkedInAt ? '已签到' : '未签到' }}</el-tag></template></el-table-column><el-table-column label="首次签到时间（北京时间）" min-width="210"><template #default="{ row }">{{ formatTime(row.checkedInAt) }}</template></el-table-column><el-table-column v-if="canWrite" label="操作" width="160" fixed="right"><template #default="{ row }"><el-button link type="primary" :disabled="busy || !!row.checkedInAt" @click="helpCheckin(row)">{{ row.checkedInAt ? '已签到' : '帮签' }}</el-button><el-button link type="danger" :disabled="busy" @click="deleteAttendee(row)">删除</el-button></template></el-table-column></el-table>
         <el-pagination v-if="attendeeTotal" v-model:current-page="page" :total="attendeeTotal" :page-size="50" layout="total, prev, pager, next" @current-change="loadAttendees" />
       </section>
       </template>
@@ -47,8 +47,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { computed, h, onMounted, reactive, ref } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import zhCn from "element-plus/es/locale/lang/zh-cn";
 import type { ExternalCheckinField } from "@conference/shared";
 import { externalCheckins as api, type ExternalCheckinEvent, type ExternalCheckinAttendee } from "../../services/external-checkin";
@@ -69,7 +69,14 @@ const message = (e: unknown) => e instanceof Error ? e.message : "操作失败�
 async function run(fn: () => Promise<void>, dialog = false) { if (busy.value) return; busy.value = true; (dialog ? dialogError : error).value = ""; try { await fn(); } catch (e) { (dialog ? dialogError : error).value = message(e); } finally { busy.value = false; } }
 async function fetchEvents() { const result = await api.list(eventPage.value); events.value = result.items; eventTotal.value = result.total; }
 const loadEvents = () => run(fetchEvents);
-async function fetchAttendees() { if (!event.value) return; const result = await api.attendees(event.value.id, { page: page.value, keyword: keyword.value, status: status.value }); attendees.value = result.items; attendeeTotal.value = result.total; }
+async function fetchAttendees() {
+  if (!event.value) return;
+  const fetchPage = () => api.attendees(event.value!.id, { page: page.value, keyword: keyword.value, status: status.value });
+  let result = await fetchPage();
+  const lastPage = Math.max(1, Math.ceil(result.total / 50));
+  if (page.value > lastPage) { page.value = lastPage; result = await fetchPage(); }
+  attendees.value = result.items; attendeeTotal.value = result.total;
+}
 const loadAttendees = () => run(fetchAttendees);
 const search = () => { page.value = 1; void loadAttendees(); };
 const openEventRow = (row: ExternalCheckinEvent) => openEvent(row.id);
@@ -84,6 +91,27 @@ function addField() { draft.fields.push({ key: `f_${crypto.randomUUID().replaceA
 const saveConfig = () => run(async () => { const body = { ...draft, startsAt: startLocal.value ? `${startLocal.value}:00+08:00` : null, endsAt: endLocal.value ? `${endLocal.value}:00+08:00` : null, enabled: creating.value ? false : event.value?.enabled, revision: event.value?.revision }; event.value = creating.value ? await api.create(body) : await api.save(event.value!.id, body); configVisible.value = false; page.value = 1; await fetchAttendees(); ElMessage.success("配置已保存"); }, true);
 const toggle = () => run(async () => { if (event.value) event.value = await api.save(event.value.id, { ...event.value, enabled: !event.value.enabled }); });
 const rosterSaved = (saved: ExternalCheckinEvent) => run(async () => { event.value = saved; rosterMode.value = null; page.value = 1; await fetchAttendees(); });
+async function confirmAttendeeAction(row: ExternalCheckinAttendee, deleting: boolean) {
+  const current = event.value!;
+  const identity = current.fields.filter((field, index) => field.match || index === 0).map(field => `${field.label}：${row.values[field.key] || '—'}`).join('；');
+  const statusText = row.checkedInAt ? `已签到，首次时间：${formatTime(row.checkedInAt)}` : '当前未签到';
+  const unavailable = !current.enabled || (current.startsAt && Date.parse(current.startsAt) > Date.now()) || (current.endsAt && Date.parse(current.endsAt) <= Date.now());
+  const content = h('div', [h('p', identity), h('p', statusText), h('p', deleting ? '删除后该嘉宾将无法通过此条名单签到，已有签到记录也会删除。' : '确认后将以系统当前时间为该嘉宾签到，并记录本次操作管理员。'), ...(!deleting && unavailable ? [h('p', '当前未开放自助签到，此操作仍会记为已签到。')] : [])]);
+  try { await ElMessageBox.confirm(content, deleting ? '确认删除名单' : '确认管理员帮签', { type: 'warning', confirmButtonText: deleting ? '确认删除' : '确认帮签', cancelButtonText: '取消', closeOnClickModal: false, distinguishCancelAndClose: true }); return true; }
+  catch (action) { if (action === 'cancel' || action === 'close') return false; throw action; }
+}
+async function reloadAfterActionError() { try { if (event.value) event.value = await api.detail(event.value.id); await fetchAttendees(); } catch { /* Keep the original action error visible. */ } }
+const helpCheckin = (row: ExternalCheckinAttendee) => run(async () => {
+  if (!event.value || row.checkedInAt || !await confirmAttendeeAction(row, false)) return;
+  try { const result = await api.helpCheckin(event.value.id, row.id, event.value.revision); event.value = result.event; await fetchAttendees(); ElMessage.success(result.alreadyCheckedIn ? '该嘉宾已签到，首次时间已保留' : '管理员帮签成功'); }
+  catch (e) { await reloadAfterActionError(); throw e; }
+});
+const deleteAttendee = (row: ExternalCheckinAttendee) => run(async () => {
+  if (!event.value || !await confirmAttendeeAction(row, true)) return;
+  const current = event.value;
+  try { event.value = await api.deleteAttendee(current.id, row.id, current.revision, row.checkedInAt); await fetchAttendees(); ElMessage.success(current.enabled && !event.value.statistics.total ? '名单已删除，当前会议已无名单并暂停签到' : '名单已删除'); }
+  catch (e) { await reloadAfterActionError(); throw e; }
+});
 const exportRoster = () => run(async () => { const current = event.value!, result = await api.export(current.id); await downloadExternalCheckinSheet(`${current.title}-签到名单`, [current.fields.map(field => field.label).concat(current.fields.filter(field => field.input && !field.match).map(field => field.label + "（现场填写）"), "签到状态", "首次签到时间（北京时间）"), ...result.items.map(row => current.fields.map(field => row.values[field.key] || "").concat(current.fields.filter(field => field.input && !field.match).map(field => row.submittedValues?.[field.key] || ""), row.checkedInAt ? "已签到" : "未签到", row.checkedInAt ? formatTime(row.checkedInAt) : ""))]); });
 const showQr = () => run(async () => { const qr = await import("qrcode"); qrImage.value = await qr.toDataURL(publicUrl.value, { width: 840, margin: 4, errorCorrectionLevel: "M" }); qrVisible.value = true; });
 function downloadQr() { const a = document.createElement("a"); a.href = qrImage.value; a.download = `${event.value?.title || "会议"}-签到二维码.png`; a.click(); }

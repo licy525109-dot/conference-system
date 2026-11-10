@@ -85,8 +85,8 @@ export class ExternalCheckinService {
       if (rows.length + plan.added > MAX_ATTENDEES) throw new BadRequestException(`单场会议最多 ${MAX_ATTENDEES} 人`);
       // Bind the reviewed candidates (including check-in state), while allowing the
       // administrator to choose a member locally without writing during preview.
-      const digest = hash(JSON.stringify({ version: 2, id, revision: event.revision, source, rows: body.rows, rowNumbers: body.rowNumbers ?? null, duplicates: plan.duplicates.map(group => ({ id: group.id, candidates: group.candidates })) }));
-      if (!commit) return { added: plan.added, updated: plan.updated, skipped: plan.skipped, unresolved: plan.unresolved, duplicates: plan.duplicates, errors: plan.errors, digest, revision: event.revision };
+      const digest = hash(JSON.stringify({ version: 3, id, revision: event.revision, source, rows: body.rows, rowNumbers: body.rowNumbers ?? null, duplicates: plan.duplicates.map(group => ({ id: group.id, candidates: group.candidates })) }));
+      if (!commit) return { added: plan.added, updated: plan.updated, skipped: plan.skipped, deduplicated: plan.deduplicated, unresolved: plan.unresolved, duplicates: plan.duplicates, errors: plan.errors, digest, revision: event.revision };
       if (body.digest !== digest) throw new ConflictException("名单内容、重复记录或签到状态已变化，请重新预检并选择保留记录");
       if (plan.errors.length) throw new BadRequestException(`名单有 ${plan.errors.length} 个错误，请修正后重新预检`);
       if (plan.unresolved) throw new BadRequestException(`还有 ${plan.unresolved} 组重复记录未选择保留哪条`);
@@ -97,7 +97,7 @@ export class ExternalCheckinService {
         await tx.externalCheckinAttendee.update({ where: { id: update.id, eventId: id }, data: { values: { ...previousValues.get(update.id), ...update.values } } });
       }
       const next = await tx.externalCheckinEvent.update({ where: { id }, data: { revision: { increment: 1 } } });
-      await audit(tx, admin, id, `${source === "manual" ? "手动录入" : "导入"}外部名单：新增 ${plan.added}，更新 ${plan.updated}，跳过 ${plan.skipped}`);
+      await audit(tx, admin, id, `${source === "manual" ? "手动录入" : "导入"}外部名单：新增 ${plan.added}，更新 ${plan.updated}，自动去重 ${plan.deduplicated}，其他跳过 ${plan.skipped - plan.deduplicated}`);
       return detail(tx, next);
     }, { timeout: 30_000 });
   }
@@ -166,6 +166,40 @@ export class ExternalCheckinService {
     ]);
     if (exporting) await audit(this.prisma, admin, id, `导出外部签到名单：${items.length} 人`);
     return { items, total, page, pageSize };
+  }
+
+  async helpCheckin(id: string, attendeeId: string, input: unknown, admin: CurrentAdmin) {
+    access(admin, true);
+    const body = object(input);
+    return this.prisma.$transaction(async tx => {
+      const event = await lockEvent(tx, id); revision(event, body);
+      const attendee = await tx.externalCheckinAttendee.findFirst({ where: { id: attendeeId, eventId: id } });
+      if (!attendee) throw new NotFoundException("名单记录不存在或已删除");
+      // Administrator assistance is allowed independently of the self-service window.
+      // The event lock serializes this with guest scans, imports and deletion.
+      if (!attendee.checkedInAt) {
+        await tx.externalCheckinAttendee.update({ where: { id: attendeeId, eventId: id }, data: { checkedInAt: new Date() } });
+        await tx.auditLog.create({ data: { adminUserId: admin.id, action: AuditAction.UPDATE, entityType: "ExternalCheckinAttendee", entityId: attendeeId, summary: "管理员帮签成功", metadataJson: { eventId: id, source: "ADMIN" } } });
+      }
+      return { event: await detail(tx, event), alreadyCheckedIn: !!attendee.checkedInAt };
+    });
+  }
+
+  async deleteAttendee(id: string, attendeeId: string, input: unknown, admin: CurrentAdmin) {
+    access(admin, true);
+    const body = object(input);
+    if (body.checkedInAt !== null && (typeof body.checkedInAt !== "string" || !Number.isFinite(Date.parse(body.checkedInAt)))) throw new BadRequestException("请刷新名单后确认要删除的记录");
+    return this.prisma.$transaction(async tx => {
+      const event = await lockEvent(tx, id); revision(event, body);
+      const attendee = await tx.externalCheckinAttendee.findFirst({ where: { id: attendeeId, eventId: id } });
+      if (!attendee) throw new NotFoundException("名单记录不存在或已删除");
+      if ((attendee.checkedInAt?.toISOString() ?? null) !== body.checkedInAt) throw new ConflictException("该嘉宾的签到状态已变化，请刷新后重新确认删除");
+      await tx.externalCheckinAttendee.delete({ where: { id: attendeeId, eventId: id } });
+      const empty = await tx.externalCheckinAttendee.count({ where: { eventId: id } }) === 0;
+      const next = await tx.externalCheckinEvent.update({ where: { id }, data: { revision: { increment: 1 }, ...(empty ? { enabled: false } : {}) } });
+      await tx.auditLog.create({ data: { adminUserId: admin.id, action: AuditAction.DELETE, entityType: "ExternalCheckinAttendee", entityId: attendeeId, summary: "管理员删除外部签到名单记录", metadataJson: { eventId: id, wasCheckedIn: !!attendee.checkedInAt, autoPaused: empty && event.enabled } } });
+      return detail(tx, next);
+    });
   }
 
   async publicMeta(token: string) {
