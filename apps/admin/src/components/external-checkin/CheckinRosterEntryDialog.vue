@@ -14,16 +14,16 @@
         <p class="entry-hint">读取 {{ fileRowCount }} 行有效资料，请确认列对应关系。空白行不导入，来源行号按原文件显示。</p>
         <el-form label-position="top" :disabled="busy" class="mapping-grid"><el-form-item v-for="field in fields" :key="field.key" :label="field.label + (field.match ? '（用于核验）' : '')"><el-select v-model="mapping[field.key]" clearable :aria-label="`${field.label}对应名单列`" placeholder="选择名单列" @change="invalidate"><el-option v-for="(header, index) in sheet[0]" :key="index" :value="String(index)" :label="header || `第 ${index + 1} 列`" /></el-select></el-form-item></el-form>
         <el-table :data="rawPreviewRows" max-height="220"><el-table-column prop="row" label="文件行号" width="95" /><el-table-column v-for="(header, index) in sheet[0]" :key="index" :label="header || `第 ${index + 1} 列`" min-width="140"><template #default="{ row }">{{ row.cells[index] }}</template></el-table-column></el-table>
-        <p class="entry-hint">上方展示前 5 条有效记录。预检后会列出所有重复组，选择保留记录后再确认导入。</p><el-button :loading="busy" :disabled="busy" @click="preview">{{ plan ? '重新预检' : '预检导入' }}</el-button>
+        <p class="entry-hint">上方展示前 5 条有效记录。完全相同的资料自动去重；有差异的重复记录可选择保留或删除。此处删除仅排除本次导入资料，已有名单可在名单页删除。</p><el-button :loading="busy" :disabled="busy" @click="preview">{{ plan ? '重新预检' : '预检导入' }}</el-button>
       </template>
     </template>
     <section v-if="reviewed" class="review-summary" aria-label="名单预检结果">
-      <strong>新增 {{ reviewed.added }} 人 · 更新 {{ reviewed.updated }} 人 · 跳过 {{ reviewed.skipped }} 条 · 待处理 {{ reviewed.unresolved }} 组 · 格式错误 {{ reviewed.errors.length }} 条</strong>
-      <p v-if="reviewed.unresolved" class="entry-hint">请在下方为每组重复记录选择保留哪条。</p>
+      <strong>新增 {{ reviewed.added }} 人 · 更新 {{ reviewed.updated }} 人 · 自动去重 {{ reviewed.deduplicated }} 条 · 其他不保留 {{ reviewed.skipped - reviewed.deduplicated }} 条 · 待处理 {{ reviewed.unresolved }} 组 · 格式错误 {{ reviewed.errors.length }} 条</strong>
+      <p v-if="reviewed.unresolved" class="entry-hint">请在下方为有差异的重复记录选择保留或删除。</p>
       <el-table v-if="reviewed.errors.length" :data="reviewed.errors" max-height="230"><el-table-column v-if="mode === 'file'" prop="row" label="文件行号" width="100" /><el-table-column prop="message" label="需修正的问题" /></el-table>
       <p v-if="reviewed.errors.length" class="entry-hint">格式错误和重复组全部处理完后才会写入。{{ mode === 'file' ? '请修正文件后重新选择并预检。' : '请修改上方资料后重新保存。' }}</p>
     </section>
-    <CheckinDuplicateReview v-if="reviewed" :plan="reviewed" :fields="fields" :mode="mode" :busy="busy" :source-columns="sourceColumns" @select="selectCandidate" />
+    <CheckinDuplicateReview v-if="reviewed" :plan="reviewed" :fields="fields" :mode="mode" :busy="busy" :source-columns="sourceColumns" :discarded="discarded" @select="selectCandidate" @discard="toggleDiscard" @discard-group="discardGroup" />
     <template #footer><el-button :disabled="busy" @click="$emit('close')">取消</el-button><el-button type="primary" :loading="busy" :disabled="submitDisabled" @click="save">{{ mode === 'file' ? '确认导入' : plan?.duplicates.length ? '确认保留并保存' : '保存名单' }}</el-button></template>
   </el-dialog>
 </template>
@@ -38,7 +38,7 @@ import CheckinDuplicateReview from "./CheckinDuplicateReview.vue";
 const props = defineProps<{ event: ExternalCheckinEvent; mode: "file" | "manual" }>();
 const emit = defineEmits<{ (event: "saved", value: ExternalCheckinEvent): void; (event: "close"): void }>();
 const fields = props.event.fields.map(field => ({ ...field }));
-const busy = ref(false), error = ref(""), plan = ref<ImportPlan | null>(null), choices = ref<Record<string, string>>({});
+const busy = ref(false), error = ref(""), plan = ref<ImportPlan | null>(null), choices = ref<Record<string, string | null>>({}), discarded = ref<Record<string, string[]>>({});
 const sheets = ref<{ name: string; rows: string[][] }[]>([]), sheetIndex = ref(0), fileName = ref(""), mapping = reactive<Record<string, string>>({});
 const manualValues = reactive<ExternalCheckinValues>(Object.fromEntries(fields.map(field => [field.key, ""])));
 const sheet = computed(() => sheets.value[sheetIndex.value]?.rows || []);
@@ -49,13 +49,30 @@ const decisions = computed(() => Object.entries(choices.value).map(([groupId, ke
 const reviewed = computed(() => {
   if (!plan.value) return null;
   const result = resolveExternalCheckinDuplicates(plan.value.duplicates, fields, decisions.value);
-  return { ...plan.value, ...result, added: plan.value.added + result.added };
+  return { ...plan.value, ...result, added: plan.value.added + result.added, skipped: plan.value.deduplicated + result.skipped };
 });
 const submitDisabled = computed(() => busy.value || (props.mode === "file" && !reviewed.value) || !!reviewed.value?.errors.length || !!reviewed.value?.unresolved);
 let payload: { rows: ExternalCheckinValues[]; rowNumbers: number[]; revision: number; source: "file" | "manual" } | null = null;
-function invalidate() { plan.value = null; payload = null; choices.value = {}; error.value = ""; }
+function invalidate() { plan.value = null; payload = null; choices.value = {}; discarded.value = {}; error.value = ""; }
 watch(manualValues, () => { if (!busy.value) invalidate(); }, { deep: true });
 function selectCandidate(groupId: string, candidateId: string | null) { if (busy.value) return; if (candidateId) choices.value[groupId] = candidateId; else delete choices.value[groupId]; }
+function toggleDiscard(groupId: string, candidateId: string) {
+  if (busy.value) return;
+  const group = plan.value?.duplicates.find(item => item.id === groupId);
+  if (!group?.candidates.some(candidate => candidate.id === candidateId && candidate.source === "incoming")) return;
+  const removed = new Set(discarded.value[groupId] || []);
+  if (removed.has(candidateId)) { removed.delete(candidateId); delete choices.value[groupId]; }
+  else { removed.add(candidateId); if (choices.value[groupId] === candidateId) delete choices.value[groupId]; }
+  discarded.value[groupId] = [...removed];
+  const remaining = group.candidates.filter(candidate => !removed.has(candidate.id));
+  if (remaining.length <= 1) choices.value[groupId] = remaining[0]?.id ?? null;
+}
+function discardGroup(groupId: string) {
+  if (busy.value) return;
+  const group = plan.value?.duplicates.find(item => item.id === groupId); if (!group) return;
+  discarded.value[groupId] = group.candidates.filter(candidate => candidate.source === "incoming").map(candidate => candidate.id);
+  choices.value[groupId] = group.candidates.find(candidate => candidate.source === "existing")?.id ?? null;
+}
 async function run(fn: () => Promise<void>) { if (busy.value) return; busy.value = true; error.value = ""; try { await fn(); } catch (e) { error.value = e instanceof Error ? e.message : "操作失败，请重试"; } finally { busy.value = false; } }
 function mapHeaders() { invalidate(); for (const key of Object.keys(mapping)) delete mapping[key]; for (const field of fields) { const index = sheet.value[0]?.findIndex(header => header.normalize("NFKC").trim() === field.label); mapping[field.key] = index === undefined || index < 0 ? "" : String(index); } }
 async function readFile(event: Event) {
@@ -82,7 +99,7 @@ const save = () => run(async () => {
   let saved: ExternalCheckinEvent;
   try { saved = await api.import(props.event.id, { ...payload, digest: plan.value.digest, decisions: decisions.value }); }
   catch (e) { invalidate(); throw e; }
-  ElMessage.success(summary.updated ? "名单资料已更新，签到记录已保留" : summary.added ? props.mode === "manual" ? "名单已添加" : "名单已导入" : "已保留现有名单");
+  ElMessage.success(summary.updated ? "名单资料已更新，签到记录已保留" : summary.added ? props.mode === "manual" ? "名单已添加" : "名单已导入" : summary.deduplicated ? "相同资料已自动去重" : "已完成处理，本次未新增名单");
   emit("saved", saved);
 });
 const downloadTemplate = () => run(async () => { await downloadExternalCheckinSheet(`${props.event.title}-名单模板`, [fields.map(field => field.label)]); });

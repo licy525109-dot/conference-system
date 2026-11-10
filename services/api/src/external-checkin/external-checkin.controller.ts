@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -39,6 +39,10 @@ export class AdminExternalCheckinController {
   @Post(":id/import") @RequireAdminPermissions("external-checkin:view", "external-checkin:write")
   async import(@Param("id") id: string, @Body() body: unknown, @Req() r: RequestWithCurrentAdmin) { return ok(await this.service.import(id, body, r.currentAdmin!, true)); }
   @Get(":id/attendees") async attendees(@Param("id") id: string, @Query() q: Record<string, unknown>, @Req() r: RequestWithCurrentAdmin) { return ok(await this.service.attendees(id, q, r.currentAdmin!)); }
+  @Post(":id/attendees/:attendeeId/checkin") @RequireAdminPermissions("external-checkin:view", "external-checkin:write")
+  async helpCheckin(@Param("id") id: string, @Param("attendeeId") attendeeId: string, @Body() body: unknown, @Req() r: RequestWithCurrentAdmin) { return ok(await this.service.helpCheckin(id, attendeeId, body, r.currentAdmin!)); }
+  @Delete(":id/attendees/:attendeeId") @RequireAdminPermissions("external-checkin:view", "external-checkin:write")
+  async deleteAttendee(@Param("id") id: string, @Param("attendeeId") attendeeId: string, @Body() body: unknown, @Req() r: RequestWithCurrentAdmin) { return ok(await this.service.deleteAttendee(id, attendeeId, body, r.currentAdmin!)); }
   @Get(":id/export") async export(@Param("id") id: string, @Req() r: RequestWithCurrentAdmin) { return ok(await this.service.attendees(id, {}, r.currentAdmin!, true)); }
 }
 

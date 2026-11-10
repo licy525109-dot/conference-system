@@ -26,6 +26,8 @@ export const externalCheckins = {
   preview: (id: string, body: unknown) => mutate<ImportPlan>(`${base}/${id}/import/preview`, body),
   import: (id: string, body: unknown) => mutate<ExternalCheckinEvent>(`${base}/${id}/import`, body),
   attendees: (id: string, query: { page: number; keyword: string; status: string }) => apiRequest<{ items: ExternalCheckinAttendee[]; total: number }>(`${base}/${id}/attendees${toQuery(query)}`),
+  helpCheckin: (id: string, attendeeId: string, revision: number) => mutate<{ event: ExternalCheckinEvent; alreadyCheckedIn: boolean }>(`${base}/${id}/attendees/${attendeeId}/checkin`, { revision }),
+  deleteAttendee: (id: string, attendeeId: string, revision: number, checkedInAt: string | null) => mutate<ExternalCheckinEvent>(`${base}/${id}/attendees/${attendeeId}`, { revision, checkedInAt }, "DELETE"),
   export: (id: string) => apiRequest<{ items: ExternalCheckinAttendee[] }>(`${base}/${id}/export`),
   publicUrl: (event: ExternalCheckinEvent) => `${API_BASE_URL.replace(/\/api\/?$/, "")}${event.publicPath}`
 };
