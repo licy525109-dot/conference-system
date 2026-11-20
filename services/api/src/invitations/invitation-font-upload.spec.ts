@@ -46,6 +46,7 @@ test("font multipart upload streams to disk, persists to materials and cleans up
     .useValue(new AdminJwtAuthGuard({
       getCurrentAdminFromToken: async (token: string) => ({
         id: "test-font-admin", username: "test-font-admin",
+        conferenceScopeMode: "ALL",
         permissions: token === "editor" ? ["invitation:view", "invitation:content"] : ["invitation:view"],
       }),
     } as never))
