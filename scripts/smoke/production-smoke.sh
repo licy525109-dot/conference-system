@@ -166,6 +166,7 @@ check_h5_runtime_preview_bundle() {
 require_cmd curl
 require_cmd grep
 require_cmd find
+require_cmd node
 load_production_env
 
 log "1. API health"
@@ -177,6 +178,7 @@ curl_expect_200 "public conferences" "${API_BASE}/conferences?page=1&pageSize=1"
 curl_expect_200 "published CMS page" "${API_BASE}/pages/${CMS_PAGE_KEY}/published"
 curl_expect_200 "app tabbar" "${API_BASE}/app/tabbar"
 curl_expect_existing_endpoint "admin login endpoint" "${API_BASE}/admin/auth/login"
+API_BASE="$API_BASE" node "${PROJECT_DIR}/scripts/smoke/check-invitation-proxy.mjs"
 check_uploads_static_path
 
 log "3. Database schema"

@@ -21,7 +21,8 @@ export interface InvitationOptions {
 }
 const base = "/admin/invitations";
 export const listInvitationCampaigns = () =>
-  apiRequest<{ items: InvitationCampaignSummary[] }>(`${base}/campaigns`);
+  // Avoid stale cached redirects as well as stale invitation summaries.
+  apiRequest<{ items: InvitationCampaignSummary[] }>(`${base}/campaigns`, { cache: "no-store" });
 export const invitationOptions = () =>
   apiRequest<InvitationOptions>(`${base}/options`);
 export const createInvitationCampaign = (

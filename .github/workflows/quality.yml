@@ -10,6 +10,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  invitation-proxy:
+    name: Invitation Nginx routing
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get update -qq && sudo apt-get install -y nginx
+      - run: node --test tests/deploy/invitation-proxy.test.mjs
+
   external-checkin-api:
     name: External check-in API and page isolation
     runs-on: ubuntu-latest
