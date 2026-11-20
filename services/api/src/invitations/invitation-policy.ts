@@ -21,7 +21,7 @@ export function hasInvitationPermission(
 export function invitationCampaignScope(
   admin: CurrentAdmin,
 ): Prisma.InvitationCampaignWhereInput {
-  return hasInvitationPermission(admin, "invitation:access")
+  return admin.conferenceScopeMode !== "ASSIGNED" && hasInvitationPermission(admin, "invitation:access")
     ? {}
     : { members: { some: { adminId: admin.id } } };
 }

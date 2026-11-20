@@ -16,6 +16,12 @@ export class AdminAccessController {
     return this.accessService.listAccounts();
   }
 
+  @Get("accounts/invitation-options")
+  @RequireAdminPermissions("system:account")
+  invitationOptions() {
+    return this.accessService.invitationOptions();
+  }
+
   @Post("accounts")
   @RequireAdminPermissions("system:account")
   createAccount(@Body() body: unknown, @Req() request: RequestWithCurrentAdmin) {

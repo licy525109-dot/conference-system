@@ -128,6 +128,15 @@ describe("AdminAccessService authorization hardening", () => {
     assert.deepEqual([...operator().permissionIds], []);
   });
 
+  it("seeds an invitation editor without global access and preserves later permission changes", async () => {
+    const { access, invitationEditor } = roleFixture();
+    await access.ensureBuiltInAccess();
+    assert.deepEqual([...invitationEditor().permissionIds].sort(), ["invitation:content", "invitation:publish", "invitation:view", "invitation:write"]);
+    await access.updateRole(invitationEditor().id, { permissionIds: ["invitation:view", "invitation:content"] }, roleEditor);
+    await access.ensureBuiltInAccess();
+    assert.deepEqual([...invitationEditor().permissionIds].sort(), ["invitation:content", "invitation:view"]);
+  });
+
   it("preserves explicit export grants and operator metadata across initialization", async () => {
     const { access, operator } = roleFixture();
     await access.ensureBuiltInAccess();
@@ -197,5 +206,5 @@ function roleFixture() {
     $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(db)
   };
   const prisma = db as unknown as PrismaService;
-  return { prisma, access: new AdminAccessService(prisma), operator: () => roles.get("CONFERENCE_OPERATOR")!, operatorCreates: () => createdOperators };
+  return { prisma, access: new AdminAccessService(prisma), operator: () => roles.get("CONFERENCE_OPERATOR")!, invitationEditor: () => roles.get("INVITATION_EDITOR")!, operatorCreates: () => createdOperators };
 }

@@ -27,6 +27,15 @@
     <CertificatesPage v-if="hasPermission('certificate:view')" />
     <el-result v-else icon="warning" title="无证书管理权限" />
   </div>
+  <div v-else-if="admin.conferenceScopeMode === 'ASSIGNED' && (currentRoute.path === '/invitations' || (hasPermission('invitation:view') && !hasPermission('conference:view')))" class="scoped-invitation-page">
+    <nav class="scoped-invitation-nav" aria-label="工作台导航">
+      <el-button v-if="hasPermission('conference:view')" @click="navigateTo('/dashboard')">返回授权会议工作台</el-button>
+      <el-button v-if="hasPermission('certificate:view')" @click="navigateTo('/certificates')">证书管理</el-button>
+      <span>{{ admin.displayName || admin.username }}</span><el-button @click="logout">退出登录</el-button>
+    </nav>
+    <InvitationsPage v-if="hasPermission('invitation:view')" />
+    <el-result v-else icon="warning" title="无邀请函管理权限" />
+  </div>
   <ScopedConferenceWorkspace v-else-if="admin.conferenceScopeMode === 'ASSIGNED'" />
   <AdminLayout v-else />
 </template>
@@ -37,11 +46,12 @@ import { ElMessage } from "element-plus";
 import AdminLayout from "./layouts/AdminLayout.vue";
 import ScopedConferenceWorkspace from "./pages/conferences/ScopedConferenceWorkspace.vue";
 const CertificatesPage = defineAsyncComponent(() => import("./pages/certificates/index.vue"));
+const InvitationsPage = defineAsyncComponent(() => import("./pages/invitations/index.vue"));
 import { currentRoute, navigateTo } from "./router";
 import { getTheme } from "./services/admin";
 import { useAdminSession } from "./stores/admin-session";
 
-const { admin, ready, init, login, hasPermission } = useAdminSession();
+const { admin, ready, init, login, logout, hasPermission } = useAdminSession();
 const loading = ref(false);
 const loginForm = reactive({ username: "admin", password: "" });
 const browserTitle = ref("会务运营平台");
@@ -94,3 +104,9 @@ async function submitLogin() {
   }
 }
 </script>
+
+<style scoped>
+.scoped-invitation-page { padding: 24px; max-width: 1600px; margin: auto; }
+.scoped-invitation-nav { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+@media (max-width: 640px) { .scoped-invitation-page { padding: 16px; } }
+</style>

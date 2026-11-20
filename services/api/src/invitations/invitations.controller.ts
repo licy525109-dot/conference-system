@@ -22,6 +22,7 @@ import { AdminMaterialsService } from "../admin/admin-materials.service";
 import { invitationOrigin } from "./invitation-policy";
 import { AdminJwtAuthGuard } from "../admin/admin-jwt-auth.guard";
 import { AdminPermissionGuard } from "../admin/admin-permission.guard";
+import { AllowConferenceScopedAdmin } from "../admin/conference-scope";
 import { RequireAdminPermissions } from "../admin/require-permissions.decorator";
 import type { RequestWithCurrentAdmin } from "../admin/current-admin";
 import { InvitationsService } from "./invitations.service";
@@ -30,6 +31,7 @@ import { InvitationAssetsService, INVITATION_ASSET_TYPES } from "./invitation-as
 import type { StoredMaterialFile, UploadedMaterialFile } from "../admin/admin-materials.service";
 
 @Controller("admin/invitations")
+@AllowConferenceScopedAdmin()
 @UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
 @RequireAdminPermissions("invitation:view")
 export class AdminInvitationsController {

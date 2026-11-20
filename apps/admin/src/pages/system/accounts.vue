@@ -14,6 +14,7 @@
         <el-table-column prop="displayName" label="显示名" min-width="160" />
         <el-table-column label="角色" min-width="220"><template #default="{ row }">{{ rolesText(row) }}</template></el-table-column>
         <el-table-column label="会议范围" min-width="240"><template #default="{ row }"><span class="conference-scope-text">{{ conferenceScopeText(row) }}</span></template></el-table-column>
+        <el-table-column label="邀请函范围" min-width="220"><template #default="{ row }"><span class="conference-scope-text">{{ invitationScopeText(row) }}</span></template></el-table-column>
         <el-table-column label="状态" width="100"><template #default="{ row }"><AdminStatusBadge :status="row.enabled" /></template></el-table-column>
         <el-table-column label="操作" width="100" fixed="right"><template #default="{ row }"><el-button size="small" :disabled="loading || saving || Boolean(loadError)" @click="openEdit(row)">编辑</el-button></template></el-table-column>
       </el-table>
@@ -28,6 +29,7 @@
           <el-select v-model="form.roleIds" multiple style="width: 100%">
             <el-option v-for="role in roles" :key="role.id" :label="role.enabled ? role.name : `${role.name}（已停用）`" :value="role.id" :disabled="!role.enabled" />
           </el-select>
+          <el-button v-if="invitationEditor && !form.roleIds.includes(invitationEditor.id)" link type="primary" @click="form.roleIds.push(invitationEditor.id)">添加邀请函编辑人员角色</el-button>
         </el-form-item>
         <el-form-item label="会议范围">
           <el-radio-group v-model="form.conferenceScopeMode" :disabled="!scopeAvailable">
@@ -47,9 +49,10 @@
             <el-button :icon="Refresh" :disabled="choicesLoading || saving" @click="loadConferenceChoices">重试</el-button>
           </div>
           <p v-else-if="choicesReady" class="muted-text">可授权会议 {{ conferences.length }} 场，已选 {{ form.conferenceIds.length }} 场。</p>
-          <el-alert v-if="!form.conferenceIds.length" title="未授权任何会议，该账号不能访问任何会议数据。" type="warning" :closable="false" show-icon class="account-alert" />
+          <el-alert v-if="!form.conferenceIds.length" title="未授权报名会议，该账号不能访问报名会议数据；邀请函按下方范围单独授权。" type="info" :closable="false" show-icon class="account-alert" />
         </template>
         <el-alert v-else title="全部会议包含当前及未来新增的会议；可执行的操作仍由角色权限决定。" type="warning" :closable="false" show-icon class="account-alert" />
+        <AccountInvitationGrants :key="form.id || 'new'" v-model="form.invitationCampaignIds" :existing="existingInvitations" :available="invitationScopeAvailable" :unrestricted="allInvitations" :can-view="selectedPermissions.has('invitation:view')" @ready="invitationChoicesReady = $event" />
         <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" :disabled="!canSave" @click="save">保存</el-button></template>
@@ -59,13 +62,14 @@
 
 <script setup lang="ts">
 import AdminTableIndex from "../../components/AdminTableIndex.vue";
+import AccountInvitationGrants from "../../components/AccountInvitationGrants.vue";
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
 import { Plus, Refresh } from "@element-plus/icons-vue";
 import AdminPageHeader from "../../components/AdminPageHeader.vue";
 import AdminStatusBadge from "../../components/AdminStatusBadge.vue";
 import { createAccount, listAccounts, listConferences, listRoles, updateAccount } from "../../services/admin";
-import type { AdminAccount, Conference, Role } from "../../services/types";
+import type { AdminAccount, Conference, Role, InvitationGrantOption } from "../../services/types";
 import { useAdminSession } from "../../stores/admin-session";
 
 const { admin, hasPermission } = useAdminSession();
@@ -84,8 +88,16 @@ const choicesError = ref("");
 const choicesLoadedCount = ref(0);
 const scopeAvailable = ref(true);
 const initialScope = ref("");
+const invitationScopeAvailable = ref(true);
+const invitationChoicesReady = ref(false);
+const existingInvitations = ref<InvitationGrantOption[]>([]);
+const initialInvitations = ref("");
+const invitationEditor = computed(() => roles.value.find(role => role.code === 'INVITATION_EDITOR' && role.enabled));
+const selectedPermissions = computed(() => new Set(roles.value.filter(role => role.enabled && form.roleIds.includes(role.id)).flatMap(role => role.permissions.map(permission => permission.code))));
+const allInvitations = computed(() => form.conferenceScopeMode === 'ALL' && (selectedPermissions.value.has('invitation:access') || roles.value.some(role => form.roleIds.includes(role.id) && role.code === 'SUPER_ADMIN')));
+const invitationScopeChanged = computed(() => invitationScopeAvailable.value && (!form.id || initialInvitations.value !== invitationKey()));
 const formRef = ref<FormInstance>();
-const form = reactive({ id: "", username: "", displayName: "", password: "", roleIds: [] as string[], enabled: true, conferenceScopeMode: "ASSIGNED" as "ALL" | "ASSIGNED", conferenceIds: [] as string[] });
+const form = reactive({ id: "", username: "", displayName: "", password: "", roleIds: [] as string[], enabled: true, conferenceScopeMode: "ASSIGNED" as "ALL" | "ASSIGNED", conferenceIds: [] as string[], invitationCampaignIds: [] as string[] });
 let choicesRequest = 0;
 let disposed = false;
 const rules: FormRules = {
@@ -93,7 +105,7 @@ const rules: FormRules = {
   password: [{ validator: (_rule, value: string, callback) => callback(form.id || value.trim() ? undefined : new Error("请输入新账号密码")), trigger: "blur" }]
 };
 const scopeChanged = computed(() => scopeAvailable.value && (!form.id || initialScope.value !== scopeKey()));
-const canSave = computed(() => !saving.value && (!scopeChanged.value || form.conferenceScopeMode === "ALL" || !form.conferenceIds.length || choicesReady.value));
+const canSave = computed(() => !saving.value && (!scopeChanged.value || form.conferenceScopeMode === "ALL" || !form.conferenceIds.length || choicesReady.value) && (!invitationScopeChanged.value || !form.invitationCampaignIds.length || invitationChoicesReady.value));
 const conferenceOptions = computed(() => {
   const items = conferences.value.map(item => ({ id: item.id, title: item.title, unavailable: false }));
   const ids = new Set(items.map(item => item.id));
@@ -151,7 +163,10 @@ async function loadConferenceChoices() {
 
 function openCreate() {
   const operator = roles.value.find(role => role.code === "CONFERENCE_OPERATOR" && role.enabled);
-  Object.assign(form, { id: "", username: "", displayName: "", password: "", roleIds: operator ? [operator.id] : [], enabled: true, conferenceScopeMode: "ASSIGNED", conferenceIds: [] });
+  Object.assign(form, { id: "", username: "", displayName: "", password: "", roleIds: operator ? [operator.id] : [], enabled: true, conferenceScopeMode: "ASSIGNED", conferenceIds: [], invitationCampaignIds: [] });
+  invitationScopeAvailable.value = true;
+  invitationChoicesReady.value = false;
+  existingInvitations.value = [];
   scopeAvailable.value = true;
   existingGrants.value = [];
   saveError.value = "";
@@ -168,8 +183,13 @@ function openEdit(row: AdminAccount) {
     roleIds: row.roles.map((role) => role.id),
     enabled: row.enabled,
     conferenceScopeMode: row.conferenceScopeMode ?? "ASSIGNED",
-    conferenceIds: [...(row.conferenceIds ?? row.conferenceGrants?.map(grant => grant.conferenceId) ?? [])]
+    conferenceIds: [...(row.conferenceIds ?? row.conferenceGrants?.map(grant => grant.conferenceId) ?? [])],
+    invitationCampaignIds: [...(row.invitationCampaignIds ?? row.invitationCampaigns?.map(item => item.id) ?? [])]
   });
+  invitationScopeAvailable.value = row.invitationCampaignIds !== undefined;
+  invitationChoicesReady.value = false;
+  existingInvitations.value = row.invitationCampaigns ?? [];
+  initialInvitations.value = invitationKey();
   existingGrants.value = row.conferenceGrants ?? [];
   scopeAvailable.value = row.conferenceScopeMode !== undefined;
   initialScope.value = scopeKey();
@@ -193,6 +213,7 @@ async function save() {
     const payload = {
       username: form.username.trim(), displayName: form.displayName.trim() || null, password: form.password,
       roleIds: [...form.roleIds], enabled: form.enabled,
+      ...(invitationScopeChanged.value ? { invitationCampaignIds: [...form.invitationCampaignIds] } : {}),
       ...(scopeChanged.value ? { conferenceScopeMode: form.conferenceScopeMode, conferenceIds: form.conferenceScopeMode === "ALL" ? [] : [...form.conferenceIds] } : {})
     };
     const request = form.id ? updateAccount(form.id, payload) : createAccount(payload);
@@ -210,6 +231,13 @@ function rolesText(row: AdminAccount) {
 }
 
 function scopeKey() { return JSON.stringify([form.conferenceScopeMode, form.conferenceScopeMode === "ALL" ? [] : [...new Set(form.conferenceIds)].sort()]); }
+function invitationKey() { return JSON.stringify([...new Set(form.invitationCampaignIds)].sort()); }
+function invitationScopeText(row: AdminAccount) {
+  const assignedRoles = roles.value.filter(role => role.enabled && row.roles.some(item => item.id === role.id));
+  if (row.conferenceScopeMode === 'ALL' && assignedRoles.some(role => role.code === 'SUPER_ADMIN' || role.permissions.some(permission => permission.code === 'invitation:access'))) return '全部邀请函（角色授权）';
+  if (row.invitationCampaignIds === undefined) return '邀请函范围待同步';
+  return row.invitationCampaigns?.map(item => `${item.title}${item.conferenceId ? '' : '（外部）'}`).join('、') || (row.invitationCampaignIds.length ? `已授权 ${row.invitationCampaignIds.length} 场` : '未授权邀请函');
+}
 function conferenceScopeText(row: AdminAccount) {
   if (!row.conferenceScopeMode) return "会议范围待同步";
   if (row.conferenceScopeMode === "ALL") return "全部会议";
