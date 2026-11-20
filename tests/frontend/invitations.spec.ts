@@ -2463,6 +2463,42 @@ test("a published update refreshes an already open link without changing the rec
   ).toBeVisible();
   await expect(page.locator(".invitation-document")).toHaveCount(0);
 });
+test("organizations can batch add logos and text and pan without moving existing artwork", async ({ page }) => {
+  await page.setViewportSize({width: 1440, height: 900});
+  const doc = document();
+  const org = createInvitationModule("organizations", "batch-org");
+  org.settings!.organizationLayout = "canvas";
+  org.organizationCanvas = { width: 750, height: 1600, labels: [] };
+  org.items = [{ id: "original", title: "主办单位", description: "原单位", imageUrl: "", icon:"link", href:"", body:[], frame:{x:10,y:6,width:35,height:6} }];
+  doc.content.modules.push(org);
+  const campaign = await adminFixture(page, ["*"], doc);
+  await page.route("**/campaigns/campaign/assets", route => ok(route, {url: "/invitation-art/tide-paper.jpg"}));
+  await page.goto(`${origin}/#/invitations`);
+  await page.getByRole("tab",{name:"会议内容",exact:true}).click();
+  await page.getByRole("button",{name:/组织架构/}).first().click();
+  const importer = page.locator(".organization-import");
+  await importer.locator("input[type=file]").setInputFiles(["a","b"].map(name => ({name: name+".png", mimeType:"image/png", buffer: Buffer.from(name)})));
+  await expect(page.locator(".organization-canvas-editor .organization-canvas-logo")).toHaveCount(3);
+  await importer.getByRole("button",{name:"添加纯文字单位"}).click();
+  await importer.getByRole("textbox",{name:"纯文字单位名称"}).fill("言灵工作室");
+  await importer.getByRole("button",{name:"加入分组"}).click();
+  const view = page.getByLabel("组织画布视区", {exact:true});
+  await page.getByRole("button",{name:"平移画布"}).click();
+  await view.scrollIntoViewIfNeeded();
+  const box = (await view.boundingBox())!;
+  await page.mouse.move(box.x+40,box.y+150);
+  await page.mouse.down();
+  await page.mouse.move(box.x+40,box.y+65,{steps:5});
+  await page.mouse.up();
+  await expect.poll(() => view.evaluate(el => el.scrollTop)).toBeGreaterThan(30);
+  await page.getByRole("button",{name:"保存草稿",exact:true}).click();
+  await expect.poll(() => campaign.draftRevision).toBe(2);
+  const saved = campaign.draft.modules.find(m => m.id === org.id)!;
+  expect(saved.items!.map(item => item.description)).toEqual(["原单位","a","b","言灵工作室"]);
+  expect(saved.items![0].frame).toEqual(org.items[0].frame);
+  expect(saved.items![3].imageUrl).toBe("");
+});
+
 async function adminFixture(
   page: Page,
   permissions: string[],
