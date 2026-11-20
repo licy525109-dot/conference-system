@@ -10,6 +10,7 @@ import type {
   ConferenceTestDataCleanupPreview,
   ConferenceTestDataCleanupResult,
   AdminAccount,
+  InvitationGrantOption,
   AdminAuditLog,
   AdminUser,
   ApiList,
@@ -584,6 +585,10 @@ export function updateSmsConfig(input: Record<string, unknown>) {
 
 export function listAccounts() {
   return apiRequest<{ items: AdminAccount[] }>("/admin/accounts");
+}
+
+export function listAccountInvitationOptions() {
+  return apiRequest<{ items: InvitationGrantOption[] }>("/admin/accounts/invitation-options");
 }
 
 export function createAccount(input: Record<string, unknown>) {

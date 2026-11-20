@@ -75,6 +75,15 @@ export class AdminAccessService {
       permissions: { create: operatorPermissions.map(permission => ({ permissionId: permission.id })) }
     } });
 
+    const invitationPermissions = await this.prisma.permission.findMany({
+      where: { code: { in: ["invitation:view", "invitation:content", "invitation:publish", "invitation:write"] } }, select: { id: true }
+    });
+    // Defaults apply once; subsequent logins must not undo a role administrator's changes.
+    await this.prisma.role.upsert({ where: { code: "INVITATION_EDITOR" }, update: {}, create: {
+      code: "INVITATION_EDITOR", name: "邀请函编辑人员", description: "编辑、发布已授权邀请函，并生成个人邀约；不含全局授权和公众号配置", system: true, enabled: true,
+      permissions: { create: invitationPermissions.map(permission => ({ permissionId: permission.id })) }
+    } });
+
   }
 
   async getAdminPermissions(adminUserId: string): Promise<string[]> {
@@ -145,6 +154,7 @@ export class AdminAccessService {
     const enabled = readOptionalBoolean(body, "enabled") ?? true;
     const roleIds = readStringArray(body.roleIds);
     const scope = await this.parseConferenceScope(body, true);
+    const invitationIds = await this.parseInvitationGrants(body);
 
     const account = await catchUniqueConstraint(
       this.prisma.adminUser.create({
@@ -155,6 +165,7 @@ export class AdminAccessService {
           enabled,
           conferenceScopeMode: scope!.mode,
           conferenceGrants: { create: scope!.ids.map(conferenceId => ({ conferenceId })) },
+          invitationCampaigns: { create: (invitationIds ?? []).map(campaignId => ({ campaignId })) },
           roles: {
             create: roleIds.map((roleId) => ({ roleId }))
           }
@@ -164,7 +175,7 @@ export class AdminAccessService {
       "用户名已存在"
     );
 
-    await this.writeAudit(admin, AuditAction.CREATE, "AdminUser", account.id, "Create admin account", { username });
+    await this.writeAudit(admin, AuditAction.CREATE, "AdminUser", account.id, "Create admin account", { username, invitationCampaignIds: invitationIds ?? [] });
     return ok(formatAccount(account));
   }
 
@@ -173,6 +184,7 @@ export class AdminAccessService {
     const body = readObject(input);
     const roleIds = typeof body.roleIds === "undefined" ? undefined : readStringArray(body.roleIds);
     const scope = await this.parseConferenceScope(body, false);
+    const invitationIds = await this.parseInvitationGrants(body);
     if (id === admin.id && scope?.mode === "ASSIGNED") throw new BadRequestException("不能将当前登录账号改为会议授权账号");
     const data: Prisma.AdminUserUpdateInput = {
       ...(typeof body.displayName !== "undefined" ? { displayName: readNullableString(body.displayName) } : {}),
@@ -192,11 +204,13 @@ export class AdminAccessService {
         await tx.adminUserRole.deleteMany({ where: { adminUserId: id } });
       }
       if (scope) await tx.adminConferenceGrant.deleteMany({ where: { adminUserId: id } });
+      if (invitationIds) await tx.invitationCampaignMember.deleteMany({ where: { adminId: id } });
 
       return tx.adminUser.update({
         where: { id },
         data: {
           ...data,
+          ...(invitationIds ? { invitationCampaigns: { create: invitationIds.map(campaignId => ({ campaignId })) } } : {}),
           ...(scope ? { conferenceScopeMode: scope.mode, conferenceGrants: { create: scope.ids.map(conferenceId => ({ conferenceId })) } } : {}),
           ...(roleIds
             ? {
@@ -212,6 +226,7 @@ export class AdminAccessService {
 
     await this.writeAudit(admin, AuditAction.UPDATE, "AdminUser", account.id, "Update admin account", {
       username: account.username,
+      ...(invitationIds ? { invitationCampaignIds: invitationIds } : {}),
       ...(scope ? { conferenceScopeMode: scope.mode, conferenceIds: scope.ids } : {})
     });
     return ok(formatAccount(account));
@@ -230,6 +245,23 @@ export class AdminAccessService {
       }
     });
     return ok({ items });
+  }
+
+  async invitationOptions() {
+    const items = await this.prisma.invitationCampaign.findMany({
+      select: campaignGrantSelect, orderBy: [{ updatedAt: "desc" }, { id: "asc" }]
+    });
+    return ok({ items: items.map(formatCampaignGrant) });
+  }
+
+  private async parseInvitationGrants(body: Record<string, unknown>) {
+    if (body.invitationCampaignIds === undefined) return null;
+    const ids = [...new Set(readStringArray(body.invitationCampaignIds))];
+    if (ids.length > 1000) throw new BadRequestException("授权邀请函数量超出限制");
+    if (ids.length && await this.prisma.invitationCampaign.count({ where: { id: { in: ids } } }) !== ids.length) {
+      throw new BadRequestException("部分邀请函不存在，请刷新列表后重新选择");
+    }
+    return ids;
   }
 
   private async parseConferenceScope(body: Record<string, unknown>, creating: boolean) {
@@ -342,6 +374,17 @@ export class AdminAccessService {
   }
 }
 
+const campaignGrantSelect = {
+  id: true, conferenceId: true, draftJson: true, conference: { select: { title: true } }
+} satisfies Prisma.InvitationCampaignSelect;
+
+function formatCampaignGrant(campaign: Prisma.InvitationCampaignGetPayload<{ select: typeof campaignGrantSelect }>) {
+  const draft = campaign.draftJson;
+  return { id: campaign.id, conferenceId: campaign.conferenceId,
+    title: isRecord(draft) && typeof draft.title === "string" && draft.title.trim()
+      ? draft.title.trim() : campaign.conference?.title || "未命名邀请函" };
+}
+
 const accountSelect = {
   id: true,
   username: true,
@@ -349,6 +392,7 @@ const accountSelect = {
   enabled: true,
   conferenceScopeMode: true,
   conferenceGrants: { select: { conferenceId: true, conference: { select: { title: true } } } },
+  invitationCampaigns: { select: { campaign: { select: campaignGrantSelect } } },
   createdAt: true,
   updatedAt: true,
   roles: {
@@ -391,6 +435,8 @@ function formatAccount(account: Prisma.AdminUserGetPayload<{ select: typeof acco
   return {
     ...account,
     roles: account.roles.map((item) => item.role),
+    invitationCampaigns: (account.invitationCampaigns ?? []).map(item => formatCampaignGrant(item.campaign)),
+    invitationCampaignIds: (account.invitationCampaigns ?? []).map(item => item.campaign.id),
     conferenceIds: account.conferenceGrants?.map(item => item.conferenceId) ?? [],
     createdAt: account.createdAt.toISOString(),
     updatedAt: account.updatedAt.toISOString()

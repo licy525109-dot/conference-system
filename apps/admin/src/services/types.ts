@@ -614,6 +614,12 @@ export interface Role {
   updatedAt: string;
 }
 
+export interface InvitationGrantOption {
+  id: string;
+  title: string;
+  conferenceId: string | null;
+}
+
 export interface AdminAccount {
   id: string;
   username: string;
@@ -622,6 +628,8 @@ export interface AdminAccount {
   conferenceScopeMode?: "ALL" | "ASSIGNED";
   conferenceIds?: string[];
   conferenceGrants?: Array<{ conferenceId: string; conference: { title: string } }>;
+  invitationCampaignIds?: string[];
+  invitationCampaigns?: InvitationGrantOption[];
   roles: Array<{
     id: string;
     code: string;
