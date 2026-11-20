@@ -189,8 +189,9 @@ export const getInvitationAssets = (
 export const uploadInvitationAsset = (id: string, file: File) => {
   const data = new FormData();
   data.append("file", file);
+  const endpoint = /\.(woff2?|ttf|otf)$/i.test(file.name) ? "assets/font" : "assets";
   return apiRequest<InvitationAsset>(
-    `${base}/campaigns/${encodeURIComponent(id)}/assets`,
+    `${base}/campaigns/${encodeURIComponent(id)}/${endpoint}`,
     { method: "POST", body: data },
   );
 };

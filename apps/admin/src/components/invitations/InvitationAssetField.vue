@@ -15,7 +15,7 @@
     <div class="asset-meta">
       <span v-if="size">原图 {{ size.width }} × {{ size.height }} px</span
       ><span v-if="recommended">建议 {{ recommended }}</span
-      ><span>{{ spec.label }} · ≤ {{ spec.limit }}MB</span>
+      ><span>{{ spec.label }}<template v-if="spec.limit !== null"> · ≤ {{ spec.limit }}MB</template><template v-else> · 不限大小</template></span>
     </div>
     <span v-if="imageError" class="asset-error">图片无法加载，请检查地址</span>
     <div class="asset-source">
@@ -185,7 +185,7 @@ const specs = {
   font: {
     accept: ".woff2,.woff,.ttf,.otf",
     label: "WOFF2 / WOFF / TTF / OTF",
-    limit: 5,
+    limit: null,
   },
 };
 const spec = computed(() => specs[props.kind]);
@@ -271,10 +271,12 @@ async function upload(event: Event) {
   const extension = "." + file.name.split(".").pop()?.toLowerCase();
   if (
     !spec.value.accept.split(",").includes(extension) ||
-    file.size > spec.value.limit * 1024 * 1024
+    (spec.value.limit !== null && file.size > spec.value.limit * 1024 * 1024)
   ) {
     ElMessage.error(
-      `请选择 ${spec.value.limit}MB 以内的 ${spec.value.label} 文件`,
+      spec.value.limit === null
+        ? `请选择 ${spec.value.label} 文件`
+        : `请选择 ${spec.value.limit}MB 以内的 ${spec.value.label} 文件`,
     );
     return;
   }

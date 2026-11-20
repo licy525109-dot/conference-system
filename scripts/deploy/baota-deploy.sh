@@ -268,7 +268,25 @@ if ! grep -R -F "pages/cms-preview/index" -n "$H5_ROOT/assets" >/dev/null; then
   exit 3
 fi
 
-nginx -t
+PHASE="configure invitation font uploads"
+FONT_NGINX_DIR="${FONT_NGINX_DIR:-/www/server/panel/vhost/nginx/extension/guanchaohuiji.com_80}"
+if [[ ! -d "$FONT_NGINX_DIR" ]]; then
+  echo "ERROR: invitation font Nginx include directory is missing: $FONT_NGINX_DIR" >&2
+  exit 3
+fi
+FONT_NGINX_FILE="$FONT_NGINX_DIR/invitation-font-upload.conf"
+if [[ -f "$FONT_NGINX_FILE" ]]; then
+  cp -a "$FONT_NGINX_FILE" "$BACKUP/invitation-font-upload.conf"
+fi
+install -m 644 scripts/deploy/nginx-invitation-fonts.conf "$FONT_NGINX_FILE"
+if ! nginx -t; then
+  if [[ -f "$BACKUP/invitation-font-upload.conf" ]]; then
+    cp -a "$BACKUP/invitation-font-upload.conf" "$FONT_NGINX_FILE"
+  else
+    rm -f "$FONT_NGINX_FILE"
+  fi
+  exit 3
+fi
 nginx -s reload
 
 PHASE="health check"

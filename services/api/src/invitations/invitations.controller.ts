@@ -15,6 +15,9 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
 import { AdminMaterialsService } from "../admin/admin-materials.service";
 import { invitationOrigin } from "./invitation-policy";
 import { AdminJwtAuthGuard } from "../admin/admin-jwt-auth.guard";
@@ -23,8 +26,8 @@ import { RequireAdminPermissions } from "../admin/require-permissions.decorator"
 import type { RequestWithCurrentAdmin } from "../admin/current-admin";
 import { InvitationsService } from "./invitations.service";
 import { InvitationWechatService } from "./invitation-wechat.service";
-import { InvitationAssetsService } from "./invitation-assets.service";
-import type { UploadedMaterialFile } from "../admin/admin-materials.service";
+import { InvitationAssetsService, INVITATION_ASSET_TYPES } from "./invitation-assets.service";
+import type { StoredMaterialFile, UploadedMaterialFile } from "../admin/admin-materials.service";
 
 @Controller("admin/invitations")
 @UseGuards(AdminJwtAuthGuard, AdminPermissionGuard)
@@ -57,6 +60,30 @@ export class AdminInvitationsController {
   ) {
     await this.service.campaign(id, req.currentAdmin!);
     return this.assets.upload(id, file, req.currentAdmin!);
+  }
+  @Post("campaigns/:id/assets/font")
+  @RequireAdminPermissions("invitation:view", "invitation:content")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      dest: join(tmpdir(), "conference-invitation-fonts"),
+      limits: { files: 1, fields: 0, parts: 2 },
+      fileFilter(_request, file, callback) {
+        const mime = INVITATION_ASSET_TYPES[extname(file.originalname).toLowerCase()];
+        callback(mime?.startsWith("font/") ? null : new BadRequestException("不支持此字体格式"), Boolean(mime?.startsWith("font/")));
+      },
+    }),
+  )
+  async uploadFont(
+    @Param("id") id: string,
+    @UploadedFile() file: StoredMaterialFile | undefined,
+    @Req() req: RequestWithCurrentAdmin,
+  ) {
+    try {
+      await this.service.campaign(id, req.currentAdmin!);
+      return await this.assets.uploadFont(id, file, req.currentAdmin!);
+    } finally {
+      if (file) await rm(file.path, { force: true });
+    }
   }
   @Post("campaigns/:id/image")
   @RequireAdminPermissions("invitation:view", "invitation:content")
