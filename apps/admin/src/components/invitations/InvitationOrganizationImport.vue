@@ -24,6 +24,27 @@
     >
       {{ busy ? progress : "批量添加 Logo" }}
     </el-button>
+    <el-button
+      :disabled="disabled || busy || !role.trim() || available < 1"
+      @click="libraryOpen = true"
+      >从素材库多选</el-button
+    >
+    <InvitationAssetLibrary
+      v-model="libraryOpen"
+      title="选择单位 Logo"
+      :campaign-id="campaignId"
+      kind="image"
+      multiple
+      :role="role.trim()"
+      :limit="available"
+      :disabled="disabled || busy"
+      :used-urls="
+        items
+          .filter((item) => item.title === role.trim())
+          .map((item) => item.imageUrl)
+      "
+      @select="addFromLibrary"
+    />
     <input
       ref="picker"
       hidden
@@ -64,7 +85,11 @@ import {
   type InvitationModule,
   type InvitationModuleItem,
 } from "@conference/shared";
-import { uploadInvitationAsset } from "../../services/invitations";
+import InvitationAssetLibrary from "./InvitationAssetLibrary.vue";
+import {
+  uploadInvitationAsset,
+  type InvitationAsset,
+} from "../../services/invitations";
 
 const props = defineProps<{
   module: InvitationModule;
@@ -87,6 +112,31 @@ const roles = computed(() => [
     ].filter(Boolean),
   ),
 ]);
+const libraryOpen = ref(false);
+function logoUnit(
+  title: string,
+  description: string,
+  imageUrl: string,
+): InvitationModuleItem {
+  return {
+    id: crypto.randomUUID(),
+    title,
+    description,
+    imageUrl,
+    href: "",
+    icon: "link",
+    body: [],
+  };
+}
+function addFromLibrary(assets: InvitationAsset[]) {
+  const title = role.value.trim().slice(0, 120);
+  if (!title || props.disabled || busy.value || assets.length > available.value)
+    return;
+  emit(
+    "append",
+    assets.map((asset) => logoUnit(title, asset.name, asset.url)),
+  );
+}
 const role = ref("主办单位");
 const picker = ref<HTMLInputElement>();
 const busy = ref(false);
@@ -125,6 +175,7 @@ watch(
   () => [props.campaignId, props.module.id],
   () => {
     generation++;
+    libraryOpen.value = false;
     busy.value = false;
   },
 );
@@ -159,16 +210,14 @@ async function upload(event: Event) {
       if (generation !== current || props.disabled) return;
       progress.value = `正在上传 ${index + 1} / ${files.length}`;
       try {
-        const asset = await uploadInvitationAsset(props.campaignId, file);
-        added.push({
-          id: crypto.randomUUID(),
-          title,
-          description: file.name.replace(/\.[^.]+$/, ""),
-          imageUrl: asset.url,
-          href: "",
-          icon: "link",
-          body: [],
-        });
+        const asset = await uploadInvitationAsset(
+          props.campaignId,
+          file,
+          "organization_logo",
+        );
+        added.push(
+          logoUnit(title, file.name.replace(/\.[^.]+$/, ""), asset.url),
+        );
       } catch {
         failed.push(file.name);
       }

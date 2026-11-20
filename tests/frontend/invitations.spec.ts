@@ -2472,7 +2472,7 @@ test("organizations can batch add logos and text and pan without moving existing
   org.items = [{ id: "original", title: "主办单位", description: "原单位", imageUrl: "", icon:"link", href:"", body:[], frame:{x:10,y:6,width:35,height:6} }];
   doc.content.modules.push(org);
   const campaign = await adminFixture(page, ["*"], doc);
-  await page.route("**/campaigns/campaign/assets", route => ok(route, {url: "/invitation-art/tide-paper.jpg"}));
+  await page.route("**/campaigns/campaign/assets?purpose=organization_logo", route => ok(route, {url: "/invitation-art/tide-paper.jpg"}));
   await page.goto(`${origin}/#/invitations`);
   await page.getByRole("tab",{name:"会议内容",exact:true}).click();
   await page.getByRole("button",{name:/组织架构/}).first().click();
@@ -2497,6 +2497,46 @@ test("organizations can batch add logos and text and pan without moving existing
   expect(saved.items!.map(item => item.description)).toEqual(["原单位","a","b","言灵工作室"]);
   expect(saved.items![0].frame).toEqual(org.items[0].frame);
   expect(saved.items![3].imageUrl).toBe("");
+});
+
+test("organization library keeps checked logos across searches and cancels without editing", async ({page}) => {
+  const doc = document();
+  const org = createInvitationModule("organizations", "library-org");
+  org.items = [];
+  doc.content.modules.push(org);
+  const campaign = await adminFixture(page, ["*"], doc);
+  let uploads = 0;
+  await page.route("**/campaigns/campaign/assets**", route => {
+    if (route.request().method() !== "GET") uploads++;
+    const query = new URL(route.request().url()).searchParams;
+    const names = query.get("keyword") ? ["乙单位"] : query.get("page") === "2" ? ["丙单位"] : ["甲单位", "乙单位"];
+    return ok(route, {items:names.map(name=>({id:name,name,url:"/uploads/"+name+".png",fileType:"image/png"})),total:query.get("keyword") ? names.length : 25,categories:[{code:"logo",name:"单位与品牌 Logo"}]});
+  });
+  await page.goto(`${origin}/#/invitations`);
+  await page.getByRole("tab",{name:"会议内容",exact:true}).click();
+  await page.getByRole("button",{name:/组织架构/}).first().click();
+  const open = page.getByRole("button",{name:"从素材库多选"});
+  await open.click();
+  await page.getByRole("button",{name:"选择素材 甲单位"}).click();
+  await page.getByRole("button",{name:"取消", exact:true}).last().click();
+  await open.click();
+  await expect(page.getByRole("button",{name:"加入主办单位（0）"})).toBeDisabled();
+  await page.getByRole("button",{name:"选择素材 甲单位"}).click();
+  await page.locator(".library-footer .btn-next").click();
+  await page.getByRole("button",{name:"选择素材 丙单位"}).click();
+  const search=page.getByRole("textbox",{name:"搜索素材名称"});
+  await search.fill("乙");
+  await search.press("Enter");
+  await expect(page.getByRole("button",{name:"选择素材 甲单位"})).toHaveCount(0);
+  await page.getByRole("button",{name:"选择素材 乙单位"}).click();
+  await page.getByRole("button",{name:"加入主办单位（3）"}).click();
+  await open.click();
+  await expect(page.getByRole("button",{name:"选择素材 甲单位"})).toBeDisabled();
+  await page.getByRole("button",{name:"取消",exact:true}).last().click();
+  await page.getByRole("button",{name:"保存草稿",exact:true}).click();
+  await expect.poll(()=>campaign.draftRevision).toBe(2);
+  expect(campaign.draft.modules.find(m=>m.id===org.id)?.items?.map(i=>[i.title,i.description])).toEqual([["主办单位","甲单位"],["主办单位","丙单位"],["主办单位","乙单位"]]);
+  expect(uploads).toBe(0);
 });
 
 async function adminFixture(

@@ -183,14 +183,15 @@ export const getInvitationAssets = (
   kind: string,
   keyword = "",
   page = 1,
+  category = "",
 ) =>
-  apiRequest<{ items: InvitationAsset[]; total: number }>(
-    `${base}/campaigns/${encodeURIComponent(id)}/assets?${new URLSearchParams({ kind, keyword, page: String(page) })}`,
+  apiRequest<{ items: InvitationAsset[]; total: number; categories: { code: string; name: string }[] }>(
+    `${base}/campaigns/${encodeURIComponent(id)}/assets?${new URLSearchParams({ kind, keyword, page: String(page), ...(category ? { category } : {}) })}`,
   );
-export const uploadInvitationAsset = (id: string, file: File) => {
+export const uploadInvitationAsset = (id: string, file: File, purpose?: "organization_logo") => {
   const data = new FormData();
   data.append("file", file);
-  const endpoint = /\.(woff2?|ttf|otf)$/i.test(file.name) ? "assets/font" : "assets";
+  const endpoint = /\.(woff2?|ttf|otf)$/i.test(file.name) ? "assets/font" : purpose ? "assets?purpose=organization_logo" : "assets";
   return apiRequest<InvitationAsset>(
     `${base}/campaigns/${encodeURIComponent(id)}/${endpoint}`,
     { method: "POST", body: data },

@@ -130,24 +130,19 @@ export class InvitationAssetsService {
     const mimeTypes = Object.values(INVITATION_ASSET_TYPES).filter((type) =>
       type.startsWith(`${prefix}/`),
     );
-    const where: Prisma.MaterialAssetWhereInput = {
-      AND: [
-        invitationAssetScope(campaignId, admin),
-        {
-          enabled: true,
-          fileType: { in: mimeTypes },
-          ...(query.keyword
-            ? {
-                name: {
-                  contains: query.keyword.slice(0, 100),
-                  mode: "insensitive" as const,
-                },
-              }
-            : {}),
-        },
-      ],
+    const scope: Prisma.MaterialAssetWhereInput = {
+      ...invitationAssetScope(campaignId, admin),
+      enabled: true,
+      fileType: { in: mimeTypes },
     };
-    const [items, total] = await this.prisma.$transaction([
+    const where: Prisma.MaterialAssetWhereInput = {
+      ...scope,
+      ...(query.category === "__none"
+        ? { categoryId: null }
+        : query.category ? { category: { code: query.category } } : {}),
+      ...(query.keyword ? { name: { contains: query.keyword.slice(0, 100), mode: "insensitive" } } : {}),
+    };
+    const [items, total, categories] = await this.prisma.$transaction([
       this.prisma.materialAsset.findMany({
         where,
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
@@ -164,12 +159,18 @@ export class InvitationAssetsService {
         },
       }),
       this.prisma.materialAsset.count({ where }),
+      this.prisma.materialCategory.findMany({
+        where: { assets: { some: scope } },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: { code: true, name: true },
+      }),
     ]);
     return {
       code: "OK",
       message: "ok",
       data: {
         items: items.map((item) => ({ ...item, url: localUrl(item.url) })),
+        categories,
         total,
         page,
         pageSize: 24,
@@ -181,10 +182,16 @@ export class InvitationAssetsService {
     campaignId: string,
     file: UploadedMaterialFile | undefined,
     admin: CurrentAdmin,
+    purpose?: string,
   ) {
     const validated = validateInvitationAsset(file);
+    const isLogo = purpose === "organization_logo";
+    if (isLogo && !validated.mimetype?.startsWith("image/")) throw new BadRequestException("单位 Logo 需要图片文件");
+    const category = isLogo ? await this.prisma.materialCategory.upsert({
+      where: { code: "logo" }, update: {}, create: { code: "logo", name: "单位与品牌 Logo" }, select: { id: true },
+    }) : null;
     const result = await this.materials.createAsset(
-      { usage: `conference_invitation:${campaignId}` },
+      { usage: `conference_invitation:${campaignId}`, categoryId: category?.id },
       validated,
       invitationOrigin(),
       admin,

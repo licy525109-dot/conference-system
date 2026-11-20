@@ -116,24 +116,35 @@ test("asset listing clamps pagination and combines search with scope rather than
         return 0;
       },
     },
+    materialCategory: { findMany: (args: unknown) => { calls.push(args); return []; } },
     $transaction: async (values: unknown[]) => values,
   };
   const service = new InvitationAssetsService(prisma as never, {} as never);
   const result = await service.list(
     "campaign-a",
-    { page: "-4", kind: "font", keyword: "字体" },
+    { page: "-4", kind: "font", keyword: "字体", category: "fonts" },
     admin,
   );
   assert.equal(result.data.page, 1);
   assert.equal(calls[0].take, 24);
+  assert.deepEqual(calls[0].where.category, { code: "fonts" });
+  assert.deepEqual(calls[2].where.assets.some.OR, invitationAssetScope("campaign-a", admin).OR);
+  assert.equal(calls[2].where.assets.some.enabled, true);
   assert.deepEqual(
-    calls[0].where.AND[0],
-    invitationAssetScope("campaign-a", admin),
+    calls[0].where.OR,
+    invitationAssetScope("campaign-a", admin).OR,
   );
   assert.deepEqual(calls[0].where, calls[1].where);
   assert.ok(
-    calls[0].where.AND[1].fileType.in.every((mime: string) =>
+    calls[0].where.fileType.in.every((mime: string) =>
       mime.startsWith("font/"),
     ),
   );
+});
+
+test("multipart Chinese names round-trip while native names stay readable", async () => {
+  const { decodeMaterialFilename } = await import("../admin/admin-materials.service");
+  const name = "观潮会集-logo.png";
+  assert.equal(decodeMaterialFilename(Buffer.from(name).toString("latin1")), name);
+  for (const original of [name, "Logo.png", "Café.png"]) assert.equal(decodeMaterialFilename(original), original);
 });
