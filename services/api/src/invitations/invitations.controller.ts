@@ -56,12 +56,13 @@ export class AdminInvitationsController {
     FileInterceptor("file", { limits: { fileSize: 20 * 1024 * 1024 } }),
   )
   async uploadAsset(
+    @Query("purpose") purpose: string | undefined,
     @Param("id") id: string,
     @UploadedFile() file: UploadedMaterialFile | undefined,
     @Req() req: RequestWithCurrentAdmin,
   ) {
     await this.service.campaign(id, req.currentAdmin!);
-    return this.assets.upload(id, file, req.currentAdmin!);
+    return this.assets.upload(id, file, req.currentAdmin!, purpose);
   }
   @Post("campaigns/:id/assets/font")
   @RequireAdminPermissions("invitation:view", "invitation:content")

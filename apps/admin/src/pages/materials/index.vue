@@ -3,7 +3,7 @@
     <AdminPageHeader
       title="素材管理"
       eyebrow="页面装修"
-      subtitle="按使用位置管理图片、图标、视频和字体素材；上传接口和 uploads 目录策略保持不变。"
+      subtitle="按分类或使用位置查找素材。"
     >
       <template #actions>
         <el-button @click="categoryVisible = true">新增分类</el-button>
@@ -12,11 +12,13 @@
     </AdminPageHeader>
 
     <AdminFilterBar>
-      <el-input v-model="keyword" clearable placeholder="素材名称 / 位置 / 备注" style="width: 240px" @keyup.enter="load" />
-      <el-select v-model="categoryId" clearable placeholder="分类" style="width: 180px">
+      <el-input v-model="keyword" clearable placeholder="素材名称 / 位置 / 备注" style="width: 240px" @keyup.enter="search" @clear="search" />
+      <el-select v-model="categoryId" clearable placeholder="全部分类" style="width: 180px" @change="search">
+        <el-option label="未分类" value="__none" />
         <el-option v-for="item in categories" :key="item.id" :label="item.name" :value="item.id" />
       </el-select>
-      <el-select v-model="usage" clearable placeholder="使用位置" style="width: 180px">
+      <el-select v-model="usage" clearable placeholder="使用位置" style="width: 180px" @change="search">
+        <el-option label="会议邀请函" value="all_invitations" />
         <el-option label="首页 Banner" value="home_banner" />
         <el-option label="会议封面" value="conference_cover" />
         <el-option label="详情头图" value="conference_header" />
@@ -34,12 +36,12 @@
         <el-option label="企微群发图片" value="wecom_message_image" />
         <el-option label="企微群发文件" value="wecom_message_file" />
       </el-select>
-      <el-select v-model="enabledFilter" clearable placeholder="状态" style="width: 130px">
+      <el-select v-model="enabledFilter" clearable placeholder="状态" style="width: 130px" @change="search">
         <el-option label="启用" value="true" />
         <el-option label="停用" value="false" />
       </el-select>
       <template #actions>
-        <el-button :loading="loading" type="primary" @click="load">查询</el-button>
+        <el-button :loading="loading" type="primary" @click="search">查询</el-button>
       </template>
     </AdminFilterBar>
 
@@ -61,8 +63,8 @@
             <div class="muted-text">{{ row.fileType || "外部 URL" }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="分类" width="140"><template #default="{ row }">{{ row.category?.name || "-" }}</template></el-table-column>
-        <el-table-column prop="usage" label="使用位置" width="160" />
+        <el-table-column label="分类" width="140"><template #default="{ row }">{{ row.category?.name || "未分类" }}</template></el-table-column>
+        <el-table-column label="使用位置" width="160"><template #default="{ row }">{{ row.usage === "invitation" || row.usage.startsWith("conference_invitation:") ? "会议邀请函" : row.usage }}</template></el-table-column>
         <el-table-column label="文件" width="120">
           <template #default="{ row }">
             <el-tag :type="row.uploadCheck?.localExists ? 'success' : 'warning'" size="small">
@@ -91,6 +93,7 @@
           <AdminEmptyState title="暂无素材" description="可先上传会议封面、详情头图、页面装修图片或字体文件。" action-text="上传素材" @action="openCreate" />
         </template>
       </el-table>
+      <el-pagination v-if="total > pageSize" v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="load" />
     </section>
 
     <el-dialog v-model="dialogVisible" title="上传素材" width="620px">
@@ -219,21 +222,24 @@ async function loadCategories() {
   categories.value = (await listMaterialCategories()).items;
 }
 
+const page = ref(1), total = ref(0), pageSize = 48;
+let request = 0;
+function search() { page.value = 1; void load(); }
 async function load() {
+  const current = ++request;
   loading.value = true;
   try {
-    assets.value = (
-      await listMaterials({
-        page: 1,
-        pageSize: 100,
+    const result = await listMaterials({
+        page: page.value,
+        pageSize,
         keyword: keyword.value,
         categoryId: categoryId.value,
         usage: usage.value,
         enabled: enabledFilter.value ? enabledFilter.value === "true" : undefined
-      })
-    ).items;
+      });
+    if (current === request) { assets.value = result.items; total.value = result.total; }
   } finally {
-    loading.value = false;
+    if (current === request) loading.value = false;
   }
 }
 

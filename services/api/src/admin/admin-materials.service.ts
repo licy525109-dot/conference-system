@@ -124,16 +124,16 @@ export class AdminMaterialsService {
     const keyword = readOptionalString(query, "keyword");
     const enabled = readOptionalBoolean(query, "enabled") ?? true;
     const where: Prisma.MaterialAssetWhereInput = {
-      ...(categoryId ? { categoryId } : {}),
-      ...(usage ? { usage } : {}),
+      ...(categoryId ? { categoryId: categoryId === "__none" ? null : categoryId } : {}),
+      ...(usage === "all_invitations" ? { OR: [{ usage: "invitation" }, { usage: { startsWith: "conference_invitation:" } }] } : usage ? { usage } : {}),
       enabled,
       ...(keyword
         ? {
-            OR: [
+            AND: [{ OR: [
               { name: { contains: keyword, mode: "insensitive" } },
               { usage: { contains: keyword, mode: "insensitive" } },
               { remark: { contains: keyword, mode: "insensitive" } }
-            ]
+            ] }]
           }
         : {})
     };
@@ -393,7 +393,7 @@ async function saveMaterialFile(file: MaterialFile, publicOrigin: string) {
   const publicBase = normalizePublicOrigin(publicOrigin);
   const url = `${publicBase}/uploads/materials/${fileName}`;
   return {
-    name: stripExtension(file.originalname) || fileName,
+    name: stripExtension(decodeMaterialFilename(file.originalname)) || fileName,
     url,
     fileType: file.mimetype ?? inferFileType(fileName),
     sizeBytes: file.size <= 2 ** 31 - 1 ? file.size : null,
@@ -593,6 +593,13 @@ function maxMaterialSize(file: MaterialFile): { bytes: number; text: string; lab
   if (type.startsWith("font/") || [".ttf", ".otf", ".woff", ".woff2", ".eot"].includes(extension)) return null;
   if (type.startsWith("image/") || [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"].includes(extension)) return { bytes: MAX_IMAGE_SIZE_BYTES, text: "2MB", label: "图片素材" };
   return { bytes: MAX_FILE_SIZE_BYTES, text: "20MB", label: "文件素材" };
+}
+
+// Multipart filenames from browsers may arrive as UTF-8 bytes interpreted as Latin-1.
+export function decodeMaterialFilename(value?: string) {
+  if (!value || !/^[\x00-\xff]+$/.test(value)) return value;
+  const decoded = Buffer.from(value, "latin1").toString("utf8");
+  return decoded.includes("\ufffd") ? value : decoded;
 }
 
 function stripExtension(value: string | undefined): string | null {

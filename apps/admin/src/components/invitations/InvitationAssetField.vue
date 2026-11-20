@@ -37,7 +37,7 @@
       <el-button
         :icon="FolderOpened"
         :disabled="disabled || uploading"
-        @click="openLibrary"
+        @click="libraryOpen = true"
         >素材库</el-button
       >
     </div>
@@ -49,94 +49,7 @@
       :aria-label="`上传${label}`"
       @change="upload"
     />
-    <el-drawer
-      v-model="libraryOpen"
-      :title="`${label} · 素材库`"
-      size="min(94vw, 780px)"
-      append-to-body
-    >
-      <div class="asset-library-search">
-        <el-input
-          v-model="keyword"
-          clearable
-          placeholder="搜索素材名称"
-          :prefix-icon="Search"
-          aria-label="搜索素材名称"
-          @keyup.enter="
-            page = 1;
-            load();
-          "
-          @clear="
-            page = 1;
-            load();
-          "
-        /><el-button
-          :icon="Search"
-          @click="
-            page = 1;
-            load();
-          "
-          >搜索</el-button
-        >
-      </div>
-      <el-alert
-        v-if="error"
-        :title="error"
-        type="error"
-        :closable="false"
-      /><el-button v-if="error" :icon="Refresh" @click="load">重试</el-button>
-      <el-skeleton v-if="loading" :rows="6" animated />
-      <div v-else class="asset-library-grid">
-        <button
-          v-for="item in assets"
-          :key="item.id"
-          type="button"
-          class="asset-library-item"
-          :aria-label="`选择素材 ${item.name}`"
-          @click="select(item)"
-        >
-          <img
-            v-if="kind === 'image'"
-            :src="assetUrl(item.url)"
-            :alt="item.name"
-            loading="lazy"
-          />
-          <div v-else class="asset-library-symbol">
-            <el-icon
-              ><component
-                :is="
-                  kind === 'video'
-                    ? VideoPlay
-                    : kind === 'audio'
-                      ? Headset
-                      : Document
-                " /></el-icon
-            ><span>{{
-              kind === "font" ? "Aa 字体" : kind === "audio" ? "音频" : "视频"
-            }}</span>
-          </div>
-          <strong>{{ item.name }}</strong
-          ><small>{{
-            item.sizeBytes
-              ? (item.sizeBytes / 1024 / 1024).toFixed(2) + " MB"
-              : item.fileType
-          }}</small>
-        </button>
-      </div>
-      <el-empty
-        v-if="!loading && !error && !assets.length"
-        description="暂无符合条件的素材"
-      />
-      <template #footer
-        ><el-pagination
-          v-if="total > 24"
-          v-model:current-page="page"
-          :page-size="24"
-          :total="total"
-          layout="prev, pager, next"
-          @current-change="load"
-      /></template>
-    </el-drawer>
+    <InvitationAssetLibrary v-model="libraryOpen" :title="`${label} · 素材库`" :campaign-id="campaignId" :kind="kind" :disabled="disabled" @select="select($event[0])" />
   </div>
 </template>
 <script setup lang="ts">
@@ -144,16 +57,13 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import {
   Upload,
   FolderOpened,
-  Search,
-  Refresh,
-  VideoPlay,
-  Headset,
-  Document,
+
 } from "@element-plus/icons-vue";
+import InvitationAssetLibrary from "./InvitationAssetLibrary.vue";
 import { ElMessage } from "element-plus";
 import { API_BASE_URL } from "../../config";
 import {
-  getInvitationAssets,
+
   uploadInvitationAsset,
   type InvitationAsset,
 } from "../../services/invitations";
@@ -193,15 +103,8 @@ const fileInput = ref<HTMLInputElement>(),
   size = ref<{ width: number; height: number }>(),
   imageError = ref(false);
 const uploading = ref(false),
-  libraryOpen = ref(false),
-  keyword = ref(""),
-  page = ref(1),
-  loading = ref(false),
-  error = ref(""),
-  assets = ref<InvitationAsset[]>([]),
-  total = ref(0);
-let generation = 0,
-  uploadGeneration = 0;
+  libraryOpen = ref(false);
+let uploadGeneration = 0;
 const assetUrl = (url: string) =>
   url.startsWith("/") ? new URL(API_BASE_URL).origin + url : url;
 watch(
@@ -214,14 +117,12 @@ watch(
 watch(
   () => [props.campaignId, props.kind],
   () => {
-    generation++;
     uploadGeneration++;
     uploading.value = false;
     libraryOpen.value = false;
   },
 );
 onBeforeUnmount(() => {
-  generation++;
   uploadGeneration++;
 });
 function loaded(event: Event) {
@@ -235,33 +136,6 @@ function select(item: InvitationAsset) {
   emit("update:modelValue", item.url);
   emit("asset", item);
   libraryOpen.value = false;
-}
-function openLibrary() {
-  libraryOpen.value = true;
-  page.value = 1;
-  void load();
-}
-async function load() {
-  const current = ++generation;
-  loading.value = true;
-  error.value = "";
-  try {
-    const result = await getInvitationAssets(
-      props.campaignId,
-      props.kind,
-      keyword.value,
-      page.value,
-    );
-    if (current === generation) {
-      assets.value = result.items;
-      total.value = result.total;
-    }
-  } catch (e) {
-    if (current === generation)
-      error.value = e instanceof Error ? e.message : "素材加载失败";
-  } finally {
-    if (current === generation) loading.value = false;
-  }
 }
 async function upload(event: Event) {
   const input = event.target as HTMLInputElement,
@@ -341,69 +215,5 @@ async function upload(event: Event) {
   color: #a73446;
   font-size: 12px;
 }
-.asset-library-search {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 24px;
-}
-.asset-library-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-}
-.asset-library-item {
-  min-width: 0;
-  text-align: left;
-  border: 1px solid #e2e6e9;
-  border-radius: 6px;
-  background: #fcfdfd;
-  padding: 8px;
-  cursor: pointer;
-  color: #283238;
-  transition: border-color 0.2s;
-}
-.asset-library-item:hover,
-.asset-library-item:focus-visible {
-  border-color: #287264;
-  outline: 2px solid #d9ede8;
-}
-.asset-library-item img,
-.asset-library-symbol {
-  width: 100%;
-  aspect-ratio: 4/3;
-  object-fit: contain;
-  background: #eef2f3;
-  border-radius: 3px;
-}
-.asset-library-item strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  margin-top: 10px;
-  overflow-wrap: anywhere;
-  line-height: 1.5;
-}
-.asset-library-item small {
-  font-size: 11px;
-  color: #78848a;
-}
-.asset-library-symbol {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 10px;
-  color: #65776f;
-}
-.asset-library-symbol .el-icon {
-  font-size: 28px;
-}
-@media (max-width: 600px) {
-  .asset-library-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .asset-source > .el-input {
-    flex-basis: 100%;
-  }
-}
+@media (max-width:600px){.asset-source > .el-input{flex-basis:100%}}
 </style>
