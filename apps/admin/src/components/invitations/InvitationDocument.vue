@@ -281,13 +281,20 @@
                 <span class="invitation-guest__status">{{
                   guest.status === "CONFIRMED" ? "确认出席" : "拟邀嘉宾"
                 }}</span>
-                <h3>{{ guest.name }}</h3>
-                <p>{{ guest.organization }}</p>
-                <small>{{ guest.role }}</small>
-                <p v-if="guest.biography" class="invitation-guest__biography">
-                  {{ guest.biography }}
-                </p>
+                <h3>
+                  {{ guestName(guest.name).name }}
+                  <small
+                    v-if="guestName(guest.name).alias"
+                    class="invitation-guest__alias"
+                    >{{ guestName(guest.name).alias }}</small
+                  >
+                </h3>
+                <p v-if="guest.organization">{{ guest.organization }}</p>
+                <small v-if="guest.role">{{ guest.role }}</small>
               </div>
+              <p v-if="guest.biography" class="invitation-guest__biography">
+                {{ guest.biography }}
+              </p>
             </article>
           </div>
         </div>
@@ -600,6 +607,10 @@ import InvitationKeywords from "./InvitationKeywords.vue";
 import { useInvitationFont } from "../../utils/invitation-font";
 import { API_BASE_URL } from "../../config";
 const props = defineProps<{ document: PublicInvitation; preview?: boolean }>();
+function guestName(value: string) {
+  const match = value.match(/^(.+?)\s*([（(][^）)]+[）)])$/);
+  return match ? { name: match[1], alias: match[2] } : { name: value, alias: "" };
+}
 defineEmits<{ register: []; share: [] }>();
 const content = computed(() => props.document.content);
 const design = computed(() =>
@@ -962,23 +973,57 @@ const themeStyle = computed(() => ({
 .invitation-guests > .invitation-guest:only-child {
   grid-column: 1 / -1;
 }
-.invitation-guests.invitation-guests--list {
-  grid-template-columns: 1fr;
+.invitation-document .invitation-guests.invitation-guests--list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  max-width: 680px;
+  margin-inline: auto;
 }
-.invitation-guests--list .invitation-guest {
+.invitation-document .invitation-guests--list .invitation-guest {
   display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
-  gap: 28px;
-  border-bottom: 1px solid #dde4df;
-  padding-bottom: 28px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  padding: 24px;
+  border: 1px solid color-mix(in srgb, var(--invite-primary) 18%, transparent);
+  border-radius: 8px;
+  background: var(--invite-paper);
+  background: color-mix(in srgb, var(--invite-paper) 84%, transparent);
 }
-.invitation-guests--list
+.invitation-document .invitation-guests--list
   .invitation-guest:not(:has(.invitation-guest__portrait)) {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
-.invitation-guests--list .invitation-guest__portrait {
-  align-self: start;
+.invitation-document .invitation-guests--list .invitation-guest__portrait {
+  align-self: center;
+  border-radius: 4px;
   margin: 0;
+}
+.invitation-guest__info {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.invitation-document .invitation-guests--list .invitation-guest h3 {
+  font-size: 24px;
+  line-height: 1.4;
+  margin: 8px 0 0;
+}
+.invitation-document .invitation-guest h3 .invitation-guest__alias {
+  font-family: var(--invite-global-font);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: inherit;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+.invitation-document .invitation-guests--list .invitation-guest__biography {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: 18px;
+  border-top: 1px solid color-mix(in srgb, var(--invite-primary) 12%, transparent);
+  font-size: var(--invite-body-size);
+  line-height: 1.9;
 }
 @media (prefers-reduced-motion: no-preference) {
   .invitation-motion .background-pan {
@@ -999,9 +1044,10 @@ const themeStyle = computed(() => ({
   }
 }
 @container (max-width:600px) {
-  .invitation-guests--list .invitation-guest {
-    grid-template-columns: 100px minmax(0, 1fr);
-    gap: 18px;
+  .invitation-document .invitation-guests--list .invitation-guest {
+    grid-template-columns: 80px minmax(0, 1fr);
+    gap: 18px 20px;
+    padding: 20px;
   }
 }
 .invitation-artwork-cover {

@@ -75,9 +75,9 @@
         @update:model-value="
           patchSettings({ layout: $event === 'list' ? 'list' : 'grid' })
         "
-        ><el-radio-button value="grid">网格</el-radio-button
+        ><el-radio-button value="grid">{{ module.type === "guests" ? "照片网格" : "网格" }}</el-radio-button
         ><el-radio-button value="list"
-          >纵向列表</el-radio-button
+          >{{ module.type === "guests" ? "人物介绍卡" : "纵向列表" }}</el-radio-button
         ></el-radio-group
       ></el-form-item
     >

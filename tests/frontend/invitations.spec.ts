@@ -25,6 +25,65 @@ const artworkPath =
   process.env.INVITATION_ARTWORK_PATH ||
   "apps/admin/public/invitation-art/tide-paper.jpg";
 
+for (const surface of ["phone", "dialog", "editor"] as const) {
+  test(`guest profile cards keep readable biographies in ${surface}`, async ({ page }) => {
+    await page.setViewportSize({ width: surface === "phone" ? 320 : 1440, height: 1000 });
+    const doc = document();
+    doc.content = applyInvitationBooklet(doc.content);
+    doc.content.modules.find((m) => m.type === "guests")!.settings = {
+      ...createInvitationModule("guests", "guests").settings!, layout: "list",
+    };
+    const biography = "自然教育项目创始人\n长期从事课程研究与教师培养\n跨区域教育实践与儿童成长研究";
+    doc.content.guests = Array.from({ length: 3 }, (_, i) => ({
+      id: `profile-${i}`, name: i === 0 ? "示例嘉宾（自然导师）" : `示例嘉宾${i}`,
+      organization: i === 1 ? "示例教育机构" : "", role: "",
+      biography, status: i === 1 ? "CONFIRMED" : "INVITED",
+      imageUrl: i === 2 ? "" : "/invitation-art/booklet-cover.png",
+    }));
+    await adminFixture(page, ["*"], doc);
+    await publicFixture(page, () => doc);
+    let scope;
+    if (surface === "phone") {
+      await page.goto(`${origin}/i/${token}`);
+      scope = page.locator(".invitation-document");
+    } else {
+      await page.goto(`${origin}/#/invitations`);
+      if (surface === "dialog") {
+        await page.getByRole("tab", { name: "视觉与分享", exact: true }).click();
+        await page.getByRole("button", { name: "预览", exact: true }).click();
+        scope = page.getByRole("dialog", { name: "邀请函预览" });
+      } else {
+        await page.getByRole("tab", { name: "会议内容", exact: true }).click();
+        await page.getByRole("button", { name: /嘉宾介绍/ }).first().click();
+        scope = page.locator(".module-live-preview");
+      }
+    }
+    const cards = scope.locator(".invitation-guest");
+    await expect(cards).toHaveCount(3);
+    await expect(cards.first().locator("h3")).toContainText("示例嘉宾");
+    await expect(cards.first().locator(".invitation-guest__alias")).toHaveText("（自然导师）");
+    await expect(cards.nth(1)).toContainText("确认出席");
+    for (const card of await cards.all()) {
+      await expect(card.locator(".invitation-guest__biography")).toHaveText(biography);
+      const dimensions = await card.evaluate((el) => {
+        const card = el.getBoundingClientRect();
+        const bio = el.querySelector(".invitation-guest__biography")!.getBoundingClientRect();
+        const info = el.querySelector(".invitation-guest__info")!.getBoundingClientRect();
+        const image = el.querySelector(".invitation-guest__portrait")?.getBoundingClientRect();
+        return { width: card.width, bioWidth: bio.width, textBelowHeader: bio.top >= Math.max(info.bottom, image?.bottom || 0), overflow: el.scrollWidth > el.clientWidth + 1 };
+      });
+      expect(dimensions.bioWidth).toBeGreaterThan(200);
+      expect(dimensions.width - dimensions.bioWidth).toBeLessThan(52);
+      expect(dimensions.textBelowHeader).toBe(true);
+      expect(dimensions.overflow).toBe(false);
+    }
+    const first = await cards.nth(0).boundingBox();
+    const second = await cards.nth(1).boundingBox();
+    expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height);
+    await scope.locator("#invitation-guests").screenshot({ path: `output/playwright/guest-profile-${surface}.png`, animations: "disabled" });
+  });
+}
+
 for (const width of [390, 1440]) {
   test(`check-in time is editable, saved and shown in the invitation at ${width}px`, async ({
     page,
