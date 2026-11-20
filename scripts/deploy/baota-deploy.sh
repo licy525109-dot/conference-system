@@ -295,6 +295,7 @@ curl -fsS "$API_HEALTH_LOCAL"
 echo
 curl -fsS "$API_HEALTH_PUBLIC"
 echo
+API_BASE="$USER_API_BASE_URL" node scripts/smoke/check-invitation-proxy.mjs
 curl -fsS "${H5_PUBLIC_URL%/}/" >/dev/null
 echo "User H5: ok (${H5_PUBLIC_URL%/}/)"
 
