@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { extname } from "node:path";
+import { open } from "node:fs/promises";
 import { PrismaService } from "../prisma.service";
 import {
   AdminMaterialsService,
   type UploadedMaterialFile,
+  type StoredMaterialFile,
 } from "../admin/admin-materials.service";
 import type { CurrentAdmin } from "../admin/current-admin";
 import { invitationOrigin } from "./invitation-policy";
@@ -33,13 +35,14 @@ export function validateInvitationAsset(
   const limit = mime.startsWith("image/")
     ? 2
     : mime.startsWith("font/")
-      ? 5
+      ? null
       : 20;
   if (
     !file.size ||
-    file.size !== file.buffer.length ||
-    file.size > limit * 1024 * 1024
+    file.size !== file.buffer.length
   )
+    throw new BadRequestException("素材文件为空或不完整");
+  if (limit !== null && file.size > limit * 1024 * 1024)
     throw new BadRequestException(`素材大小应在 0 到 ${limit}MB 之间`);
   const b = file.buffer,
     head = b.subarray(0, 4).toString("ascii");
@@ -69,6 +72,25 @@ export function validateInvitationAsset(
                           head === "true";
   if (!valid) throw new BadRequestException("文件内容与格式不一致");
   return { ...file, mimetype: mime };
+}
+
+export async function validateInvitationFont(file?: StoredMaterialFile) {
+  if (!file) throw new BadRequestException("请选择字体文件");
+  const mime = INVITATION_ASSET_TYPES[extname(file.originalname || "").toLowerCase()];
+  if (!mime?.startsWith("font/")) throw new BadRequestException("不支持此字体格式");
+  const handle = await open(file.path, "r");
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile() || !file.size || file.size !== stats.size)
+      throw new BadRequestException("字体文件为空或不完整");
+    const header = Buffer.alloc(4);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    if (bytesRead !== header.length) throw new BadRequestException("文件内容与格式不一致");
+    validateInvitationAsset({ ...file, buffer: header, size: header.length });
+    return { ...file, mimetype: mime };
+  } finally {
+    await handle.close();
+  }
 }
 
 export function invitationAssetScope(
@@ -171,6 +193,17 @@ export class InvitationAssetsService {
       ...result,
       data: { ...result.data, url: localUrl(result.data.url) },
     };
+  }
+
+  async uploadFont(campaignId: string, file: StoredMaterialFile | undefined, admin: CurrentAdmin) {
+    const validated = await validateInvitationFont(file);
+    const result = await this.materials.createAsset(
+      { usage: `conference_invitation:${campaignId}` },
+      validated,
+      invitationOrigin(),
+      admin,
+    );
+    return { ...result, data: { ...result.data, url: localUrl(result.data.url) } };
   }
 }
 function localUrl(url: string) {

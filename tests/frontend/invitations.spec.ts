@@ -1369,10 +1369,12 @@ for (const width of [390, 1440]) {
       }),
     );
     await page.route(
-      "**/api/admin/invitations/campaigns/campaign/assets*",
+      "**/api/admin/invitations/campaigns/campaign/assets**",
       async (route) => {
         if (route.request().method() === "POST") {
           uploads++;
+          expect(new URL(route.request().url()).pathname).toMatch(/\/assets\/font$/);
+          expect(route.request().postDataBuffer()!.length).toBeGreaterThan(20 * 1024 * 1024);
           expect(route.request().headers()["content-type"]).toContain(
             "multipart/form-data",
           );
@@ -1407,12 +1409,13 @@ for (const width of [390, 1440]) {
       mimeType: "text/plain",
       buffer: Buffer.from("not a font"),
     });
-    await expect(page.getByText(/请选择 5MB 以内/)).toBeVisible();
+    await expect(page.getByText("请选择 WOFF2 / WOFF / TTF / OTF 文件", { exact: true })).toBeVisible();
+    await expect(fonts.locator(".asset-meta")).toContainText("不限大小");
     expect(uploads).toBe(0);
     await fonts.locator('input[type="file"]').setInputFiles({
       name: asset.name,
       mimeType: "font/woff2",
-      buffer: await readFile(fontPath),
+      buffer: Buffer.concat([await readFile(fontPath), Buffer.alloc(21 * 1024 * 1024)]),
     });
     await expect(fonts.getByRole("textbox", { name: "字体名称" })).toHaveValue(
       asset.name,

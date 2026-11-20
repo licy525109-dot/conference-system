@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { constants, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFile, rm } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuditAction, Prisma } from "@prisma/client";
@@ -15,13 +16,17 @@ export interface UploadedMaterialFile {
   size: number;
 }
 
+export type StoredMaterialFile = Omit<UploadedMaterialFile, "buffer"> & {
+  path: string;
+};
+type MaterialFile = UploadedMaterialFile | StoredMaterialFile;
+
 const UPLOADS_ROOT = resolve(process.env.UPLOADS_DIR || join(inferProjectRoot(process.cwd()), "uploads"));
 const MATERIAL_UPLOAD_DIR = join(UPLOADS_ROOT, "materials");
 const MB = 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 2 * MB;
 const MAX_VIDEO_SIZE_BYTES = 20 * MB;
 const MAX_FILE_SIZE_BYTES = 20 * MB;
-const MAX_FONT_SIZE_BYTES = 5 * MB;
 const ALLOWED_MATERIAL_TYPES = new Map([
   ["image/jpeg", ".jpg"],
   ["image/png", ".png"],
@@ -151,9 +156,9 @@ export class AdminMaterialsService {
     });
   }
 
-  async createAsset(input: unknown, file: UploadedMaterialFile | undefined, publicOrigin: string, admin: CurrentAdmin) {
+  async createAsset(input: unknown, file: MaterialFile | undefined, publicOrigin: string, admin: CurrentAdmin) {
     const body = readObject(input);
-    const uploaded = file ? saveMaterialFile(file, publicOrigin) : null;
+    const uploaded = file ? await saveMaterialFile(file, publicOrigin) : null;
     const url = uploaded?.url ?? readRequiredString(body, "url");
     const name = readOptionalString(body, "name") ?? uploaded?.name ?? "未命名素材";
     const asset = await this.prisma.materialAsset.create({
@@ -172,6 +177,9 @@ export class AdminMaterialsService {
         updatedBy: admin.id
       },
       select: assetSelect
+    }).catch(async (error: unknown) => {
+      if (uploaded && file && "path" in file) await rm(uploaded.check.localPath, { force: true });
+      throw error;
     });
     await this.writeAudit(admin, AuditAction.CREATE, "MaterialAsset", asset.id, "Create material asset", {
       usage: asset.usage
@@ -367,9 +375,9 @@ function formatAsset(asset: Prisma.MaterialAssetGetPayload<{ select: typeof asse
   };
 }
 
-function saveMaterialFile(file: UploadedMaterialFile, publicOrigin: string) {
+async function saveMaterialFile(file: MaterialFile, publicOrigin: string) {
   const maxSize = maxMaterialSize(file);
-  if (file.size > maxSize.bytes) {
+  if (maxSize && file.size > maxSize.bytes) {
     throw new BadRequestException(`${maxSize.label}文件过大，不能超过 ${maxSize.text}`);
   }
 
@@ -377,14 +385,18 @@ function saveMaterialFile(file: UploadedMaterialFile, publicOrigin: string) {
   mkdirSync(MATERIAL_UPLOAD_DIR, { recursive: true });
   const fileName = `${Date.now()}-${randomBytes(8).toString("hex")}${extension}`;
   const filePath = join(MATERIAL_UPLOAD_DIR, fileName);
-  writeFileSync(filePath, file.buffer, { flag: "wx" });
+  if ("buffer" in file) {
+    writeFileSync(filePath, file.buffer, { flag: "wx" });
+  } else {
+    await copyFile(file.path, filePath, constants.COPYFILE_EXCL);
+  }
   const publicBase = normalizePublicOrigin(publicOrigin);
   const url = `${publicBase}/uploads/materials/${fileName}`;
   return {
     name: stripExtension(file.originalname) || fileName,
     url,
     fileType: file.mimetype ?? inferFileType(fileName),
-    sizeBytes: file.size,
+    sizeBytes: file.size <= 2 ** 31 - 1 ? file.size : null,
     check: {
       url,
       localPath: filePath,
@@ -507,7 +519,7 @@ function referenceItem(type: string, id: string, name?: string | null) {
   return { type, id, label: `${type}${name ? `：${name}` : ""}` };
 }
 
-function readAllowedExtension(file: UploadedMaterialFile): string {
+function readAllowedExtension(file: MaterialFile): string {
   const extension = extname(file.originalname ?? "").toLowerCase();
   if (extension && !ALLOWED_EXTENSION_TYPES.has(extension)) {
     throw new BadRequestException("格式不支持。仅支持 jpg/png/webp/gif/svg/mp4/pdf/doc/docx/xls/xlsx/ppt/pptx/txt/md/ttf/otf/woff/woff2 素材，不能上传可执行文件");
@@ -574,11 +586,11 @@ function inferFileType(url: string): string {
   return "image/jpeg";
 }
 
-function maxMaterialSize(file: UploadedMaterialFile): { bytes: number; text: string; label: string } {
+function maxMaterialSize(file: MaterialFile): { bytes: number; text: string; label: string } | null {
   const extension = extname(file.originalname ?? "").toLowerCase();
   const type = file.mimetype ?? "";
   if (type.startsWith("video/") || extension === ".mp4") return { bytes: MAX_VIDEO_SIZE_BYTES, text: "20MB", label: "视频素材" };
-  if (type.startsWith("font/") || [".ttf", ".otf", ".woff", ".woff2", ".eot"].includes(extension)) return { bytes: MAX_FONT_SIZE_BYTES, text: "5MB", label: "字体素材" };
+  if (type.startsWith("font/") || [".ttf", ".otf", ".woff", ".woff2", ".eot"].includes(extension)) return null;
   if (type.startsWith("image/") || [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"].includes(extension)) return { bytes: MAX_IMAGE_SIZE_BYTES, text: "2MB", label: "图片素材" };
   return { bytes: MAX_FILE_SIZE_BYTES, text: "20MB", label: "文件素材" };
 }

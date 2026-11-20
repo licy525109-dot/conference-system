@@ -4,7 +4,11 @@ import {
   validateInvitationAsset,
   invitationAssetScope,
   InvitationAssetsService,
+  validateInvitationFont,
 } from "./invitation-assets.service";
+import { mkdtemp, open, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 const admin = {
   id: "staff-a",
   username: "staff",
@@ -64,8 +68,40 @@ test("media uploads verify extension, signature and size before entering the mat
         buffer: Buffer.alloc(6 * 1024 * 1024),
         size: 6 * 1024 * 1024,
       }),
-    /5MB/,
+    /格式/,
   );
+});
+test("fonts above both legacy limits validate from disk while other asset limits remain enforced", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "invitation-font-test-"));
+  try {
+    for (const [extension, signature] of [
+      ["woff2", "wOF2"], ["woff", "wOFF"], ["otf", "OTTO"], ["ttf", "\0\x01\0\0"],
+    ]) {
+      const path = join(directory, `font.${extension}`);
+      const handle = await open(path, "w");
+      const size = 25 * 1024 * 1024;
+      await handle.write(signature);
+      await handle.truncate(size);
+      await handle.close();
+      const file = { originalname: `font.${extension}`, path, size };
+      assert.equal((await validateInvitationFont(file)).mimetype, `font/${extension}`);
+      await assert.rejects(validateInvitationFont({ ...file, size: size - 1 }), /不完整/);
+      await assert.rejects(validateInvitationFont({ ...file, originalname: "renamed.png" }), /格式/);
+    }
+    const path = join(directory, "invalid.ttf");
+    const handle = await open(path, "w");
+    await handle.write("<html>not a font</html>");
+    await handle.close();
+    await assert.rejects(validateInvitationFont({ path, originalname: "invalid.ttf", size: 23 }), /格式/);
+    for (const [originalname, size, limit] of [
+      ["photo.png", 3 * 1024 * 1024, "2MB"],
+      ["clip.mp4", 21 * 1024 * 1024, "20MB"],
+    ] as const) {
+      assert.throws(() => validateInvitationAsset({ originalname, size, buffer: Buffer.alloc(size) }), new RegExp(limit));
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 test("asset listing clamps pagination and combines search with scope rather than replacing access restrictions", async () => {
   const calls: any[] = [];
