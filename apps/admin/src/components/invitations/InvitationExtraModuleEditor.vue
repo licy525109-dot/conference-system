@@ -75,10 +75,12 @@
         @update:model-value="
           patchSettings({ layout: $event === 'list' ? 'list' : 'grid' })
         "
-        ><el-radio-button value="grid">{{ module.type === "guests" ? "照片网格" : "网格" }}</el-radio-button
-        ><el-radio-button value="list"
-          >{{ module.type === "guests" ? "人物介绍卡" : "纵向列表" }}</el-radio-button
-        ></el-radio-group
+        ><el-radio-button value="grid">{{
+          module.type === "guests" ? "照片网格" : "网格"
+        }}</el-radio-button
+        ><el-radio-button value="list">{{
+          module.type === "guests" ? "人物介绍卡" : "纵向列表"
+        }}</el-radio-button></el-radio-group
       ></el-form-item
     >
     <template v-if="module.type === 'carousel'">
@@ -247,6 +249,13 @@
         />
       </el-form-item>
     </div>
+    <InvitationOrganizationImport
+      v-if="module.type === 'organizations'"
+      :module="module"
+      :campaign-id="campaignId"
+      :disabled="disabled"
+      @append="appendOrganizations"
+    />
     <InvitationOrganizationCanvasEditor
       v-if="
         module.type === 'organizations' &&
@@ -410,6 +419,7 @@ import { Plus, Delete, Top, Bottom, Document } from "@element-plus/icons-vue";
 import {
   INVITATION_DISCUSSION_NOTE,
   INVITATION_ORGANIZATION_LIMIT,
+  createInvitationLayer,
   arrangeInvitationOrganizations,
   normalizeInvitationModuleSettings,
   type InvitationModule,
@@ -420,6 +430,8 @@ import {
 import InvitationAssetField from "./InvitationAssetField.vue";
 import InvitationImageField from "./InvitationImageField.vue";
 import InvitationRichTextEditor from "./InvitationRichTextEditor.vue";
+import { ElMessage } from "element-plus";
+import InvitationOrganizationImport from "./InvitationOrganizationImport.vue";
 import InvitationOrganizationCanvasEditor from "./InvitationOrganizationCanvasEditor.vue";
 import InvitationContactsEditor from "./InvitationContactsEditor.vue";
 const props = defineProps<{
@@ -451,6 +463,108 @@ function patchSettings(value: Partial<InvitationModuleSettings>) {
 function setItems(value: InvitationModuleItem[]) {
   if (!props.disabled) emit("patch", { items: value });
 }
+function appendOrganizations(
+  added: InvitationModuleItem[],
+  replaceId?: string,
+) {
+  if (props.disabled) return;
+  const previous = items.value.filter(
+    (item) => !replaceId || item.id !== replaceId,
+  );
+  if (previous.length + added.length > INVITATION_ORGANIZATION_LIMIT) {
+    ElMessage.warning("单位数量已变化，已上传 Logo 可从素材库选取");
+    return;
+  }
+  if (settings.value.organizationLayout !== "canvas") {
+    setItems([...previous, ...added]);
+    return;
+  }
+  // Append a band beneath the existing artwork. Preserve its pixel positions
+  // as the persisted frames are percentages of the total canvas height.
+  const base =
+    props.module.organizationCanvas ||
+    arrangeInvitationOrganizations(props.module).organizationCanvas!;
+  const fallback = arrangeInvitationOrganizations(props.module).items || [];
+  const existing = previous.map((item) => ({
+    ...item,
+    frame: item.frame || fallback.find((unit) => unit.id === item.id)?.frame,
+  }));
+  const labels = base.labels;
+  const title = added[0].title;
+  const columns = added.every((item) => !item.imageUrl)
+    ? 1
+    : settings.value.logoColumns;
+  const lastLabel = labels
+    .filter((label) => label.enabled)
+    .sort((a, b) => b.y - a.y)[0];
+  const needsTitle = lastLabel?.text !== title;
+  const bottom = Math.max(
+    0,
+    ...existing.map(({ frame }) => (frame ? frame.y + frame.height : 0)),
+    ...labels.map((label) => label.y + label.height),
+  );
+  const top = (base.height * bottom) / 100 + 24;
+  const rowHeight = base.width * 0.15;
+  const unitTop = top + (needsTitle ? 54 : 0);
+  const height = Math.ceil(
+    Math.max(
+      base.height,
+      unitTop + Math.ceil(added.length / columns) * rowHeight + 16,
+    ),
+  );
+  if (
+    height > 6000 ||
+    (needsTitle && labels.length >= INVITATION_ORGANIZATION_LIMIT)
+  ) {
+    ElMessage.warning("画布空间不足。可切换自动排列，再从素材库添加这些 Logo");
+    return;
+  }
+  const scale = base.height / height;
+  const stretch = <T extends { y: number; height: number }>(frame: T) => ({
+    ...frame,
+    y: frame.y * scale,
+    height: frame.height * scale,
+  });
+  const units = added.map((item, i) => ({
+    ...item,
+    frame: {
+      x: 4 + ((i % columns) * 92) / columns,
+      y: ((unitTop + Math.floor(i / columns) * rowHeight) * 100) / height,
+      width: 92 / columns - 4,
+      height: ((rowHeight - 12) * 100) / height,
+    },
+  }));
+  emit("patch", {
+    items: [
+      ...existing.map((item) =>
+        item.frame ? { ...item, frame: stretch(item.frame) } : item,
+      ),
+      ...units,
+    ],
+    organizationCanvas: {
+      ...base,
+      height,
+      labels: [
+        ...labels.map(stretch),
+        ...(needsTitle
+          ? [
+              {
+                ...createInvitationLayer(crypto.randomUUID(), title),
+                label: "分组标题",
+                align: "left" as const,
+                x: 4,
+                y: (top * 100) / height,
+                width: 92,
+                height: (42 * 100) / height,
+                fontSize: 28,
+                color: props.module.style?.accentColor || "#8b693b",
+              },
+            ]
+          : []),
+      ],
+    },
+  });
+}
 function setOrganizationLayout(value: string) {
   if (props.disabled) return;
   if (value === "canvas")
@@ -467,6 +581,19 @@ function setOrganizationLayout(value: string) {
     });
 }
 function patchItem(index: number, value: Partial<InvitationModuleItem>) {
+  const item = items.value[index];
+  if (
+    props.module.type === "organizations" &&
+    settings.value.organizationLayout === "canvas" &&
+    item &&
+    !item.frame &&
+    !item.imageUrl &&
+    !item.description.trim() &&
+    (value.imageUrl || value.description?.trim())
+  ) {
+    appendOrganizations([{ ...item, ...value }], item.id);
+    return;
+  }
   setItems(
     items.value.map((item, i) => (i === index ? { ...item, ...value } : item)),
   );

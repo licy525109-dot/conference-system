@@ -16,7 +16,9 @@
           @click="redo"
         /><el-button
           :icon="Plus"
-          :disabled="disabled || canvas.labels.length >= 20"
+          :disabled="
+            disabled || canvas.labels.length >= INVITATION_ORGANIZATION_LIMIT
+          "
           @click="addText"
           >添加文字</el-button
         >
@@ -54,20 +56,56 @@
           @update:model-value="setCanvas({ height: Number($event) })"
       /></el-form-item>
     </div>
-    <InvitationOrganizationCanvas
-      :module="module"
-      :asset-origin="assetOrigin"
-      :editable="!disabled"
-      :selected-id="selectedId"
-      :grid="grid"
-      :custom-font-family="font.customFamily.value"
-      :font-family="pageDesign?.replaceAllFonts ? font.family.value : undefined"
-      :style="{ '--invite-custom-font': font.customFamily.value || undefined }"
-      @select="selectedId = $event"
-      @start="beginGesture"
-      @change="changeFrame"
-      @commit="finishGesture"
-    />
+    <div class="canvas-view-tools">
+      <el-button
+        :aria-pressed="panMode"
+        :type="panMode ? 'primary' : 'default'"
+        :icon="Rank"
+        @click="panMode = !panMode"
+        >平移画布</el-button
+      >
+      <el-select v-model="zoom" aria-label="画布缩放">
+        <el-option
+          v-for="n in [50, 75, 100, 150, 200]"
+          :key="n"
+          :value="n"
+          :label="n === 100 ? '适应宽度' : n + '%'"
+        />
+      </el-select>
+    </div>
+    <div
+      ref="viewport"
+      class="canvas-viewport"
+      :class="{ panning: panMode }"
+      tabindex="0"
+      aria-label="组织画布视区"
+      @pointerdown.capture="startPan"
+      @pointermove="movePan"
+      @pointerup="endPan"
+      @pointercancel="endPan"
+      @lostpointercapture="endPan"
+    >
+      <div :style="{ width: zoom + '%', marginInline: 'auto' }">
+        <InvitationOrganizationCanvas
+          :module="module"
+          :asset-origin="assetOrigin"
+          :editable="!disabled"
+          :selected-id="selectedId"
+          :grid="grid"
+          :custom-font-family="font.customFamily.value"
+          :font-family="
+            pageDesign?.replaceAllFonts ? font.family.value : undefined
+          "
+          :style="{
+            '--invite-custom-font': font.customFamily.value || undefined,
+          }"
+          @select="selectedId = $event"
+          @start="beginGesture"
+          @change="changeFrame"
+          @commit="finishGesture"
+        />
+      </div>
+    </div>
     <div class="canvas-selection-tools">
       <el-select
         v-model="selectedId"
@@ -179,6 +217,7 @@ import {
 } from "@element-plus/icons-vue";
 import {
   INVITATION_FONTS,
+  INVITATION_ORGANIZATION_LIMIT,
   arrangeInvitationOrganizations,
   createInvitationLayer,
   normalizeInvitationPageDesign,
@@ -208,6 +247,41 @@ const font = useInvitationFont(
   assetOrigin,
   computed(() => canvas.value.labels.some((label) => label.font === "custom")),
 );
+const viewport = ref<HTMLElement>();
+const zoom = ref(100),
+  panMode = ref(false);
+let pan:
+  { id: number; x: number; y: number; left: number; top: number } | undefined;
+function startPan(event: PointerEvent) {
+  const view = viewport.value;
+  if (!view || event.button !== 0 || !event.isPrimary) return;
+  if (
+    !panMode.value &&
+    (event.pointerType !== "mouse" ||
+      (event.target as Element).closest("[data-canvas-id]"))
+  )
+    return;
+  pan = {
+    id: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    left: view.scrollLeft,
+    top: view.scrollTop,
+  };
+  view.setPointerCapture(event.pointerId);
+  event.stopPropagation();
+  event.preventDefault();
+}
+function movePan(event: PointerEvent) {
+  if (!pan || pan.id !== event.pointerId || !viewport.value) return;
+  viewport.value.scrollTo(
+    pan.left + pan.x - event.clientX,
+    pan.top + pan.y - event.clientY,
+  );
+}
+function endPan(event: PointerEvent) {
+  if (pan?.id === event.pointerId) pan = undefined;
+}
 const grid = ref(true),
   selectedId = ref("");
 const objects = computed(() => [
@@ -381,7 +455,7 @@ function editText(value: Partial<InvitationTextLayer>) {
   });
 }
 function addText() {
-  if (canvas.value.labels.length >= 20) return;
+  if (canvas.value.labels.length >= INVITATION_ORGANIZATION_LIMIT) return;
   const id = crypto.randomUUID();
   const initialItems = (props.module.items || []).map((item) => ({
     ...item,
@@ -488,6 +562,30 @@ async function arrange() {
 }
 </script>
 <style scoped>
+.canvas-view-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.canvas-view-tools .el-select {
+  width: 120px;
+}
+.canvas-viewport {
+  max-height: min(62vh, 680px);
+  overflow: auto;
+  border: 1px solid #dbe3df;
+  background: #f3f4ef;
+}
+.canvas-viewport.panning,
+.canvas-viewport.panning :deep([data-canvas-id]) {
+  touch-action: none;
+  cursor: grab;
+}
+.canvas-viewport.panning:active {
+  cursor: grabbing;
+}
 .organization-canvas-editor {
   padding: 16px 0 24px;
   min-width: 0;

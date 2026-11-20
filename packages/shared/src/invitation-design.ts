@@ -397,7 +397,7 @@ export function normalizeInvitationOrganizationCanvas(
     width: Math.round(num(s.width, 750, 320, 1600)),
     height: Math.round(num(s.height, 750, 200, 6000)),
     labels: (Array.isArray(s.labels) ? s.labels : [])
-      .slice(0, 20)
+      .slice(0, INVITATION_ORGANIZATION_LIMIT)
       .map((value, index) => {
         const label = normalizeInvitationCover({ layers: [value] }).layers[0]!;
         let id = label.id;
