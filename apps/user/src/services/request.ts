@@ -89,19 +89,19 @@ async function requestWithAuthRecovery<T>(path: string, options: RequestOptions,
   }
 }
 
-function dispatchRequest<T>(path: string, options: RequestOptions): Promise<T> {
+export function requestWithBearer<T>(path: string, token: string, options: RequestOptions): Promise<T> {
+  return dispatchRequest<T>(path, { ...options, auth: false }, token);
+}
+
+function dispatchRequest<T>(path: string, options: RequestOptions, bearer?: string): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   const method = options.method ?? "GET";
   const headers: Record<string, string> = {
     "content-type": "application/json"
   };
 
-  if (options.auth !== false) {
-    const token = getToken();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-  }
+  const token = bearer ?? (options.auth !== false ? getToken() : "");
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   return new Promise<T>((resolve, reject) => {
     uni.request({

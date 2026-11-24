@@ -228,6 +228,8 @@ const actions: Record<string, string> = {
   config: "保存配置",
   appearance: "手机页面",
   forms: "启用新版评分表",
+  "rehearsal-seed": "导入模拟原单",
+  "rehearsal-submit": "模拟席位交分",
   handover: "补录颁奖与复赛资料",
   start: "开始评分",
   gate: "场次开关",

@@ -64,6 +64,27 @@ export class JudgingAdminController {
   ) {
     return ok(await this.service.progress(id, r.currentAdmin!));
   }
+  @Get(":id/sessions/:sid/rehearsal/:judge")
+  @Header("Cache-Control", "private, no-store")
+  async rehearsalPage(
+    @Param("id") id: string,
+    @Param("sid") sid: string,
+    @Param("judge") judgeKey: string,
+    @Req() req: RequestWithCurrentAdmin
+  ) {
+    return ok(await this.service.mobile(id, sid, { operator: req.currentAdmin!, judgeKey }));
+  }
+  @Post(":id/sessions/:sid/rehearsal/:judge")
+  @Header("Cache-Control", "private, no-store")
+  async rehearsalSubmit(
+    @Param("id") id: string,
+    @Param("sid") sid: string,
+    @Param("judge") judgeKey: string,
+    @Body() data: unknown,
+    @Req() req: RequestWithCurrentAdmin
+  ) {
+    return ok(await this.service.submit(id, sid, data, { operator: req.currentAdmin!, judgeKey }));
+  }
   @Get(":id/results") @Header("Cache-Control", "private, no-store") async results(
     @Param("id") id: string,
     @Req() r: RequestWithCurrentAdmin

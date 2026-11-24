@@ -1,6 +1,26 @@
 <template>
   <view class="judging-surface" :style="style">
-    <view v-if="!page" class="judging-panel">
+    <view v-if="loginNeeded && practice" class="judging-panel">
+      <text class="judging-heading">联排账号登录</text>
+      <text class="judging-note">使用获本场授权的后台账号进入模拟评委席。</text>
+      <input class="judging-input" v-model="loginName" placeholder="后台用户名" maxlength="100" />
+      <input
+        class="judging-input"
+        v-model="loginPassword"
+        password
+        placeholder="登录密码"
+        @confirm="signIn"
+      />
+      <text v-if="message" class="judging-note">{{ message }}</text>
+      <button
+        class="judging-submit"
+        :disabled="loading || !loginName.trim() || !loginPassword"
+        @click="signIn"
+      >
+        进入模拟评分
+      </button>
+    </view>
+    <view v-else-if="!page" class="judging-panel">
       <text class="judging-heading">{{ loading ? "正在核对评审资格" : "现场评审" }}</text>
       <text>{{ message }}</text>
       <!-- #ifdef MP-WEIXIN -->
@@ -9,10 +29,13 @@
       </button>
       <!-- #endif -->
       <button v-if="!loading" @click="load">重新核对</button>
+      <button v-if="practice && !loading" @click="switchAccount">切换联排账号</button>
     </view>
     <template v-else>
       <view class="judging-hero">
-        <text v-if="page.rehearsal" class="judging-test">联排测试</text>
+        <text v-if="page.rehearsal" class="judging-test">
+          {{ page.rehearsalSeat ? "模拟席位 · " + page.rehearsalSeat : "联排测试" }}
+        </text>
         <image v-if="page.look.cover" class="judging-cover" :src="asset(page.look.cover)" mode="aspectFill" />
         <image v-if="page.look.logo" class="judging-logo" :src="asset(page.look.logo)" mode="aspectFit" />
         <text class="judging-kicker">{{ page.title }} · {{ roleLabels[page.role] }}</text>
@@ -89,6 +112,39 @@ import { ensureAuthenticatedUser } from "@/services/auth";
 import { bindWechatPhone } from "@/services/profile";
 import { ApiRequestError, request } from "@/services/request";
 import { API_BASE_URL } from "@/config/app";
+import {
+  rehearsalScore,
+  rehearsalToken,
+  signIntoRehearsal,
+  setRehearsalToken
+} from "@/services/judging-rehearsal";
+const practice = ref(""),
+  loginNeeded = ref(false),
+  loginName = ref(""),
+  loginPassword = ref("");
+function switchAccount() {
+  setRehearsalToken("");
+  loginPassword.value = "";
+  message.value = "";
+  page.value = null;
+  loginNeeded.value = true;
+}
+async function signIn() {
+  if (loading.value || !loginName.value.trim() || !loginPassword.value) return;
+  loading.value = true;
+  message.value = "";
+  try {
+    await signIntoRehearsal(loginName.value.trim(), loginPassword.value);
+    loginPassword.value = "";
+    loginNeeded.value = false;
+  } catch (e) {
+    message.value = problem(e);
+    return;
+  } finally {
+    loading.value = false;
+  }
+  await load();
+}
 const page = ref<ScoringView | null>(null),
   message = ref(""),
   loading = ref(false),
@@ -116,13 +172,24 @@ async function load() {
   needPhone.value = false;
   try {
     if (!eventId.value || !sessionId.value) throw new Error("请扫描本场独立评分码");
-    const user = await ensureAuthenticatedUser();
-    needPhone.value = !user.phoneVerifiedAt;
-    const data = await request<ScoringView>(path());
+    let data: ScoringView;
+    if (practice.value) {
+      if (!rehearsalToken()) {
+        loginNeeded.value = true;
+        page.value = null;
+        return;
+      }
+      data = await rehearsalScore(eventId.value, sessionId.value, practice.value);
+    } else {
+      const user = await ensureAuthenticatedUser();
+      needPhone.value = !user.phoneVerifiedAt;
+      data = await request<ScoringView>(path());
+    }
     page.value = data;
     uni.setNavigationBarTitle({ title: data.look.heading });
   } catch (e) {
     page.value = null;
+    if (practice.value && !rehearsalToken()) loginNeeded.value = true;
     message.value = problem(e);
   } finally {
     loading.value = false;
@@ -167,20 +234,27 @@ async function send() {
   sending.value = true;
   message.value = "";
   try {
-    page.value.receipt = await request<ScoreReceipt>(path() + "/submit", {
-      method: "POST",
-      data: { answers, formVersion: page.value.formVersion }
-    });
+    const payload = { answers, formVersion: page.value.formVersion };
+    page.value.receipt = practice.value
+      ? await rehearsalScore(eventId.value, sessionId.value, practice.value, payload)
+      : await request<ScoreReceipt>(path() + "/submit", { method: "POST", data: payload });
     const task = page.value.tasks.find((t) => t.sessionId === sessionId.value);
     if (task) task.status = "已交";
     values.value = {};
   } catch (err) {
     message.value = problem(err);
+    if (practice.value && !rehearsalToken()) {
+      page.value = null;
+      loginNeeded.value = true;
+    }
   } finally {
     sending.value = false;
   }
 }
 onLoad((q: any) => {
+  // #ifdef H5
+  practice.value = String(q?.practice || "");
+  // #endif
   eventId.value = String(q?.event || "");
   sessionId.value = String(q?.session || "");
   void load();
