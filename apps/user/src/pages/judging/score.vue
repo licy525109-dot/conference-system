@@ -105,7 +105,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { onLoad } from "@dcloudio/uni-app";
+import { onLoad, onUnload } from "@dcloudio/uni-app";
 import { defaultJudgingConfig, judgingStyle, roleLabels } from "@conference/shared";
 import type { Answers, ScoreReceipt, ScoringView } from "@conference/shared";
 import { ensureAuthenticatedUser } from "@/services/auth";
@@ -251,8 +251,19 @@ async function send() {
     sending.value = false;
   }
 }
+// #ifdef H5
+// uni-app reuses this page when a second scoring link is opened in the same browser tab.
+function reloadLinkedScore(event: HashChangeEvent) {
+  const route = "#/pages/judging/score?";
+  const before = new URL(event.oldURL).hash;
+  const after = new URL(event.newURL).hash;
+  if (before !== after && before.startsWith(route) && after.startsWith(route)) window.location.reload();
+}
+onUnload(() => window.removeEventListener("hashchange", reloadLinkedScore));
+// #endif
 onLoad((q: any) => {
   // #ifdef H5
+  window.addEventListener("hashchange", reloadLinkedScore);
   practice.value = String(q?.practice || "");
   // #endif
   eventId.value = String(q?.event || "");
