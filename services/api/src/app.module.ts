@@ -19,10 +19,11 @@ import { RegistrationsModule } from "./registrations/registrations.module";
 import { WecomModule } from "./wecom/wecom.module";
 import { InvitationsModule } from "./invitations/invitations.module";
 import { CertificatesModule } from "./certificates/certificates.module";
+import { JudgingModule } from "./judging/judging.module";
 import { ExternalCheckinModule } from "./external-checkin/external-checkin.module";
 
 @Module({
-  imports: [PrismaModule, PaymentMerchantsModule, AdminModule, AuthModule, CartModule, CheckinModule, ExternalCheckinModule, CmsModule, ConferencesModule, GuestScheduleModule, InvitationsModule, CertificatesModule, MallModule, MemberModule, OrderLifecycleModule, PaymentsModule, PlatformModule, RegistrationModule, RegistrationsModule, WecomModule],
+  imports: [PrismaModule, JudgingModule, PaymentMerchantsModule, AdminModule, AuthModule, CartModule, CheckinModule, ExternalCheckinModule, CmsModule, ConferencesModule, GuestScheduleModule, InvitationsModule, CertificatesModule, MallModule, MemberModule, OrderLifecycleModule, PaymentsModule, PlatformModule, RegistrationModule, RegistrationsModule, WecomModule],
   controllers: [HealthController]
 })
 export class AppModule {}

@@ -6,7 +6,7 @@ import { CurrentUser } from "../auth/current-user";
 import { signJwt, verifyJwt } from "../auth/jwt";
 import { AdminAccessService } from "./admin-access.service";
 import { CurrentAdmin } from "./current-admin";
-import { SCOPED_ADMIN_PERMISSIONS, SCOPED_CERTIFICATE_PERMISSIONS, SCOPED_INVITATION_PERMISSIONS } from "./conference-scope";
+import { SCOPED_JUDGING_PERMISSIONS, SCOPED_ADMIN_PERMISSIONS, SCOPED_CERTIFICATE_PERMISSIONS, SCOPED_INVITATION_PERMISSIONS } from "./conference-scope";
 
 export interface ApiResponse<TData> {
   code: "OK";
@@ -94,7 +94,8 @@ export class AdminAuthService {
     }
 
     const admin = await this.buildCurrentAdmin(adminUser);
-    if (admin.conferenceScopeMode !== "ALL") throw new ForbiddenException("会议授权账号请使用后台授权会议工作台，暂不开放小程序全局管理入口");
+    const namedJudgingConfirmer = admin.permissions?.includes("judging:confirm") && currentUser.realName === "王红丽" && currentUser.phoneVerifiedAt && !currentUser.openid.startsWith("mock_");
+    if (admin.conferenceScopeMode !== "ALL" && !namedJudgingConfirmer) throw new ForbiddenException("会议授权账号请使用后台授权会议工作台，暂不开放小程序全局管理入口");
 
     const existingOpenidBinding = await this.prisma.adminWechatBinding.findUnique({
       where: { openid: currentUser.openid },
@@ -228,7 +229,7 @@ export class AdminAuthService {
       id: adminUser.id,
       username: adminUser.username,
       displayName: adminUser.displayName,
-      permissions: conferenceScopeMode === "ALL" ? permissions : permissions.filter(code => [...SCOPED_ADMIN_PERMISSIONS, ...SCOPED_CERTIFICATE_PERMISSIONS, ...SCOPED_INVITATION_PERMISSIONS].includes(code)),
+      permissions: conferenceScopeMode === "ALL" ? permissions : permissions.filter(code => [...SCOPED_ADMIN_PERMISSIONS, ...SCOPED_CERTIFICATE_PERMISSIONS, ...SCOPED_INVITATION_PERMISSIONS, ...SCOPED_JUDGING_PERMISSIONS].includes(code)),
       conferenceScopeMode,
       conferenceIds: scope?.conferenceGrants?.map(item => item.conferenceId) ?? []
     };

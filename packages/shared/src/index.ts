@@ -58,3 +58,4 @@ export * from "./certificates";
 export * from "./certificates-legacy";
 export * from "./external-checkin";
 export * from "./external-checkin-appearance";
+export * from "./judging";

@@ -3083,3 +3083,73 @@ model ReconciliationResult {
   @@index([createdAt])
   @@map("reconciliation_results")
 }
+
+model JudgingEvent {
+  id                String   @id @default(cuid())
+  title             String
+  rehearsal         Boolean
+  config            Json
+  control           Json
+  revision          Int      @default(1)
+  edition           Int      @default(1)
+  phase             String   @default("SETUP")
+  staffIds          String[] @default([])
+  confirmerId       String?
+  publishedEdition  Int?
+  publishedFields   String[] @default([])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  ballots           JudgingBallot[]
+  editions          JudgingEdition[]
+  audit             JudgingAudit[]
+
+  @@map("judging_events")
+}
+
+model JudgingBallot {
+  id         String   @id @default(cuid())
+  eventId    String
+  sessionKey String
+  judgeKey   String
+  teacherKey String
+  role       String
+  userId     String
+  rubric     Json
+  answers    Json
+  units      Int?
+  status     String
+  createdAt  DateTime @default(now())
+  event      JudgingEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@unique([eventId, sessionKey, judgeKey])
+  @@index([eventId, teacherKey])
+  @@map("judging_ballots")
+}
+
+model JudgingEdition {
+  id          String   @id @default(cuid())
+  eventId     String
+  edition     Int
+  revision    Int
+  snapshot    Json
+  confirmedBy String
+  confirmedAt DateTime @default(now())
+  event       JudgingEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@unique([eventId, edition])
+  @@map("judging_editions")
+}
+
+model JudgingAudit {
+  id        String   @id @default(cuid())
+  eventId   String
+  edition   Int
+  actor     String
+  action    String
+  detail    Json
+  createdAt DateTime @default(now())
+  event     JudgingEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@index([eventId, createdAt])
+  @@map("judging_audit")
+}

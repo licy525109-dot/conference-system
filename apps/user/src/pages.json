@@ -127,6 +127,7 @@
     }
   ],
   "subPackages": [
+    { "root": "pages/judging", "pages": [ { "path": "score", "style": { "navigationBarTitleText": "现场评审" } }, { "path": "awards", "style": { "navigationBarTitleText": "颁奖名单" } } ] },
     {
       "root": "pages/cart",
       "pages": [
