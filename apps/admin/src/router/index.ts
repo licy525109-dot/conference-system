@@ -62,7 +62,7 @@ export const routes: AdminRoute[] = [
   { path: "/mobile", title: "会务工作台", menuTitle: "手机工作台", group: "控制台", permission: "registration:view", component: MobileWorkspacePage },
   { path: "/notifications/paid-alerts", title: "管理员缴费提醒", menuTitle: "管理员缴费提醒", group: "通知中心", permission: "system:account", component: PaidAlertsPage },
   { path: "/conferences", title: "会议管理", menuTitle: "会议管理", group: "会议管理", description: "会议基础信息、上下架和配置入口", permission: "conference:view", component: ConferencesPage },
-  { path: "/judging", title: "赛事评审", menuTitle: "赛事评审", group: "会议管理", permission: "judging:view", component: JudgingPage },
+  { path: "/judging", title: "赛课评审", menuTitle: "赛课评审", group: "会议管理", permission: "judging:view", component: JudgingPage },
   {
     path: "/conferences/config",
     title: "会议配置详情",
