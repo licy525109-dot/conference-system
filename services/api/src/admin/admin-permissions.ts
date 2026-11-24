@@ -1,4 +1,12 @@
 export const ADMIN_PERMISSIONS = [
+  { code: "judging:view", name: "打开赛事评审工作台", group: "会议管理" },
+  { code: "judging:config", name: "配置评审名单、场次、量表和手机页面", group: "会议管理" },
+  { code: "judging:floor", name: "现场开关和核对评审任务", group: "会议管理" },
+  { code: "judging:results", name: "查看内部成绩及原单", group: "会议管理" },
+  { code: "judging:adjust", name: "复核原单、调整总分及送审", group: "会议管理" },
+  { code: "judging:confirm", name: "本人确认已绑定赛事名单", group: "会议管理" },
+  { code: "judging:export", name: "导出授权的成绩和颁奖名单", group: "会议管理" },
+  { code: "judging:publish", name: "公布已确认的颁奖名单", group: "会议管理" },
   { code: "external-checkin:view", name: "查看和导出外部会议签到", group: "会议管理" },
   { code: "external-checkin:write", name: "配置外部签到和导入名单", group: "会议管理" },
   { code: "certificate:view", name: "查看证书项目与名单", group: "会议管理" },

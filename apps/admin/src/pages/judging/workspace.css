@@ -1,0 +1,153 @@
+.judging-workspace {
+  --j-ink: #182d2b;
+  --j-muted: #536a65;
+  --j-line: #dce5e0;
+  color: var(--j-ink);
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 8px 4px 24px;
+}
+.judging-workspace h1 {
+  font-size: 30px;
+  line-height: 1.25;
+  margin: 4px 0 8px;
+}
+.judging-workspace h2 {
+  margin: 10px 0 0;
+  font-size: 24px;
+  font-weight: 650;
+}
+.judging-workspace h3 {
+  font-size: 18px;
+  margin: 20px 0 14px;
+}
+.j-header,
+.j-overview,
+.j-statusline,
+.j-bottom,
+.j-overline,
+.j-counts,
+.j-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.j-header,
+.j-overview,
+.j-bottom {
+  justify-content: space-between;
+}
+.j-eyebrow,
+.j-note,
+.j-bottom,
+.j-overline {
+  font-size: 13px;
+  color: var(--j-muted);
+}
+.j-overview {
+  border: 1px solid #c9dbd3;
+  border-radius: 12px;
+  background: #edf4ef;
+  margin: 14px 0 18px;
+  padding: 20px 24px;
+}
+.j-mode {
+  color: #195e48;
+  padding: 3px 9px;
+  border: 1px solid #aecab9;
+  border-radius: 4px;
+  background: #f8fbf8;
+  font-weight: 600;
+}
+.j-counts {
+  gap: 28px;
+}
+.j-counts span {
+  display: grid;
+  font-size: 12px;
+  color: var(--j-muted);
+}
+.j-counts strong {
+  font-size: 26px;
+  line-height: 1.35;
+  color: var(--j-ink);
+  font-variant-numeric: tabular-nums;
+}
+.j-tabs {
+  background: #fff;
+  border: 1px solid var(--j-line);
+  border-radius: 12px;
+  padding: 6px 20px 20px;
+}
+.j-tabs .el-tabs__nav-wrap:after {
+  height: 1px;
+}
+.j-tools {
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.j-tools .el-button + .el-button {
+  margin-left: 0;
+}
+.j-statusline {
+  margin: 18px 0;
+}
+.j-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.j-question {
+  border: 1px solid var(--j-line, #dce5e0);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+.j-rulegrid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+  margin: 10px 0;
+}
+.j-rulegrid label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+}
+.j-rulegrid .el-input-number {
+  width: 120px;
+}
+.j-rulegrid .el-select {
+  width: 170px;
+}
+.j-bottom {
+  margin: 10px 4px;
+}
+.scoped-judging-page {
+  padding: 20px;
+  max-width: 1500px;
+  margin: auto;
+}
+.judging-workspace table {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 760px) {
+  .j-header,
+  .j-overview {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .j-overview {
+    padding: 14px;
+  }
+  .j-tabs {
+    padding: 4px 10px 14px;
+  }
+  .j-pair {
+    grid-template-columns: 1fr;
+  }
+  .j-counts {
+    gap: 20px;
+  }
+}

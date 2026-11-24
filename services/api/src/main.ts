@@ -61,6 +61,11 @@ async function bootstrap() {
     express.json({ limit: "4mb" })(request, response, next);
   });
   app.use("/api/external-checkin-assets", express.static(resolve(inferProjectRoot(process.cwd()), "apps/admin/dist/assets")));
+  const parseJudgingJson = express.json({ limit: "2mb" });
+  app.use("/api/admin/judging", (request: unknown, response: { setHeader(name: string, value: string): void }, next: () => void) => {
+    response.setHeader("Cache-Control", "private, no-store");
+    parseJudgingJson(request, response, next);
+  });
   const parseCertificateJson = express.json({ limit: "4mb" });
   app.use("/api/admin/certificates", (request: unknown, response: { setHeader(name: string, value: string): void }, next: () => void) => {
     response.setHeader("Cache-Control", "private, no-store");

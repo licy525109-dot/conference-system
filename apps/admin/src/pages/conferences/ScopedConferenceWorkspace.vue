@@ -3,6 +3,7 @@
     <header class="workspace-header">
       <div class="brand"><strong>观潮会集</strong><span>会议工作台</span></div>
       <div class="account">
+        <el-button v-if="session.hasPermission('judging:view')" @click="navigateTo('/judging')">赛事评审</el-button>
         <el-button v-if="session.hasPermission('invitation:view')" @click="navigateTo('/invitations')">专属邀请函</el-button>
         <el-button v-if="session.hasPermission('certificate:view')" @click="navigateTo('/certificates')">证书管理</el-button>
         <span>{{ session.admin.value?.displayName || session.admin.value?.username }}</span>

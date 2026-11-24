@@ -122,6 +122,14 @@ class LinkService extends WechatAuthService {
   }
 }
 describe("WechatAuthService private invitation links", () => {
+  it("uses a separate session route and WeChat environment for judging", async () => {
+    withWechatCredentials(); const service = new LinkService();
+    service.responses.push({...service.responses[0]});
+    await service.generateJudgingLink("event1", "class-A", true);
+    await service.generateJudgingLink("event1", "ted-B");
+    assert.deepEqual(service.requests.map(r => [r.path, r.query, r.env_version]), [["pages/judging/score", "event=event1&session=class-A", "trial"], ["pages/judging/score", "event=event1&session=ted-B", "release"]]);
+    await assert.rejects(service.generateJudgingLink("event1", "bad id"));
+  });
   it("generates a coupon-only released route for a seven-day invitation", async () => {
     withWechatCredentials(); const service = new LinkService(); const expiry = new Date(Date.now() + 168 * 3600_000 - 1000);
     await service.generateCouponClaimLink("c".repeat(43), expiry);

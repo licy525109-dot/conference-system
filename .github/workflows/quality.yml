@@ -57,6 +57,14 @@ jobs:
       - run: pnpm build:api
       - run: pnpm build:admin
       - run: pnpm exec tsx --test tests/e2e/external-checkin.integration.ts
+      - name: Five-room judging and signed award editions
+        env:
+          DATABASE_URL: postgresql://external_checkin_test@127.0.0.1:5432/judging_test
+          JUDGING_TEST_DATABASE_URL: postgresql://external_checkin_test@127.0.0.1:5432/judging_test
+        run: |
+          createdb -h 127.0.0.1 -U external_checkin_test judging_test
+          pnpm --filter @conference/api exec prisma migrate deploy --schema ../../prisma/schema.prisma
+          node --import tsx --test tests/e2e/judging.integration.ts
 
   certificate-api:
     name: Certificate API and publication isolation

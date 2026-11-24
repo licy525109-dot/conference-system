@@ -132,6 +132,7 @@ function permissionMenuGroup(code: string): string {
     code.startsWith("registration:") ||
     code.startsWith("guest-schedule:") ||
     code.startsWith("checkin:") ||
+    code.startsWith("judging:") ||
     code.startsWith("external-checkin:") ||
     code.startsWith("inventory:") ||
     code.startsWith("inventory-alert:")

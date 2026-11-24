@@ -22,6 +22,12 @@
     </el-card>
   </main>
 
+  <div v-else-if="admin.conferenceScopeMode === 'ASSIGNED' && (currentRoute.path === '/judging' || (currentRoute.path === '/dashboard' && hasPermission('judging:view') && !hasPermission('conference:view') && !hasPermission('invitation:view')))" class="scoped-judging-page">
+    <el-button v-if="hasPermission('conference:view')" @click="navigateTo('/dashboard')">返回授权会议工作台</el-button>
+    <el-button v-if="hasPermission('invitation:view')" @click="navigateTo('/invitations')">专属邀请函</el-button>
+    <el-button v-if="hasPermission('certificate:view')" @click="navigateTo('/certificates')">证书管理</el-button>
+    <el-button @click="logout">退出登录</el-button><JudgingPage v-if="hasPermission('judging:view')" />
+  </div>
   <div v-else-if="admin.conferenceScopeMode === 'ASSIGNED' && currentRoute.path === '/certificates'" class="scoped-certificate-page">
     <el-button @click="navigateTo('/dashboard')">返回授权会议工作台</el-button>
     <CertificatesPage v-if="hasPermission('certificate:view')" />
@@ -29,6 +35,7 @@
   </div>
   <div v-else-if="admin.conferenceScopeMode === 'ASSIGNED' && (currentRoute.path === '/invitations' || (hasPermission('invitation:view') && !hasPermission('conference:view')))" class="scoped-invitation-page">
     <nav class="scoped-invitation-nav" aria-label="工作台导航">
+      <el-button v-if="hasPermission('judging:view')" @click="navigateTo('/judging')">赛事评审</el-button>
       <el-button v-if="hasPermission('conference:view')" @click="navigateTo('/dashboard')">返回授权会议工作台</el-button>
       <el-button v-if="hasPermission('certificate:view')" @click="navigateTo('/certificates')">证书管理</el-button>
       <span>{{ admin.displayName || admin.username }}</span><el-button @click="logout">退出登录</el-button>
@@ -45,6 +52,7 @@ import { defineAsyncComponent, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import AdminLayout from "./layouts/AdminLayout.vue";
 import ScopedConferenceWorkspace from "./pages/conferences/ScopedConferenceWorkspace.vue";
+const JudgingPage = defineAsyncComponent(() => import("./pages/judging/index.vue"));
 const CertificatesPage = defineAsyncComponent(() => import("./pages/certificates/index.vue"));
 const InvitationsPage = defineAsyncComponent(() => import("./pages/invitations/index.vue"));
 import { currentRoute, navigateTo } from "./router";
