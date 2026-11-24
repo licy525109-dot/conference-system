@@ -179,7 +179,7 @@ async function arrange() {
   }
 }
 function demo() {
-  const c = rehearsalRoster();
+  const c = rehearsalRoster(props.id);
   for (const k of sections) Object.assign(props.config, { [k]: c[k] });
 }
 async function read(ev: Event) {

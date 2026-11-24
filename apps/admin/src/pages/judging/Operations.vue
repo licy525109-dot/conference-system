@@ -54,6 +54,13 @@
         <template #default="{ row }">{{ taskStatus[row.status] }} {{ row.present ? "· 已到" : "" }}</template>
       </el-table-column>
       <el-table-column prop="reason" label="现场记录" />
+      <el-table-column v-if="event.rehearsal" label="模拟席位" width="108">
+        <template #default="{ row }">
+          <a v-if="row.canRehearse" :href="practiceLink(row)" target="_blank" rel="noopener noreferrer">
+            打开评分页
+          </a>
+        </template>
+      </el-table-column>
       <el-table-column v-if="['LIVE', 'REVIEW'].includes(state.phase)" width="200" label="现场操作">
         <template #default="{ row }">
           <template v-if="!row.receipt">
@@ -97,6 +104,13 @@ const tasks = ref<ScoringTask[]>([]),
   qrError = ref(""),
   qrOpen = ref(false),
   miniPath = ref("");
+function practiceLink(t: ScoringTask) {
+  const origin = import.meta.env.DEV
+    ? import.meta.env.VITE_JUDGING_H5_ORIGIN || "http://localhost:5173"
+    : "https://m.guanchaohuiji.com";
+  const params = new URLSearchParams({ event: props.event.id, session: t.session.id, practice: t.judgeId });
+  return origin + "/#/pages/judging/score?" + params.toString();
+}
 let timer: ReturnType<typeof setInterval> | undefined;
 const observed = ref<{ revision: number; phase: string; gates: Record<string, string> } | null>(null);
 const state = computed(() =>

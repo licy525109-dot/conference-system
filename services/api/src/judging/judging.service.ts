@@ -4,6 +4,7 @@ import {
   assigned,
   defaultJudgingConfig,
   defaultJudgingControl,
+  rehearsalUserId,
   rubricFor,
   stageOf,
   maxPoints,
@@ -81,6 +82,19 @@ function sessionOf(c: JudgingConfig, id: unknown) {
   const s = c.sessions.find((x) => x.id === id);
   if (!s) fail("场次不存在");
   return s;
+}
+type Scorer = CurrentUser | { operator: CurrentAdmin; judgeKey: string };
+function isRehearsalSeat(e: JudgingEvent, j: Judge) {
+  return e.rehearsal && !j.phone && j.userId === rehearsalUserId(e.id, j.id);
+}
+function scoringIdentity(e: JudgingEvent, principal: Scorer): CurrentUser {
+  if (!("operator" in principal)) return principal;
+  permit(principal.operator, "judging:floor");
+  scope(e, principal.operator);
+  const judge = config(e).judges.find((j) => j.id === principal.judgeKey);
+  if (!judge || !isRehearsalSeat(e, judge))
+    throw new ForbiddenException("仅联排赛事中专门创建的模拟席位可试交");
+  return { id: judge.userId, openid: null, nickname: judge.name };
 }
 function candidates(c: JudgingConfig, u: CurrentUser) {
   return c.judges.filter((j) =>
@@ -285,6 +299,8 @@ export class JudgingService {
         const e = await getEvent(tx, id);
         scope(e, a);
         const state = control(e);
+        const c = config(e),
+          rehearsalSeats = new Set(c.judges.filter((j) => isRehearsalSeat(e, j)).map((j) => j.id));
         const ballots = await tx.judgingBallot.findMany({
           where: { eventId: id },
           select: { id: true, sessionKey: true, judgeKey: true, status: true }
@@ -293,7 +309,10 @@ export class JudgingService {
           revision: e.revision,
           gates: state.gates,
           phase: e.phase,
-          tasks: scoringTasks(config(e), state, ballots)
+          tasks: scoringTasks(c, state, ballots).map((t) => ({
+            ...t,
+            canRehearse: rehearsalSeats.has(t.judgeId)
+          }))
         };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead }
@@ -645,8 +664,9 @@ export class JudgingService {
       { timeout: 15000 }
     );
   }
-  async mobile(id: string, sid: string, u: CurrentUser): Promise<ScoringView> {
+  async mobile(id: string, sid: string, principal: Scorer): Promise<ScoringView> {
     const e = await getEvent(this.db, id),
+      u = scoringIdentity(e, principal),
       c = config(e),
       s = sessionOf(c, sid),
       j = findJudge(e, c, s, u),
@@ -658,6 +678,7 @@ export class JudgingService {
     return {
       title: e.title,
       rehearsal: e.rehearsal,
+      rehearsalSeat: "operator" in principal ? j.name : undefined,
       look: c.look,
       teacher: {
         name: teacher.name,
@@ -692,11 +713,12 @@ export class JudgingService {
       )
     };
   }
-  async submit(id: string, sid: string, raw: unknown, u: CurrentUser) {
+  async submit(id: string, sid: string, raw: unknown, principal: Scorer) {
     const b = object(raw);
     return this.db.$transaction(
       async (tx) => {
         const e = await getEvent(tx, id, true),
+          u = scoringIdentity(e, principal),
           c = config(e),
           s = sessionOf(c, sid),
           j = findJudge(e, c, s, u);
@@ -735,6 +757,12 @@ export class JudgingService {
           j.userId = u.id;
           data.config = json(c);
         }
+        if ("operator" in principal)
+          await audit(tx, e, principal.operator, "rehearsal-submit", {
+            session: s.id,
+            judge: j.id,
+            ballot: record.id
+          });
         await tx.judgingEvent.update({ where: { id }, data });
         return receipt(record, c, s);
       },

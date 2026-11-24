@@ -1,4 +1,4 @@
-import { defaultJudgingConfig, roleLabels, type JudgingConfig } from "@conference/shared";
+import { defaultJudgingConfig, rehearsalUserId, roleLabels, type JudgingConfig } from "@conference/shared";
 import { readExternalCheckinWorkbook } from "../../utils/external-checkin-sheet";
 export type Section = "rooms" | "teachers" | "judges" | "sessions" | "merits";
 export type Field = {
@@ -157,7 +157,7 @@ export function schedule(c: JudgingConfig) {
     ];
   });
 }
-export function rehearsalRoster(): JudgingConfig {
+export function rehearsalRoster(eventId: string): JudgingConfig {
   const c = defaultJudgingConfig();
   c.rooms = c.rooms.slice(0, 1);
   c.teachers = [
@@ -180,7 +180,7 @@ export function rehearsalRoster(): JudgingConfig {
     name: "联排" + roleLabels[role],
     role,
     room: role === "expert" ? "" : "R1",
-    userId: "rehearsal-user-" + (i + 1),
+    userId: rehearsalUserId(eventId, "J0" + (i + 1)),
     phone: ""
   }));
   return c;

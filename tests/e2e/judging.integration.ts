@@ -426,6 +426,63 @@ test(
         );
         await assert.rejects(service.published(event.id), /尚未公布/);
       });
+      await t.test(
+        "rehearsal staff may submit exclusively for assigned synthetic seats, with the real gates, receipts and audit",
+        async () => {
+          let e = await service.create({ title: "浏览器模拟席位测试", rehearsal: true }, cfg.admin);
+          events.push(e.id);
+          const cc = structuredClone(c);
+          cc.rooms = cc.rooms.slice(0, 1);
+          cc.teachers = cc.teachers.slice(0, 1);
+          cc.sessions = cc.sessions.filter((s) => s.teacher === "T0");
+          cc.merits = [];
+          const sample = {
+            ...c.judges.find((j) => j.id === "R1D0")!,
+            userId: req("@conference/shared").rehearsalUserId(e.id, "R1D0")
+          };
+          cc.judges = [first, sample, c.judges.find((j) => j.id === "E0")!];
+          const changeTrial = async (action: string, body: Record<string, unknown> = {}) => {
+            e = await service.change(e.id, { action, revision: e.revision, ...body }, cfg.admin);
+          };
+          await changeTrial("config", { title: "浏览器模拟席位测试", config: cc });
+          await changeTrial("start");
+          const route = (eventId: string, sid: string, seat: string) =>
+            "/admin/judging/" + eventId + "/sessions/" + sid + "/rehearsal/" + seat;
+          const target = route(e.id, "C0", sample.id);
+          await call(target, undefined, undefined, 401);
+          await call(target, namedToken, undefined, 401);
+          await call(target, floor.token, undefined, 403);
+          await changeTrial("access", { staffIds: [floor.admin.id, outsider.admin.id], confirmerId: null });
+          await call(target, outsider.token, undefined, 403);
+          await call(route(id, "C0", first.id), cfg.token, undefined, 403);
+          await call(route(e.id, "C0", first.id), floor.token, undefined, 403);
+          await call(route(e.id, "S0", sample.id), floor.token, undefined, 403);
+          const page = await call(target, floor.token);
+          assert.equal(page.rehearsalSeat, sample.name);
+          assert.equal(page.open, false);
+          const body = { answers: { score: 25 }, formVersion: page.formVersion };
+          await call(target, floor.token, body, 409);
+          await changeTrial("gate", { session: "C0", open: true });
+          const tasks = (await call("/admin/judging/" + e.id + "/progress", floor.token)).tasks;
+          assert.equal(tasks.filter((x: { canRehearse: boolean }) => x.canRehearse).length, 1);
+          await call(target, floor.token, { ...body, formVersion: page.formVersion - 1 }, 409);
+          const [one, two] = await Promise.all([
+            call(target, floor.token, body),
+            call(target, floor.token, body)
+          ]);
+          assert.deepEqual(one, two);
+          assert.deepEqual(Object.keys(one).sort(), ["id", "teacher", "session", "at", "status"].sort());
+          const log = await db.judgingAudit.findMany({
+            where: { eventId: e.id, action: "rehearsal-submit" }
+          });
+          assert.equal(log.length, 1);
+          assert.equal(log[0].actor, floor.admin.id);
+          assert.equal(log[0].detail.ballot, one.id);
+          e = await service.detail(e.id, cfg.admin);
+          await changeTrial("access", { staffIds: [], confirmerId: null });
+          await call(target, floor.token, body, 403);
+        }
+      );
     } finally {
       await db.$transaction([
         db.judgingBallot.deleteMany({ where: { eventId: { in: events } } }),

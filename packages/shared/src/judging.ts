@@ -164,6 +164,7 @@ export interface ScoringRow {
   adjustment: Adjustment | null;
 }
 export interface ScoringTask {
+  canRehearse?: boolean;
   session: JudgingSession;
   judgeId: string;
   name: string;
@@ -190,6 +191,7 @@ export interface ScoreReceipt {
   status: "received";
 }
 export interface ScoringView {
+  rehearsalSeat?: string;
   title: string;
   rehearsal: boolean;
   look: JudgingLook;
@@ -203,6 +205,7 @@ export interface ScoringView {
   tasks: MobileTask[];
   receipt: ScoreReceipt | null;
 }
+export const rehearsalUserId = (eventId: string, judgeId: string) => "rehearsal:" + eventId + ":" + judgeId;
 export const taskKey = (session: string, judge: string) => session + "/" + judge;
 export const assigned = (s: JudgingSession, j: Judge) =>
   s.kind === "ted" ? j.role === "expert" : j.role !== "expert" && s.room === j.room;
