@@ -3,7 +3,7 @@
     <header class="j-header">
       <div>
         <span class="j-eyebrow">会议管理</span>
-        <h1>赛事评审</h1>
+        <h1>赛课评审</h1>
       </div>
       <div class="j-tools">
         <el-select

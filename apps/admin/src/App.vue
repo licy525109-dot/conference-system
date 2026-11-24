@@ -35,7 +35,7 @@
   </div>
   <div v-else-if="admin.conferenceScopeMode === 'ASSIGNED' && (currentRoute.path === '/invitations' || (hasPermission('invitation:view') && !hasPermission('conference:view')))" class="scoped-invitation-page">
     <nav class="scoped-invitation-nav" aria-label="工作台导航">
-      <el-button v-if="hasPermission('judging:view')" @click="navigateTo('/judging')">赛事评审</el-button>
+      <el-button v-if="hasPermission('judging:view')" @click="navigateTo('/judging')">赛课评审</el-button>
       <el-button v-if="hasPermission('conference:view')" @click="navigateTo('/dashboard')">返回授权会议工作台</el-button>
       <el-button v-if="hasPermission('certificate:view')" @click="navigateTo('/certificates')">证书管理</el-button>
       <span>{{ admin.displayName || admin.username }}</span><el-button @click="logout">退出登录</el-button>
