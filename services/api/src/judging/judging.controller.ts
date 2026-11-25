@@ -1,4 +1,22 @@
-import { Body, Controller, Get, Header, Headers, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Header,
+  Headers,
+  Param,
+  Post,
+  Query,
+  Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { AdminMaterialsService, type UploadedMaterialFile } from "../admin/admin-materials.service";
+import { validateInvitationAsset } from "../invitations/invitation-assets.service";
+import { resolvePublicOrigin } from "../security/public-origin";
 import { AdminJwtAuthGuard } from "../admin/admin-jwt-auth.guard";
 import { AdminPermissionGuard } from "../admin/admin-permission.guard";
 import { RequireAdminPermissions } from "../admin/require-permissions.decorator";
@@ -14,7 +32,32 @@ const ok = <T>(data: T) => ({ code: "OK", message: "ok", data });
 @AllowConferenceScopedAdmin()
 @RequireAdminPermissions("judging:view")
 export class JudgingAdminController {
-  constructor(private readonly service: JudgingService) {}
+  constructor(
+    private readonly service: JudgingService,
+    private readonly materials: AdminMaterialsService
+  ) {}
+
+  @Post(":id/design-images")
+  @RequireAdminPermissions("judging:view", "judging:config")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 2 * 1024 * 1024 } }))
+  async designImage(
+    @Param("id") id: string,
+    @UploadedFile() file: UploadedMaterialFile | undefined,
+    @Req() r: RequestWithCurrentAdmin
+  ) {
+    await this.service.requireDesignEditor(id, r.currentAdmin!);
+    const image = validateInvitationAsset(file);
+    if (!image.mimetype?.startsWith("image/")) throw new BadRequestException("请选择 JPG、PNG 或 WebP 图片");
+    const saved = await this.materials.createAsset(
+      { usage: "judging_design:" + id },
+      image,
+      resolvePublicOrigin({
+        host: process.env.NODE_ENV === "production" ? "guanchaohuiji.com" : "localhost:3001"
+      }),
+      r.currentAdmin!
+    );
+    return ok({ url: new URL(saved.data.url).pathname });
+  }
   @Get() async list(@Req() r: RequestWithCurrentAdmin) {
     return ok(await this.service.list(r.currentAdmin!));
   }

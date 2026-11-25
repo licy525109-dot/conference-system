@@ -10,6 +10,10 @@ import type {
 } from "@conference/shared";
 import { apiRequest } from "./api";
 import { API_BASE_URL } from "../config";
+export const judgingH5Origin = new URL(
+  import.meta.env.VITE_JUDGING_H5_ORIGIN ||
+    (import.meta.env.DEV ? "http://localhost:5173" : "https://m.guanchaohuiji.com")
+).origin;
 export const judgingImageUrl = (url: string) =>
   url.startsWith("/uploads/") ? new URL(url, API_BASE_URL).href : url;
 export interface EventSummary {
@@ -62,6 +66,14 @@ const base = "/admin/judging";
 const post = <T>(url: string, body: unknown) =>
   apiRequest<T>(url, { method: "POST", body: JSON.stringify(body) });
 export const judgingApi = {
+  uploadDesignImage(id: string, file: File) {
+    const body = new FormData();
+    body.set("file", file);
+    return apiRequest<{ url: string }>(base + "/" + encodeURIComponent(id) + "/design-images", {
+      method: "POST",
+      body
+    });
+  },
   conferences: (id: string) =>
     apiRequest<{ id: string; title: string }[]>(base + "/" + id + "/sources/conferences"),
   registered: (id: string, cid: string, keyword: string) =>

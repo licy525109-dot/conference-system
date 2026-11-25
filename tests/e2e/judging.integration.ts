@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, pbkdf2Sync } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { test } from "node:test";
@@ -16,6 +18,8 @@ test(
     process.env.DATABASE_URL = url.toString();
     process.env.JWT_SECRET = randomBytes(48).toString("hex");
     process.env.NODE_ENV = "test";
+    const uploads = await mkdtemp(resolve(tmpdir(), "judging-design-"));
+    process.env.UPLOADS_DIR = uploads;
     const req = createRequire(resolve("services/api/package.json"));
     const { NestFactory } = req("@nestjs/core"),
       { AppModule } = req("./dist/app.module.js"),
@@ -30,6 +34,7 @@ test(
     const db = app.get(PrismaService),
       service = app.get(JudgingService),
       origin = await app.getUrl();
+    process.env.PUBLIC_ORIGIN = origin;
     const salt = randomBytes(16).toString("hex"),
       pwd = randomBytes(32).toString("hex"),
       suffix = randomBytes(7).toString("hex");
@@ -254,6 +259,42 @@ test(
         assert.equal(desk.page.tasks.length, 3);
         assert.equal(desk.page.open, false);
       });
+      await t.test(
+        "guest entry keeps its published URL and gates after an authorized design change",
+        async () => {
+          const before = await call(path, cfg.token);
+          const { entry, ...legacyLook } = before.config.look;
+          const themed = { ...legacyLook, entry: { ...entry, layout: "poster", button: "查看评分表" } };
+          await call(path + "/actions", floor.token, { action: "appearance", revision, look: themed }, 403);
+          await call(path + "/design-images", floor.token, {}, 403);
+          await call(path + "/design-images", cfg.token, {}, 400);
+          const other = await admin("otherdesigner", ["judging:view", "judging:config"]);
+          await call(path + "/design-images", other.token, {}, 403);
+          const form = new FormData();
+          form.set(
+            "file",
+            new Blob([await readFile("apps/user/src/pages/judging/paper-stage.jpg")], { type: "image/jpeg" }),
+            "cover.jpg"
+          );
+          const uploaded = await fetch(origin + "/api" + path + "/design-images", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + cfg.token },
+            body: form
+          });
+          assert.equal(uploaded.status, 201);
+          themed.cover = (await uploaded.json()).data.url;
+          assert.match(themed.cover, /^\/uploads\/materials\/.+\.jpg$/);
+          assert.ok((await readFile(resolve(uploads, themed.cover.slice("/uploads/".length)))).length > 0);
+          await change("appearance", { look: themed });
+          assert.equal((await call(formalEntry)).look.entry.button, "查看评分表");
+          await change("appearance", { look: legacyLook });
+          const saved = await call(path, cfg.token);
+          assert.deepEqual(saved.config.look.entry, themed.entry);
+          assert.deepEqual(saved.gates, before.gates);
+          assert.equal(saved.entryCode, before.entryCode);
+          assert.equal(await db.judgingBallot.count({ where: { eventId: id } }), 0);
+        }
+      );
       await t.test("five independent rooms, frozen forms and idempotent HTTP receipt", async () => {
         for (let i = 0; i < 5; i++) await change("gate", { session: "C" + i, open: true });
         await assert.rejects(change("gate", { session: "C5", open: true }), /上一场/);
@@ -632,11 +673,13 @@ test(
         db.judgingAudit.deleteMany({ where: { eventId: { in: events } } }),
         db.judgingEvent.deleteMany({ where: { id: { in: events } } })
       ]);
+      await db.materialAsset.deleteMany({ where: { createdBy: { in: admins } } });
       await db.auditLog.deleteMany({ where: { adminUserId: { in: admins } } });
       await db.adminUser.deleteMany({ where: { id: { in: admins } } });
       await db.role.deleteMany({ where: { id: { in: roles } } });
       await db.user.deleteMany({ where: { id: { in: users } } });
       await app.close();
+      await rm(uploads, { recursive: true, force: true });
     }
   }
 );

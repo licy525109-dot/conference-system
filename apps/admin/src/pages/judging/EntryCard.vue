@@ -8,6 +8,7 @@
       <div class="j-entry-title">
         <h3 id="judging-entry-title">评委评分入口</h3>
         <span class="j-entry-state">{{ url ? "已发布" : "未发布" }}</span>
+        <el-button v-if="canDesign" @click="emit('design')">设计评分入口</el-button>
       </div>
       <p>把同一个二维码或链接发给全体评委。评委用手机打开，输入名单中的姓名，即可进入自己的场次。</p>
       <template v-if="url">
@@ -44,16 +45,20 @@ import { computed, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import QRCode from "qrcode";
 import { guestScoringPath } from "@conference/shared";
-import type { EventDetail, Operate } from "../../services/judging";
+import { judgingH5Origin, type EventDetail, type Operate } from "../../services/judging";
 
-const props = defineProps<{ event: EventDetail; canPublish: boolean; busy: boolean; operate: Operate }>();
+const props = defineProps<{
+  event: EventDetail;
+  canPublish: boolean;
+  canDesign: boolean;
+  busy: boolean;
+  operate: Operate;
+}>();
+const emit = defineEmits<{ (e: "design"): void }>();
 const activePhase = computed(() => ["SETUP", "LIVE", "REVIEW"].includes(props.event.phase));
 const url = computed(() => {
   if (!props.event.entryCode) return "";
-  const origin =
-    import.meta.env.VITE_JUDGING_H5_ORIGIN ||
-    (import.meta.env.DEV ? "http://localhost:5173" : "https://m.guanchaohuiji.com");
-  return origin.replace(/\/$/, "") + "/#/" + guestScoringPath(props.event.id, props.event.entryCode);
+  return judgingH5Origin + "/#/" + guestScoringPath(props.event.id, props.event.entryCode);
 });
 const qr = ref(""),
   qrError = ref(""),

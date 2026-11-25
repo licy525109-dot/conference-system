@@ -1,6 +1,25 @@
 import { BadRequestException } from "@nestjs/common";
-import { awardFieldOptions, judgeRoles, maxPoints, rubricFor, stageOf, stages } from "@conference/shared";
-import type { Answers, JudgeRole, JudgingConfig, JudgingLook, Rubric } from "@conference/shared";
+import {
+  awardFieldOptions,
+  coverFits,
+  coverPositions,
+  defaultEntryDesign,
+  entryLayouts,
+  entryTypefaces,
+  judgeRoles,
+  maxPoints,
+  rubricFor,
+  stageOf,
+  stages
+} from "@conference/shared";
+import type {
+  Answers,
+  JudgeRole,
+  JudgingConfig,
+  JudgingEntryDesign,
+  JudgingLook,
+  Rubric
+} from "@conference/shared";
 
 export function fail(message: string): never {
   throw new BadRequestException(message);
@@ -41,14 +60,37 @@ export function imageUrl(v: unknown) {
     fail("图片请使用 HTTPS 地址或平台上传地址");
   return value;
 }
-export function validateLook(v: unknown): JudgingLook {
+function designOption<T extends string>(v: unknown, choices: readonly T[], label: string): T {
+  const choice = choices.find((item) => item === v);
+  if (!choice) fail(label + "选项无效");
+  return choice;
+}
+export function validateLook(
+  v: unknown,
+  previousEntry: JudgingEntryDesign = defaultEntryDesign
+): JudgingLook {
   const o = object(v),
     color = (n: string) => {
       const s = str(o[n], n, 7);
       if (!/^#[a-f0-9]{6}$/i.test(s)) fail("颜色须使用六位色值");
       return s;
     };
+  const entry = {
+    ...defaultEntryDesign,
+    ...previousEntry,
+    ...(o.entry === undefined ? {} : object(o.entry))
+  };
   return {
+    entry: {
+      layout: designOption(entry.layout, entryLayouts, "入口版式"),
+      typeface: designOption(entry.typeface, entryTypefaces, "标题字形"),
+      position: designOption(entry.position, coverPositions, "封面取景"),
+      fit: designOption(entry.fit, coverFits, "封面显示"),
+      intro: str(entry.intro, "入口说明", 180, false),
+      nameLabel: str(entry.nameLabel, "姓名栏标题", 32),
+      placeholder: str(entry.placeholder, "姓名输入提示", 60),
+      button: str(entry.button, "进入按钮", 25)
+    },
     heading: str(o.heading, "页标题", 50),
     intro: str(o.intro, "引导语", 400, false),
     submit: str(o.submit, "按钮文案", 25),
@@ -114,7 +156,11 @@ export function validateRubric(value: unknown, role: JudgeRole): Rubric {
     fields
   };
 }
-export function validateConfig(value: unknown, rehearsal: boolean): JudgingConfig {
+export function validateConfig(
+  value: unknown,
+  rehearsal: boolean,
+  previousEntry?: JudgingEntryDesign
+): JudgingConfig {
   const c = object(value),
     forms = object(c.rubrics),
     minimum = object(c.minimum);
@@ -218,7 +264,7 @@ export function validateConfig(value: unknown, rehearsal: boolean): JudgingConfi
   )
     fail("公开字段须包含姓名并从允许的字段中选择");
   return {
-    look: validateLook(c.look),
+    look: validateLook(c.look, previousEntry),
     rooms,
     teachers,
     sessions,
