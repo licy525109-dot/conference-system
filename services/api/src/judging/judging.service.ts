@@ -70,6 +70,10 @@ const summary = (e: JudgingEvent) => ({
 const listedSchools = (c: JudgingConfig) => [
   ...new Map(c.teachers.map((t) => [t.orgId, { id: t.orgId, name: t.org }])).values()
 ];
+function registrationCompany(data: Prisma.JsonValue) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return "";
+  return typeof data.company === "string" ? data.company.trim() : "";
+}
 const teacherOf = (c: JudgingConfig, s: JudgingSession) => c.teachers.find((t) => t.id === s.teacher)!;
 const roomName = (c: JudgingConfig, s: JudgingSession) =>
   s.kind === "ted" ? "TED 主会场" : (c.rooms.find((r) => r.id === s.room)?.name ?? s.room);
@@ -272,6 +276,7 @@ export class JudgingService {
           id: true,
           name: true,
           company: true,
+          formDataJson: true,
           phone: true,
           guestProfile: { select: { user: { select: { id: true, phone: true, phoneVerifiedAt: true } } } }
         }
@@ -279,7 +284,7 @@ export class JudgingService {
       this.db.registration.findMany({
         where: { ...where, attendees: { none: {} }, ...(term ? { attendeeName: { contains: term } } : {}) },
         take: 501,
-        select: { id: true, attendeeName: true, phone: true }
+        select: { id: true, attendeeName: true, phone: true, formDataJson: true }
       })
     ]);
     if (attendees.length + singles.length > 500) fail("超过 500 人，请按姓名缩小范围");
@@ -287,14 +292,20 @@ export class JudgingService {
       ...attendees.map((r) => ({
         id: r.id,
         name: r.name,
-        org: r.company || "",
+        org: r.company || registrationCompany(r.formDataJson),
         phone: r.phone,
         userId:
           r.guestProfile?.user?.phoneVerifiedAt && r.guestProfile.user.phone === r.phone
             ? r.guestProfile.user.id
             : ""
       })),
-      ...singles.map((r) => ({ id: r.id, name: r.attendeeName, org: "", phone: r.phone, userId: "" }))
+      ...singles.map((r) => ({
+        id: r.id,
+        name: r.attendeeName,
+        org: registrationCompany(r.formDataJson),
+        phone: r.phone,
+        userId: ""
+      }))
     ];
   }
   async accounts(a: CurrentAdmin) {
