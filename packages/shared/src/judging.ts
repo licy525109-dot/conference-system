@@ -40,6 +40,7 @@ export interface JudgingSession {
 export interface Judge {
   id: string;
   name: string;
+  org?: string;
   userId: string;
   phone: string;
   role: JudgeRole;
@@ -183,6 +184,19 @@ export interface MobileTask {
   role: JudgeRole;
   status: string;
 }
+export interface GuestSeat {
+  id: string;
+  name: string;
+  org: string;
+  role: JudgeRole;
+}
+export type GuestChoice = Pick<GuestSeat, "id" | "org">;
+export type GuestIdentification =
+  { kind: "choose"; choices: GuestChoice[] } | { kind: "ready"; ticket: string };
+export interface GuestDesk {
+  judge: GuestSeat;
+  page: ScoringView | null;
+}
 export interface ScoreReceipt {
   id: string;
   teacher: string;
@@ -205,6 +219,8 @@ export interface ScoringView {
   tasks: MobileTask[];
   receipt: ScoreReceipt | null;
 }
+export const guestScoringPath = (event: string, code: string) =>
+  "pages/judging/entry?event=" + encodeURIComponent(event) + "&entry=" + encodeURIComponent(code);
 export const rehearsalUserId = (eventId: string, judgeId: string) => "rehearsal:" + eventId + ":" + judgeId;
 export const taskKey = (session: string, judge: string) => session + "/" + judge;
 export const assigned = (s: JudgingSession, j: Judge) =>

@@ -167,6 +167,7 @@ test(
       const id = initial.id;
       events.push(id);
       let revision = initial.revision;
+      let formalEntry = "";
       const path = "/admin/judging/" + id;
       async function change(action: string, data: Record<string, unknown> = {}, a: CurrentAdmin = cfg.admin) {
         const e = await service.change(id, { action, ...data, revision }, a);
@@ -232,6 +233,26 @@ test(
           service.mobile(id, "C0", { ...asUser(first), openid: "mock_trial" }),
           /微信小程序/
         );
+      });
+      await t.test("formal event shares one H5 entry for every room and role", async () => {
+        assert.equal((await call(path, cfg.token)).entryCode, null);
+        await change("entry-open", {}, floor.admin);
+        const detail = await call(path, floor.token);
+        assert.equal(typeof detail.entryCode, "string");
+        assert.equal((await call(path, signer.token)).entryCode, null);
+        formalEntry = "/judging/" + id + "/entry/" + detail.entryCode;
+        const classroomLink = await call(path + "/sessions/C0/link", floor.token, {});
+        const expertLink = await call(path + "/sessions/S0/link", floor.token, {});
+        assert.deepEqual(classroomLink, expertLink);
+        assert.equal(
+          classroomLink.url,
+          "https://m.guanchaohuiji.com/#/pages/judging/entry?event=" + id + "&entry=" + detail.entryCode
+        );
+        const identified = await call(formalEntry + "/identify", undefined, { name: first.name });
+        const desk = await call(formalEntry + "/desk", identified.ticket);
+        assert.equal(desk.judge.role, "lecturer");
+        assert.equal(desk.page.tasks.length, 3);
+        assert.equal(desk.page.open, false);
       });
       await t.test("five independent rooms, frozen forms and idempotent HTTP receipt", async () => {
         for (let i = 0; i < 5; i++) await change("gate", { session: "C" + i, open: true });
@@ -481,6 +502,127 @@ test(
           e = await service.detail(e.id, cfg.admin);
           await changeTrial("access", { staffIds: [], confirmerId: null });
           await call(target, floor.token, body, 403);
+        }
+      );
+      await t.test(
+        "public H5 matches complete names, separates duplicate seats and counts one ballot per seat",
+        async () => {
+          const sample = await service.create({ title: "同名评委实操", rehearsal: true }, cfg.admin);
+          events.push(sample.id);
+          const route = "/admin/judging/" + sample.id;
+          const update = async (action: string, rest: Record<string, unknown> = {}) => {
+            const detail = await call(route, cfg.token);
+            return call(route + "/actions", cfg.token, { action, revision: detail.revision, ...rest });
+          };
+          const cc = structuredClone(c);
+          cc.rooms = cc.rooms.slice(0, 1);
+          cc.teachers = cc.teachers.filter((t) => t.id === "T0" || t.id === "T5");
+          cc.sessions = cc.sessions.filter((s) => cc.teachers.some((t) => t.id === s.teacher));
+          cc.merits = [];
+          cc.judges = [
+            { ...first, id: "J01", name: "陈晨", org: "青禾", userId: "", phone: "" },
+            {
+              ...c.judges.find((j) => j.id === "R1D0")!,
+              id: "J02",
+              name: "林小雨",
+              org: "星河",
+              userId: "",
+              phone: ""
+            },
+            {
+              ...c.judges.find((j) => j.id === "R1D16")!,
+              id: "J03",
+              name: "林小雨",
+              org: "明月",
+              userId: "",
+              phone: ""
+            },
+            {
+              ...c.judges.find((j) => j.id === "E0")!,
+              id: "J04",
+              name: "赵宁",
+              org: "如初",
+              userId: "",
+              phone: ""
+            }
+          ];
+          await update("config", { title: "同名评委实操", config: cc });
+          const prefix = "/judging/" + sample.id + "/entry/";
+          await call(prefix + "unpublished", undefined, undefined, 404);
+          await call(route + "/actions", outsider.token, { action: "entry-open", revision: 2 }, 403);
+          await update("entry-open");
+          const published = await call(route, cfg.token);
+          const entry = prefix + published.entryCode;
+          assert.deepEqual(Object.keys(await call(entry)).sort(), ["look", "rehearsal", "title"]);
+          const identify = (name: string, number?: string, code = 201) =>
+            call(entry + "/identify", undefined, { name, number }, code);
+          await identify("林", undefined, 404);
+          await identify(" ", undefined, 400);
+          const choices = await identify("  林小雨 ");
+          assert.deepEqual(choices, {
+            kind: "choose",
+            choices: [
+              { id: "J02", org: "星河" },
+              { id: "J03", org: "明月" }
+            ]
+          });
+          await identify("林小雨", "J04", 400);
+          const firstSeat = (await identify("林小雨", "J02")).ticket;
+          const secondSeat = (await identify("林小雨", "J03")).ticket;
+          const expert = (await identify("赵宁")).ticket;
+          assert.notEqual(firstSeat, secondSeat);
+          await call(entry + "/desk", undefined, undefined, 401);
+          await call(entry + "/desk", cfg.token, undefined, 401);
+          await call(route, firstSeat, undefined, 401);
+          await call(formalEntry + "/desk", firstSeat, undefined, 401);
+          const view = (token: string) => call(entry + "/desk", token);
+          assert.equal((await view(expert)).page.role, "expert");
+          assert.ok(
+            (await view(expert)).page.tasks.every((t: { sessionId: string }) => t.sessionId.startsWith("S"))
+          );
+          await call(entry + "/desk?session=S0", firstSeat, undefined, 403);
+          const originalLecturer = (await identify("陈晨")).ticket;
+          cc.judges[0].org = "青禾新校区";
+          await update("config", { title: "同名评委实操", config: cc });
+          await call(entry + "/desk", originalLecturer, undefined, 401);
+          await update("start");
+          await update("gate", { session: "C0", open: false });
+          await update("gate", { session: "C5", open: true });
+          const one = await view(firstSeat),
+            two = await view(secondSeat);
+          assert.equal(one.page.session.id, "C5");
+          assert.equal(one.page.open, true);
+          assert.equal(one.judge.role, "experience");
+          assert.equal(two.judge.role, "observer");
+          const payload = { formVersion: one.page.formVersion, answers: { score: 25 } };
+          await call(entry + "/sessions/C0/submit", firstSeat, payload, 409);
+          await call(entry + "/sessions/C5/submit", expert, payload, 403);
+          await call(entry + "/sessions/C5/submit", firstSeat, { ...payload, formVersion: 0 }, 409);
+          const submit = (ticket: string) => call(entry + "/sessions/C5/submit", ticket, payload);
+          const [receipt, again] = await Promise.all([submit(firstSeat), submit(firstSeat)]);
+          assert.deepEqual(again, receipt);
+          const other = await submit(secondSeat);
+          assert.notEqual(other.id, receipt.id);
+          assert.deepEqual(
+            (await call(entry + "/desk?session=C5", (await identify("林小雨", "J02")).ticket)).page.receipt,
+            receipt
+          );
+          assert.equal(await db.judgingBallot.count({ where: { eventId: sample.id } }), 2);
+          assert.equal(
+            (await service.results(sample.id, cfg.admin)).rows.find((r: ScoringRow) => r.id === "T5")
+              .audience,
+            25
+          );
+          await update("entry-open");
+          assert.equal((await call(route, cfg.token)).entryCode, published.entryCode);
+          await update("entry-close");
+          await call(entry, undefined, undefined, 404);
+          await call(entry + "/sessions/C5/submit", firstSeat, payload, 404);
+          await update("entry-open");
+          const renewed = (await call(route, cfg.token)).entryCode;
+          assert.notEqual(renewed, published.entryCode);
+          await call(prefix + renewed + "/desk", firstSeat, undefined, 401);
+          await call("/judging/" + sample.id + "/published", undefined, undefined, 404);
         }
       );
     } finally {

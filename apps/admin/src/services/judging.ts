@@ -22,6 +22,7 @@ export interface EventSummary {
   publishedEdition: number | null;
 }
 export interface EventDetail extends EventSummary {
+  entryCode: string | null;
   config: JudgingConfig;
   confirmerId: string | null;
   staffIds: string[];
@@ -90,8 +91,6 @@ export const judgingApi = {
     ),
   change: (id: string, revision: number, body: Record<string, unknown>) =>
     post<EventSummary>(base + "/" + id + "/actions", { ...body, revision }),
-  link: (id: string, sid: string) =>
-    post<{ url: string; path: string }>(base + "/" + id + "/sessions/" + sid + "/link", {}),
   export: (id: string, kind: string, edition: number, fields?: AwardField[]) =>
     apiRequest<any>(
       base +

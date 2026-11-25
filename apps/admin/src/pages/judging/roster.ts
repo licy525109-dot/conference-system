@@ -4,6 +4,8 @@ export type Section = "rooms" | "teachers" | "judges" | "sessions" | "merits";
 export type Field = {
   key: string;
   label: string;
+  legacy?: boolean;
+  aliases?: string[];
   kind?: "num" | "optionalNum" | "room" | "teacher" | "role" | "stage" | "image";
 };
 export const spec: Record<Section, { label: string; fields: Field[] }> = {
@@ -35,11 +37,12 @@ export const spec: Record<Section, { label: string; fields: Field[] }> = {
     label: "评委",
     fields: [
       { key: "id", label: "评委编号" },
-      { key: "name", label: "实名" },
+      { key: "name", label: "姓名", aliases: ["实名"] },
+      { key: "org", label: "机构名称", aliases: ["机构", "单位", "所属机构"] },
       { key: "role", label: "评委身份", kind: "role" },
       { key: "room", label: "教室编号", kind: "room" },
-      { key: "phone", label: "已验证手机号" },
-      { key: "userId", label: "平台用户编号" }
+      { key: "phone", label: "已验证手机号", legacy: true },
+      { key: "userId", label: "平台用户编号", legacy: true }
     ]
   },
   sessions: {
@@ -97,7 +100,9 @@ export async function prepareImport(file: File, current: JudgingConfig, selected
     if (!section) continue;
     const fields = spec[section].fields,
       header = sheet.rows[0] ?? [],
-      indexes = fields.map((f) => header.findIndex((h) => h.trim() === f.label || h.trim() === f.key));
+      indexes = fields.map((f) =>
+        header.findIndex((h) => [f.label, f.key, ...(f.aliases || [])].includes(h.trim()))
+      );
     if (indexes[0] < 0) throw new Error(sheet.name + "缺少列：" + fields[0].label);
     const existing = new Map((next[section] as Row[]).map((row) => [row.id, row])),
       seen = new Set<string>();
@@ -131,13 +136,13 @@ export async function rosterTemplate(c: JudgingConfig) {
   const x = await import("xlsx"),
     book = x.utils.book_new();
   for (const k of sections) {
-    const f = spec[k].fields,
+    const f = spec[k].fields.filter((field) => !field.legacy),
       data = (c[k] as Row[]).map((row) => f.map((field) => row[field.key] ?? ""));
     const ws = x.utils.aoa_to_sheet([f.map((v) => v.label), ...data]);
     ws["!cols"] = f.map(() => ({ wch: 22 }));
     x.utils.book_append_sheet(book, ws, spec[k].label);
   }
-  x.writeFile(book, "赛事排场与实名名单.xlsx");
+  x.writeFile(book, "赛课排场与评委名单.xlsx");
 }
 export function schedule(c: JudgingConfig) {
   if (!c.rooms.length) throw new Error("请先设置教室");
@@ -177,7 +182,8 @@ export function rehearsalRoster(eventId: string): JudgingConfig {
   c.sessions = schedule(c);
   c.judges = (["lecturer", "experience", "observer", "expert"] as const).map((role, i) => ({
     id: "J0" + (i + 1),
-    name: "联排" + roleLabels[role],
+    name: i === 1 || i === 2 ? "林小雨" : i === 0 ? "陈晨" : "赵宁",
+    org: ["青苗教研室", "晨光舞蹈中心", "星禾艺术学校", "云帆教研室"][i],
     role,
     room: role === "expert" ? "" : "R1",
     userId: rehearsalUserId(eventId, "J0" + (i + 1)),

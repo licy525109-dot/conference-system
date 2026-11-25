@@ -151,3 +151,128 @@
     gap: 20px;
   }
 }
+
+.j-stage-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+}
+.j-stage-nav button {
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  border: 1px solid var(--j-line);
+  border-radius: 7px;
+  padding: 9px 16px;
+  color: var(--j-ink);
+  background: white;
+}
+.j-stage-nav button[aria-current="page"] {
+  background: #245946;
+  color: white;
+  border-color: #245946;
+  font-weight: 600;
+}
+.j-stage-nav button:focus-visible,
+.j-share-url:focus-visible {
+  outline: 2px solid #87620c;
+  outline-offset: 2px;
+}
+.j-entry-card,
+.j-next-step {
+  background: #fff;
+  border: 1px solid var(--j-line);
+  border-radius: 12px;
+  padding: 22px 24px;
+}
+.j-entry-card {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.j-entry-code {
+  display: grid;
+  place-items: center;
+  flex: 0 0 168px;
+  min-height: 168px;
+  text-align: center;
+  border: 1px solid var(--j-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.j-entry-code img {
+  display: block;
+  width: 168px;
+  height: 168px;
+}
+.j-entry-title,
+.j-next-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.j-entry-copy {
+  min-width: 0;
+  flex: 1;
+}
+.j-entry-title h3,
+.j-next-step h3 {
+  margin: 0;
+}
+.j-entry-state {
+  color: var(--j-muted);
+  font-size: 13px;
+}
+.j-entry-copy p,
+.j-next-step p {
+  margin: 7px 0 13px;
+  color: var(--j-muted);
+  line-height: 1.6;
+}
+.j-share-label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+.j-share-url {
+  width: min(100%, 680px);
+  box-sizing: border-box;
+  color: var(--j-ink);
+  background: #f8faf9;
+  border: 1px solid #cddbd4;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+}
+.j-entry-card a {
+  color: #25614a;
+  text-underline-offset: 3px;
+}
+.j-retire-entry {
+  font-size: 12px;
+  color: var(--j-muted);
+}
+.j-next-step {
+  margin-top: 14px;
+  justify-content: space-between;
+}
+.j-next-step p {
+  margin-bottom: 0;
+}
+@media (max-width: 700px) {
+  .j-entry-card,
+  .j-next-step {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px;
+  }
+  .j-entry-copy {
+    width: 100%;
+  }
+  .j-stage-nav button {
+    padding: 8px 11px;
+  }
+}

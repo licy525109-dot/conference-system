@@ -79,6 +79,7 @@ async function apply() {
       judges.push({
         id,
         name: p.name,
+        org: p.org,
         phone: p.phone,
         userId: p.userId,
         role: role.value,

@@ -179,7 +179,6 @@ export function validateConfig(value: unknown, rehearsal: boolean): JudgingConfi
     const userId = str(r.userId, "用户编号", 100, false),
       phone = str(r.phone, "实名手机号", 24, false),
       role = r.role as JudgeRole;
-    if (!userId && !phone) fail("需要已验证手机号或平台用户编号");
     if (phone && !/^1\d{10}$/.test(phone)) fail("手机号格式有误");
     for (const identity of [userId && "u:" + userId, phone && "p:" + phone].filter(Boolean)) {
       const bucket = (role === "expert" ? "ted/" : "class/") + identity;
@@ -188,7 +187,15 @@ export function validateConfig(value: unknown, rehearsal: boolean): JudgingConfi
     }
     const room = role === "expert" ? "" : key(r.room, "教室编号");
     if (room && !roomIds.has(room)) fail("分配教室不存在");
-    return { id: key(r.id, "评委编号"), name: str(r.name, "实名", 50), role, room, userId, phone };
+    return {
+      id: key(r.id, "评委编号"),
+      name: str(r.name, "姓名", 50),
+      org: str(r.org, "机构名称", 120, false),
+      role,
+      room,
+      userId,
+      phone
+    };
   });
   const merits = rows(c.merits, "优秀奖名单", 500, (r) => ({
     id: key(r.id, "教师编号"),
