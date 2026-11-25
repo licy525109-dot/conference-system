@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, Headers, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { AdminJwtAuthGuard } from "../admin/admin-jwt-auth.guard";
 import { AdminPermissionGuard } from "../admin/admin-permission.guard";
 import { RequireAdminPermissions } from "../admin/require-permissions.decorator";
@@ -116,6 +116,45 @@ export class JudgingAdminController {
     );
   }
 }
+@Controller("judging/:id/entry/:code")
+export class JudgingEntryController {
+  constructor(private readonly service: JudgingService) {}
+  @Get()
+  @Header("Cache-Control", "private, no-store")
+  async info(@Param("id") id: string, @Param("code") code: string) {
+    return ok(await this.service.entryInfo(id, code));
+  }
+  @Post("identify")
+  @Header("Cache-Control", "private, no-store")
+  async identify(@Param("id") id: string, @Param("code") code: string, @Body() body: unknown) {
+    return ok(await this.service.identify(id, code, body));
+  }
+  @Get("desk")
+  @Header("Cache-Control", "private, no-store")
+  async desk(
+    @Param("id") id: string,
+    @Param("code") code: string,
+    @Headers("authorization") bearer: string | undefined,
+    @Query("session") sid?: string
+  ) {
+    return ok(await this.service.guestDesk(id, code, guestBearer(bearer), sid));
+  }
+  @Post("sessions/:sid/submit")
+  @Header("Cache-Control", "private, no-store")
+  async submit(
+    @Param("id") id: string,
+    @Param("code") code: string,
+    @Param("sid") sid: string,
+    @Headers("authorization") bearer: string | undefined,
+    @Body() body: unknown
+  ) {
+    return ok(await this.service.submit(id, sid, body, { entryCode: code, ticket: guestBearer(bearer) }));
+  }
+}
+function guestBearer(value: string | undefined) {
+  return value?.startsWith("Bearer ") ? value.slice(7) : "";
+}
+
 @Controller("judging")
 export class JudgingMobileController {
   constructor(private readonly service: JudgingService) {}

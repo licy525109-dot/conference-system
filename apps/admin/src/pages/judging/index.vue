@@ -32,7 +32,7 @@
         <div>
           <div class="j-overline">
             <span class="j-mode">{{ event.rehearsal ? "联排测试" : "正式赛事" }}</span>
-            <span>{{ phaseNames[event.phase] }} · 第 {{ event.edition }} 版</span>
+            <span>{{ phaseNames[event.phase] }}</span>
           </div>
           <h2>{{ event.title }}</h2>
         </div>
@@ -51,8 +51,40 @@
           </span>
         </div>
       </section>
-      <el-tabs v-model="tab" class="j-tabs">
-        <el-tab-pane v-if="can('judging:config')" label="名单与排场" name="roster">
+      <nav class="j-stage-nav" aria-label="赛事操作">
+        <button
+          v-for="item in navigation"
+          :key="item.tab"
+          type="button"
+          :aria-current="group === item.group ? 'page' : undefined"
+          @click="tab = item.tab"
+        >
+          {{ item.label }}
+        </button>
+      </nav>
+      <template v-if="tab === 'home'">
+        <EntryCard
+          v-if="can('judging:floor') || can('judging:config')"
+          :event="event"
+          :can-publish="can('judging:floor')"
+          :busy="busy"
+          :operate="operate"
+        />
+        <section v-if="nextStep" class="j-next-step">
+          <div>
+            <h3>{{ nextStep.title }}</h3>
+            <p>{{ nextStep.detail }}</p>
+          </div>
+          <el-button @click="tab = nextStep.tab">{{ nextStep.button }}</el-button>
+        </section>
+      </template>
+      <section v-else-if="tab === 'live' && can('judging:floor')" class="j-tabs">
+        <h3>现场收分</h3>
+        <p class="j-note">选择要收分的场次并开放评分。已扫码的评委会在手机上看到自己负责的评分表。</p>
+        <Operations :event="event" :operate="operate" />
+      </section>
+      <el-tabs v-else v-model="tab" class="j-tabs">
+        <el-tab-pane v-if="group === 'prep' && can('judging:config')" label="名单与排场" name="roster">
           <div class="j-tools">
             <el-input
               v-model="draftTitle"
@@ -71,7 +103,7 @@
             <el-button @click="handoverOpen = true">补录颁奖与复赛资料</el-button>
           </div>
         </el-tab-pane>
-        <el-tab-pane v-if="can('judging:config')" label="手机页面设计" name="look">
+        <el-tab-pane v-if="group === 'prep' && can('judging:config')" label="手机页面设计" name="look">
           <Appearance
             :config="draft"
             :title="draftTitle"
@@ -79,7 +111,7 @@
             @save="saveLook"
           />
         </el-tab-pane>
-        <el-tab-pane v-if="can('judging:config')" label="评分表与规则" name="forms">
+        <el-tab-pane v-if="group === 'prep' && can('judging:config')" label="评分表与规则" name="forms">
           <Rubrics :config="draft" :disabled="!setup && event.phase !== 'LIVE'" :rules-locked="!setup" />
           <div class="j-tools">
             <el-button v-if="setup" type="primary" @click="saveConfig">保存评分表与规则</el-button>
@@ -88,10 +120,7 @@
             </el-button>
           </div>
         </el-tab-pane>
-        <el-tab-pane v-if="can('judging:floor')" label="现场收分" name="live">
-          <Operations v-if="tab === 'live'" :event="event" :operate="operate" />
-        </el-tab-pane>
-        <el-tab-pane v-if="can('judging:results')" label="成绩与复核" name="results">
+        <el-tab-pane v-if="group === 'results' && can('judging:results')" label="成绩与复核" name="results">
           <Review
             v-if="tab === 'results'"
             :event="event"
@@ -100,7 +129,11 @@
             :admin-id="admin?.id || ''"
           />
         </el-tab-pane>
-        <el-tab-pane v-if="can('judging:export') || can('judging:publish')" label="颁奖与发布" name="awards">
+        <el-tab-pane
+          v-if="group === 'results' && (can('judging:export') || can('judging:publish'))"
+          label="颁奖与发布"
+          name="awards"
+        >
           <h3>已确认的名单版本</h3>
           <el-empty
             v-if="!event.editions.length"
@@ -147,11 +180,23 @@
             </div>
           </template>
           <p v-if="event.publishedEdition">
-            第 {{ event.publishedEdition }} 版已公布。小程序路径
-            <code>pages/judging/awards?event={{ event.id }}</code>
+            第 {{ event.publishedEdition }} 版已公布。
+            <a
+              :href="
+                'https://m.guanchaohuiji.com/#/pages/judging/awards?event=' + encodeURIComponent(event.id)
+              "
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              打开已公布的名单
+            </a>
           </p>
         </el-tab-pane>
-        <el-tab-pane v-if="can('system:account') && can('judging:config')" label="人员授权" name="access">
+        <el-tab-pane
+          v-if="group === 'prep' && can('system:account') && can('judging:config')"
+          label="工作人员授权"
+          name="access"
+        >
           <h3>本赛事后台账号</h3>
           <p>
             岗位权限来自「系统管理 →
@@ -263,6 +308,8 @@ import {
   type EventDetail
 } from "../../services/judging";
 import Roster from "./Roster.vue";
+import EntryCard from "./EntryCard.vue";
+import { routeQuery } from "../../router";
 import Appearance from "./Appearance.vue";
 import Rubrics from "./Rubrics.vue";
 import Operations from "./Operations.vue";
@@ -279,20 +326,72 @@ const events = ref<EventSummary[]>([]),
   creating = ref(false),
   title = ref("绘本舞蹈教师赛课总决赛 · 杭州站"),
   rehearsal = ref(true);
-const tab = ref(
-    can("judging:config")
-      ? "roster"
-      : can("judging:floor")
-        ? "live"
-        : can("judging:results")
-          ? "results"
-          : "awards"
-  ),
+const tab = ref("home"),
   staff = ref<string[]>([]),
   confirmer = ref(""),
   accounts = ref<{ id: string; username: string; displayName: string | null }[]>([]),
   fields = ref<AwardField[]>([]),
   handoverOpen = ref(false);
+const resultsTab = computed(() => (can("judging:results") ? "results" : "awards"));
+const navigation = computed(() => [
+  { label: "操作首页", group: "home", tab: "home" },
+  ...(can("judging:config") ? [{ label: "赛前设置", group: "prep", tab: "roster" }] : []),
+  ...(can("judging:floor") ? [{ label: "现场收分", group: "live", tab: "live" }] : []),
+  ...(can("judging:results") || can("judging:export") || can("judging:publish")
+    ? [{ label: "成绩与颁奖", group: "results", tab: resultsTab.value }]
+    : [])
+]);
+const group = computed(() => {
+  if (tab.value === "home" || tab.value === "live") return tab.value;
+  return ["results", "awards"].includes(tab.value) ? "results" : "prep";
+});
+const nextStep = computed(() => {
+  const e = event.value;
+  if (!e) return null;
+  if (e.phase === "SETUP" && can("judging:config") && (!e.config.judges.length || !e.config.sessions.length))
+    return {
+      title: "准备评委名单和场次",
+      detail: "填写评委的姓名、编号、机构与身份，再安排每场由哪位教师参赛。",
+      button: "填写名单与排场",
+      tab: "roster"
+    };
+  if (["SETUP", "LIVE"].includes(e.phase) && can("judging:floor"))
+    return {
+      title: e.phase === "LIVE" ? "管理正在进行的评分" : "准备开场",
+      detail: "进入现场收分，选择场次并开放。可随时查看谁已交分、谁还待交。",
+      button: "进入现场收分",
+      tab: "live"
+    };
+  if (["REVIEW", "SUBMITTED"].includes(e.phase) && can("judging:results"))
+    return {
+      title: "核对本场成绩",
+      detail: "查看原始评分和待复核事项，核对后将名单交给最终确认人。",
+      button: "查看成绩与复核",
+      tab: "results"
+    };
+  if (e.phase === "LOCKED" && (can("judging:export") || can("judging:publish")))
+    return {
+      title: "查看已确认的颁奖名单",
+      detail: "选择已确认的版本，即可准备颁奖资料。",
+      button: "查看颁奖名单",
+      tab: "awards"
+    };
+  if (can("judging:results"))
+    return {
+      title: "查看评审成绩",
+      detail: "按参赛教师查看收分情况、原单和复核记录。",
+      button: "查看成绩",
+      tab: "results"
+    };
+  if (can("judging:config"))
+    return {
+      title: "查看赛前设置",
+      detail: "在这里管理名单、场次、手机页面和评分规则。",
+      button: "查看设置",
+      tab: "roster"
+    };
+  return null;
+});
 const meritFields = [
   { key: "id", label: "教师编号" },
   { key: "name", label: "姓名" },
@@ -350,7 +449,7 @@ async function create() {
     events.value = await judgingApi.list();
     await read(e.id);
     creating.value = false;
-    tab.value = "roster";
+    tab.value = "home";
     ElMessage.success("赛事已创建");
   } catch (e) {
     ElMessage.error((e as Error).message);
@@ -471,7 +570,11 @@ onMounted(async () => {
   loading.value = true;
   try {
     events.value = await judgingApi.list();
-    if (events.value[0]) await read(events.value[0].id);
+    const selected =
+      events.value.find((e) => e.id === routeQuery.value.event) ||
+      events.value.find((e) => e.phase === "LIVE") ||
+      events.value[0];
+    if (selected) await read(selected.id);
   } catch (e) {
     error.value = (e as Error).message;
   } finally {

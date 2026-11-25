@@ -9,7 +9,6 @@
       />
     </el-select>
     <el-button @click="load">刷新收分进度</el-button>
-    <el-button v-if="current" @click="showCode">独立评分码</el-button>
   </div>
   <template v-if="current">
     <div class="j-statusline">
@@ -54,13 +53,6 @@
         <template #default="{ row }">{{ taskStatus[row.status] }} {{ row.present ? "· 已到" : "" }}</template>
       </el-table-column>
       <el-table-column prop="reason" label="现场记录" />
-      <el-table-column v-if="event.rehearsal" label="模拟席位" width="108">
-        <template #default="{ row }">
-          <a v-if="row.canRehearse" :href="practiceLink(row)" target="_blank" rel="noopener noreferrer">
-            打开评分页
-          </a>
-        </template>
-      </el-table-column>
       <el-table-column v-if="['LIVE', 'REVIEW'].includes(state.phase)" width="200" label="现场操作">
         <template #default="{ row }">
           <template v-if="!row.receipt">
@@ -72,45 +64,24 @@
       </el-table-column>
     </el-table>
   </template>
-  <el-empty v-else description="配置名单和场次后即可生成独立评分码" />
+  <el-empty v-else description="请先在「赛前设置」中添加教师并安排场次" />
   <div class="j-tools">
     <el-button v-if="state.phase === 'SETUP'" type="primary" @click="transition('start')">
       开始现场评分
     </el-button>
     <el-button v-if="state.phase === 'LIVE'" @click="transition('finish')">结束全部评分并进入复核</el-button>
   </div>
-  <el-dialog v-model="qrOpen" title="独立评分码" width="min(440px,94vw)" append-to-body>
-    <p>{{ current && slotLabel(current, event.config) }}</p>
-    <img v-if="qr" :src="qr" alt="本场独立评分二维码" width="220" height="220" />
-    <p v-if="qrError">{{ qrError }}</p>
-    <p>{{ event.rehearsal ? "体验版" : "正式版" }}小程序页面路径</p>
-    <el-input :model-value="miniPath" readonly />
-    <p v-if="qr">仅实名名单中获分配的评委可以交分。此码自生成起有效 28 天。</p>
-    <el-button v-if="qr" @click="download">下载二维码</el-button>
-  </el-dialog>
 </template>
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { judgeRoles, roleLabels, type JudgeRole, type ScoringTask } from "@conference/shared";
 import { judgingApi, slotLabel, taskStatus, type EventDetail, type Operate } from "../../services/judging";
-import QRCode from "qrcode";
 const props = defineProps<{ event: EventDetail; operate: Operate }>();
 const tasks = ref<ScoringTask[]>([]),
   sid = ref(""),
   keyword = ref(""),
-  status = ref(""),
-  qr = ref(""),
-  qrError = ref(""),
-  qrOpen = ref(false),
-  miniPath = ref("");
-function practiceLink(t: ScoringTask) {
-  const origin = import.meta.env.DEV
-    ? import.meta.env.VITE_JUDGING_H5_ORIGIN || "http://localhost:5173"
-    : "https://m.guanchaohuiji.com";
-  const params = new URLSearchParams({ event: props.event.id, session: t.session.id, practice: t.judgeId });
-  return origin + "/#/pages/judging/score?" + params.toString();
-}
+  status = ref("");
 let timer: ReturnType<typeof setInterval> | undefined;
 const observed = ref<{ revision: number; phase: string; gates: Record<string, string> } | null>(null);
 const state = computed(() =>
@@ -121,6 +92,7 @@ const operate: Operate = (action, data = {}) =>
 watch(
   () => props.event.id,
   () => {
+    sid.value = "";
     observed.value = null;
     tasks.value = [];
   }
@@ -163,7 +135,10 @@ async function load(quiet = false) {
 watch(
   () => [props.event.id, props.event.revision],
   () => {
-    if (!current.value) sid.value = props.event.config.sessions[0]?.id || "";
+    if (!current.value) {
+      const sessions = props.event.config.sessions;
+      sid.value = sessions.find((s) => props.event.gates[s.id] === "open")?.id || sessions[0]?.id || "";
+    }
     void load();
   },
   { immediate: true }
@@ -195,27 +170,5 @@ async function transition(action: string) {
     );
     await operate(action);
   } catch {}
-}
-async function showCode() {
-  const id = props.event.id,
-    s = sid.value;
-  qr.value = "";
-  qrError.value = "正在生成评分码…";
-  miniPath.value = "pages/judging/score?event=" + id + "&session=" + s;
-  qrOpen.value = true;
-  try {
-    const value = await judgingApi.link(id, s);
-    if (s !== sid.value) return;
-    qr.value = await QRCode.toDataURL(value.url, { width: 540, margin: 3 });
-    qrError.value = "";
-  } catch (e) {
-    qrError.value = (e as Error).message;
-  }
-}
-function download() {
-  const a = document.createElement("a");
-  a.href = qr.value;
-  a.download = sid.value + "-评分码.png";
-  a.click();
 }
 </script>

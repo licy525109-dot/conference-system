@@ -17,9 +17,7 @@
       <el-table-column type="selection" />
       <el-table-column prop="name" label="参会人" />
       <el-table-column prop="org" label="机构" />
-      <el-table-column label="手机号">
-        <template #default="{ row }">{{ row.phone.slice(0, 3) + "****" + row.phone.slice(-4) }}</template>
-      </el-table-column>
+      <el-table-column prop="id" label="报名记录编号" show-overflow-tooltip />
     </el-table>
     <div class="j-tools">
       <el-select v-model="role" style="width: 150px">
@@ -49,7 +47,7 @@ const visible = ref(false),
   role = ref<JudgeRole>("experience"),
   room = ref(""),
   conferences = ref<{ id: string; title: string }[]>([]);
-type Person = { id: string; name: string; org: string; phone: string; userId: string };
+type Person = { id: string; name: string; org: string };
 const rows = ref<Person[]>([]),
   selection = ref<Person[]>([]);
 async function open() {
@@ -79,8 +77,9 @@ async function apply() {
       judges.push({
         id,
         name: p.name,
-        phone: p.phone,
-        userId: p.userId,
+        org: p.org,
+        phone: "",
+        userId: "",
         role: role.value,
         room: role.value === "expert" ? "" : room.value
       });

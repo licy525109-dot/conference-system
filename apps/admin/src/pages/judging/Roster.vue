@@ -22,6 +22,9 @@
     </template>
   </div>
   <input ref="file" hidden type="file" accept=".xlsx,.xls,.csv,.tsv" @change="read" />
+  <p v-if="section === 'judges'" class="j-note">
+    每位评委使用独立编号。姓名可以相同，请填写各自的机构，方便本人扫码后辨认。
+  </p>
   <el-table :data="filtered" max-height="480" empty-text="尚无记录，可手工添加或导入名单">
     <el-table-column
       v-for="f in visible"
@@ -47,7 +50,11 @@
   >
     <el-form label-position="top">
       <div class="j-pair">
-        <el-form-item v-for="f in spec[section].fields" :key="f.key" :label="f.label">
+        <el-form-item
+          v-for="f in spec[section].fields.filter((field) => !field.legacy)"
+          :key="f.key"
+          :label="f.label"
+        >
           <el-input-number
             v-if="f.kind === 'num' || f.kind === 'optionalNum'"
             v-model="row[f.key]"
@@ -111,7 +118,7 @@ import RegistrationSource from "./RegistrationSource.vue";
 import { useAdminSession } from "../../stores/admin-session";
 const { hasPermission } = useAdminSession();
 const props = defineProps<{ config: JudgingConfig; id: string; editable: boolean; rehearsal: boolean }>();
-const section = ref<Section>("teachers"),
+const section = ref<Section>("judges"),
   search = ref(""),
   row = ref<Row>({}),
   original = ref(""),
@@ -127,10 +134,18 @@ const preview = ref<{
 const filtered = computed(() =>
     (props.config[section.value] as Row[]).filter((o) => Object.values(o).join(" ").includes(search.value))
   ),
-  visible = computed(() => spec[section.value].fields.filter((f) => f.kind !== "image").slice(0, 8));
+  visible = computed(() =>
+    spec[section.value].fields.filter((f) => !f.legacy && f.kind !== "image").slice(0, 8)
+  );
 function edit(current?: Row) {
   original.value = current?.id || "";
   row.value = { ...emptyRow(section.value), ...current };
+  if (!current && section.value === "judges") {
+    const used = new Set(props.config.judges.map((j) => j.id));
+    let number = 1;
+    while (used.has("J" + String(number).padStart(3, "0"))) number++;
+    row.value.id = "J" + String(number).padStart(3, "0");
+  }
   editing.value = true;
 }
 function options(f: Field) {

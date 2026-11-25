@@ -5,6 +5,7 @@ import {
   defaultJudgingConfig,
   defaultJudgingControl,
   rehearsalUserId,
+  guestScoringPath,
   rubricFor,
   stageOf,
   maxPoints,
@@ -17,6 +18,7 @@ import type {
   JudgeRole,
   JudgingConfig,
   JudgingControl,
+  GuestDesk,
   JudgingSession,
   Rubric,
   ScoreReceipt,
@@ -24,7 +26,14 @@ import type {
 } from "@conference/shared";
 import type { CurrentAdmin } from "../admin/current-admin";
 import type { CurrentUser } from "../auth/current-user";
-import { WechatAuthService } from "../auth/wechat-auth.service";
+import {
+  createGuestEntry,
+  guestSeat,
+  identifyGuest,
+  publicSeat,
+  requireGuestEntry,
+  type GuestEntry
+} from "./guest-entry";
 import { PrismaService } from "../prisma.service";
 import { awardReport, calculate, scoringTasks, type JudgingSnapshot } from "./results";
 import {
@@ -42,7 +51,7 @@ import {
 type Tx = Prisma.TransactionClient;
 const json = (data: unknown) => JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
 const config = (e: JudgingEvent) => e.config as unknown as JudgingConfig;
-const control = (e: JudgingEvent) => e.control as unknown as JudgingControl;
+const control = (e: JudgingEvent) => e.control as unknown as JudgingControl & { guestEntry?: GuestEntry };
 export const allowed = (a: CurrentAdmin, p: string) =>
   Boolean(a.permissions?.includes("*") || a.permissions?.includes(p));
 function permit(a: CurrentAdmin, p: string) {
@@ -61,6 +70,10 @@ const summary = (e: JudgingEvent) => ({
 const listedSchools = (c: JudgingConfig) => [
   ...new Map(c.teachers.map((t) => [t.orgId, { id: t.orgId, name: t.org }])).values()
 ];
+function registrationCompany(data: Prisma.JsonValue) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return "";
+  return typeof data.company === "string" ? data.company.trim() : "";
+}
 const teacherOf = (c: JudgingConfig, s: JudgingSession) => c.teachers.find((t) => t.id === s.teacher)!;
 const roomName = (c: JudgingConfig, s: JudgingSession) =>
   s.kind === "ted" ? "TED 主会场" : (c.rooms.find((r) => r.id === s.room)?.name ?? s.room);
@@ -83,29 +96,35 @@ function sessionOf(c: JudgingConfig, id: unknown) {
   if (!s) fail("场次不存在");
   return s;
 }
-type Scorer = CurrentUser | { operator: CurrentAdmin; judgeKey: string };
+type GuestScorer = { entryCode: string; ticket: string };
+type Scorer = CurrentUser | { operator: CurrentAdmin; judgeKey: string } | GuestScorer;
+const guestBallotOwner = (event: string, judge: string) => "h5:" + event + ":" + judge;
 function isRehearsalSeat(e: JudgingEvent, j: Judge) {
   return e.rehearsal && !j.phone && j.userId === rehearsalUserId(e.id, j.id);
 }
-function scoringIdentity(e: JudgingEvent, principal: Scorer): CurrentUser {
-  if (!("operator" in principal)) return principal;
-  permit(principal.operator, "judging:floor");
-  scope(e, principal.operator);
-  const judge = config(e).judges.find((j) => j.id === principal.judgeKey);
-  if (!judge || !isRehearsalSeat(e, judge))
-    throw new ForbiddenException("仅联排赛事中专门创建的模拟席位可试交");
-  return { id: judge.userId, openid: null, nickname: judge.name };
-}
-function candidates(c: JudgingConfig, u: CurrentUser) {
+function scoringSeats(e: JudgingEvent, c: JudgingConfig, principal: Scorer): Judge[] {
+  if ("entryCode" in principal) {
+    const entry = requireGuestEntry(control(e).guestEntry, principal.entryCode);
+    return [guestSeat(entry, c.judges, principal.ticket)];
+  }
+  if ("operator" in principal) {
+    permit(principal.operator, "judging:floor");
+    scope(e, principal.operator);
+    const judge = c.judges.find((j) => j.id === principal.judgeKey);
+    if (!judge || !isRehearsalSeat(e, judge))
+      throw new ForbiddenException("仅联排赛事中专门创建的模拟席位可试交");
+    return [judge];
+  }
+  if (!e.rehearsal && (!principal.openid || principal.openid.startsWith("mock_")))
+    throw new ForbiddenException("请使用观潮会集微信小程序实名登录");
   return c.judges.filter((j) =>
-    j.userId ? j.userId === u.id : Boolean(u.phoneVerifiedAt && u.phone && u.phone === j.phone)
+    j.userId
+      ? j.userId === principal.id
+      : Boolean(principal.phoneVerifiedAt && principal.phone && principal.phone === j.phone)
   );
 }
-function findJudge(e: JudgingEvent, c: JudgingConfig, s: JudgingSession, u: CurrentUser) {
-  if (!e.rehearsal && (!u.openid || u.openid.startsWith("mock_")))
-    throw new ForbiddenException("请使用观潮会集微信小程序实名登录");
-  const parts = candidates(c, u),
-    matches = parts.filter((j) => assigned(s, j));
+function findJudge(c: JudgingConfig, s: JudgingSession, parts: Judge[]) {
+  const matches = parts.filter((j) => assigned(s, j));
   if (matches.length !== 1) {
     const room = c.rooms.find((r) => r.id === parts.find((j) => j.room)?.room)?.name;
     throw new ForbiddenException(
@@ -158,10 +177,7 @@ async function audit(tx: Tx, e: JudgingEvent, a: CurrentAdmin, action: string, d
 
 @Injectable()
 export class JudgingService {
-  constructor(
-    private readonly db: PrismaService,
-    private readonly wechat: WechatAuthService
-  ) {}
+  constructor(private readonly db: PrismaService) {}
   protected publicationDay() {
     return today();
   }
@@ -206,6 +222,7 @@ export class JudgingService {
       floor = allowed(a, "judging:floor");
     return {
       ...summary(e),
+      entryCode: floor || manage ? state.guestEntry?.code || null : null,
       confirmerId: e.confirmerId,
       staffIds: allowed(a, "system:account") ? e.staffIds : [],
       config: manage
@@ -259,6 +276,7 @@ export class JudgingService {
           id: true,
           name: true,
           company: true,
+          formDataJson: true,
           phone: true,
           guestProfile: { select: { user: { select: { id: true, phone: true, phoneVerifiedAt: true } } } }
         }
@@ -266,7 +284,7 @@ export class JudgingService {
       this.db.registration.findMany({
         where: { ...where, attendees: { none: {} }, ...(term ? { attendeeName: { contains: term } } : {}) },
         take: 501,
-        select: { id: true, attendeeName: true, phone: true }
+        select: { id: true, attendeeName: true, phone: true, formDataJson: true }
       })
     ]);
     if (attendees.length + singles.length > 500) fail("超过 500 人，请按姓名缩小范围");
@@ -274,14 +292,20 @@ export class JudgingService {
       ...attendees.map((r) => ({
         id: r.id,
         name: r.name,
-        org: r.company || "",
+        org: r.company || registrationCompany(r.formDataJson),
         phone: r.phone,
         userId:
           r.guestProfile?.user?.phoneVerifiedAt && r.guestProfile.user.phone === r.phone
             ? r.guestProfile.user.id
             : ""
       })),
-      ...singles.map((r) => ({ id: r.id, name: r.attendeeName, org: "", phone: r.phone, userId: "" }))
+      ...singles.map((r) => ({
+        id: r.id,
+        name: r.attendeeName,
+        org: registrationCompany(r.formDataJson),
+        phone: r.phone,
+        userId: ""
+      }))
     ];
   }
   async accounts(a: CurrentAdmin) {
@@ -374,15 +398,17 @@ export class JudgingService {
     const e = await getEvent(this.db, id);
     scope(e, a);
     sessionOf(config(e), session);
-    return {
-      url: await this.wechat.generateJudgingLink(id, session, e.rehearsal),
-      path: "pages/judging/score?event=" + encodeURIComponent(id) + "&session=" + encodeURIComponent(session)
-    };
+    const entry = control(e).guestEntry;
+    if (!entry) fail("请先在操作首页发布评分入口");
+    const path = guestScoringPath(id, entry.code);
+    return { path, url: "https://m.guanchaohuiji.com/#/" + path };
   }
   async change(id: string, raw: unknown, a: CurrentAdmin) {
     const b = object(raw),
       action = str(b.action, "操作", 32);
     const rights: Record<string, string> = {
+      "entry-open": "floor",
+      "entry-close": "floor",
       config: "config",
       forms: "config",
       appearance: "config",
@@ -411,7 +437,12 @@ export class JudgingService {
           state = control(e),
           data: Prisma.JudgingEventUpdateInput = { revision: { increment: 1 } };
         let evidence: unknown = {};
-        if (action === "config") {
+        if (action === "entry-open") {
+          phase(e, "SETUP", "LIVE", "REVIEW");
+          state.guestEntry ??= createGuestEntry();
+        } else if (action === "entry-close") {
+          delete state.guestEntry;
+        } else if (action === "config") {
           phase(e, "SETUP");
           const next = validateConfig(b.config, e.rehearsal);
           next.formVersion = c.formVersion + 1;
@@ -664,21 +695,63 @@ export class JudgingService {
       { timeout: 15000 }
     );
   }
+  async entryInfo(id: string, code: string) {
+    const e = await getEvent(this.db, id);
+    requireGuestEntry(control(e).guestEntry, code);
+    return { title: e.title, rehearsal: e.rehearsal, look: config(e).look };
+  }
+  async identify(id: string, code: string, raw: unknown) {
+    const e = await getEvent(this.db, id);
+    return identifyGuest(requireGuestEntry(control(e).guestEntry, code), config(e).judges, raw);
+  }
+  async guestDesk(id: string, code: string, ticket: string, sid?: string): Promise<GuestDesk> {
+    const e = await getEvent(this.db, id);
+    const seats = scoringSeats(e, config(e), { entryCode: code, ticket });
+    return { judge: publicSeat(seats[0]), page: await this.scoreView(e, seats, sid) };
+  }
   async mobile(id: string, sid: string, principal: Scorer): Promise<ScoringView> {
-    const e = await getEvent(this.db, id),
-      u = scoringIdentity(e, principal),
-      c = config(e),
-      s = sessionOf(c, sid),
-      j = findJudge(e, c, s, u),
+    const e = await getEvent(this.db, id);
+    const seats = scoringSeats(e, config(e), principal);
+    const view = await this.scoreView(e, seats, sid);
+    if (!view) fail("场次不存在");
+    if ("operator" in principal) view.rehearsalSeat = seats[0].name;
+    return view;
+  }
+  private async scoreView(e: JudgingEvent, mine: Judge[], sid?: string): Promise<ScoringView | null> {
+    const c = config(e);
+    const ballots = await this.db.judgingBallot.findMany({
+      where: { eventId: e.id, judgeKey: { in: mine.map((j) => j.id) } },
+      select: { id: true, createdAt: true, sessionKey: true, judgeKey: true }
+    });
+    const bySeat = new Map(ballots.map((b) => [taskKey(b.sessionKey, b.judgeKey), b]));
+    const tasks = c.sessions
+      .flatMap((s) =>
+        mine
+          .filter((j) => assigned(s, j))
+          .map((j) => ({
+            sessionId: s.id,
+            teacher: teacherOf(c, s).name,
+            time: s.time,
+            room: roomName(c, s),
+            round: s.round,
+            role: j.role,
+            status: bySeat.has(taskKey(s.id, j.id)) ? "已交" : isOpen(e, s, j) ? "评分中" : "待开放或已截止"
+          }))
+      )
+      .sort((a, b) => a.round - b.round);
+    const next =
+      tasks.find((t) => t.status === "评分中") ||
+      tasks.find((t) => t.status !== "已交") ||
+      tasks[tasks.length - 1];
+    if (!sid && !next) return null;
+    const s = sessionOf(c, sid || next!.sessionId);
+    const j = findJudge(c, s, mine),
       teacher = teacherOf(c, s);
-    const sessionForm = control(e).sessionForms[s.id] ?? c;
-    const mine = candidates(c, u),
-      ballots = await this.db.judgingBallot.findMany({ where: { eventId: id, userId: u.id } }),
-      b = ballots.find((x) => x.sessionKey === sid && x.judgeKey === j.id);
+    const sessionForm = control(e).sessionForms[s.id] ?? c,
+      ballot = bySeat.get(taskKey(s.id, j.id));
     return {
       title: e.title,
       rehearsal: e.rehearsal,
-      rehearsalSeat: "operator" in principal ? j.name : undefined,
       look: c.look,
       teacher: {
         name: teacher.name,
@@ -693,24 +766,8 @@ export class JudgingService {
       formVersion: sessionForm.formVersion,
       max: maxPoints[stageOf(j.role)],
       open: isOpen(e, s, j),
-      receipt: b ? receipt(b, c, s) : null,
-      tasks: c.sessions.flatMap((x) =>
-        mine
-          .filter((k) => assigned(x, k))
-          .map((k) => ({
-            sessionId: x.id,
-            teacher: teacherOf(c, x).name,
-            time: x.time,
-            room: roomName(c, x),
-            round: x.round,
-            role: k.role,
-            status: ballots.some((b) => b.sessionKey === x.id && b.judgeKey === k.id)
-              ? "已交"
-              : isOpen(e, x, k)
-                ? "评分中"
-                : "待开放或已截止"
-          }))
-      )
+      receipt: ballot ? receipt(ballot, c, s) : null,
+      tasks
     };
   }
   async submit(id: string, sid: string, raw: unknown, principal: Scorer) {
@@ -718,15 +775,18 @@ export class JudgingService {
     return this.db.$transaction(
       async (tx) => {
         const e = await getEvent(tx, id, true),
-          u = scoringIdentity(e, principal),
           c = config(e),
           s = sessionOf(c, sid),
-          j = findJudge(e, c, s, u);
+          j = findJudge(c, s, scoringSeats(e, c, principal));
+        const guestOwner = guestBallotOwner(id, j.id);
+        const owner =
+          "entryCode" in principal ? guestOwner : "operator" in principal ? j.userId : principal.id;
         const existing = await tx.judgingBallot.findUnique({
           where: { eventId_sessionKey_judgeKey: { eventId: id, sessionKey: sid, judgeKey: j.id } }
         });
         if (existing) {
-          if (existing.userId !== u.id) throw new ForbiddenException("实名任务已由绑定账号领取");
+          if (!("entryCode" in principal) && existing.userId !== owner && existing.userId !== guestOwner)
+            throw new ForbiddenException("实名任务已由绑定账号领取");
           return receipt(existing, c, s);
         }
         if (!isOpen(e, s, j)) throw new ConflictException("本场尚未开放或已截止");
@@ -741,7 +801,7 @@ export class JudgingService {
             judgeKey: j.id,
             teacherKey: s.teacher,
             role: j.role,
-            userId: u.id,
+            userId: owner,
             rubric: json({ ...form, version: sessionForm.formVersion }),
             answers: json(res.answers),
             units: res.units,
@@ -753,8 +813,8 @@ export class JudgingService {
         state.ties = [];
         if (state.adjustments[s.teacher]) state.adjustments[s.teacher].recheck = true;
         const data: Prisma.JudgingEventUpdateInput = { revision: { increment: 1 }, control: json(state) };
-        if (!j.userId) {
-          j.userId = u.id;
+        if (!j.userId && "id" in principal) {
+          j.userId = principal.id;
           data.config = json(c);
         }
         if ("operator" in principal)
