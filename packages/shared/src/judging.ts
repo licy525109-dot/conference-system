@@ -66,7 +66,47 @@ export interface Rubric {
   description: string;
   fields: RubricField[];
 }
+export const entryLayouts = ["spread", "poster", "minimal"] as const;
+export const entryTypefaces = ["serif", "sans"] as const;
+export const coverPositions = ["top", "center", "bottom"] as const;
+export const coverFits = ["cover", "contain"] as const;
+export interface JudgingEntryDesign {
+  layout: (typeof entryLayouts)[number];
+  typeface: (typeof entryTypefaces)[number];
+  position: (typeof coverPositions)[number];
+  fit: (typeof coverFits)[number];
+  intro: string;
+  nameLabel: string;
+  placeholder: string;
+  button: string;
+}
+export const defaultEntryDesign: Readonly<JudgingEntryDesign> = {
+  layout: "spread",
+  typeface: "serif",
+  position: "center",
+  fit: "cover",
+  intro: "",
+  nameLabel: "评委姓名",
+  placeholder: "请输入名单上的姓名",
+  button: "进入评分"
+};
+export const judgingPalettes = [
+  {
+    label: "纸艺暖棕",
+    colors: { accent: "#8D412D", background: "#F4EFE5", surface: "#FFFCF4", text: "#332C25" }
+  },
+  {
+    label: "林间青绿",
+    colors: { accent: "#186859", background: "#F3F6F3", surface: "#FFFFFF", text: "#182E2A" }
+  },
+  {
+    label: "夜幕靛蓝",
+    colors: { accent: "#414C78", background: "#EEF0F5", surface: "#FCFCFF", text: "#222B46" }
+  }
+] as const;
+export const judgingPreviewChannel = "judging-entry-design-v1";
 export interface JudgingLook {
+  entry: JudgingEntryDesign;
   heading: string;
   intro: string;
   submit: string;
@@ -249,16 +289,14 @@ export function defaultJudgingConfig(): JudgingConfig {
   }
   return {
     look: {
+      entry: { ...defaultEntryDesign },
       heading: "现场评审",
       intro: "请核对教师与场次后填写。",
       submit: "确认提交",
       receipt: "本场评分已收到",
       logo: "",
       cover: "",
-      accent: "#186859",
-      background: "#F3F6F3",
-      surface: "#FFFFFF",
-      text: "#182E2A",
+      ...judgingPalettes[0].colors,
       radius: 14,
       fontSize: 16,
       showPhoto: true,

@@ -1,11 +1,22 @@
 <template>
   <view class="judging-surface guest-entry" :style="surface">
-    <view v-if="!info" class="judging-panel">
+    <view v-if="!info" class="guest-loading judging-panel">
       <text class="judging-heading">{{ busy ? "正在打开评分入口" : "评分入口" }}</text>
       <text v-if="message" class="judging-note">{{ message }}</text>
       <button v-if="!busy" @click="open">重新打开</button>
     </view>
-    <template v-else>
+    <EntryWelcome
+      v-else-if="!desk"
+      :title="info.title"
+      :look="info.look"
+      :busy="busy"
+      :choices="choices"
+      :matched-name="matchedName"
+      :message="message"
+      @identify="identify"
+      @back="clearChoices"
+    />
+    <view v-else class="guest-score-desk">
       <view class="judging-hero">
         <image v-if="info.look.cover" class="judging-cover" :src="asset(info.look.cover)" mode="aspectFill" />
         <image v-if="info.look.logo" class="judging-logo" :src="asset(info.look.logo)" mode="aspectFit" />
@@ -13,84 +24,45 @@
         <text class="judging-heading">{{ info.look.heading }}</text>
         <text v-if="info.look.intro && desk">{{ info.look.intro }}</text>
       </view>
-      <view v-if="!desk" class="judging-panel">
-        <template v-if="choices.length">
-          <text class="judging-name">请选择你的名单记录</text>
+      <view class="judging-panel guest-identity">
+        <view>
+          <text class="judging-name">{{ desk.judge.name }} · {{ roleLabels[desk.judge.role] }}</text>
           <text class="judging-note">
-            有 {{ choices.length }} 位评委叫「{{ matchedName }}」，请核对编号和机构。
+            编号 {{ desk.judge.id }}{{ desk.judge.org ? " · " + desk.judge.org : "" }}
           </text>
-          <button
-            v-for="j in choices"
-            :key="j.id"
-            class="guest-choice"
-            role="button"
-            :aria-label="'编号 ' + j.id + ' ' + (j.org || '机构未填写')"
-            :disabled="busy"
-            @click="identify(matchedName, j.id)"
-          >
-            <text class="guest-choice-id">编号 {{ j.id }}</text>
-            <text>{{ j.org || "机构未填写" }}</text>
-          </button>
-          <button class="guest-link" :disabled="busy" @click="clearChoices">重新输入姓名</button>
-        </template>
-        <form v-else @submit="identify(submittedValues($event).judgeName)">
-          <text class="judging-name">输入姓名开始评分</text>
-          <input
-            name="judgeName"
-            class="judging-input"
-            maxlength="50"
-            aria-label="评委姓名"
-            placeholder="请输入名单上的姓名"
-            confirm-type="go"
-            @confirm="identify($event.detail.value)"
-          />
-          <button class="judging-submit" :disabled="busy" form-type="submit">
-            {{ busy ? "正在查询…" : "进入评分" }}
-          </button>
-        </form>
-        <text v-if="message" class="judging-note guest-error">{{ message }}</text>
+        </view>
+        <button class="guest-link" :disabled="sending || busy" @click="signOut">切换姓名</button>
       </view>
-      <template v-else>
-        <view class="judging-panel guest-identity">
-          <view>
-            <text class="judging-name">{{ desk.judge.name }} · {{ roleLabels[desk.judge.role] }}</text>
-            <text class="judging-note">
-              编号 {{ desk.judge.id }}{{ desk.judge.org ? " · " + desk.judge.org : "" }}
-            </text>
-          </view>
-          <button class="guest-link" :disabled="sending || busy" @click="signOut">切换姓名</button>
-        </view>
-        <BallotPanel
-          v-if="desk.page"
-          :page="desk.page"
-          :sending="sending || busy"
-          :message="message"
-          @submit="submit"
-          @refresh="refresh()"
-        />
-        <view v-else class="judging-panel">
-          <text class="judging-name">等待分配场次</text>
-          <text class="judging-note">场控分配并开放评分后，这里会显示你的评分表。</text>
-          <button @click="refresh()">刷新场次</button>
-        </view>
-        <text v-if="message && (!desk.page?.open || desk.page.receipt)" class="judging-note guest-error">
-          {{ message }}
-        </text>
-        <view v-if="desk.page?.look.showProgress && desk.page.tasks.length" class="judging-panel">
-          <text class="judging-name">我的评审任务</text>
-          <button
-            v-for="task in desk.page.tasks"
-            :key="task.sessionId"
-            class="guest-task"
-            :disabled="sending || busy"
-            @click="refresh(task.sessionId)"
-          >
-            <text>{{ task.teacher }} · {{ task.room }}</text>
-            <text>{{ task.status }}</text>
-          </button>
-        </view>
-      </template>
-    </template>
+      <BallotPanel
+        v-if="desk.page"
+        :page="desk.page"
+        :sending="sending || busy"
+        :message="message"
+        @submit="submit"
+        @refresh="refresh()"
+      />
+      <view v-else class="judging-panel">
+        <text class="judging-name">等待分配场次</text>
+        <text class="judging-note">场控分配并开放评分后，这里会显示你的评分表。</text>
+        <button @click="refresh()">刷新场次</button>
+      </view>
+      <text v-if="message && (!desk.page?.open || desk.page.receipt)" class="judging-note guest-error">
+        {{ message }}
+      </text>
+      <view v-if="desk.page?.look.showProgress && desk.page.tasks.length" class="judging-panel">
+        <text class="judging-name">我的评审任务</text>
+        <button
+          v-for="task in desk.page.tasks"
+          :key="task.sessionId"
+          class="guest-task"
+          :disabled="sending || busy"
+          @click="refresh(task.sessionId)"
+        >
+          <text>{{ task.teacher }} · {{ task.room }}</text>
+          <text>{{ task.status }}</text>
+        </button>
+      </view>
+    </view>
   </view>
 </template>
 <script setup lang="ts">
@@ -109,7 +81,7 @@ import { guestScoring } from "@/services/judging-guest";
 import { ApiRequestError } from "@/services/request";
 import { API_BASE_URL } from "@/config/app";
 import BallotPanel from "./BallotPanel.vue";
-import { submittedValues } from "./form-values";
+import EntryWelcome from "./EntryWelcome.vue";
 const info = ref<{ title: string; rehearsal: boolean; look: JudgingLook } | null>(null),
   desk = ref<GuestDesk | null>(null);
 const matchedName = ref(""),
@@ -299,6 +271,17 @@ page {
 .guest-entry {
   min-height: 100vh;
   box-sizing: border-box;
+  padding: 0;
+}
+.guest-score-desk {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 22px 16px 40px;
+}
+.guest-loading {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 36px 24px;
 }
 .guest-identity {
   display: flex;
@@ -310,7 +293,6 @@ page {
   font-size: 1.05em;
 }
 .guest-entry .guest-link,
-.guest-entry .guest-choice,
 .guest-entry .guest-task {
   background: transparent;
   color: var(--judging-accent);
@@ -323,7 +305,6 @@ page {
   padding: 8px 0;
   white-space: nowrap;
 }
-.guest-entry .guest-choice,
 .guest-entry .guest-task {
   display: flex;
   align-items: center;
@@ -335,11 +316,7 @@ page {
   border: 1px solid #d6e2dd;
   border-radius: 8px;
 }
-.guest-choice-id {
-  font-weight: 600;
-}
 .guest-entry .guest-link::after,
-.guest-entry .guest-choice::after,
 .guest-entry .guest-task::after {
   border: 0;
 }

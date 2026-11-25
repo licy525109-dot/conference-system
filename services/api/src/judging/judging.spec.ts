@@ -37,6 +37,24 @@ test("formal public date, appearance and template caps are validated by the serv
   assert.throws(() => validateRubric(c.rubrics.expert, "lecturer"), /40/);
   assert.throws(() => validateConfig({ ...c, rooms: [c.rooms[0], c.rooms[0]] }, false), /第 2 行/);
 });
+test("entry designs support legacy JSON, partial updates and bounded form settings", () => {
+  const { entry, ...oldLook } = defaultJudgingConfig().look;
+  assert.deepEqual(validateLook(oldLook).entry, entry);
+  const selected = { ...entry, layout: "minimal" as const, button: "开始评课" };
+  assert.deepEqual(validateLook(oldLook, selected).entry, selected);
+  const partial = validateLook({ ...oldLook, entry: { intro: " 欢迎评委 " } }, selected);
+  assert.deepEqual(partial.entry, { ...selected, intro: "欢迎评委" });
+  for (const invalid of [
+    { layout: "anything" },
+    { fit: "tile" },
+    { position: "free" },
+    { typeface: "" },
+    { button: " " },
+    { placeholder: "字".repeat(61) }
+  ]) {
+    assert.throws(() => validateLook({ ...oldLook, entry: invalid }));
+  }
+});
 test("tie order uses professional, TED, audience and recorded adjudication independently of display rounding", () => {
   const c = defaultJudgingConfig(),
     state = defaultJudgingControl();

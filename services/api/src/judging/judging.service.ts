@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { Prisma, type JudgingEvent } from "@prisma/client";
 import {
   assigned,
+  defaultEntryDesign,
   defaultJudgingConfig,
   defaultJudgingControl,
   rehearsalUserId,
@@ -50,7 +51,10 @@ import {
 
 type Tx = Prisma.TransactionClient;
 const json = (data: unknown) => JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
-const config = (e: JudgingEvent) => e.config as unknown as JudgingConfig;
+function config(e: JudgingEvent): JudgingConfig {
+  const stored = e.config as unknown as JudgingConfig;
+  return { ...stored, look: { ...stored.look, entry: { ...defaultEntryDesign, ...stored.look.entry } } };
+}
 const control = (e: JudgingEvent) => e.control as unknown as JudgingControl & { guestEntry?: GuestEntry };
 export const allowed = (a: CurrentAdmin, p: string) =>
   Boolean(a.permissions?.includes("*") || a.permissions?.includes(p));
@@ -250,6 +254,12 @@ export class JudgingService {
       }))
     };
   }
+  async requireDesignEditor(id: string, a: CurrentAdmin) {
+    permit(a, "judging:config");
+    const e = await getEvent(this.db, id);
+    scope(e, a);
+    phase(e, "SETUP", "LIVE", "REVIEW");
+  }
   async sourceConferences(id: string, a: CurrentAdmin) {
     permit(a, "judging:config");
     permit(a, "registration:export");
@@ -444,7 +454,7 @@ export class JudgingService {
           delete state.guestEntry;
         } else if (action === "config") {
           phase(e, "SETUP");
-          const next = validateConfig(b.config, e.rehearsal);
+          const next = validateConfig(b.config, e.rehearsal, c.look.entry);
           next.formVersion = c.formVersion + 1;
           data.config = json(next);
           data.title = str(b.title, "赛事名称");
@@ -501,7 +511,7 @@ export class JudgingService {
           evidence = { before, after: { merits: c.merits, teachers: b.teachers } };
         } else if (action === "appearance") {
           phase(e, "SETUP", "LIVE", "REVIEW");
-          c.look = validateLook(b.look);
+          c.look = validateLook(b.look, c.look.entry);
           data.config = json(c);
         } else if (action === "access") {
           permit(a, "system:account");

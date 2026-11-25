@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["@dcloudio/types"],
+    "types": ["@dcloudio/types", "vite/client"],
     "baseUrl": ".",
     "paths": {
       "@conference/design-system": ["../../design-system/index.ts"],

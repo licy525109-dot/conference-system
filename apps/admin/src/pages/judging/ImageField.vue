@@ -7,7 +7,9 @@
       clearable
     />
     <el-button v-if="hasPermission('material:view')" @click="openLibrary">素材库</el-button>
-    <el-button v-if="hasPermission('material:write')" :loading="busy" @click="input?.click()">上传</el-button>
+    <el-button v-if="eventId || hasPermission('material:write')" :loading="busy" @click="input?.click()"
+      >上传</el-button
+    >
     <input ref="input" hidden type="file" accept="image/jpeg,image/png,image/webp" @change="upload" />
     <el-dialog v-model="shown" title="选择图片素材" width="min(720px,94vw)" append-to-body>
       <el-input v-model="keyword" placeholder="素材名称，回车搜索" @keyup.enter="openLibrary" />
@@ -31,12 +33,12 @@
 </template>
 <script setup lang="ts">
 import { ref } from "vue";
-import { judgingImageUrl } from "../../services/judging";
+import { judgingApi, judgingImageUrl } from "../../services/judging";
 import { ElMessage } from "element-plus";
 import { createMaterial, listMaterials } from "../../services/admin";
 import { useAdminSession } from "../../stores/admin-session";
 import type { MaterialAsset } from "../../services/types";
-defineProps<{ modelValue: string }>();
+const props = defineProps<{ modelValue: string; eventId?: string }>();
 const emit = defineEmits<{ (e: "update:modelValue", v: string): void }>();
 const { hasPermission } = useAdminSession();
 const input = ref<HTMLInputElement>(),
@@ -59,7 +61,9 @@ async function upload(e: Event) {
   if (!f) return;
   busy.value = true;
   try {
-    const a = await createMaterial({ name: f.name, usage: "conference_cover", file: f });
+    const a = props.eventId
+      ? await judgingApi.uploadDesignImage(props.eventId, f)
+      : await createMaterial({ name: f.name, usage: "conference_cover", file: f });
     emit("update:modelValue", a.url);
   } catch (err) {
     ElMessage.error((err as Error).message);

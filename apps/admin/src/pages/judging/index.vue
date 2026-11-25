@@ -67,6 +67,8 @@
           v-if="can('judging:floor') || can('judging:config')"
           :event="event"
           :can-publish="can('judging:floor')"
+          :can-design="can('judging:config')"
+          @design="tab = 'look'"
           :busy="busy"
           :operate="operate"
         />
@@ -103,10 +105,15 @@
             <el-button @click="handoverOpen = true">补录颁奖与复赛资料</el-button>
           </div>
         </el-tab-pane>
-        <el-tab-pane v-if="group === 'prep' && can('judging:config')" label="手机页面设计" name="look">
+        <el-tab-pane v-if="group === 'prep' && can('judging:config')" label="评分页面设计" name="look">
           <Appearance
+            v-if="tab === 'look'"
+            :key="event.id"
+            :event-id="event.id"
+            :busy="busy"
+            :changed="JSON.stringify(draft.look) !== JSON.stringify(event.config.look)"
             :config="draft"
-            :title="draftTitle"
+            :title="event.title"
             :editable="['SETUP', 'LIVE', 'REVIEW'].includes(event.phase)"
             @save="saveLook"
           />
@@ -298,7 +305,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { awardFieldOptions, type AwardField, type JudgingConfig } from "@conference/shared";
+import {
+  awardFieldOptions,
+  defaultEntryDesign,
+  type AwardField,
+  type JudgingConfig
+} from "@conference/shared";
 import { useAdminSession } from "../../stores/admin-session";
 import {
   judgingApi,
@@ -408,6 +420,7 @@ const setup = computed(() => event.value?.phase === "SETUP" && can("judging:conf
   );
 async function read(id: string, keep = false) {
   const data = await judgingApi.detail(id);
+  data.config.look.entry = { ...defaultEntryDesign, ...data.config.look.entry };
   event.value = data;
   if (!keep) {
     draft.value = clone(data.config);
@@ -574,7 +587,10 @@ onMounted(async () => {
       events.value.find((e) => e.id === routeQuery.value.event) ||
       events.value.find((e) => e.phase === "LIVE") ||
       events.value[0];
-    if (selected) await read(selected.id);
+    if (selected) {
+      await read(selected.id);
+      if (routeQuery.value.tab === "look" && can("judging:config")) tab.value = "look";
+    }
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
