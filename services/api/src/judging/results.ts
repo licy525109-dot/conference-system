@@ -163,6 +163,7 @@ export function calculate(c: JudgingConfig, control: JudgingControl, ballots: Ba
     .map((value) => value.row);
 }
 export interface JudgingSnapshot {
+  periodReviews?: JudgingControl["periodReviews"];
   rows: ScoringRow[];
   merits: JudgingConfig["merits"];
   schools: { id: string; name: string }[];

@@ -325,8 +325,44 @@ test(
           await change("gate", { session: sid, open: false });
         }
         assert.equal((await service.mobile(id, "C5", asUser(first))).formVersion, old + 1);
+        await assert.rejects(change("period-close", { period: "night" }), /上午场或下午场/);
+        await change("period-close", { period: "am" }, floor.admin);
+        const morning = await service.results(id, cfg.admin);
+        assert.equal(morning.phase, "LIVE");
+        assert.equal(morning.periodReviews.am?.status, "reviewing");
+        assert.equal(morning.periodTasks.filter((t) => t.sessionId.startsWith("C") && t.receipt).length, 465);
+        assert.equal((await call(scorePath, token, payload)).id, firstReceipt);
+        await assert.rejects(change("gate", { session: "C0", open: true }), /结束收分/);
+        await assert.rejects(change("period-approve", { period: "am" }, floor.admin), /权限/);
         await change("gate", { session: "S0", open: true, scope: "group" });
-        for (let i = 0; i < 15; i++) await handIn("S" + i);
+        await handIn("S0");
+        const afternoon = await service.results(id, cfg.admin);
+        const afternoonBallot = afternoon.ballots.find((b) => b.sessionKey === "S0")!;
+        const stamp = { period: "am", periodVersion: morning.periodReviews.am!.version };
+        await assert.rejects(
+          change("correction", {
+            ...stamp,
+            ballotId: afternoonBallot.id,
+            answers: { score: 25 },
+            reason: "误选"
+          }),
+          /不属于/
+        );
+        await change("correction", {
+          ...stamp,
+          revision: morning.revision,
+          ballotId: firstReceipt,
+          answers: { score: 39 },
+          reason: "核对上午原单"
+        });
+        await assert.rejects(change("period-approve", stamp), /版本/);
+        await change("period-approve", { period: "am" });
+        assert.equal((await service.detail(id, cfg.admin)).phase, "LIVE");
+        await assert.rejects(
+          change("attendance", { session: "C0", judge: first.id, kind: "makeup", reason: "已复核" }),
+          /重新复核/
+        );
+        for (let i = 1; i < 15; i++) await handIn("S" + i);
         await change("gate", { session: "S0", open: false, scope: "group" });
         assert.equal(attempted + 1, 510);
         assert.equal(await db.judgingBallot.count({ where: { eventId: id } }), 510);
@@ -336,7 +372,8 @@ test(
           ).length,
           510
         );
-        await change("finish");
+        await change("period-close", { period: "pm" }, floor.admin);
+        assert.equal((await service.detail(id, cfg.admin)).phase, "REVIEW");
       });
       const row = (rows: ScoringRow[], i: number) => rows.find((x) => x.id === "T" + i)!;
       await t.test("weighted sample, direct adjustment, unchanged originals and prize boundary", async () => {
@@ -363,6 +400,11 @@ test(
         const raw = result.ballots.find(
           (b: { teacherKey: string; role: string }) => b.teacherKey === "T3" && b.role === "lecturer"
         );
+        await assert.rejects(
+          change("correction", { ballotId: raw.id, answers: { score: 36 }, reason: "已确认" }),
+          /重新复核/
+        );
+        await change("period-reopen", { period: "am", reason: "核对原始记录" });
         await change("correction", { ballotId: raw.id, answers: { score: 36 }, reason: "原单更正联排" });
         assert.equal((await db.judgingBallot.findUniqueOrThrow({ where: { id: raw.id } })).units, 3700);
         a = row((await service.results(id, cfg.admin)).rows, 3);
@@ -382,6 +424,10 @@ test(
         // The app clock is the only substituted collaborator. Database, guards and controllers are real.
         service.publicationDay = () => "2026-12-15";
         await assert.rejects(service.export(id, "awards", 1, cfg.admin), /本人确认/);
+        await assert.rejects(change("send", { reviewedRevision: revision }), /上午场、下午场/);
+        await change("period-approve", { period: "am" });
+        await assert.rejects(change("send", { reviewedRevision: revision }), /下午场/);
+        await change("period-approve", { period: "pm" });
         await change("send", { reviewedRevision: revision });
         await assert.rejects(change("confirm", { reviewedRevision: revision }, cfg.admin), /权限/);
         await assert.rejects(change("confirm", { reviewedRevision: revision - 1 }, signer.admin), /版本/);
@@ -514,7 +560,7 @@ test(
           cc.judges = c.judges.filter((j) => ["PR1", "PR2", "R1D0", "R2D0", "E0"].includes(j.id));
           cc.sessions = c.sessions
             .filter((s) => cc.teachers.some((t) => t.id === s.teacher))
-            .map((s) => (s.id === "C1" ? { ...s, round: 4 } : s));
+            .map((s) => (s.id === "C1" ? { ...s, round: 4, period: "pm" as const } : s));
           cc.approvedForms = true;
           const invalid = structuredClone(cc);
           invalid.rooms[1].rounds = 3;
@@ -526,9 +572,12 @@ test(
           const entry = "/judging/" + created.id + "/entry/" + (await detail()).entryCode;
           await update("start");
           await update("gate", { session: "S0", open: true, scope: "group" });
+          const delayed = cc.judges.find((j) => j.id === "PR1")!;
+          const { ticket: late } = await call(entry + "/identify", undefined, { name: delayed.name });
           for (const s of cc.sessions) {
             if (s.kind === "class") await update("gate", { session: s.id, open: true });
             for (const judge of cc.judges.filter((j) => assigned(s, j))) {
+              if (s.id === "C0" && judge.id === delayed.id) continue;
               const { ticket } = await call(entry + "/identify", undefined, { name: judge.name });
               const { page } = await call(entry + "/desk", ticket);
               assert.equal(page.session.round, s.round);
@@ -541,12 +590,95 @@ test(
           }
           await update("gate", { session: "S0", open: false, scope: "group" });
           await update("finish");
+          const d = await detail(),
+            submission = {
+              formVersion: (await call(entry + "/desk?session=C0", late)).page.formVersion,
+              answers: { score: 28 }
+            };
+          assert.equal(d.config.sessions.find((s: { id: string }) => s.id === "C1").period, "pm");
+          await call(
+            path + "/actions",
+            cfg.token,
+            { action: "period-approve", period: "am", revision: d.revision },
+            400
+          );
+          await call(entry + "/sessions/C0/submit", late, submission, 409);
+          assert.equal((await call(entry + "/desk?session=C0", late)).page.session.reviewStatus, "reviewing");
+          await update("period-approve", { period: "pm" });
+          await update("attendance", {
+            session: "C0",
+            judge: delayed.id,
+            kind: "makeup",
+            reason: "核对后补交"
+          });
+          await call(entry + "/sessions/C0/submit", late, submission);
+          await update("period-approve", { period: "am" });
+          assert.equal((await detail()).periodReviews.pm.status, "confirmed");
           await update("send");
           await update("confirm", {}, signer.token);
           assert.equal((await detail()).phase, "LOCKED");
           const final = await service.export(created.id, "awards", 1, cfg.admin);
           assert.deepEqual([final.teachers.length, final.merits.length, final.schools.length], [2, 0, 2]);
           await call("/judging/" + created.id + "/published", undefined, undefined, 404);
+        }
+      );
+      await t.test(
+        "a single scheduled period can complete, and a previously submitted legacy edition can still be signed",
+        async () => {
+          const event = await service.create(
+            { title: "只排下午场", roomCount: 1, roundsPerRoom: 1 },
+            cfg.admin
+          );
+          events.push(event.id);
+          const read = () => service.detail(event.id, cfg.admin);
+          const act = async (action: string, body: Record<string, unknown> = {}, actor = cfg.admin) => {
+            const { revision } = await read();
+            return service.change(event.id, { action, revision, reviewedRevision: revision, ...body }, actor);
+          };
+          const conf = (await read()).config as JudgingConfig;
+          conf.rooms[0].allRoundsOpen = true;
+          conf.teachers = [c.teachers[0]];
+          conf.sessions = c.sessions.filter((s) => s.teacher === "T0").map((s) => ({ ...s, period: "pm" }));
+          conf.judges = c.judges.filter((j) => ["PR1", "R1D0", "E0"].includes(j.id));
+          conf.approvedForms = true;
+          await act("config", { title: event.title, config: conf });
+          await act("access", { staffIds: [signer.admin.id], confirmerId: signer.admin.id });
+          await act("start");
+          await assert.rejects(act("period-close", { period: "am" }), /没有排场/);
+          await act("period-close", { period: "pm" });
+          const original = (await read()).periodReviews.pm!;
+          await act("period-resume", { period: "pm", reason: "场控误点，尚未开始 TED" });
+          assert.equal((await read()).gates.S0, "closed");
+          await act("gate", { session: "C0", open: true, scope: "group" });
+          await act("gate", { session: "S0", scope: "group", open: true });
+          for (const session of conf.sessions)
+            for (const judge of conf.judges.filter((j) => assigned(session, j))) {
+              const user = asUser(judge);
+              const page = await service.mobile(event.id, session.id, user);
+              assert.equal(page.open, true);
+              await service.submit(
+                event.id,
+                session.id,
+                { formVersion: page.formVersion, answers: { score: 25 } },
+                user
+              );
+            }
+          await act("period-close", { period: "pm" });
+          await assert.rejects(
+            act("period-approve", { period: "pm", periodVersion: original.version }),
+            /版本/
+          );
+          await act("period-approve", { period: "pm" });
+          assert.deepEqual(Object.keys((await read()).periodReviews), ["pm"]);
+          await act("send");
+          // Archived pre-feature events have no period review metadata.
+          const saved = await db.judgingEvent.findUniqueOrThrow({ where: { id: event.id } });
+          const legacy = { ...saved.control };
+          delete legacy.periodReviews;
+          await db.judgingEvent.update({ where: { id: event.id }, data: { control: legacy } });
+          await act("confirm", {}, signer.admin);
+          assert.equal((await read()).phase, "LOCKED");
+          assert.deepEqual((await read()).periodReviews, {});
         }
       );
       await t.test(
@@ -572,7 +704,10 @@ test(
           cc.teachers = c.teachers
             .filter((t) => ["T0", "T5", "T10", "T1", "T6"].includes(t.id))
             .map((t) => ({ ...t, photo: "", poster: "" }));
-          cc.sessions = c.sessions.filter((s) => cc.teachers.some((t) => t.id === s.teacher));
+          cc.sessions = c.sessions
+            .filter((s) => cc.teachers.some((t) => t.id === s.teacher))
+            .map((s) => ({ ...s }));
+          cc.sessions.find((s) => s.id === "C10")!.period = "pm";
           cc.sessions.find((s) => s.id === "S10")!.round = 501;
           cc.judges = c.judges.filter((j) => ["PR1", "PR2", "R1D0", "R2D0", "E0"].includes(j.id));
           cc.guidance = { instructions: "请核对选手及教室。", rules: "按本场课堂和演讲规则评分。" };
@@ -604,7 +739,13 @@ test(
             expert = await ticket("E0");
           const desk = async (t: string, sid: string) => (await call(entry + "/desk?session=" + sid, t)).page;
           await act("start", {}, floor.token);
-          for (const sid of ["C0", "C5", "C10"]) assert.equal((await desk(a, sid)).open, true);
+          for (const sid of ["C0", "C5"]) assert.equal((await desk(a, sid)).open, true);
+          assert.equal((await desk(a, "C10")).open, false);
+          await act("room-mode", { session: "C10", allRoundsOpen: false }, floor.token);
+          await act("gate", { session: "C10", scope: "group", open: true }, floor.token, 400);
+          await act("gate", { session: "C10", open: true }, floor.token);
+          await act("gate", { session: "C0", open: true }, floor.token, 400);
+          assert.equal((await desk(a, "C5")).open, true);
           assert.equal((await desk(b, "C1")).open, false);
           assert.equal((await desk(a, "C0")).teacher.photo, cc.teachers[0].photo);
           assert.equal((await desk(a, "C0")).teacher.poster, "");
@@ -657,6 +798,8 @@ test(
           await submit(expert, "S1", 26, 409);
           assert.ok((await desk(expert, "S0")).receipt);
           await act("gate", { session: "C0", scope: "group", open: false }, floor.token);
+          assert.equal((await desk(a, "C10")).open, true);
+          await act("gate", { session: "C10", open: false }, floor.token);
           assert.equal((await desk(b, "C1")).open, true);
           await act("gate", { session: "C1", scope: "group", open: false }, floor.token);
           await act("finish", {}, floor.token);

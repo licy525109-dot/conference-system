@@ -5,9 +5,12 @@ import {
   judgeRoles,
   judgingRoleLabel,
   judgingRoles,
+  periodNames,
+  sessionPeriod,
   rehearsalUserId,
   type JudgingConfig,
-  type JudgingRoom
+  type JudgingRoom,
+  type JudgingSession
 } from "@conference/shared";
 import { readExternalCheckinWorkbook } from "../../utils/external-checkin-sheet";
 export type Section = "rooms" | "teachers" | "judges" | "sessions" | "merits";
@@ -16,7 +19,7 @@ export type Field = {
   label: string;
   legacy?: boolean;
   aliases?: string[];
-  kind?: "num" | "optionalNum" | "room" | "teacher" | "role" | "stage" | "image" | "roundMode";
+  kind?: "num" | "optionalNum" | "room" | "teacher" | "role" | "stage" | "image" | "roundMode" | "period";
 };
 export const spec: Record<Section, { label: string; fields: Field[] }> = {
   rooms: {
@@ -62,6 +65,7 @@ export const spec: Record<Section, { label: string; fields: Field[] }> = {
     fields: [
       { key: "id", label: "场次编号" },
       { key: "kind", label: "环节", kind: "stage" },
+      { key: "period", label: "场别", aliases: ["上下午"], kind: "period" },
       { key: "teacher", label: "教师编号", kind: "teacher" },
       { key: "room", label: "教室编号", kind: "room" },
       { key: "round", label: "轮次或演讲顺序", kind: "num" },
@@ -91,7 +95,7 @@ export function emptyRow(section: Section, c: JudgingConfig): Row {
   };
   return Object.fromEntries(
     spec[section].fields
-      .filter((f) => f.key !== "rounds")
+      .filter((f) => f.key !== "rounds" && f.key !== "period")
       .map((f) => [f.key, f.kind && f.kind in defaults ? defaults[f.kind] : ""])
   );
 }
@@ -137,6 +141,11 @@ export async function prepareImport(file: File, current: JudgingConfig, selected
           if (!["全部轮次", "逐轮开放"].includes(v))
             throw new Error(sheet.name + " 第 " + (i + 2) + " 行评分开放方式请填「全部轮次」或「逐轮开放」");
           record[f.key] = v === "全部轮次";
+        } else if (f.kind === "period") {
+          if (!v) return;
+          if (["am", "上午", "上午场"].includes(v)) record.period = "am";
+          else if (["pm", "下午", "下午场"].includes(v)) record.period = "pm";
+          else throw new Error(sheet.name + " 第 " + (i + 2) + " 行场别请填「上午场」或「下午场」");
         } else if (f.kind === "role") {
           const roles = judgingRoles(next);
           record[f.key] = (roles.find((r) => r.id === v) ?? roles.find((r) => r.label === v))?.id ?? v;
@@ -159,6 +168,7 @@ export async function rosterTemplate(c: JudgingConfig) {
       data = (c[k] as Row[]).map((row) =>
         f.map((field) => {
           if (field.key === "rounds") return classroomRounds(row as JudgingRoom, c.sessions);
+          if (field.kind === "period") return periodNames[sessionPeriod(row as JudgingSession)];
           return field.kind === "role" || field.kind === "roundMode"
             ? displayField(field, row[field.key], c)
             : (row[field.key] ?? "");
@@ -185,11 +195,11 @@ export function schedule(c: JudgingConfig) {
   for (let round = 1; slots.length < c.teachers.length; round++) {
     for (const room of rooms) if (round <= room.rounds) slots.push({ room: room.id, round });
   }
-  const existing = new Map(c.sessions.map((s) => [s.kind + "/" + s.teacher, s.id]));
+  const existing = new Map(c.sessions.map((s) => [s.kind + "/" + s.teacher, s]));
   const usedIds = new Set(c.sessions.map((s) => s.id));
   function sessionId(kind: string, teacher: string) {
     const saved = existing.get(kind + "/" + teacher);
-    if (saved) return saved;
+    if (saved) return saved.id;
     const candidate = kind + "-" + teacher;
     const id =
       candidate.length <= 64 && !usedIds.has(candidate) ? candidate : kind + "-" + crypto.randomUUID();
@@ -204,6 +214,7 @@ export function schedule(c: JudgingConfig) {
         id: sessionId("class", t.id),
         teacher: t.id,
         kind: "class" as const,
+        period: existing.get("class/" + t.id)?.period ?? "am",
         room,
         round,
         time: times.get(["class", room, round].join("/")) || ""
@@ -212,6 +223,7 @@ export function schedule(c: JudgingConfig) {
         id: sessionId("ted", t.id),
         teacher: t.id,
         kind: "ted" as const,
+        period: existing.get("ted/" + t.id)?.period ?? "pm",
         room: "",
         round: i + 1,
         time: times.get("ted//" + (i + 1)) || ""

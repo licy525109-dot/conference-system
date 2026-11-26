@@ -16,6 +16,11 @@ import {
   rubricFor,
   stageOf,
   maxPoints,
+  needsScoreReview,
+  periodNames,
+  periodStatus,
+  scheduledPeriods,
+  sessionPeriod,
   taskKey
 } from "@conference/shared";
 import type {
@@ -25,6 +30,7 @@ import type {
   JudgeRole,
   JudgingConfig,
   JudgingControl,
+  JudgingPeriod,
   GuestDesk,
   JudgingSession,
   Rubric,
@@ -86,6 +92,35 @@ function setScoringGates(c: JudgingConfig, state: JudgingControl, sessions: Judg
     if (open) freezeSessionForms(c, state, session.id);
     state.gates[session.id] = open ? "open" : "closed";
   }
+}
+function reviewPeriod(value: unknown): JudgingPeriod {
+  if (value !== "am" && value !== "pm") fail("请选择上午场或下午场");
+  return value;
+}
+function closePeriod(
+  c: JudgingConfig,
+  state: JudgingControl,
+  period: JudgingPeriod,
+  actor: CurrentAdmin,
+  version: number
+) {
+  const sessions = c.sessions.filter((s) => sessionPeriod(s) === period);
+  setScoringGates(c, state, sessions, false);
+  const ids = new Set(sessions.map((s) => s.id));
+  for (const [id, exception] of Object.entries(state.exceptions)) {
+    if (exception.kind === "makeup" && ids.has(id.split("/")[0])) delete state.exceptions[id];
+  }
+  state.periodReviews ??= {};
+  state.periodReviews[period] = {
+    version,
+    status: "reviewing",
+    closedAt: new Date().toISOString(),
+    closedBy: actor.displayName || actor.username
+  };
+}
+function touchPeriod(state: JudgingControl, s: JudgingSession) {
+  const review = state.periodReviews?.[sessionPeriod(s)];
+  if (review) review.version++;
 }
 function transferLiveRoles(c: JudgingConfig, state: JudgingControl, raw: unknown) {
   const transfers = object(raw ?? {});
@@ -197,9 +232,10 @@ function findJudge(c: JudgingConfig, s: JudgingSession, parts: Judge[]) {
 function isOpen(e: JudgingEvent, s: JudgingSession, j: Judge) {
   const state = control(e),
     exception = state.exceptions[taskKey(s.id, j.id)];
-  if (exception?.kind === "absent") return false;
+  const review = state.periodReviews?.[sessionPeriod(s)];
+  if (exception?.kind === "absent" || review?.status === "confirmed") return false;
   return (
-    (e.phase === "LIVE" && state.gates[s.id] === "open") ||
+    (e.phase === "LIVE" && !review && state.gates[s.id] === "open") ||
     (["LIVE", "REVIEW"].includes(e.phase) && exception?.kind === "makeup")
   );
 }
@@ -312,6 +348,8 @@ export class JudgingService {
                 : []
           },
       gates: state.gates,
+      periodReviews: state.periodReviews ?? {},
+      roomPeriodModes: state.roomPeriodModes ?? {},
       editions: (
         await this.db.judgingEdition.findMany({
           where: { eventId: id },
@@ -413,6 +451,8 @@ export class JudgingService {
         return {
           revision: e.revision,
           gates: state.gates,
+          periodReviews: state.periodReviews ?? {},
+          roomPeriodModes: state.roomPeriodModes ?? {},
           allRoundRooms: c.rooms.filter((room) => room.allRoundsOpen).map((room) => room.id),
           phase: e.phase,
           tasks: scoringTasks(c, state, ballots).map((t) => ({
@@ -442,6 +482,18 @@ export class JudgingService {
     const rows = calculate(c, state, ballots);
     return {
       revision: e.revision,
+      phase: e.phase,
+      periodReviews: state.periodReviews ?? {},
+      periodTasks: scoringTasks(c, state, ballots).map(
+        ({ session, judgeId, name, roleLabel, status, receipt }) => ({
+          sessionId: session.id,
+          judgeId,
+          name,
+          roleLabel,
+          status,
+          receipt
+        })
+      ),
       rows,
       merits: c.merits,
       schools: listedSchools(c),
@@ -505,6 +557,10 @@ export class JudgingService {
       start: "floor",
       gate: "floor",
       "room-mode": "floor",
+      "period-close": "floor",
+      "period-resume": "floor",
+      "period-approve": "adjust",
+      "period-reopen": "adjust",
       attendance: "floor",
       finish: "floor",
       correction: "adjust",
@@ -523,10 +579,19 @@ export class JudgingService {
       async (tx) => {
         const e = await getEvent(tx, id, true);
         scope(e, a);
-        if (b.revision !== e.revision) throw stale();
         const c = config(e),
           state = control(e),
           data: Prisma.JudgingEventUpdateInput = { revision: { increment: 1 } };
+        // Afternoon submissions must not invalidate a review of unchanged morning ballots.
+        const period =
+          ["period-close", "period-resume", "period-approve", "period-reopen"].includes(action) ||
+          (action === "correction" && b.period !== undefined)
+            ? reviewPeriod(b.period)
+            : undefined;
+        const record = period ? state.periodReviews?.[period] : undefined;
+        const scopedRevision = period && action !== "period-close" && b.periodVersion !== undefined;
+        if (scopedRevision ? !record || record.version !== b.periodVersion : b.revision !== e.revision)
+          throw stale();
         let evidence: unknown = {};
         if (action === "delete") {
           data.phase = deletedPhase;
@@ -626,22 +691,81 @@ export class JudgingService {
           phase(e, "SETUP");
           validateStart(c, e.rehearsal);
           const rooms = new Set(c.rooms.filter((room) => room.allRoundsOpen).map((room) => room.id));
+          const first = scheduledPeriods(c.sessions)[0];
           setScoringGates(
             c,
             state,
-            c.sessions.filter((s) => s.kind === "class" && rooms.has(s.room)),
+            c.sessions.filter((s) => s.kind === "class" && rooms.has(s.room) && sessionPeriod(s) === first),
             true
           );
           data.phase = "LIVE";
+        } else if (action === "period-close" && period) {
+          phase(e, "LIVE");
+          const periods = scheduledPeriods(c.sessions);
+          if (!periods.includes(period) || record) fail("该场没有排场或已结束收分");
+          closePeriod(c, state, period, a, e.revision + 1);
+          if (periods.every((p) => state.periodReviews?.[p])) data.phase = "REVIEW";
+          evidence = { period };
+        } else if (action === "period-resume" && period) {
+          phase(e, "LIVE", "REVIEW");
+          if (!state.periodReviews || record?.status !== "reviewing") fail("仅待复核的场别可恢复收分");
+          evidence = { period, reason: str(b.reason, "恢复收分原因", 500) };
+          // A historical full-day review may predate per-period records. Keep its other periods closed.
+          if (e.phase === "REVIEW")
+            for (const p of scheduledPeriods(c.sessions)) {
+              if (p !== period && !state.periodReviews[p])
+                state.periodReviews[p] = { status: "reviewing", version: e.revision + 1 };
+            }
+          delete state.periodReviews[period];
+          data.phase = "LIVE";
+        } else if (action === "period-approve" && period) {
+          phase(e, "LIVE", "REVIEW");
+          if (!scheduledPeriods(c.sessions).includes(period) || periodStatus(e.phase, record) !== "reviewing")
+            fail("请先结束该场评分，再进行复核");
+          const sessions = c.sessions.filter((s) => sessionPeriod(s) === period);
+          const ballots = await tx.judgingBallot.findMany({
+            where: { eventId: id, sessionKey: { in: sessions.map((s) => s.id) } },
+            select: { id: true, sessionKey: true, judgeKey: true, status: true }
+          });
+          const tasks = scoringTasks({ ...c, sessions }, state, ballots);
+          const pending = tasks.filter((t) => needsScoreReview(t.status)).length;
+          if (pending) fail(periodNames[period] + "还有 " + pending + " 项待交、待补或待核，请先处理");
+          state.periodReviews ??= {};
+          state.periodReviews[period] = {
+            ...record,
+            status: "confirmed",
+            version: (record?.version ?? 0) + 1,
+            confirmedAt: new Date().toISOString(),
+            confirmedBy: a.displayName || a.username
+          };
+          evidence = { period, ballots: ballots.length, tasks: tasks.length };
+        } else if (action === "period-reopen" && period) {
+          phase(e, "LIVE", "REVIEW", "SUBMITTED");
+          if (record?.status !== "confirmed") fail("仅已复核场次可以重新复核");
+          evidence = { period, reason: str(b.reason, "重新复核原因", 500), previous: { ...record } };
+          delete record.confirmedAt;
+          delete record.confirmedBy;
+          record.status = "reviewing";
+          record.version++;
+          if (e.phase === "SUBMITTED") data.phase = "REVIEW";
         } else if (action === "room-mode") {
           phase(e, "LIVE");
           const s = sessionOf(c, b.session);
           const room = c.rooms.find((r) => s.kind === "class" && r.id === s.room);
           if (!room || typeof b.allRoundsOpen !== "boolean") fail("请选择教室和评分开放方式");
-          if (!!room.allRoundsOpen !== b.allRoundsOpen) {
-            room.allRoundsOpen = b.allRoundsOpen;
-            const sessions = c.sessions.filter((x) => x.kind === "class" && x.room === room.id);
-            if (room.allRoundsOpen) setScoringGates(c, state, sessions, true);
+          if (state.periodReviews?.[sessionPeriod(s)]) fail("该场已结束收分");
+          const p = sessionPeriod(s);
+          if ((state.roomPeriodModes?.[p]?.[room.id] ?? !!room.allRoundsOpen) !== b.allRoundsOpen) {
+            const inRoom = c.sessions.filter((x) => x.kind === "class" && x.room === room.id);
+            const sessions = inRoom.filter((x) => sessionPeriod(x) === p);
+            if (sessions.length === inRoom.length) {
+              room.allRoundsOpen = b.allRoundsOpen;
+              data.config = json(c);
+            } else {
+              state.roomPeriodModes ??= {};
+              (state.roomPeriodModes[p] ??= {})[room.id] = b.allRoundsOpen;
+            }
+            if (b.allRoundsOpen) setScoringGates(c, state, sessions, true);
             else
               setScoringGates(
                 c,
@@ -649,16 +773,21 @@ export class JudgingService {
                 sessions.filter((x) => x.id !== s.id && state.gates[x.id] === "open"),
                 false
               );
-            data.config = json(c);
           }
-          evidence = { room: room.id, allRoundsOpen: room.allRoundsOpen, session: s.id };
+          evidence = { period: p, room: room.id, allRoundsOpen: b.allRoundsOpen, session: s.id };
         } else if (action === "gate") {
           phase(e, "LIVE");
           const s = sessionOf(c, b.session);
           if (typeof b.open !== "boolean") fail("请选择开关状态");
           if (b.scope !== undefined && b.scope !== "group") fail("无效的评分开放范围");
-          const group = c.sessions.filter((x) => x.kind === s.kind && x.room === s.room);
-          const parallel = s.kind === "ted" || c.rooms.some((r) => r.id === s.room && r.allRoundsOpen);
+          if (state.periodReviews?.[sessionPeriod(s)]) fail("该场已结束收分");
+          const group = c.sessions.filter(
+            (x) => x.kind === s.kind && x.room === s.room && sessionPeriod(x) === sessionPeriod(s)
+          );
+          const parallel =
+            s.kind === "ted" ||
+            (state.roomPeriodModes?.[sessionPeriod(s)]?.[s.room] ??
+              c.rooms.some((r) => r.id === s.room && r.allRoundsOpen));
           if (parallel && b.scope !== "group")
             fail(
               s.kind === "ted"
@@ -677,6 +806,8 @@ export class JudgingService {
             j = c.judges.find((j) => j.id === b.judge);
           if (!j || !assigned(s, j) || !["absent", "makeup", "present"].includes(b.kind))
             fail("无效的应评任务");
+          if (state.periodReviews?.[sessionPeriod(s)]?.status === "confirmed")
+            fail("该场已复核，请先重新复核");
           if (b.kind === "makeup" && s.kind === "ted" && !state.sessionForms[s.id])
             fail("请先开放全部 TED，再为个别专家登记补交");
           if (
@@ -695,11 +826,12 @@ export class JudgingService {
             if (b.kind === "absent") delete state.present[k];
           }
           evidence = { session: s.id, judge: j.id, kind: b.kind, reason: state.exceptions[k]?.reason };
+          touchPeriod(state, s);
         } else if (action === "finish") {
           phase(e, "LIVE");
           if (c.sessions.some((s) => state.gates[s.id] !== "closed")) fail("请先截止全部课堂与 TED 评分");
-          for (const k of Object.keys(state.exceptions))
-            if (state.exceptions[k].kind === "makeup") delete state.exceptions[k];
+          for (const p of scheduledPeriods(c.sessions))
+            if (!state.periodReviews?.[p]) closePeriod(c, state, p, a, e.revision + 1);
           data.phase = "REVIEW";
         } else if (action === "revise") {
           phase(e, "LOCKED");
@@ -724,7 +856,8 @@ export class JudgingService {
           data.publishedFields = [...new Set<string>(b.fields)];
           evidence = { fields: b.fields };
         } else {
-          phase(e, ...(action === "confirm" ? ["SUBMITTED"] : ["REVIEW", "SUBMITTED"]));
+          if (action === "correction") phase(e, "LIVE", "REVIEW", "SUBMITTED");
+          else phase(e, ...(action === "confirm" ? ["SUBMITTED"] : ["REVIEW", "SUBMITTED"]));
           if (action === "confirm") {
             if (e.confirmerId !== a.id) throw new ForbiddenException("仅绑定的本人账号可确认");
             await requireNamedAccount(tx, a.id, e.rehearsal);
@@ -734,6 +867,12 @@ export class JudgingService {
           if (action === "correction") {
             const ballot = ballots.find((x) => x.id === b.ballotId);
             if (!ballot) fail("找不到原单");
+            const session = sessionOf(c, ballot.sessionKey);
+            const actual = sessionPeriod(session);
+            if (period && period !== actual) fail("该评分单不属于所选场别");
+            const review = state.periodReviews?.[actual];
+            if (review?.status === "confirmed") fail("该场已复核，请先重新复核");
+            if (e.phase === "LIVE" && review?.status !== "reviewing") fail("请先结束该场评分，再更正原单");
             const reason = str(b.reason, "更正原因", 500),
               before = state.corrections[ballot.id] ?? {
                 units: ballot.units,
@@ -748,8 +887,9 @@ export class JudgingService {
             state.corrections[ballot.id] = fix;
             if (state.adjustments[ballot.teacherKey]) state.adjustments[ballot.teacherKey].recheck = true;
             state.ties = [];
-            data.phase = "REVIEW";
-            evidence = { ballot: ballot.id, before, after: fix };
+            touchPeriod(state, session);
+            if (e.phase === "SUBMITTED") data.phase = "REVIEW";
+            evidence = { period: actual, ballot: ballot.id, before, after: fix };
           } else if (action === "adjust") {
             const row = rows.find((r) => r.id === b.teacher);
             if (!row || row.system === null) fail("缺少有效分项，无法直接调整总分");
@@ -787,6 +927,13 @@ export class JudgingService {
             const tasks = scoringTasks(c, state, ballots);
             if (tasks.some((t) => ["waiting", "makeup", "pending"].includes(t.status)))
               fail("还有待交、待补或待核原单，请先处理或登记弃评");
+            if (action === "send" || state.periodReviews) {
+              const missing = scheduledPeriods(c.sessions).filter(
+                (p) => state.periodReviews?.[p]?.status !== "confirmed"
+              );
+              if (missing.length)
+                fail("请先完成" + missing.map((p) => periodNames[p]).join("、") + "评分复核");
+            }
             const targets = c.awardTargets;
             if (targets.merits !== null && c.merits.length !== targets.merits)
               fail("请核对优秀奖名单，当前 " + c.merits.length + " 人，本场设置为 " + targets.merits + " 人");
@@ -797,6 +944,7 @@ export class JudgingService {
               data.phase = "SUBMITTED";
             } else {
               const snapshot: JudgingSnapshot = {
+                periodReviews: state.periodReviews ?? {},
                 rows,
                 merits: c.merits,
                 schools: listedSchools(c),
@@ -870,6 +1018,7 @@ export class JudgingService {
           .filter((j) => assigned(s, j))
           .map((j) => ({
             sessionId: s.id,
+            period: sessionPeriod(s),
             teacher: teacherOf(c, s).name,
             time: s.time,
             room: roomName(c, s),
@@ -903,7 +1052,15 @@ export class JudgingService {
         poster: teacher.poster,
         topic: s.kind === "ted" ? teacher.speech : teacher.topic
       },
-      session: { id: s.id, room: roomName(c, s), round: s.round, time: s.time, kind: s.kind },
+      session: {
+        id: s.id,
+        room: roomName(c, s),
+        round: s.round,
+        time: s.time,
+        kind: s.kind,
+        period: sessionPeriod(s),
+        reviewStatus: state.periodReviews?.[sessionPeriod(s)]?.status
+      },
       role,
       roleLabel: judgingRoleLabel(sessionForm, role),
       form: rubricFor(sessionForm, role),
@@ -955,6 +1112,7 @@ export class JudgingService {
           }
         });
         const state = control(e);
+        touchPeriod(state, s);
         delete state.exceptions[taskKey(sid, j.id)];
         state.ties = [];
         if (state.adjustments[s.teacher]) state.adjustments[s.teacher].recheck = true;

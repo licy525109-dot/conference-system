@@ -25,7 +25,8 @@
         <view
           ><text class="task-name">{{ task.teacher }}</text
           ><text class="task-place"
-            >{{ task.room }} · 第 {{ task.round }} {{ stageOf(task.role) === "ted" ? "位" : "轮" }}</text
+            >{{ task.period ? periodNames[task.period] + " · " : "" }}{{ task.room }} · 第 {{ task.round }}
+            {{ stageOf(task.role) === "ted" ? "位" : "轮" }}</text
           ></view
         >
         <text v-if="page.look.showProgress" class="task-count">{{ task.status }}</text>
@@ -35,7 +36,7 @@
 </template>
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { stageOf, type ScoringView } from "@conference/shared";
+import { periodNames, stageOf, type ScoringView } from "@conference/shared";
 const props = defineProps<{ page: ScoringView; disabled: boolean }>();
 const emit = defineEmits<{ select: [id: string] }>();
 const expanded = ref(false);

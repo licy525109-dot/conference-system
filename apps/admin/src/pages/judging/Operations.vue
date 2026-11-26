@@ -1,19 +1,38 @@
 <template>
-  <div v-if="tedSessions.length && state.phase === 'LIVE'" class="j-statusline">
+  <div v-if="['LIVE', 'REVIEW'].includes(state.phase)" class="j-periods">
+    <div v-for="p in periods" :key="p" class="j-period-row">
+      <strong>{{ periodNames[p] }}</strong>
+      <span>{{ periodCounts[p].received }} / {{ periodCounts[p].assigned }} 份已交</span>
+      <el-tag :type="statusOf(p) === 'confirmed' ? 'success' : 'info'">{{
+        periodStatusNames[statusOf(p)]
+      }}</el-tag>
+      <el-button
+        v-if="statusOf(p) === 'scoring'"
+        :disabled="!observed || observed.revision < event.revision"
+        @click="close(p)"
+        >结束{{ periodNames[p] }}评分</el-button
+      >
+      <el-button v-else-if="canReview" @click="emit('review', p)">查看{{ periodNames[p] }}复核</el-button>
+      <el-button v-if="state.periodReviews?.[p]?.status === 'reviewing'" link @click="resume(p)"
+        >恢复收分</el-button
+      >
+    </div>
+  </div>
+  <div v-for="{ p, sessions, label } in tedGroups" :key="p" class="j-statusline">
     <strong>TED 专家评审</strong>
     <span
-      >{{ tedSessions.filter((s) => state.gates[s.id] === "open").length }} /
-      {{ tedSessions.length }} 位选手开放中</span
+      >{{ sessions.filter((s) => state.gates[s.id] === "open").length }} /
+      {{ sessions.length }} 位选手开放中</span
     >
     <el-button
-      :disabled="tedSessions.every((s) => state.gates[s.id] === 'open')"
-      @click="groupGate(tedSessions[0], true)"
-      >开放全部 TED</el-button
+      :disabled="sessions.every((s) => state.gates[s.id] === 'open')"
+      @click="groupGate(sessions[0], true)"
+      >开放{{ label }} TED</el-button
     >
     <el-button
-      :disabled="tedSessions.every((s) => state.gates[s.id] === 'closed')"
-      @click="groupGate(tedSessions[0], false)"
-      >截止全部 TED</el-button
+      :disabled="sessions.every((s) => state.gates[s.id] === 'closed')"
+      @click="groupGate(sessions[0], false)"
+      >截止{{ label }} TED</el-button
     >
   </div>
   <div class="j-tools">
@@ -33,7 +52,7 @@
       <el-tag :type="state.gates[sid] === 'open' ? 'success' : 'info'">
         {{ state.gates[sid] === "open" ? "评分中" : "未开放或已截止" }}
       </el-tag>
-      <template v-if="room && state.phase === 'LIVE'">
+      <template v-if="room && collecting">
         <el-switch
           :model-value="allRounds"
           :aria-label="room.name + '全部轮次评审'"
@@ -54,14 +73,14 @@
         </template>
       </template>
       <el-button
-        v-if="state.phase === 'LIVE' && room && !allRounds"
+        v-if="collecting && room && !allRounds"
         type="primary"
         @click="operate('gate', { session: sid, open: state.gates[sid] !== 'open' })"
       >
         {{ state.gates[sid] === "open" ? "截止本场" : "开放本场" }}
       </el-button>
       <el-button
-        v-if="state.phase === 'LIVE' && room && !allRounds && !state.gates[sid]"
+        v-if="collecting && room && !allRounds && !state.gates[sid]"
         @click="operate('gate', { session: sid, open: false })"
       >
         标记本场截止
@@ -92,7 +111,11 @@
         <template #default="{ row }">{{ taskStatus[row.status] }} {{ row.present ? "· 已到" : "" }}</template>
       </el-table-column>
       <el-table-column prop="reason" label="现场记录" />
-      <el-table-column v-if="['LIVE', 'REVIEW'].includes(state.phase)" width="200" label="现场操作">
+      <el-table-column
+        v-if="['LIVE', 'REVIEW'].includes(state.phase) && statusOf(sessionPeriod(current)) !== 'confirmed'"
+        width="200"
+        label="现场操作"
+      >
         <template #default="{ row }">
           <template v-if="!row.receipt">
             <el-button link @click="attendance(row, 'present')">到场</el-button>
@@ -105,10 +128,7 @@
   </template>
   <el-empty v-else description="请先在「赛前设置」中添加教师并安排场次" />
   <div class="j-tools">
-    <el-button v-if="state.phase === 'SETUP'" type="primary" @click="transition('start')">
-      开始现场评分
-    </el-button>
-    <el-button v-if="state.phase === 'LIVE'" @click="transition('finish')">结束全部评分并进入复核</el-button>
+    <el-button v-if="state.phase === 'SETUP'" type="primary" @click="start"> 开始现场评分 </el-button>
   </div>
 </template>
 <script setup lang="ts">
@@ -118,12 +138,21 @@ import {
   baseJudgeRole,
   judgingRoleLabel,
   judgingRoles,
+  periodNames,
+  periodStatus,
+  periodStatusNames,
+  sessionPeriod,
+  scheduledPeriods,
+  type JudgingPeriod,
+  type PeriodReviews,
+  type RoomPeriodModes,
   stageOf,
   type JudgingSession,
   type ScoringTask
 } from "@conference/shared";
 import { judgingApi, slotLabel, taskStatus, type EventDetail, type Operate } from "../../services/judging";
-const props = defineProps<{ event: EventDetail; operate: Operate }>();
+const props = defineProps<{ event: EventDetail; operate: Operate; canReview: boolean }>();
+const emit = defineEmits<{ review: [period: JudgingPeriod] }>();
 const tasks = ref<ScoringTask[]>([]),
   sid = ref(""),
   keyword = ref(""),
@@ -134,6 +163,8 @@ const observed = ref<{
   phase: string;
   gates: Record<string, string>;
   allRoundRooms?: string[];
+  periodReviews?: PeriodReviews;
+  roomPeriodModes?: RoomPeriodModes;
 } | null>(null);
 const state = computed(() =>
   observed.value && observed.value.revision >= props.event.revision ? observed.value : props.event
@@ -150,12 +181,44 @@ watch(
 );
 const current = computed(() => props.event.config.sessions.find((s) => s.id === sid.value)),
   room = computed(() => props.event.config.rooms.find((r) => r.id === current.value?.room));
-const tedSessions = computed(() => props.event.config.sessions.filter((s) => s.kind === "ted"));
+const periods = computed(() => scheduledPeriods(props.event.config.sessions));
+const statusOf = (p: JudgingPeriod) => periodStatus(state.value.phase, state.value.periodReviews?.[p]);
+const collecting = computed(
+  () => current.value && state.value.phase === "LIVE" && statusOf(sessionPeriod(current.value)) === "scoring"
+);
+const tedGroups = computed(() => {
+  const groups = periods.value
+    .map((p) => ({
+      p,
+      sessions: props.event.config.sessions.filter((s) => s.kind === "ted" && sessionPeriod(s) === p)
+    }))
+    .filter((g) => g.sessions.length);
+  return groups
+    .filter((g) => state.value.phase === "LIVE" && statusOf(g.p) === "scoring")
+    .map((g) => ({ ...g, label: groups.length === 1 ? "全部" : periodNames[g.p] }));
+});
+const periodCounts = computed(() => {
+  const counts = { am: { assigned: 0, received: 0 }, pm: { assigned: 0, received: 0 } };
+  for (const task of tasks.value) {
+    const count = counts[sessionPeriod(task.session)];
+    count.assigned++;
+    if (task.receipt) count.received++;
+  }
+  return counts;
+});
 const roomSessions = computed(() =>
-  props.event.config.sessions.filter((s) => s.kind === "class" && s.room === room.value?.id)
+  props.event.config.sessions.filter(
+    (s) =>
+      s.kind === "class" &&
+      s.room === room.value?.id &&
+      current.value &&
+      sessionPeriod(s) === sessionPeriod(current.value)
+  )
 );
 const allRounds = computed(() => {
-  if (!room.value) return false;
+  if (!room.value || !current.value) return false;
+  const override = state.value.roomPeriodModes?.[sessionPeriod(current.value)]?.[room.value.id];
+  if (override !== undefined) return override;
   const latest = observed.value;
   return latest && latest.revision >= props.event.revision && latest.allRoundRooms
     ? latest.allRoundRooms.includes(room.value.id)
@@ -176,7 +239,9 @@ async function setMode(allRoundsOpen: boolean) {
   await operate("room-mode", { session: s.id, allRoundsOpen });
 }
 async function groupGate(s: JudgingSession, open: boolean) {
-  const name = s.kind === "ted" ? "所有 TED 选手" : (room.value?.name || "本教室") + "的全部轮次";
+  const name =
+    periodNames[sessionPeriod(s)] +
+    (s.kind === "ted" ? "所有 TED 选手" : (room.value?.name || "本教室") + "的全部轮次");
   try {
     await ElMessageBox.confirm("确定" + (open ? "开放" : "截止") + name + "的评分？", "批量调整评分");
   } catch {
@@ -258,13 +323,61 @@ async function attendance(t: ScoringTask, kind: string) {
     await operate("attendance", { session: sid.value, judge: t.judgeId, kind, reason });
   } catch {}
 }
-async function transition(action: string) {
+async function close(p: JudgingPeriod) {
   try {
+    const count = periodCounts.value[p];
     await ElMessageBox.confirm(
-      action === "start" ? "将启用本届配置，开始按场次接收评分。" : "所有场次均须截止，随后进入内部复核。",
-      "确认赛事阶段"
+      periodNames[p] +
+        "已收到 " +
+        count.received +
+        " / " +
+        count.assigned +
+        " 份评分单。结束后关闭本场收分，交组委会复核。",
+      "结束" + periodNames[p] + "评分",
+      { confirmButtonText: "结束并进入复核", cancelButtonText: "取消" }
     );
-    await operate(action);
+    await operate("period-close", { period: p });
+  } catch {}
+}
+async function resume(p: JudgingPeriod) {
+  const version = state.value.periodReviews?.[p]?.version;
+  try {
+    const r = await ElMessageBox.prompt(
+      "填写原因后，可在本场重新开放教室或 TED 评分。",
+      "恢复" + periodNames[p] + "收分",
+      {
+        inputPattern: /\S/,
+        inputErrorMessage: "请填写原因",
+        confirmButtonText: "恢复收分",
+        cancelButtonText: "取消"
+      }
+    );
+    await operate("period-resume", { period: p, periodVersion: version, reason: r.value });
+  } catch {}
+}
+async function start() {
+  try {
+    await ElMessageBox.confirm("将启用本届配置，开始按场次接收评分。", "确认赛事阶段");
+    await operate("start");
   } catch {}
 }
 </script>
+<style scoped>
+.j-periods {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 18px;
+}
+.j-period-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid #d9e1dc;
+  border-radius: 8px;
+}
+.j-period-row .el-button {
+  margin-left: auto;
+}
+</style>

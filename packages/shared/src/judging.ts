@@ -49,9 +49,46 @@ export interface JudgingSession {
   id: string;
   teacher: string;
   kind: "class" | "ted";
+  period?: JudgingPeriod;
   room: string;
   round: number;
   time: string;
+}
+export const judgingPeriods = ["am", "pm"] as const;
+export type JudgingPeriod = (typeof judgingPeriods)[number];
+export const periodNames = { am: "上午场", pm: "下午场" } as const;
+export function sessionPeriod(s: Pick<JudgingSession, "kind" | "period">): JudgingPeriod {
+  return s.period ?? (s.kind === "ted" ? "pm" : "am");
+}
+export function scheduledPeriods(sessions: JudgingSession[]): JudgingPeriod[] {
+  return judgingPeriods.filter((p) => sessions.some((s) => sessionPeriod(s) === p));
+}
+export interface PeriodReview {
+  status: "reviewing" | "confirmed";
+  version: number;
+  closedAt?: string;
+  closedBy?: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
+}
+export type PeriodReviews = Partial<Record<JudgingPeriod, PeriodReview>>;
+export type RoomPeriodModes = Partial<Record<JudgingPeriod, Record<string, boolean>>>;
+export function periodStatus(phase: string, review?: PeriodReview) {
+  if (review) return review.status;
+  if (phase === "SETUP") return "upcoming";
+  if (phase === "REVIEW") return "reviewing";
+  if (phase === "SUBMITTED" || phase === "LOCKED") return "historical";
+  return "scoring";
+}
+export const periodStatusNames = {
+  upcoming: "待开场",
+  scoring: "收分中",
+  reviewing: "待复核",
+  confirmed: "已复核",
+  historical: "历史版本无分场记录"
+} as const;
+export function needsScoreReview(status: string) {
+  return ["waiting", "makeup", "pending"].includes(status);
 }
 export function classroomRounds(room: JudgingRoom, sessions: JudgingSession[]): number {
   if (room.rounds !== undefined) return room.rounds;
@@ -214,6 +251,8 @@ export interface SessionForms extends Pick<
 export const roleForSession = (snapshot: SessionForms | undefined, judge: Judge): JudgeRole =>
   snapshot?.judgeRoles?.[judge.id] ?? judge.role;
 export interface JudgingControl {
+  periodReviews?: PeriodReviews;
+  roomPeriodModes?: RoomPeriodModes;
   sessionForms: Record<string, SessionForms>;
   present: Record<string, boolean>;
   gates: Record<string, "open" | "closed">;
@@ -304,6 +343,7 @@ export interface ScoringTask {
 }
 export interface MobileTask {
   sessionId: string;
+  period?: JudgingPeriod;
   teacher: string;
   time: string;
   room: string;
@@ -320,7 +360,8 @@ export interface GuestSeat {
 }
 export type GuestChoice = Pick<GuestSeat, "id" | "org">;
 export type GuestIdentification =
-  { kind: "choose"; choices: GuestChoice[] } | { kind: "ready"; ticket: string };
+  | { kind: "choose"; choices: GuestChoice[] }
+  | { kind: "ready"; ticket: string };
 export interface GuestDesk {
   judge: GuestSeat;
   page: ScoringView | null;
@@ -339,7 +380,15 @@ export interface ScoringView {
   look: JudgingLook;
   guidance?: JudgingGuidance;
   teacher: { name: string; org: string; photo: string; poster: string; topic: string };
-  session: { id: string; room: string; round: number; time: string; kind: "class" | "ted" };
+  session: {
+    id: string;
+    room: string;
+    round: number;
+    time: string;
+    kind: "class" | "ted";
+    period?: JudgingPeriod;
+    reviewStatus?: PeriodReview["status"];
+  };
   role: JudgeRole;
   roleLabel?: string;
   form: Rubric;
