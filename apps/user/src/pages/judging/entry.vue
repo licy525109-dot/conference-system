@@ -26,7 +26,9 @@
       </view>
       <view class="judging-panel guest-identity">
         <view>
-          <text class="judging-name">{{ desk.judge.name }} · {{ roleLabels[desk.judge.role] }}</text>
+          <text class="judging-name"
+            >{{ desk.judge.name }} · {{ desk.judge.roleLabel ?? judgingRoleLabel({}, desk.judge.role) }}</text
+          >
           <text class="judging-note">
             编号 {{ desk.judge.id }}{{ desk.judge.org ? " · " + desk.judge.org : "" }}
           </text>
@@ -71,7 +73,7 @@ import { onLoad, onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import {
   defaultJudgingConfig,
   judgingStyle,
-  roleLabels,
+  judgingRoleLabel,
   type Answers,
   type GuestDesk,
   type GuestChoice,

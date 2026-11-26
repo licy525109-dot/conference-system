@@ -5,6 +5,34 @@ import type { JudgingTeacher, Rubric } from "@conference/shared";
 import { calculate, type BallotRecord } from "./results";
 import { evaluate, validateConfig, validateLook, validateRubric } from "./validation";
 
+test("legacy events have four types and an explicitly empty draft stays empty", () => {
+  const legacy = defaultJudgingConfig();
+  delete legacy.roleOptions;
+  assert.deepEqual(
+    validateConfig(legacy, true).roleOptions?.map((r) => r.id),
+    ["lecturer", "experience", "observer", "expert"]
+  );
+  const empty = validateConfig({ ...legacy, roleOptions: [], rubrics: {} }, true);
+  assert.deepEqual(empty.roleOptions, []);
+  assert.deepEqual(empty.rubrics, {});
+  assert.equal(empty.sameAudienceForm, false);
+  assert.deepEqual(validateConfig(legacy, true, undefined, empty).roleOptions, []);
+  assert.throws(
+    () =>
+      validateConfig(
+        {
+          ...legacy,
+          roleOptions: [
+            { id: "experience_one", label: "家长" },
+            { id: "observer_two", label: "家长" }
+          ]
+        },
+        true
+      ),
+    /名称重复/
+  );
+});
+
 test("blank, zero and unseen scores retain distinct meanings", () => {
   const f = defaultJudgingConfig().rubrics.experience.fields[0];
   const form: Rubric = {

@@ -674,6 +674,115 @@ test(
           assert.equal(await db.judgingBallot.count({ where: { eventId: sample.id } }), 2);
         }
       );
+      await t.test(
+        "event-specific judge types route the shared H5 and keep opened forms and receipts intact",
+        async () => {
+          const sample = await service.create({ title: "自定义评委类型联排", rehearsal: true }, cfg.admin);
+          events.push(sample.id);
+          const route = "/admin/judging/" + sample.id;
+          const detail = () => call(route, cfg.token);
+          const edit = async (action: string, data: Record<string, unknown> = {}, status = 201) =>
+            call(
+              route + "/actions",
+              cfg.token,
+              { action, revision: (await detail()).revision, ...data },
+              status
+            );
+          const cc = structuredClone(c);
+          const pro = "lecturer_coach",
+            old = "observer_visitors",
+            next = "observer_team";
+          const ted = "expert_panel";
+          cc.roleOptions = cc.roleOptions!.filter((r) => r.id !== "lecturer" && r.id !== "expert");
+          cc.roleOptions.push(
+            { id: pro, label: "专业导师" },
+            { id: old, label: "特邀观察员" },
+            { id: ted, label: "演讲评委团" }
+          );
+          cc.rubrics[pro] = { ...cc.rubrics.lecturer, title: "专业导师表" };
+          cc.rubrics[ted] = { ...cc.rubrics.expert, title: "演讲表现评分表" };
+          delete (cc.rubrics as Partial<typeof cc.rubrics>).lecturer;
+          delete (cc.rubrics as Partial<typeof cc.rubrics>).expert;
+          cc.rubrics[old] = { ...cc.rubrics.observer, title: "首轮观察表" };
+          for (const judge of cc.judges) if (judge.role === "lecturer") judge.role = pro;
+          for (const judge of cc.judges) if (judge.role === "expert") judge.role = ted;
+          const guest = cc.judges.find((j) => j.role === "observer" && j.room === "R1")!;
+          guest.role = old;
+          await edit("config", { title: sample.title, config: cc });
+          const saved = (await detail()).config;
+          assert.ok(!saved.rubrics.lecturer && saved.rubrics[pro]);
+          assert.equal(saved.judges.find((j: Judge) => j.id === guest.id).role, old);
+          const legacy = structuredClone(saved);
+          delete legacy.roleOptions;
+          delete legacy.rubrics[old];
+          await edit("config", { title: sample.title, config: legacy });
+          assert.equal((await detail()).config.rubrics[old].title, "首轮观察表");
+          assert.ok(!(await call(path, cfg.token)).config.rubrics[old]);
+          await edit("start");
+          await edit("entry-open");
+          const entry = "/judging/" + sample.id + "/entry/" + (await detail()).entryCode;
+          const tedJudge = cc.judges.find((j) => j.role === ted)!;
+          const tedSeat = await call(entry + "/identify", undefined, { name: tedJudge.name });
+          await edit("gate", { session: "S0", open: true });
+          const tedDesk = await call(entry + "/desk?session=S0", tedSeat.ticket);
+          assert.equal(tedDesk.judge.roleLabel, "演讲评委团");
+          assert.equal(tedDesk.page.form.title, "演讲表现评分表");
+          assert.ok(
+            tedDesk.page.tasks.every((task: { sessionId: string }) => task.sessionId.startsWith("S"))
+          );
+          await call(entry + "/sessions/S0/submit", tedSeat.ticket, {
+            formVersion: tedDesk.page.formVersion,
+            answers: { score: 29 }
+          });
+          const { ticket } = await call(entry + "/identify", undefined, { name: guest.name });
+          await edit("gate", { session: "C0", open: true });
+          await edit("attendance", { session: "C10", judge: guest.id, kind: "makeup", reason: "单独补交" });
+          const desk = (session: string) => call(entry + "/desk?session=" + session, ticket);
+          const first = (await desk("C0")).page;
+          assert.equal(first.roleLabel, "特邀观察员");
+          assert.equal(first.form.title, "首轮观察表");
+          const { roleOptions, rubrics } = (await detail()).config as JudgingConfig;
+          const updated = {
+            roleOptions: [...roleOptions!.filter((r) => r.id !== old), { id: next, label: "教研观察团" }],
+            rubrics: { ...rubrics, [next]: { ...rubrics[old], title: "第二轮观察表" } },
+            sameAudienceForm: true,
+            approvedForms: true
+          };
+          delete (updated.rubrics as Partial<typeof rubrics>)[old];
+          await edit("forms", updated, 400);
+          await edit("forms", { ...updated, roleTransfers: { [guest.id]: pro } }, 400);
+          await edit("forms", { ...updated, roleTransfers: { [guest.id]: next } });
+          const frozen = (await desk("C0")).page;
+          assert.equal(frozen.roleLabel, first.roleLabel);
+          assert.equal(frozen.formVersion, first.formVersion);
+          assert.deepEqual(frozen.form, first.form);
+          const makeup = (await desk("C10")).page;
+          assert.equal(makeup.open, true);
+          assert.equal(makeup.roleLabel, "特邀观察员");
+          assert.deepEqual(makeup.form, first.form);
+          const handIn = (session: string, version: number, score: number) =>
+            call(entry + "/sessions/" + session + "/submit", ticket, {
+              formVersion: version,
+              answers: { score }
+            });
+          const receipt = await handIn("C0", first.formVersion, 25);
+          await edit("gate", { session: "C0", open: false });
+          await edit("gate", { session: "C5", open: true });
+          const second = await desk("C5");
+          assert.equal(second.judge.roleLabel, "教研观察团");
+          assert.equal(second.page.form.title, "第二轮观察表");
+          assert.ok(second.page.formVersion > first.formVersion);
+          await handIn("C5", second.page.formVersion, 28);
+          assert.deepEqual((await desk("C0")).page.receipt, receipt);
+          const result = await call(route + "/results", cfg.token);
+          assert.deepEqual(
+            result.ballots.map((b: { roleLabel: string }) => b.roleLabel),
+            ["演讲评委团", "特邀观察员", "教研观察团"]
+          );
+          assert.equal(result.rows.find((r: ScoringRow) => r.id === "T0").ted, 29);
+          assert.equal(result.rows.find((r: ScoringRow) => r.id === "T5").audience, 28);
+        }
+      );
       await t.test("only a global editor can delete a locked event and its records stay on file", async () => {
         const current = await call(path, cfg.token);
         assert.equal(current.phase, "LOCKED");

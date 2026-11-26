@@ -153,10 +153,11 @@
       <div class="preview-tools">
         <strong>手机预览与试填</strong>
         <el-select v-model="role">
-          <el-option v-for="r in judgeRoles" :key="r" :label="roleLabels[r]" :value="r" />
+          <el-option v-for="r in roles" :key="r.id" :label="r.label" :value="r.id" />
         </el-select>
       </div>
-      <div class="preview-scroll judging-surface" :style="judgingStyle(config.look)">
+      <el-empty v-if="!role || !form" description="请先在「评分表与规则」新增评委类型" />
+      <div v-else class="preview-scroll judging-surface" :style="judgingStyle(config.look)">
         <div class="judging-hero">
           <img
             v-if="config.look.cover"
@@ -170,7 +171,7 @@
             :src="judgingImageUrl(config.look.logo)"
             alt="标志"
           />
-          <small class="judging-kicker">{{ title }} · {{ roleLabels[role] }}</small>
+          <small class="judging-kicker">{{ title }} · {{ judgingRoleLabel(config, role) }}</small>
           <strong class="judging-heading">{{ config.look.heading }}</strong>
           {{ config.look.intro }}
         </div>
@@ -184,14 +185,16 @@
             />
             <div>
               <small class="judging-note">
-                {{ role === "expert" ? "TED 主会场" : "第 1 轮 · " + (config.rooms[0]?.name || "教室") }}
+                {{
+                  stageOf(role) === "ted" ? "TED 主会场" : "第 1 轮 · " + (config.rooms[0]?.name || "教室")
+                }}
               </small>
               <strong class="judging-name">{{ teacher?.name || "示例教师" }}</strong>
               <small v-if="config.look.showOrg" class="judging-note">{{ teacher?.org || "示例机构" }}</small>
             </div>
           </div>
           <span class="judging-topic">
-            {{ (role === "expert" ? teacher?.speech : teacher?.topic) || "课程或演讲题目" }}
+            {{ (stageOf(role) === "ted" ? teacher?.speech : teacher?.topic) || "课程或演讲题目" }}
           </span>
         </div>
         <div v-if="!received" class="judging-panel">
@@ -240,8 +243,8 @@ import { ElMessage } from "element-plus";
 import {
   judgingStyle,
   judgingPalettes,
-  judgeRoles,
-  roleLabels,
+  judgingRoles,
+  judgingRoleLabel,
   rubricFor,
   maxPoints,
   stageOf,
@@ -286,17 +289,26 @@ const colors = [
   { key: "surface", label: "卡片" },
   { key: "text", label: "文字" }
 ] as const;
-const role = ref<JudgeRole>("lecturer"),
+const roles = computed(() => judgingRoles(props.config)),
+  role = ref<JudgeRole>(),
   answers = ref<Answers>({}),
   received = ref(false),
-  form = computed(() => rubricFor(props.config, role.value)),
+  form = computed(() => role.value && rubricFor(props.config, role.value)),
   teacher = computed(() => props.config.teachers[0]);
+watch(
+  roles,
+  (list) => {
+    if (!list.some((r) => r.id === role.value)) role.value = list[0]?.id;
+  },
+  { immediate: true }
+);
 function reset() {
   answers.value = {};
   received.value = false;
 }
 watch([role, form], reset, { deep: true });
 function tryForm() {
+  if (!form.value) return;
   for (const f of form.value.fields) {
     const v = answers.value[f.id];
     if ((v == null || String(v) === "") && f.required) {

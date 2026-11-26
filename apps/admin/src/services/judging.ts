@@ -39,6 +39,7 @@ export interface ReviewBallot {
   sessionKey: string;
   teacherKey: string;
   role: string;
+  roleLabel?: string;
   rubric: Rubric & { version: number };
   answers: Answers;
   units: number | null;

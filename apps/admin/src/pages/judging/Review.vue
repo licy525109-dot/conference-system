@@ -187,7 +187,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { roleLabels, type Answers, type ScoringRow, type JudgeRole } from "@conference/shared";
+import { judgingRoleLabel, type Answers, type ScoringRow, type JudgeRole } from "@conference/shared";
 import {
   judgingApi,
   downloadJudgingBook,
@@ -337,7 +337,7 @@ async function exportData(kind: string) {
             教师: b.teacherName,
             场次: b.sessionKey,
             评委: b.judgeName,
-            席别: roleLabels[b.role as JudgeRole],
+            席别: b.roleLabel ?? judgingRoleLabel(props.event.config, b.role as JudgeRole),
             量表版本: b.rubric.version,
             评分细则: b.rubric,
             提交时间: b.createdAt,

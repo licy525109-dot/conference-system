@@ -1,12 +1,8 @@
 <template>
   <section>
-    <div class="j-tools">
-      <el-radio-group v-model="role">
-        <el-radio-button v-for="r in judgeRoles" :key="r" :value="r">{{ roleLabels[r] }}</el-radio-button>
-      </el-radio-group>
-      <el-checkbox v-model="config.sameAudienceForm" :disabled="disabled">体验席与观察席共用量表</el-checkbox>
-    </div>
-    <el-form label-position="top" :disabled="disabled">
+    <RoleOptions v-model="role" :config="config" :disabled="disabled" :live="live" />
+    <el-empty v-if="!form || !role" description="请先新增评委类型" />
+    <el-form v-else label-position="top" :disabled="disabled">
       <div class="j-pair">
         <el-form-item label="评分表标题"><el-input v-model="form.title" /></el-form-item>
         <el-form-item label="评分说明">
@@ -91,11 +87,11 @@
   </section>
 </template>
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import RoleOptions from "./RoleOptions.vue";
 import {
   awardFieldOptions,
-  judgeRoles,
-  roleLabels,
+  judgingRoles,
   stageOf,
   stages,
   maxPoints,
@@ -103,17 +99,31 @@ import {
   type JudgeRole,
   type JudgingConfig
 } from "@conference/shared";
-const props = defineProps<{ config: JudgingConfig; disabled: boolean; rulesLocked: boolean }>();
-const role = ref<JudgeRole>("lecturer"),
-  form = computed(() => rubricFor(props.config, role.value)),
-  sum = computed(() => Math.round(form.value.fields.reduce((n, f) => n + f.max, 0) * 100) / 100);
+const props = defineProps<{
+  config: JudgingConfig;
+  disabled: boolean;
+  rulesLocked: boolean;
+  live: boolean;
+}>();
+const role = ref<JudgeRole>(),
+  roles = computed(() => judgingRoles(props.config)),
+  form = computed(() => role.value && rubricFor(props.config, role.value)),
+  sum = computed(() => Math.round((form.value?.fields ?? []).reduce((n, f) => n + f.max, 0) * 100) / 100);
+watch(
+  roles,
+  (list) => {
+    if (!list.some((r) => r.id === role.value)) role.value = list[0]?.id;
+  },
+  { immediate: true }
+);
 const stageNames = { professional: "专业", audience: "大众", ted: "TED" };
 function move(i: number, n: number) {
+  if (!form.value) return;
   const items = form.value.fields;
   items.splice(i + n, 0, items.splice(i, 1)[0]);
 }
 function add() {
-  form.value.fields.push({
+  form.value?.fields.push({
     id: "q" + crypto.randomUUID().slice(0, 8),
     label: "新评分项",
     hint: "",

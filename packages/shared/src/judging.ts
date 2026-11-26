@@ -1,16 +1,30 @@
 export const judgeRoles = ["lecturer", "experience", "observer", "expert"] as const;
-export type JudgeRole = (typeof judgeRoles)[number];
-export const roleLabels: Record<JudgeRole, string> = {
+export type BaseJudgeRole = (typeof judgeRoles)[number];
+export type JudgeRole = BaseJudgeRole | `${BaseJudgeRole}_${string}`;
+export const roleLabels: Record<BaseJudgeRole, string> = {
   lecturer: "总部讲师",
   experience: "体验席",
   observer: "观察席",
   expert: "TED 专家"
 };
+export interface JudgingRoleOption {
+  id: JudgeRole;
+  label: string;
+}
+export const baseJudgeRole = (role: JudgeRole) => role.split("_", 1)[0] as BaseJudgeRole;
+export const isJudgeRoleId = (id: string): id is JudgeRole =>
+  judgeRoles.some((base) => id === base || (id.startsWith(base + "_") && id.length > base.length + 1));
+export const judgingRoles = (c: Pick<JudgingConfig, "roleOptions">): JudgingRoleOption[] =>
+  c.roleOptions ?? judgeRoles.map((id) => ({ id, label: roleLabels[id] }));
+export const judgingRoleLabel = (c: Pick<JudgingConfig, "roleOptions">, id: JudgeRole) =>
+  c.roleOptions?.find((r) => r.id === id)?.label ?? roleLabels[baseJudgeRole(id)];
 export type Stage = "professional" | "audience" | "ted";
 export const stages: Stage[] = ["professional", "audience", "ted"];
 export const maxPoints: Record<Stage, number> = { professional: 40, audience: 30, ted: 30 };
-export const stageOf = (role: JudgeRole): Stage =>
-  role === "lecturer" ? "professional" : role === "expert" ? "ted" : "audience";
+export const stageOf = (role: JudgeRole): Stage => {
+  const base = baseJudgeRole(role);
+  return base === "lecturer" ? "professional" : base === "expert" ? "ted" : "audience";
+};
 export interface JudgingRoom {
   id: string;
   name: string;
@@ -141,6 +155,7 @@ export interface JudgingConfig {
   sessions: JudgingSession[];
   judges: Judge[];
   merits: Merit[];
+  roleOptions?: JudgingRoleOption[];
   rubrics: Record<JudgeRole, Rubric>;
   sameAudienceForm: boolean;
   minimum: Record<Stage, number>;
@@ -172,8 +187,16 @@ export interface TieOrder {
   reason: string;
   actor: string;
 }
+export interface SessionForms extends Pick<
+  JudgingConfig,
+  "rubrics" | "sameAudienceForm" | "formVersion" | "roleOptions"
+> {
+  judgeRoles?: Record<string, JudgeRole>;
+}
+export const roleForSession = (snapshot: SessionForms | undefined, judge: Judge): JudgeRole =>
+  snapshot?.judgeRoles?.[judge.id] ?? judge.role;
 export interface JudgingControl {
-  sessionForms: Record<string, Pick<JudgingConfig, "rubrics" | "sameAudienceForm" | "formVersion">>;
+  sessionForms: Record<string, SessionForms>;
   present: Record<string, boolean>;
   gates: Record<string, "open" | "closed">;
   exceptions: Record<string, { kind: "absent" | "makeup"; reason: string }>;
@@ -210,6 +233,7 @@ export interface ScoringTask {
   judgeId: string;
   name: string;
   role: JudgeRole;
+  roleLabel?: string;
   present: boolean;
   status: string;
   receipt?: string;
@@ -229,6 +253,7 @@ export interface GuestSeat {
   name: string;
   org: string;
   role: JudgeRole;
+  roleLabel?: string;
 }
 export type GuestChoice = Pick<GuestSeat, "id" | "org">;
 export type GuestIdentification =
@@ -252,6 +277,7 @@ export interface ScoringView {
   teacher: { name: string; org: string; photo: string; poster: string; topic: string };
   session: { id: string; room: string; round: number; time: string; kind: "class" | "ted" };
   role: JudgeRole;
+  roleLabel?: string;
   form: Rubric;
   formVersion: number;
   max: number;
@@ -264,29 +290,32 @@ export const guestScoringPath = (event: string, code: string) =>
 export const rehearsalUserId = (eventId: string, judgeId: string) => "rehearsal:" + eventId + ":" + judgeId;
 export const taskKey = (session: string, judge: string) => session + "/" + judge;
 export const assigned = (s: JudgingSession, j: Judge) =>
-  s.kind === "ted" ? j.role === "expert" : j.role !== "expert" && s.room === j.room;
+  stageOf(j.role) === "ted" ? s.kind === "ted" : s.kind === "class" && s.room === j.room;
 export const rubricFor = (c: Pick<JudgingConfig, "rubrics" | "sameAudienceForm">, role: JudgeRole) =>
-  c.rubrics[role === "observer" && c.sameAudienceForm ? "experience" : role];
+  c.rubrics[role === "observer" && c.sameAudienceForm && c.rubrics.experience ? "experience" : role];
+export function defaultJudgingRubric(role: JudgeRole, label = roleLabels[baseJudgeRole(role)]): Rubric {
+  return {
+    title: label + "评分表",
+    description: "请核对本场教师，依照现场公布的细则评分。",
+    fields: [
+      {
+        id: "score",
+        label: "综合评价",
+        hint: "联排示例，正式赛前请录入经确认的评分细则。",
+        min: 0,
+        max: maxPoints[stageOf(role)],
+        step: 0.5,
+        required: true,
+        unseen: "review"
+      }
+    ]
+  };
+}
 export function defaultJudgingConfig(): JudgingConfig {
-  const rubrics = {} as Record<JudgeRole, Rubric>;
-  for (const role of judgeRoles) {
-    rubrics[role] = {
-      title: roleLabels[role] + "评分表",
-      description: "请核对本场教师，依照现场公布的细则评分。",
-      fields: [
-        {
-          id: "score",
-          label: "综合评价",
-          hint: "联排示例，正式赛前请录入经确认的评分细则。",
-          min: 0,
-          max: maxPoints[stageOf(role)],
-          step: 0.5,
-          required: true,
-          unseen: "review"
-        }
-      ]
-    };
-  }
+  const roleOptions = judgingRoles({});
+  const rubrics = Object.fromEntries(
+    roleOptions.map(({ id }) => [id, defaultJudgingRubric(id)])
+  ) as JudgingConfig["rubrics"];
   return {
     look: {
       entry: { ...defaultEntryDesign },
@@ -313,6 +342,7 @@ export function defaultJudgingConfig(): JudgingConfig {
     sessions: [],
     judges: [],
     merits: [],
+    roleOptions,
     rubrics,
     sameAudienceForm: true,
     minimum: { professional: 1, audience: 1, ted: 1 },

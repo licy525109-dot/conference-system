@@ -1,4 +1,12 @@
-import { assigned, awardLabels, stageOf, stages, taskKey } from "@conference/shared";
+import {
+  assigned,
+  awardLabels,
+  judgingRoleLabel,
+  roleForSession,
+  stageOf,
+  stages,
+  taskKey
+} from "@conference/shared";
 import type {
   JudgeRole,
   JudgingConfig,
@@ -37,12 +45,15 @@ export function scoringTasks(
       .map((j) => {
         const key = taskKey(session.id, j.id),
           b = byTask.get(key),
-          exception = state.exceptions[key];
+          exception = state.exceptions[key],
+          frozen = state.sessionForms[session.id],
+          role = roleForSession(frozen, j);
         return {
           session,
           judgeId: j.id,
           name: j.name,
-          role: j.role,
+          role,
+          roleLabel: judgingRoleLabel(frozen ?? c, role),
           present: Boolean(b || state.present?.[key]),
           status: b ? (state.corrections[b.id]?.status ?? b.status) : (exception?.kind ?? "waiting"),
           receipt: b?.id,

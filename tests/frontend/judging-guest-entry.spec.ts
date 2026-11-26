@@ -12,10 +12,11 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
   page
 }) => {
   const config = defaultJudgingConfig();
+  config.rubrics.observer_school = { ...config.rubrics.observer, title: "教研观察评分表" };
   const seats: GuestSeat[] = [
     { id: "J01", name: "陈晨", org: "云舞", role: "lecturer" },
     { id: "J02", name: "林小雨", org: "星河", role: "experience" },
-    { id: "J03", name: "林小雨", org: "明月", role: "observer" }
+    { id: "J03", name: "林小雨", org: "明月", role: "observer_school", roleLabel: "教研观察员" }
   ];
   const tickets = new Map<string, GuestSeat>(),
     receipts = new Map<string, ScoreReceipt>();
@@ -88,7 +89,8 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
   await expect(page.getByText("编号 J02", { exact: true })).toBeVisible();
   await expect(page.getByText("编号 J03", { exact: true })).toBeVisible();
   await page.locator("uni-button").filter({ hasText: "明月" }).click();
-  await expect(page.getByText("林小雨 · " + roleLabels.observer, { exact: true })).toBeVisible();
+  await expect(page.getByText("林小雨 · 教研观察员", { exact: true })).toBeVisible();
+  await expect(page.getByText("教研观察评分表", { exact: false })).toBeVisible();
   await page.getByRole("spinbutton").fill("12");
   await page.getByRole("spinbutton").fill("25");
   await page.getByText(config.look.submit, { exact: true }).click();

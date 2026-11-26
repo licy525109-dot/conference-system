@@ -1,14 +1,15 @@
 import { BadRequestException } from "@nestjs/common";
 import {
   awardFieldOptions,
+  baseJudgeRole,
   coverFits,
   coverPositions,
   defaultEntryDesign,
   entryLayouts,
   entryTypefaces,
-  judgeRoles,
+  isJudgeRoleId,
+  judgingRoles,
   maxPoints,
-  rubricFor,
   stageOf,
   stages
 } from "@conference/shared";
@@ -18,6 +19,7 @@ import type {
   JudgingConfig,
   JudgingEntryDesign,
   JudgingLook,
+  JudgingRoleOption,
   Rubric
 } from "@conference/shared";
 
@@ -159,11 +161,21 @@ export function validateRubric(value: unknown, role: JudgeRole): Rubric {
 export function validateConfig(
   value: unknown,
   rehearsal: boolean,
-  previousEntry?: JudgingEntryDesign
+  previousEntry?: JudgingEntryDesign,
+  saved?: Pick<JudgingConfig, "roleOptions" | "rubrics">
 ): JudgingConfig {
   const c = object(value),
-    forms = object(c.rubrics),
+    submittedForms = object(c.rubrics),
+    forms = c.roleOptions === undefined && saved ? { ...saved.rubrics, ...submittedForms } : submittedForms,
     minimum = object(c.minimum);
+  const options = c.roleOptions === undefined ? judgingRoles(saved ?? {}) : c.roleOptions;
+  const roleOptions = rows<JudgingRoleOption>(options, "评委类型", 1500, (r) => {
+    const id = key(r.id, "类型编号");
+    if (!isJudgeRoleId(id)) fail("评委类型的计分方式无效");
+    return { id, label: str(r.label, "类型名称", 50) };
+  });
+  if (new Set(roleOptions.map((r) => r.label)).size !== roleOptions.length) fail("评委类型名称重复");
+  const activeRoles = new Set<string>(roleOptions.map((r) => r.id));
   const rooms = rows(c.rooms, "教室", 50, (r) => ({
     id: key(r.id, "教室编号"),
     name: str(r.name, "教室名"),
@@ -221,17 +233,17 @@ export function validateConfig(
   });
   const identities = new Set<string>();
   const judges = rows(c.judges, "评委", 1500, (r) => {
-    if (!judgeRoles.includes(r.role)) fail("评委身份有误");
+    if (!activeRoles.has(r.role)) fail("请先为 " + (r.name || r.id) + " 分配有效的评委类型");
     const userId = str(r.userId, "用户编号", 100, false),
       phone = str(r.phone, "实名手机号", 24, false),
       role = r.role as JudgeRole;
     if (phone && !/^1\d{10}$/.test(phone)) fail("手机号格式有误");
     for (const identity of [userId && "u:" + userId, phone && "p:" + phone].filter(Boolean)) {
-      const bucket = (role === "expert" ? "ted/" : "class/") + identity;
+      const bucket = (stageOf(role) === "ted" ? "ted/" : "class/") + identity;
       if (identities.has(bucket)) fail("同一实名身份在同一环节重复分配");
       identities.add(bucket);
     }
-    const room = role === "expert" ? "" : key(r.room, "教室编号");
+    const room = stageOf(role) === "ted" ? "" : key(r.room, "教室编号");
     if (room && !roomIds.has(room)) fail("分配教室不存在");
     return {
       id: key(r.id, "评委编号"),
@@ -270,10 +282,14 @@ export function validateConfig(
     sessions,
     judges,
     merits,
+    roleOptions,
     rubrics: Object.fromEntries(
-      judgeRoles.map((role) => [role, validateRubric(forms[role], role)])
+      roleOptions.map(({ id }) => [id, validateRubric(forms[id], id)])
     ) as JudgingConfig["rubrics"],
-    sameAudienceForm: bool(c.sameAudienceForm, "观察席共用表"),
+    sameAudienceForm:
+      bool(c.sameAudienceForm, "观察席共用表") &&
+      activeRoles.has("experience") &&
+      activeRoles.has("observer"),
     minimum: Object.fromEntries(
       stages.map((s) => [s, num(minimum[s], "最低有效份数", 1, 1500, true)])
     ) as JudgingConfig["minimum"],
@@ -293,20 +309,21 @@ export function validateStart(c: JudgingConfig, rehearsal: boolean) {
     if (c.sessions.filter((s) => s.teacher === t.id).length !== 2) fail(t.name + " 缺少课堂或 TED 场次");
   for (const r of c.rooms) {
     const js = c.judges.filter((j) => j.room === r.id);
-    if (js.filter((j) => j.role === "lecturer").length !== 1) fail(r.name + " 需分配一位总部讲师");
+    if (js.filter((j) => stageOf(j.role) === "professional").length !== 1)
+      fail(r.name + " 需分配一位按专业分计分的讲师");
     if (
-      js.filter((j) => j.role === "experience").length > r.experience ||
-      js.filter((j) => j.role === "observer").length > r.observer
+      js.filter((j) => baseJudgeRole(j.role) === "experience").length > r.experience ||
+      js.filter((j) => baseJudgeRole(j.role) === "observer").length > r.observer
     )
       fail(r.name + " 已分配人数超过配额");
-    if (js.filter((j) => j.role === "experience" || j.role === "observer").length < c.minimum.audience)
+    if (js.filter((j) => stageOf(j.role) === "audience").length < c.minimum.audience)
       fail(r.name + " 大众名单人数低于最低有效份数");
-    if (c.minimum.professional > 1) fail(r.name + " 仅分配一位总部讲师，专业最低有效份数应为 1");
+    if (c.minimum.professional > 1) fail(r.name + " 仅分配一位专业分评委，专业最低有效份数应为 1");
     if (!rehearsal && [1, 2, 3].some((n) => !c.sessions.some((s) => s.room === r.id && s.round === n)))
       fail(r.name + " 必须排齐三轮");
   }
-  if (c.judges.filter((j) => j.role === "expert").length < c.minimum.ted)
-    fail("TED 专家名单人数低于最低有效份数");
+  if (c.judges.filter((j) => stageOf(j.role) === "ted").length < c.minimum.ted)
+    fail("TED 分评委人数低于最低有效份数，请补齐采用 TED 计分的评委");
   if (!rehearsal && c.teachers.some((t) => !t.photo && !t.poster))
     fail("正式评分需要每位教师的照片或入围海报");
 }
