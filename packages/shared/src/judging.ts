@@ -90,6 +90,18 @@ export const periodStatusNames = {
 export function needsScoreReview(status: string) {
   return ["waiting", "makeup", "pending"].includes(status);
 }
+export function periodProgressLabel(
+  phase: string,
+  review: PeriodReview | undefined,
+  sessions: JudgingSession[],
+  gates: Record<string, string>
+) {
+  const status = periodStatus(phase, review);
+  if (status !== "scoring") return periodStatusNames[status];
+  if (sessions.some((s) => gates[s.id] === "open")) return "收分中";
+  if (sessions.length && sessions.every((s) => gates[s.id] === "closed")) return "待结束收分";
+  return sessions.some((s) => gates[s.id] === "closed") ? "等待下一场" : "待开放";
+}
 export function classroomRounds(room: JudgingRoom, sessions: JudgingSession[]): number {
   if (room.rounds !== undefined) return room.rounds;
   const scheduled = sessions.filter((s) => s.kind === "class" && s.room === room.id);

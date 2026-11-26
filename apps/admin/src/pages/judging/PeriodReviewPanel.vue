@@ -2,7 +2,9 @@
   <section class="period-review">
     <div class="j-statusline">
       <h3>{{ periodNames[period] }}评分复核</h3>
-      <el-tag :type="status === 'confirmed' ? 'success' : 'info'">{{ periodStatusNames[status] }}</el-tag>
+      <el-tag :type="status === 'confirmed' ? 'success' : 'info'">{{
+        periodProgressLabel(result.phase, review, sessions, result.gates || event.gates)
+      }}</el-tag>
       <span>{{ received }} / {{ tasks.length }} 份已交 · {{ pending.length }} 项待处理</span>
       <el-button
         v-if="canAdjust && status === 'reviewing'"
@@ -30,7 +32,7 @@
       <el-table-column v-if="hasClass" prop="audience" label="大众 /30" />
       <el-table-column v-if="hasClass" prop="classScore" label="课堂 /70" />
       <el-table-column v-if="hasTed" prop="ted" label="TED /30" />
-      <el-table-column width="100" label="原单">
+      <el-table-column width="120" label="原单">
         <template #default="{ row }"
           ><el-button link type="primary" @click.stop="emit('teacher', row.id)"
             >查看评分单</el-button
@@ -64,7 +66,7 @@ import {
   needsScoreReview,
   periodNames,
   periodStatus,
-  periodStatusNames,
+  periodProgressLabel,
   sessionPeriod,
   type JudgingPeriod
 } from "@conference/shared";

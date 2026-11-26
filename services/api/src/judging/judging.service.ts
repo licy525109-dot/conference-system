@@ -483,6 +483,7 @@ export class JudgingService {
     return {
       revision: e.revision,
       phase: e.phase,
+      gates: state.gates,
       periodReviews: state.periodReviews ?? {},
       periodTasks: scoringTasks(c, state, ballots).map(
         ({ session, judgeId, name, roleLabel, status, receipt }) => ({

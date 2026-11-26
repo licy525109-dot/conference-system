@@ -54,6 +54,7 @@ export interface ReviewBallot {
 }
 export interface ReviewData {
   phase: string;
+  gates: Record<string, string>;
   periodReviews: PeriodReviews;
   periodTasks: (Pick<ScoringTask, "judgeId" | "name" | "roleLabel" | "status" | "receipt"> & {
     sessionId: string;

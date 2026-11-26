@@ -44,7 +44,7 @@ test("operators close, inspect and approve morning and afternoon separately befo
   let revision = 3,
     phase = "LIVE",
     pending = true;
-  const gates: Record<string, string> = { C1: "open", S1: "open" };
+  const gates: Record<string, string> = { C1: "closed" };
   const summary = () => ({
     id: "sample",
     title: "绘本舞蹈赛课 · 分场复核演示",
@@ -111,7 +111,10 @@ test("operators close, inspect and approve morning and afternoon separately befo
         p = body.period as JudgingPeriod;
       expect(body.revision).toBe(revision);
       actions.push(body.action + "/" + (p || ""));
-      if (body.action === "period-close") {
+      if (body.action === "gate") {
+        expect(body).toMatchObject({ session: "S1", scope: "group", open: true });
+        gates.S1 = "open";
+      } else if (body.action === "period-close") {
         periodReviews[p] = { status: "reviewing", version: 1 };
         gates[p === "am" ? "C1" : "S1"] = "closed";
         if (periodReviews.am && periodReviews.pm) phase = "REVIEW";
@@ -150,6 +153,13 @@ test("operators close, inspect and approve morning and afternoon separately befo
     await page.getByRole("button", { name: "确认完成复核" }).click();
     await expect(page.getByRole("button", { name: "重新复核" + p })).toBeVisible();
   };
+  await nav.getByRole("button", { name: "现场收分" }).click();
+  await expect(page.locator(".j-period-row").filter({ hasText: "上午场" })).toContainText("待结束收分");
+  const afternoon = page.locator(".j-period-row").filter({ hasText: "下午场" });
+  await expect(afternoon).toContainText("待开放");
+  await page.getByRole("button", { name: "开放全部 TED" }).click();
+  await page.getByRole("dialog", { name: "批量调整评分" }).locator(".el-button--primary").click();
+  await expect(afternoon).toContainText("收分中");
   await close("上午场");
   expect(gates.S1).toBe("open");
   await expect(page.getByRole("button", { name: "完成上午场复核" })).toBeDisabled();
@@ -170,6 +180,7 @@ test("operators close, inspect and approve morning and afternoon separately befo
   await page.getByRole("dialog", { name: "名单确认" }).locator(".el-button--primary").click();
   await expect.poll(() => phase).toBe("SUBMITTED");
   expect(actions).toEqual([
+    "gate/",
     "period-close/am",
     "correction/am",
     "period-approve/am",
@@ -186,40 +197,43 @@ test("the shared H5 tells a judge when morning scores are under review and when 
   const path = "/api/judging/sample/entry/shared",
     ticket = randomUUID();
   let status: "reviewing" | "confirmed" = "reviewing";
-  await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
-    const url = new URL(route.request().url());
-    const ok = (data: unknown) => route.fulfill({ json: { code: "OK", data } });
-    if (url.pathname === path) return ok({ title: "绘本赛课", look: c.look, guidance: c.guidance });
-    if (url.pathname === path + "/identify") return ok({ kind: "ready", ticket });
-    if (url.pathname !== path + "/desk") return route.abort();
-    expect((await route.request().allHeaders()).authorization).toBe("Bearer " + ticket);
-    return ok({
-      judge: { id: "J1", role: "lecturer", name: "演示讲师", org: "绘本教室" },
-      page: {
-        title: "绘本赛课",
-        rehearsal: false,
-        look: c.look,
-        guidance: c.guidance,
-        teacher: { name: "演示选手甲", org: "", topic: "绘本", photo: "", poster: "" },
-        session: {
-          id: "C1",
-          kind: "class",
-          room: "绘本教室",
-          round: 1,
-          time: "",
-          period: "am",
-          reviewStatus: status
-        },
-        role: "lecturer",
-        form: c.rubrics.lecturer,
-        formVersion: 1,
-        max: 40,
-        open: false,
-        receipt: null,
-        tasks: []
-      }
-    });
-  });
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      const url = new URL(route.request().url());
+      const ok = (data: unknown) => route.fulfill({ json: { code: "OK", data } });
+      if (url.pathname === path) return ok({ title: "绘本赛课", look: c.look, guidance: c.guidance });
+      if (url.pathname === path + "/identify") return ok({ kind: "ready", ticket });
+      if (url.pathname !== path + "/desk") return route.abort();
+      expect((await route.request().allHeaders()).authorization).toBe("Bearer " + ticket);
+      return ok({
+        judge: { id: "J1", role: "lecturer", name: "演示讲师", org: "绘本教室" },
+        page: {
+          title: "绘本赛课",
+          rehearsal: false,
+          look: c.look,
+          guidance: c.guidance,
+          teacher: { name: "演示选手甲", org: "", topic: "绘本", photo: "", poster: "" },
+          session: {
+            id: "C1",
+            kind: "class",
+            room: "绘本教室",
+            round: 1,
+            time: "",
+            period: "am",
+            reviewStatus: status
+          },
+          role: "lecturer",
+          form: c.rubrics.lecturer,
+          formVersion: 1,
+          max: 40,
+          open: false,
+          receipt: null,
+          tasks: []
+        }
+      });
+    }
+  );
   await page.goto("/#/pages/judging/entry?event=sample&entry=shared");
   await page.getByRole("textbox").fill("演示讲师");
   await page.getByText("进入评分", { exact: true }).click();

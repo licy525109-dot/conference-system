@@ -3,9 +3,7 @@
     <div v-for="p in periods" :key="p" class="j-period-row">
       <strong>{{ periodNames[p] }}</strong>
       <span>{{ periodCounts[p].received }} / {{ periodCounts[p].assigned }} 份已交</span>
-      <el-tag :type="statusOf(p) === 'confirmed' ? 'success' : 'info'">{{
-        periodStatusNames[statusOf(p)]
-      }}</el-tag>
+      <el-tag :type="statusOf(p) === 'confirmed' ? 'success' : 'info'">{{ labelOf(p) }}</el-tag>
       <el-button
         v-if="statusOf(p) === 'scoring'"
         :disabled="!observed || observed.revision < event.revision"
@@ -140,7 +138,7 @@ import {
   judgingRoles,
   periodNames,
   periodStatus,
-  periodStatusNames,
+  periodProgressLabel,
   sessionPeriod,
   scheduledPeriods,
   type JudgingPeriod,
@@ -183,6 +181,13 @@ const current = computed(() => props.event.config.sessions.find((s) => s.id === 
   room = computed(() => props.event.config.rooms.find((r) => r.id === current.value?.room));
 const periods = computed(() => scheduledPeriods(props.event.config.sessions));
 const statusOf = (p: JudgingPeriod) => periodStatus(state.value.phase, state.value.periodReviews?.[p]);
+const labelOf = (p: JudgingPeriod) =>
+  periodProgressLabel(
+    state.value.phase,
+    state.value.periodReviews?.[p],
+    props.event.config.sessions.filter((s) => sessionPeriod(s) === p),
+    state.value.gates
+  );
 const collecting = computed(
   () => current.value && state.value.phase === "LIVE" && statusOf(sessionPeriod(current.value)) === "scoring"
 );
