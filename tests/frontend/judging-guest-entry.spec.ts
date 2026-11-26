@@ -4,6 +4,7 @@ import {
   defaultJudgingConfig,
   roleLabels,
   type GuestSeat,
+  type MobileTask,
   type ScoreReceipt,
   type ScoringView
 } from "../../packages/shared/src/judging";
@@ -12,6 +13,7 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
   page
 }) => {
   const config = defaultJudgingConfig();
+  config.guidance = { instructions: "请核对本场授课教师。", rules: "按照本场表格中的范围填写。" };
   config.rubrics.observer_school = { ...config.rubrics.observer, title: "教研观察评分表" };
   const lecturerField = config.rubrics.lecturer.fields[0];
   config.rubrics.lecturer.fields = [
@@ -34,7 +36,8 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
       const req = route.request();
       const url = new URL(req.url());
       const ok = (data: unknown) => route.fulfill({ json: { code: "OK", data } });
-      if (url.pathname === path) return ok({ title: "联排", rehearsal: true, look: config.look });
+      if (url.pathname === path)
+        return ok({ title: "联排", rehearsal: true, look: config.look, guidance: config.guidance });
       if (url.pathname === path + "/identify") {
         const { name, number } = req.postDataJSON();
         const matches = seats.filter((j) => j.name === name);
@@ -52,6 +55,7 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
           title: "联排",
           rehearsal: true,
           look: config.look,
+          guidance: config.guidance,
           teacher: { name: "许星禾", org: "绘本教室", topic: "节奏课堂", photo: "", poster: "" },
           session: { id: "C1", room: "第一教室", round: 1, time: "10:00", kind: "class" },
           form: config.rubrics[seat.role],
@@ -82,6 +86,10 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
     }
   );
   await page.goto("/#/pages/judging/entry?event=test&entry=common");
+  await page.getByRole("button", { name: "评审说明与评分规则" }).click();
+  await expect(page.getByText(config.guidance.instructions, { exact: true })).toBeVisible();
+  await expect(page.getByText(config.guidance.rules, { exact: true })).toBeVisible();
+  expect(tickets.size).toBe(0);
   const input = page.getByRole("textbox");
   await input.fill("未登记");
   await page.getByText("进入评分", { exact: true }).click();
@@ -89,6 +97,7 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
   await input.fill("陈晨");
   await page.getByText("进入评分", { exact: true }).click();
   await expect(page.getByText("陈晨 · " + roleLabels.lecturer, { exact: true })).toBeVisible();
+  await expect(page.getByText(config.guidance.rules, { exact: true })).toBeVisible();
   await expect(page.getByText("许星禾", { exact: true })).toBeVisible();
   const submit = page.locator(".judging-score-submit");
   await page.getByRole("spinbutton").first().fill("12.5");
@@ -143,4 +152,81 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
   expect([...receipts.keys()]).toEqual(["J03"]);
   expect(submissions).toBe(1);
   expect(unrelated).toEqual([]);
+});
+
+test("a TED expert can pick three contestants in any order even when progress display is off", async ({
+  page
+}) => {
+  const c = defaultJudgingConfig();
+  c.look.showProgress = false;
+  const root = "/api/judging/ted/entry/shared";
+  const seats: MobileTask[] = ["顾老师", "陆老师", "何老师"].map((teacher, i) => ({
+    sessionId: "T" + (i + 1),
+    teacher,
+    time: "",
+    room: "TED 主会场",
+    round: i + 1,
+    role: "expert",
+    status: "评分中"
+  }));
+  const receipts = new Map<string, ScoreReceipt>();
+  const ticket = randomUUID();
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      const req = route.request(),
+        url = new URL(req.url());
+      const ok = (data: unknown) => route.fulfill({ json: { code: "OK", data } });
+      if (url.pathname === root)
+        return ok({ title: "绘本赛课", look: c.look, guidance: c.guidance, rehearsal: false });
+      if (url.pathname === root + "/identify") return ok({ kind: "ready", ticket });
+      expect((await req.allHeaders()).authorization).toBe("Bearer " + ticket);
+      if (url.pathname === root + "/desk") {
+        const current = seats.find((s) => s.sessionId === url.searchParams.get("session")) ?? seats[0];
+        const ballot: ScoringView = {
+          title: "绘本赛课",
+          rehearsal: false,
+          look: c.look,
+          guidance: c.guidance,
+          teacher: { name: current.teacher, topic: "绘本分享", org: "", photo: "", poster: "" },
+          session: { id: current.sessionId, kind: "ted", room: current.room, round: current.round, time: "" },
+          role: "expert",
+          form: c.rubrics.expert,
+          formVersion: 1,
+          max: 30,
+          open: true,
+          tasks: seats,
+          receipt: receipts.get(current.sessionId) ?? null
+        };
+        return ok({ judge: { id: "E1", role: "expert", name: "专家一", org: "教研组" }, page: ballot });
+      }
+      const seat = seats.find((s) => url.pathname === root + "/sessions/" + s.sessionId + "/submit");
+      if (!seat) return route.abort();
+      expect(req.postDataJSON().answers.score).toBe(20 + seat.round);
+      const receipt: ScoreReceipt = {
+        id: randomUUID(),
+        teacher: seat.teacher,
+        at: new Date().toISOString(),
+        session: seat.room,
+        status: "received"
+      };
+      receipts.set(seat.sessionId, receipt);
+      return ok(receipt);
+    }
+  );
+  await page.goto("/#/pages/judging/entry?event=ted&entry=shared");
+  await page.getByRole("textbox").fill("专家一");
+  await page.getByText("进入评分", { exact: true }).click();
+  await page.getByRole("spinbutton").fill("8");
+  for (const i of [2, 0, 1]) {
+    const seat = seats[i];
+    await page.getByRole("button", { name: "选择评分选手" }).click();
+    await page.getByRole("button", { name: seat.teacher + " · " + seat.room + " · " + seat.round }).click();
+    await expect(page.getByText(seat.teacher, { exact: true })).toBeVisible();
+    await expect(page.getByRole("spinbutton")).toHaveValue("");
+    await page.getByRole("spinbutton").fill(String(20 + seat.round));
+    await page.getByText(c.look.submit, { exact: true }).click();
+    await expect(page.getByText(c.look.receipt, { exact: true })).toBeVisible();
+  }
+  expect([...receipts.keys()]).toEqual(["T3", "T1", "T2"]);
 });

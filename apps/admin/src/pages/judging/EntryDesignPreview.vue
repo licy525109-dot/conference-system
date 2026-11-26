@@ -46,9 +46,9 @@
 </template>
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
-import { judgingPreviewChannel, type JudgingLook } from "@conference/shared";
+import { judgingPreviewChannel, type JudgingLook, type JudgingGuidance } from "@conference/shared";
 import { judgingH5Origin } from "../../services/judging";
-const props = defineProps<{ title: string; look: JudgingLook }>();
+const props = defineProps<{ title: string; look: JudgingLook; guidance: JudgingGuidance }>();
 const source = judgingH5Origin + "/#/pages/judging/design-preview";
 const devices = [
   { value: "phone", label: "手机" },
@@ -71,6 +71,7 @@ function send() {
       type: "design",
       stage: stage.value,
       title: props.title,
+      guidance: { ...props.guidance },
       look: JSON.parse(JSON.stringify(props.look))
     },
     judgingH5Origin
@@ -86,7 +87,10 @@ function receive(e: MessageEvent) {
   if (e.data.type === "ready") send();
   if (e.data.type === "rendered") ready.value = true;
 }
-watch([() => props.look, () => props.title, stage], send, { deep: true, flush: "post" });
+watch([() => props.look, () => props.guidance, () => props.title, stage], send, {
+  deep: true,
+  flush: "post"
+});
 watch(generation, () => {
   ready.value = false;
 });

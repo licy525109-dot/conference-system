@@ -340,6 +340,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import {
   awardFieldOptions,
   defaultEntryDesign,
+  defaultJudgingGuidance,
   type AwardField,
   type JudgingConfig
 } from "@conference/shared";
@@ -453,6 +454,7 @@ const setup = computed(() => event.value?.phase === "SETUP" && can("judging:conf
   );
 async function read(id: string, keep = false) {
   const data = await judgingApi.detail(id);
+  data.config.guidance ??= { ...defaultJudgingGuidance };
   data.config.look.entry = { ...defaultEntryDesign, ...data.config.look.entry };
   event.value = data;
   if (!keep) {
@@ -600,6 +602,7 @@ function saveForms() {
     draft.value.judges.filter((j) => saved.get(j.id) !== j.role).map((j) => [j.id, j.role])
   );
   return operate("forms", {
+    guidance: draft.value.guidance,
     rubrics: draft.value.rubrics,
     roleOptions: draft.value.roleOptions,
     roleTransfers,

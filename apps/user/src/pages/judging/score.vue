@@ -44,8 +44,14 @@
         <text class="judging-heading">{{ page.look.heading }}</text>
         <text>{{ page.look.intro }}</text>
       </view>
+      <ScoringTasks
+        v-if="page.tasks.length > 1"
+        :page="page"
+        :disabled="sending || loading"
+        @select="select"
+      />
       <BallotPanel :page="page" :sending="sending" :message="message" @refresh="load" @submit="send" />
-      <view v-if="page.look.showProgress" class="judging-panel">
+      <view v-if="page.look.showProgress && page.tasks.length === 1" class="judging-panel">
         <text class="judging-name">我的评审任务</text>
         <view v-for="t in page.tasks" :key="t.sessionId" class="judging-task" @click="select(t.sessionId)">
           {{ t.teacher }} · {{ t.room }} · {{ t.status }}
@@ -57,6 +63,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import BallotPanel from "./BallotPanel.vue";
+import ScoringTasks from "./ScoringTasks.vue";
 import { onLoad, onUnload } from "@dcloudio/uni-app";
 import { defaultJudgingConfig, judgingStyle, judgingRoleLabel } from "@conference/shared";
 import type { Answers, ScoreReceipt, ScoringView } from "@conference/shared";

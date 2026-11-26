@@ -94,9 +94,13 @@ export const judgingApi = {
   accounts: () =>
     apiRequest<{ id: string; username: string; displayName: string | null }[]>(base + "/accounts"),
   progress: (id: string) =>
-    apiRequest<{ revision: number; gates: Record<string, string>; phase: string; tasks: ScoringTask[] }>(
-      base + "/" + id + "/progress"
-    ),
+    apiRequest<{
+      revision: number;
+      gates: Record<string, string>;
+      allRoundRooms?: string[];
+      phase: string;
+      tasks: ScoringTask[];
+    }>(base + "/" + id + "/progress"),
   results: (id: string) => apiRequest<ReviewData>(base + "/" + id + "/results"),
   validate: (id: string, config: JudgingConfig) =>
     post<{ teachers: number; judges: number; sessions: number; warnings: string[]; readiness: string }>(

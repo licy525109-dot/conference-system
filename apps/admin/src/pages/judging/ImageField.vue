@@ -7,9 +7,9 @@
       clearable
     />
     <el-button v-if="hasPermission('material:view')" @click="openLibrary">素材库</el-button>
-    <el-button v-if="eventId || hasPermission('material:write')" :loading="busy" @click="input?.click()"
-      >上传</el-button
-    >
+    <el-button v-if="eventId || hasPermission('material:write')" :loading="busy" @click="input?.click()">{{
+      uploadLabel || "上传"
+    }}</el-button>
     <input ref="input" hidden type="file" accept="image/jpeg,image/png,image/webp" @change="upload" />
     <el-dialog v-model="shown" title="选择图片素材" width="min(720px,94vw)" append-to-body>
       <el-input v-model="keyword" placeholder="素材名称，回车搜索" @keyup.enter="openLibrary" />
@@ -38,8 +38,11 @@ import { ElMessage } from "element-plus";
 import { createMaterial, listMaterials } from "../../services/admin";
 import { useAdminSession } from "../../stores/admin-session";
 import type { MaterialAsset } from "../../services/types";
-const props = defineProps<{ modelValue: string; eventId?: string }>();
-const emit = defineEmits<{ (e: "update:modelValue", v: string): void }>();
+const props = defineProps<{ modelValue: string; eventId?: string; uploadLabel?: string }>();
+const emit = defineEmits<{
+  (e: "update:modelValue", v: string): void;
+  (e: "uploading", busy: boolean): void;
+}>();
 const { hasPermission } = useAdminSession();
 const input = ref<HTMLInputElement>(),
   busy = ref(false),
@@ -60,6 +63,7 @@ async function upload(e: Event) {
     f = field.files?.[0];
   if (!f) return;
   busy.value = true;
+  emit("uploading", true);
   try {
     const a = props.eventId
       ? await judgingApi.uploadDesignImage(props.eventId, f)
@@ -70,15 +74,24 @@ async function upload(e: Event) {
   } finally {
     field.value = "";
     busy.value = false;
+    emit("uploading", false);
   }
 }
 </script>
 <style scoped>
 .j-image {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
   width: 100%;
+}
+.j-image .el-input {
+  flex: 1 1 145px;
+  min-width: 0;
+}
+.j-image .el-button + .el-button {
+  margin-left: 0;
 }
 .j-assets {
   display: grid;

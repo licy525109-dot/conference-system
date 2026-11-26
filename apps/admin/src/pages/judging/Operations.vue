@@ -1,4 +1,21 @@
 <template>
+  <div v-if="tedSessions.length && state.phase === 'LIVE'" class="j-statusline">
+    <strong>TED 专家评审</strong>
+    <span
+      >{{ tedSessions.filter((s) => state.gates[s.id] === "open").length }} /
+      {{ tedSessions.length }} 位选手开放中</span
+    >
+    <el-button
+      :disabled="tedSessions.every((s) => state.gates[s.id] === 'open')"
+      @click="groupGate(tedSessions[0], true)"
+      >开放全部 TED</el-button
+    >
+    <el-button
+      :disabled="tedSessions.every((s) => state.gates[s.id] === 'closed')"
+      @click="groupGate(tedSessions[0], false)"
+      >截止全部 TED</el-button
+    >
+  </div>
   <div class="j-tools">
     <el-select v-model="sid" placeholder="选择场次" style="width: min(420px, 90vw)">
       <el-option
@@ -16,15 +33,35 @@
       <el-tag :type="state.gates[sid] === 'open' ? 'success' : 'info'">
         {{ state.gates[sid] === "open" ? "评分中" : "未开放或已截止" }}
       </el-tag>
+      <template v-if="room && state.phase === 'LIVE'">
+        <el-switch
+          :model-value="allRounds"
+          :aria-label="room.name + '全部轮次评审'"
+          active-text="全部轮次评审"
+          @change="setMode($event === true)"
+        />
+        <template v-if="allRounds">
+          <el-button
+            :disabled="roomSessions.every((s) => state.gates[s.id] === 'open')"
+            @click="groupGate(current, true)"
+            >开放本教室全部轮次</el-button
+          >
+          <el-button
+            :disabled="roomSessions.every((s) => state.gates[s.id] === 'closed')"
+            @click="groupGate(current, false)"
+            >截止本教室全部轮次</el-button
+          >
+        </template>
+      </template>
       <el-button
-        v-if="state.phase === 'LIVE'"
+        v-if="state.phase === 'LIVE' && room && !allRounds"
         type="primary"
         @click="operate('gate', { session: sid, open: state.gates[sid] !== 'open' })"
       >
         {{ state.gates[sid] === "open" ? "截止本场" : "开放本场" }}
       </el-button>
       <el-button
-        v-if="state.phase === 'LIVE' && !state.gates[sid]"
+        v-if="state.phase === 'LIVE' && room && !allRounds && !state.gates[sid]"
         @click="operate('gate', { session: sid, open: false })"
       >
         标记本场截止
@@ -77,7 +114,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { baseJudgeRole, judgingRoleLabel, judgingRoles, stageOf, type ScoringTask } from "@conference/shared";
+import {
+  baseJudgeRole,
+  judgingRoleLabel,
+  judgingRoles,
+  stageOf,
+  type JudgingSession,
+  type ScoringTask
+} from "@conference/shared";
 import { judgingApi, slotLabel, taskStatus, type EventDetail, type Operate } from "../../services/judging";
 const props = defineProps<{ event: EventDetail; operate: Operate }>();
 const tasks = ref<ScoringTask[]>([]),
@@ -85,7 +129,12 @@ const tasks = ref<ScoringTask[]>([]),
   keyword = ref(""),
   status = ref("");
 let timer: ReturnType<typeof setInterval> | undefined;
-const observed = ref<{ revision: number; phase: string; gates: Record<string, string> } | null>(null);
+const observed = ref<{
+  revision: number;
+  phase: string;
+  gates: Record<string, string>;
+  allRoundRooms?: string[];
+} | null>(null);
 const state = computed(() =>
   observed.value && observed.value.revision >= props.event.revision ? observed.value : props.event
 );
@@ -101,6 +150,40 @@ watch(
 );
 const current = computed(() => props.event.config.sessions.find((s) => s.id === sid.value)),
   room = computed(() => props.event.config.rooms.find((r) => r.id === current.value?.room));
+const tedSessions = computed(() => props.event.config.sessions.filter((s) => s.kind === "ted"));
+const roomSessions = computed(() =>
+  props.event.config.sessions.filter((s) => s.kind === "class" && s.room === room.value?.id)
+);
+const allRounds = computed(() => {
+  if (!room.value) return false;
+  const latest = observed.value;
+  return latest && latest.revision >= props.event.revision && latest.allRoundRooms
+    ? latest.allRoundRooms.includes(room.value.id)
+    : !!room.value.allRoundsOpen;
+});
+async function setMode(allRoundsOpen: boolean) {
+  const s = current.value,
+    selected = room.value;
+  if (!s || !selected || allRoundsOpen === allRounds.value) return;
+  const message = allRoundsOpen
+    ? "将开放「" + selected.name + "」的所有已排选手，评委可自行选择评分顺序。"
+    : "将恢复逐轮开放并截止本教室其他正在评分的轮次。当前场次保留现有状态。";
+  try {
+    await ElMessageBox.confirm(message, "调整教室开放方式");
+  } catch {
+    return;
+  }
+  await operate("room-mode", { session: s.id, allRoundsOpen });
+}
+async function groupGate(s: JudgingSession, open: boolean) {
+  const name = s.kind === "ted" ? "所有 TED 选手" : (room.value?.name || "本教室") + "的全部轮次";
+  try {
+    await ElMessageBox.confirm("确定" + (open ? "开放" : "截止") + name + "的评分？", "批量调整评分");
+  } catch {
+    return;
+  }
+  await operate("gate", { session: s.id, scope: "group", open });
+}
 const here = computed(() => tasks.value.filter((t) => t.session.id === sid.value));
 const selected = computed(() =>
   here.value.filter(

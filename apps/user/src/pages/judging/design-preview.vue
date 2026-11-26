@@ -3,6 +3,7 @@
     v-if="draft"
     :key="draft.stage"
     :look="draft.look"
+    :guidance="draft.guidance"
     :title="draft.title"
     :choices="choices"
     :matched-name="matchedName"
@@ -15,10 +16,20 @@
 </template>
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from "vue";
-import { judgingPreviewChannel, type GuestChoice, type JudgingLook } from "@conference/shared";
+import {
+  judgingPreviewChannel,
+  type GuestChoice,
+  type JudgingLook,
+  type JudgingGuidance
+} from "@conference/shared";
 import EntryWelcome from "./EntryWelcome.vue";
 
-const draft = ref<{ look: JudgingLook; title: string; stage: "name" | "choices" }>();
+const draft = ref<{
+  look: JudgingLook;
+  guidance?: JudgingGuidance;
+  title: string;
+  stage: "name" | "choices";
+}>();
 const samples: GuestChoice[] = [
   { id: "J02", org: "晨光舞蹈中心" },
   { id: "J03", org: "星禾艺术学校" }
@@ -67,7 +78,7 @@ function receive(e: MessageEvent) {
       matchedName.value = "林小雨";
     }
   }
-  draft.value = { title: data.title, look: data.look, stage: data.stage };
+  draft.value = { title: data.title, look: data.look, guidance: data.guidance, stage: data.stage };
   window.parent.postMessage({ channel: judgingPreviewChannel, type: "rendered" }, e.origin);
 }
 onMounted(() => {

@@ -16,7 +16,7 @@ export type Field = {
   label: string;
   legacy?: boolean;
   aliases?: string[];
-  kind?: "num" | "optionalNum" | "room" | "teacher" | "role" | "stage" | "image";
+  kind?: "num" | "optionalNum" | "room" | "teacher" | "role" | "stage" | "image" | "roundMode";
 };
 export const spec: Record<Section, { label: string; fields: Field[] }> = {
   rooms: {
@@ -25,6 +25,7 @@ export const spec: Record<Section, { label: string; fields: Field[] }> = {
       { key: "id", label: "教室编号" },
       { key: "name", label: "教室名称" },
       { key: "rounds", label: "课堂轮数", aliases: ["轮数", "轮次"], kind: "num" },
+      { key: "allRoundsOpen", label: "评分开放方式", kind: "roundMode" },
       { key: "experience", label: "体验席配额", kind: "num" },
       { key: "observer", label: "观察席配额", kind: "num" }
     ]
@@ -39,7 +40,7 @@ export const spec: Record<Section, { label: string; fields: Field[] }> = {
       { key: "topic", label: "课程题目" },
       { key: "speech", label: "TED题目" },
       { key: "photo", label: "照片", kind: "image" },
-      { key: "poster", label: "入围海报", kind: "image" },
+      { key: "poster", label: "入围海报", legacy: true },
       { key: "prior", label: "复赛原分", kind: "optionalNum" },
       { key: "qualifierRank", label: "晋级名次", kind: "optionalNum" }
     ]
@@ -81,7 +82,8 @@ export type Row = Record<string, any>;
 export function emptyRow(section: Section, c: JudgingConfig): Row {
   const roles = judgingRoles(c);
   const initialRole = (roles.find((r) => baseJudgeRole(r.id) === "experience") ?? roles[0])?.id ?? "";
-  const defaults: Partial<Record<NonNullable<Field["kind"]>, string | number | null>> = {
+  const defaults: Partial<Record<NonNullable<Field["kind"]>, string | number | boolean | null>> = {
+    roundMode: false,
     num: 1,
     optionalNum: null,
     stage: "class",
@@ -94,6 +96,7 @@ export function emptyRow(section: Section, c: JudgingConfig): Row {
   );
 }
 export function displayField(f: Field, v: any, c: JudgingConfig): string {
+  if (f.kind === "roundMode") return v ? "全部轮次" : "逐轮开放";
   if (f.kind === "role") return v ? judgingRoleLabel(c, v) || v : "";
   if (f.kind === "stage") return v === "ted" ? "TED" : "课堂";
   if (f.kind === "room") return c.rooms.find((r) => r.id === v)?.name || v || "—";
@@ -129,6 +132,11 @@ export async function prepareImport(file: File, current: JudgingConfig, selected
           if (v === "" && f.kind === "num")
             throw new Error(sheet.name + " 第 " + (i + 2) + " 行缺少" + f.label);
           record[f.key] = v === "" ? null : Number(v);
+        } else if (f.kind === "roundMode") {
+          if (!v) return;
+          if (!["全部轮次", "逐轮开放"].includes(v))
+            throw new Error(sheet.name + " 第 " + (i + 2) + " 行评分开放方式请填「全部轮次」或「逐轮开放」");
+          record[f.key] = v === "全部轮次";
         } else if (f.kind === "role") {
           const roles = judgingRoles(next);
           record[f.key] = (roles.find((r) => r.id === v) ?? roles.find((r) => r.label === v))?.id ?? v;
@@ -151,7 +159,9 @@ export async function rosterTemplate(c: JudgingConfig) {
       data = (c[k] as Row[]).map((row) =>
         f.map((field) => {
           if (field.key === "rounds") return classroomRounds(row as JudgingRoom, c.sessions);
-          return field.kind === "role" ? displayField(field, row[field.key], c) : (row[field.key] ?? "");
+          return field.kind === "role" || field.kind === "roundMode"
+            ? displayField(field, row[field.key], c)
+            : (row[field.key] ?? "");
         })
       );
     const ws = x.utils.aoa_to_sheet([f.map((v) => v.label), ...data]);
