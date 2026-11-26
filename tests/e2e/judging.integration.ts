@@ -514,7 +514,7 @@ test(
           );
           assert.deepEqual(cc.awardTargets, { merits: null, schools: null });
           cc.rooms[0].rounds = 1;
-          cc.teachers = c.teachers.slice(0, 2);
+          cc.teachers = c.teachers.slice(0, 2).map((teacher) => ({ ...teacher, photo: "", poster: "" }));
           cc.judges = c.judges.filter((j) => ["PR1", "PR2", "R1D0", "R2D0", "E0"].includes(j.id));
           cc.sessions = c.sessions
             .filter((s) => cc.teachers.some((t) => t.id === s.teacher))
@@ -523,6 +523,7 @@ test(
           const invalid = structuredClone(cc);
           invalid.rooms[1].rounds = 3;
           await call(path + "/preview-config", cfg.token, invalid, 400);
+          assert.equal((await call(path + "/preview-config", cfg.token, cc)).readiness, "");
           await update("config", { title: event.title, config: cc });
           await update("access", { staffIds: [signer.admin.id], confirmerId: signer.admin.id });
           await update("entry-open");
