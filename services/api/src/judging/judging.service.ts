@@ -50,6 +50,7 @@ import {
 } from "./validation";
 
 type Tx = Prisma.TransactionClient;
+const deletedPhase = "DELETED";
 const json = (data: unknown) => JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
 function config(e: JudgingEvent): JudgingConfig {
   const stored = e.config as unknown as JudgingConfig;
@@ -91,7 +92,7 @@ function scope(e: JudgingEvent, a: CurrentAdmin) {
 async function getEvent(tx: Tx, id: string, lock = false) {
   if (lock) await tx.$queryRaw`SELECT id FROM judging_events WHERE id = ${id} FOR UPDATE`;
   const e = await tx.judgingEvent.findUnique({ where: { id } });
-  if (!e) throw new NotFoundException("赛事不存在");
+  if (!e || e.phase === deletedPhase) throw new NotFoundException("赛事不存在");
   return e;
 }
 const stale = () => new ConflictException("数据版本已更新，请刷新后重新核对");
@@ -196,8 +197,12 @@ export class JudgingService {
         edition: true,
         publishedEdition: true
       },
-      where:
-        a.conferenceScopeMode === "ALL" ? {} : { OR: [{ staffIds: { has: a.id } }, { confirmerId: a.id }] },
+      where: {
+        phase: { not: deletedPhase },
+        ...(a.conferenceScopeMode === "ALL"
+          ? {}
+          : { OR: [{ staffIds: { has: a.id } }, { confirmerId: a.id }] })
+      },
       orderBy: { createdAt: "desc" }
     });
   }
@@ -417,6 +422,7 @@ export class JudgingService {
     const b = object(raw),
       action = str(b.action, "操作", 32);
     const rights: Record<string, string> = {
+      delete: "config",
       "entry-open": "floor",
       "entry-close": "floor",
       config: "config",
@@ -438,6 +444,8 @@ export class JudgingService {
     };
     if (!Object.hasOwn(rights, action)) fail("未知操作");
     permit(a, "judging:" + rights[action]);
+    if (action === "delete" && a.conferenceScopeMode !== "ALL")
+      throw new ForbiddenException("删除赛事需要全局授权");
     return this.db.$transaction(
       async (tx) => {
         const e = await getEvent(tx, id, true);
@@ -447,7 +455,11 @@ export class JudgingService {
           state = control(e),
           data: Prisma.JudgingEventUpdateInput = { revision: { increment: 1 } };
         let evidence: unknown = {};
-        if (action === "entry-open") {
+        if (action === "delete") {
+          data.phase = deletedPhase;
+          delete state.guestEntry;
+          evidence = { previousPhase: e.phase };
+        } else if (action === "entry-open") {
           phase(e, "SETUP", "LIVE", "REVIEW");
           state.guestEntry ??= createGuestEntry();
         } else if (action === "entry-close") {

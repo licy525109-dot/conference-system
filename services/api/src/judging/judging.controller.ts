@@ -58,7 +58,7 @@ export class JudgingAdminController {
     );
     return ok({ url: new URL(saved.data.url).pathname });
   }
-  @Get() async list(@Req() r: RequestWithCurrentAdmin) {
+  @Get() @Header("Cache-Control", "private, no-store") async list(@Req() r: RequestWithCurrentAdmin) {
     return ok(await this.service.list(r.currentAdmin!));
   }
   @Post() async create(@Body() b: unknown, @Req() r: RequestWithCurrentAdmin) {

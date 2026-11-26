@@ -105,6 +105,7 @@ test(
       );
       const signer = await admin("signer", ["judging:view", "judging:confirm", "judging:results"]);
       const floor = await admin("floor", ["judging:view", "judging:floor"]);
+      const editor = await admin("editor", ["judging:view", "judging:config"]);
       const outsider = await admin("other", ["judging:view", "judging:results"]);
       const named = await db.user.create({
         data: {
@@ -220,7 +221,7 @@ test(
           username: signer.admin.username,
           password: pwd
         });
-        await change("access", { staffIds: [floor.admin.id], confirmerId: signer.admin.id });
+        await change("access", { staffIds: [floor.admin.id, editor.admin.id], confirmerId: signer.admin.id });
         await call(path + "/results", signer.token);
         await call(path + "/results", floor.token, undefined, 403);
         await call("/judging/" + id + "/published", undefined, undefined, 404);
@@ -664,8 +665,47 @@ test(
           assert.notEqual(renewed, published.entryCode);
           await call(prefix + renewed + "/desk", firstSeat, undefined, 401);
           await call("/judging/" + sample.id + "/published", undefined, undefined, 404);
+          const renewedSeat = await call(prefix + renewed + "/identify", undefined, { name: "赵宁" });
+          await update("delete");
+          await call(prefix + renewed, undefined, undefined, 404);
+          await call(prefix + renewed + "/identify", undefined, { name: "赵宁" }, 404);
+          await call(prefix + renewed + "/desk", renewedSeat.ticket, undefined, 404);
+          await call(prefix + renewed + "/sessions/C5/submit", renewedSeat.ticket, payload, 404);
+          assert.equal(await db.judgingBallot.count({ where: { eventId: sample.id } }), 2);
         }
       );
+      await t.test("only a global editor can delete a locked event and its records stay on file", async () => {
+        const current = await call(path, cfg.token);
+        assert.equal(current.phase, "LOCKED");
+        const remove = (token: string | undefined, version: number, status: number) =>
+          call(path + "/actions", token, { action: "delete", revision: version }, status);
+        const listed = async (token: string): Promise<string[]> =>
+          (await call("/admin/judging", token)).map((e: { id: string }) => e.id);
+        const before = await listed(cfg.token);
+        assert.ok(before.length > 1 && before.includes(id));
+        assert.ok((await listed(editor.token)).includes(id));
+        await remove(undefined, current.revision, 401);
+        await remove(floor.token, current.revision, 403);
+        await remove(editor.token, current.revision, 403);
+        await remove(cfg.token, current.revision - 1, 409);
+        assert.equal((await call("/judging/" + id + "/published")).edition, 2);
+        const count = await db.judgingBallot.count({ where: { eventId: id } });
+        assert.ok(count > 0);
+        await remove(cfg.token, current.revision, 201);
+        await remove(cfg.token, current.revision, 404);
+        assert.deepEqual(await listed(cfg.token), before.filter((other) => other !== id));
+        assert.ok(!(await listed(editor.token)).includes(id));
+        await call(path, cfg.token, undefined, 404);
+        await call(path + "/results", cfg.token, undefined, 404);
+        await call(path + "/export/awards?edition=2", cfg.token, undefined, 404);
+        await call("/judging/" + id + "/published", undefined, undefined, 404);
+        assert.equal(await db.judgingBallot.count({ where: { eventId: id } }), count);
+        assert.equal(await db.judgingEdition.count({ where: { eventId: id } }), 2);
+        const logs = await db.judgingAudit.findMany({ where: { eventId: id, action: "delete" } });
+        assert.equal(logs.length, 1);
+        assert.equal(logs[0].actor, cfg.admin.id);
+        assert.equal(logs[0].detail.previousPhase, "LOCKED");
+      });
     } finally {
       await db.$transaction([
         db.judgingBallot.deleteMany({ where: { eventId: { in: events } } }),
