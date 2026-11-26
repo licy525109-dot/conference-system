@@ -21,15 +21,20 @@
     </el-table>
     <div class="j-tools">
       <el-select v-model="role" style="width: 150px">
-        <el-option v-for="(v, k) in roleLabels" :key="k" :value="k" :label="v" />
+        <el-option v-for="r in judgingRoles(config)" :key="r.id" :value="r.id" :label="r.label" />
       </el-select>
-      <el-select v-if="role !== 'expert'" v-model="room" placeholder="分配教室" style="width: 160px">
+      <el-select
+        v-if="role && stageOf(role) !== 'ted'"
+        v-model="room"
+        placeholder="分配教室"
+        style="width: 160px"
+      >
         <el-option v-for="r in config.rooms" :key="r.id" :value="r.id" :label="r.name" />
       </el-select>
     </div>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :disabled="!selection.length" @click="apply">
+      <el-button type="primary" :disabled="!role || !selection.length" @click="apply">
         核对并加入 {{ selection.length }} 位到草稿
       </el-button>
     </template>
@@ -38,13 +43,13 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { ElMessage } from "element-plus";
-import { roleLabels, type JudgingConfig, type JudgeRole } from "@conference/shared";
+import { judgingRoles, stageOf, type JudgingConfig, type JudgeRole } from "@conference/shared";
 import { judgingApi } from "../../services/judging";
 const props = defineProps<{ eventId: string; config: JudgingConfig }>();
 const visible = ref(false),
   conference = ref(""),
   keyword = ref(""),
-  role = ref<JudgeRole>("experience"),
+  role = ref<JudgeRole>(),
   room = ref(""),
   conferences = ref<{ id: string; title: string }[]>([]);
 type Person = { id: string; name: string; org: string };
@@ -53,6 +58,12 @@ const rows = ref<Person[]>([]),
 async function open() {
   try {
     conferences.value = await judgingApi.conferences(props.eventId);
+    const roles = judgingRoles(props.config);
+    role.value = (
+      roles.find((r) => r.id === role.value) ??
+      roles.find((r) => r.id === "experience") ??
+      roles[0]
+    )?.id;
     room.value = props.config.rooms[0]?.id || "";
     visible.value = true;
   } catch (e) {
@@ -69,10 +80,11 @@ async function search() {
   }
 }
 async function apply() {
+  if (!role.value) return;
   try {
     const judges = [...props.config.judges];
     for (const p of selection.value) {
-      const id = p.id + (role.value === "expert" ? "-ted" : "-class");
+      const id = p.id + (stageOf(role.value) === "ted" ? "-ted" : "-class");
       if (judges.some((j) => j.id === id)) throw new Error(p.name + " 已分配此环节");
       judges.push({
         id,
@@ -81,7 +93,7 @@ async function apply() {
         phone: "",
         userId: "",
         role: role.value,
-        room: role.value === "expert" ? "" : room.value
+        room: stageOf(role.value) === "ted" ? "" : room.value
       });
     }
     await judgingApi.validate(props.eventId, { ...props.config, judges });

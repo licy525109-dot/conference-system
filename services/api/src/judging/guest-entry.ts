@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from "node:crypto";
 import { NotFoundException, UnauthorizedException } from "@nestjs/common";
 import type { Judge, GuestIdentification, GuestSeat } from "@conference/shared";
+import { baseJudgeRole } from "@conference/shared";
 import { signJwt, verifyJwt } from "../auth/jwt";
 import { key, object, str, fail } from "./validation";
 
@@ -22,7 +23,7 @@ export function publicSeat(j: Judge): GuestSeat {
 const normalizeName = (s: string) => s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 function subject(j: Judge) {
   const fingerprint = createHash("sha256")
-    .update(JSON.stringify([j.name, j.org || "", j.role, j.room]))
+    .update(JSON.stringify([j.name, j.org || "", baseJudgeRole(j.role), j.room]))
     .digest("hex");
   return j.id + "." + fingerprint;
 }

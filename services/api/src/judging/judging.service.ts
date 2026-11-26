@@ -2,11 +2,16 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { Prisma, type JudgingEvent } from "@prisma/client";
 import {
   assigned,
+  baseJudgeRole,
   defaultEntryDesign,
   defaultJudgingConfig,
   defaultJudgingControl,
   rehearsalUserId,
   guestScoringPath,
+  isJudgeRoleId,
+  judgingRoleLabel,
+  judgingRoles,
+  roleForSession,
   rubricFor,
   stageOf,
   maxPoints,
@@ -54,7 +59,44 @@ const deletedPhase = "DELETED";
 const json = (data: unknown) => JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
 function config(e: JudgingEvent): JudgingConfig {
   const stored = e.config as unknown as JudgingConfig;
-  return { ...stored, look: { ...stored.look, entry: { ...defaultEntryDesign, ...stored.look.entry } } };
+  return {
+    ...stored,
+    roleOptions: judgingRoles(stored),
+    look: { ...stored.look, entry: { ...defaultEntryDesign, ...stored.look.entry } }
+  };
+}
+function freezeSessionForms(c: JudgingConfig, state: JudgingControl, sessionId: string) {
+  state.sessionForms[sessionId] ??= {
+    rubrics: c.rubrics,
+    roleOptions: c.roleOptions,
+    sameAudienceForm: c.sameAudienceForm,
+    formVersion: c.formVersion
+  };
+}
+function transferLiveRoles(c: JudgingConfig, state: JudgingControl, raw: unknown) {
+  const transfers = object(raw ?? {});
+  const byId = new Map(c.judges.map((j) => [j.id, j]));
+  const changed = new Map<string, JudgeRole>();
+  for (const [id, next] of Object.entries(transfers)) {
+    const judge = byId.get(id);
+    if (!judge || typeof next !== "string" || !isJudgeRoleId(next)) fail("评委或目标类型无效");
+    if (baseJudgeRole(next) !== baseJudgeRole(judge.role)) fail("现场只能转入相同计分方式和席位配额的类型");
+    if (judge.role !== next) changed.set(id, next);
+  }
+  if (!changed.size) return c.judges;
+  for (const s of c.sessions) {
+    const frozen = state.sessionForms[s.id];
+    if (!frozen) continue;
+    for (const id of changed.keys()) {
+      const judge = byId.get(id)!;
+      if (assigned(s, judge)) {
+        frozen.judgeRoles ??= {};
+        frozen.judgeRoles[id] ??= judge.role;
+      }
+    }
+    frozen.roleOptions ??= judgingRoles(c);
+  }
+  return c.judges.map((j) => ({ ...j, role: changed.get(j.id) ?? j.role }));
 }
 const control = (e: JudgingEvent) => e.control as unknown as JudgingControl & { guestEntry?: GuestEntry };
 export const allowed = (a: CurrentAdmin, p: string) =>
@@ -378,7 +420,11 @@ export class JudgingService {
       rows,
       merits: c.merits,
       schools: listedSchools(c),
-      ballots: ballots.map((b) => ({ ...b, correction: state.corrections[b.id] ?? null })),
+      ballots: ballots.map((b) => ({
+        ...b,
+        roleLabel: judgingRoleLabel(state.sessionForms[b.sessionKey] ?? c, b.role as JudgeRole),
+        correction: state.corrections[b.id] ?? null
+      })),
       ties: state.ties,
       log: await tx.judgingAudit.findMany({ where: { eventId: e.id }, orderBy: { createdAt: "desc" } })
     };
@@ -387,7 +433,8 @@ export class JudgingService {
     permit(a, "judging:config");
     const e = await getEvent(this.db, id);
     scope(e, a);
-    const c = validateConfig(raw, e.rehearsal);
+    const saved = config(e);
+    const c = validateConfig(raw, e.rehearsal, saved.look.entry, saved);
     const names = new Set<string>(),
       warnings: string[] = [];
     for (const person of [...c.teachers, ...c.judges]) {
@@ -466,17 +513,23 @@ export class JudgingService {
           delete state.guestEntry;
         } else if (action === "config") {
           phase(e, "SETUP");
-          const next = validateConfig(b.config, e.rehearsal, c.look.entry);
+          const next = validateConfig(b.config, e.rehearsal, c.look.entry, c);
           next.formVersion = c.formVersion + 1;
           data.config = json(next);
           data.title = str(b.title, "赛事名称");
           evidence = { formVersion: next.formVersion };
         } else if (action === "forms") {
           phase(e, "LIVE");
+          // Older events could authorize a makeup before the first normal opening.
+          for (const [key, exception] of Object.entries(state.exceptions)) {
+            if (exception.kind === "makeup") freezeSessionForms(c, state, key.split("/")[0]);
+          }
           const next = validateConfig(
             {
               ...c,
-              rubrics: b.rubrics,
+              judges: transferLiveRoles(c, state, b.roleTransfers),
+              roleOptions: b.roleOptions ?? c.roleOptions,
+              rubrics: b.roleOptions === undefined ? { ...c.rubrics, ...object(b.rubrics) } : b.rubrics,
               sameAudienceForm: b.sameAudienceForm,
               approvedForms: b.approvedForms
             },
@@ -484,6 +537,8 @@ export class JudgingService {
           );
           if (!e.rehearsal && !next.approvedForms) fail("正式评分表须先确认细则");
           c.rubrics = next.rubrics;
+          c.roleOptions = next.roleOptions;
+          c.judges = next.judges;
           c.sameAudienceForm = next.sameAudienceForm;
           c.approvedForms = next.approvedForms;
           c.formVersion++;
@@ -560,12 +615,7 @@ export class JudgingService {
             c.sessions.some((x) => x.kind === "ted" && x.id !== s.id && state.gates[x.id] === "open")
           )
             fail("请先截止上一位 TED 选手");
-          if (b.open && !state.sessionForms[s.id])
-            state.sessionForms[s.id] = {
-              rubrics: c.rubrics,
-              sameAudienceForm: c.sameAudienceForm,
-              formVersion: c.formVersion
-            };
+          if (b.open) freezeSessionForms(c, state, s.id);
           state.gates[s.id] = b.open ? "open" : "closed";
           evidence = { session: s.id, open: b.open };
         } else if (action === "attendance") {
@@ -586,6 +636,7 @@ export class JudgingService {
             if (state.exceptions[k]?.kind === "absent") delete state.exceptions[k];
           } else {
             state.exceptions[k] = { kind: b.kind, reason: str(b.reason, "原因", 500) };
+            if (b.kind === "makeup") freezeSessionForms(c, state, s.id);
             if (b.kind === "absent") delete state.present[k];
           }
           evidence = { session: s.id, judge: j.id, kind: b.kind, reason: state.exceptions[k]?.reason };
@@ -728,8 +779,17 @@ export class JudgingService {
   }
   async guestDesk(id: string, code: string, ticket: string, sid?: string): Promise<GuestDesk> {
     const e = await getEvent(this.db, id);
-    const seats = scoringSeats(e, config(e), { entryCode: code, ticket });
-    return { judge: publicSeat(seats[0]), page: await this.scoreView(e, seats, sid) };
+    const c = config(e);
+    const seats = scoringSeats(e, c, { entryCode: code, ticket });
+    const page = await this.scoreView(e, seats, sid);
+    return {
+      judge: {
+        ...publicSeat(seats[0]),
+        role: page?.role ?? seats[0].role,
+        roleLabel: page?.roleLabel ?? judgingRoleLabel(c, seats[0].role)
+      },
+      page
+    };
   }
   async mobile(id: string, sid: string, principal: Scorer): Promise<ScoringView> {
     const e = await getEvent(this.db, id);
@@ -741,6 +801,7 @@ export class JudgingService {
   }
   private async scoreView(e: JudgingEvent, mine: Judge[], sid?: string): Promise<ScoringView | null> {
     const c = config(e);
+    const state = control(e);
     const ballots = await this.db.judgingBallot.findMany({
       where: { eventId: e.id, judgeKey: { in: mine.map((j) => j.id) } },
       select: { id: true, createdAt: true, sessionKey: true, judgeKey: true }
@@ -756,7 +817,7 @@ export class JudgingService {
             time: s.time,
             room: roomName(c, s),
             round: s.round,
-            role: j.role,
+            role: roleForSession(state.sessionForms[s.id], j),
             status: bySeat.has(taskKey(s.id, j.id)) ? "已交" : isOpen(e, s, j) ? "评分中" : "待开放或已截止"
           }))
       )
@@ -769,7 +830,9 @@ export class JudgingService {
     const s = sessionOf(c, sid || next!.sessionId);
     const j = findJudge(c, s, mine),
       teacher = teacherOf(c, s);
-    const sessionForm = control(e).sessionForms[s.id] ?? c,
+    const frozen = state.sessionForms[s.id],
+      sessionForm = frozen ?? c,
+      role = roleForSession(frozen, j),
       ballot = bySeat.get(taskKey(s.id, j.id));
     return {
       title: e.title,
@@ -783,10 +846,11 @@ export class JudgingService {
         topic: s.kind === "ted" ? teacher.speech : teacher.topic
       },
       session: { id: s.id, room: roomName(c, s), round: s.round, time: s.time, kind: s.kind },
-      role: j.role,
-      form: rubricFor(sessionForm, j.role),
+      role,
+      roleLabel: judgingRoleLabel(sessionForm, role),
+      form: rubricFor(sessionForm, role),
       formVersion: sessionForm.formVersion,
-      max: maxPoints[stageOf(j.role)],
+      max: maxPoints[stageOf(role)],
       open: isOpen(e, s, j),
       receipt: ballot ? receipt(ballot, c, s) : null,
       tasks
@@ -812,9 +876,11 @@ export class JudgingService {
           return receipt(existing, c, s);
         }
         if (!isOpen(e, s, j)) throw new ConflictException("本场尚未开放或已截止");
-        const sessionForm = control(e).sessionForms[s.id] ?? c;
+        const frozen = control(e).sessionForms[s.id],
+          sessionForm = frozen ?? c,
+          role = roleForSession(frozen, j);
         if (b.formVersion !== sessionForm.formVersion) throw stale();
-        const form = rubricFor(sessionForm, j.role),
+        const form = rubricFor(sessionForm, role),
           res = evaluate(form, b.answers);
         const record = await tx.judgingBallot.create({
           data: {
@@ -822,7 +888,7 @@ export class JudgingService {
             sessionKey: sid,
             judgeKey: j.id,
             teacherKey: s.teacher,
-            role: j.role,
+            role,
             userId: owner,
             rubric: json({ ...form, version: sessionForm.formVersion }),
             answers: json(res.answers),

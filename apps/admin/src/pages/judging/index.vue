@@ -131,10 +131,16 @@
           />
         </el-tab-pane>
         <el-tab-pane v-if="group === 'prep' && can('judging:config')" label="评分表与规则" name="forms">
-          <Rubrics :config="draft" :disabled="!setup && event.phase !== 'LIVE'" :rules-locked="!setup" />
+          <Rubrics
+            :key="event.id"
+            :config="draft"
+            :disabled="busy || (!setup && event.phase !== 'LIVE')"
+            :rules-locked="!setup"
+            :live="event.phase === 'LIVE'"
+          />
           <div class="j-tools">
-            <el-button v-if="setup" type="primary" @click="saveConfig">保存评分表与规则</el-button>
-            <el-button v-if="event.phase === 'LIVE'" type="primary" @click="saveForms">
+            <el-button v-if="setup" type="primary" :disabled="busy" @click="saveConfig">保存评分表与规则</el-button>
+            <el-button v-if="event.phase === 'LIVE'" type="primary" :disabled="busy" @click="saveForms">
               对尚未开放的场次启用新版评分表
             </el-button>
           </div>
@@ -564,12 +570,20 @@ async function check() {
     ElMessage.error((e as Error).message);
   }
 }
-const saveForms = () =>
-  operate("forms", {
-    rubrics: draft.value?.rubrics,
-    sameAudienceForm: draft.value?.sameAudienceForm,
-    approvedForms: draft.value?.approvedForms
+function saveForms() {
+  if (!event.value || !draft.value) return;
+  const saved = new Map(event.value.config.judges.map((j) => [j.id, j.role]));
+  const roleTransfers = Object.fromEntries(
+    draft.value.judges.filter((j) => saved.get(j.id) !== j.role).map((j) => [j.id, j.role])
+  );
+  return operate("forms", {
+    rubrics: draft.value.rubrics,
+    roleOptions: draft.value.roleOptions,
+    roleTransfers,
+    sameAudienceForm: draft.value.sameAudienceForm,
+    approvedForms: draft.value.approvedForms
   });
+}
 const saveConfig = () => operate("config", { title: draftTitle.value, config: draft.value });
 const saveLook = () => operate("appearance", { look: draft.value?.look });
 async function handover() {

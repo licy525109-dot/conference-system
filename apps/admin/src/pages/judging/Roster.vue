@@ -11,18 +11,21 @@
     <el-button @click="rosterTemplate(config)">下载名单模板</el-button>
     <template v-if="editable">
       <RegistrationSource
-        v-if="section === 'judges' && hasPermission('registration:export')"
+        v-if="section === 'judges' && roles.length && hasPermission('registration:export')"
         :event-id="id"
         :config="config"
       />
       <el-button @click="file?.click()">导入 Excel / CSV</el-button>
-      <el-button type="primary" plain @click="edit()">添加{{ spec[section].label }}</el-button>
+      <el-button type="primary" plain :disabled="needsType" @click="edit()"
+        >添加{{ spec[section].label }}</el-button
+      >
       <el-button v-if="section === 'sessions'" @click="arrange">按抽签顺序排场</el-button>
       <el-button v-if="rehearsal && !config.teachers.length" @click="demo">载入单室联排样本</el-button>
     </template>
   </div>
   <input ref="file" hidden type="file" accept=".xlsx,.xls,.csv,.tsv" @change="read" />
-  <p v-if="section === 'judges'" class="j-note">
+  <p v-if="needsType" class="j-note">请先在「评分表与规则」新增评委类型，再分配名单。</p>
+  <p v-else-if="section === 'judges'" class="j-note">
     每位评委使用独立编号。姓名可以相同，请填写各自的机构，方便本人扫码后辨认。
   </p>
   <el-table :data="filtered" max-height="480" empty-text="尚无记录，可手工添加或导入名单">
@@ -98,7 +101,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { roleLabels, type JudgingConfig } from "@conference/shared";
+import { judgingRoles, type JudgingConfig } from "@conference/shared";
 import { judgingApi } from "../../services/judging";
 import ImageField from "./ImageField.vue";
 import {
@@ -125,6 +128,8 @@ const section = ref<Section>("judges"),
   editing = ref(false),
   file = ref<HTMLInputElement>(),
   importing = ref(false);
+const roles = computed(() => judgingRoles(props.config));
+const needsType = computed(() => section.value === "judges" && !roles.value.length);
 const preview = ref<{
   next: JudgingConfig;
   changes: { name: string; count: number }[];
@@ -139,7 +144,7 @@ const filtered = computed(() =>
   );
 function edit(current?: Row) {
   original.value = current?.id || "";
-  row.value = { ...emptyRow(section.value), ...current };
+  row.value = { ...emptyRow(section.value, props.config), ...current };
   if (!current && section.value === "judges") {
     const used = new Set(props.config.judges.map((j) => j.id));
     let number = 1;
@@ -149,7 +154,7 @@ function edit(current?: Row) {
   editing.value = true;
 }
 function options(f: Field) {
-  if (f.kind === "role") return Object.entries(roleLabels).map(([id, name]) => ({ id, name }));
+  if (f.kind === "role") return roles.value.map(({ id, label }) => ({ id, name: label }));
   if (f.kind === "stage")
     return [
       { id: "class", name: "课堂" },
@@ -160,6 +165,10 @@ function options(f: Field) {
 function apply() {
   const rows = props.config[section.value] as Row[],
     r = { ...row.value };
+  if (section.value === "judges" && !roles.value.some((option) => option.id === r.role)) {
+    ElMessage.warning("请选择本赛事的评委类型");
+    return;
+  }
   if (!r.id || (!original.value && rows.some((x) => x.id === r.id))) {
     ElMessage.warning("请使用唯一编号");
     return;
@@ -194,7 +203,7 @@ async function arrange() {
   }
 }
 function demo() {
-  const c = rehearsalRoster(props.id);
+  const c = rehearsalRoster(props.id, props.config);
   for (const k of sections) Object.assign(props.config, { [k]: c[k] });
 }
 async function read(ev: Event) {

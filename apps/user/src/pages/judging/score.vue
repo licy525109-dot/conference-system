@@ -38,7 +38,9 @@
         </text>
         <image v-if="page.look.cover" class="judging-cover" :src="asset(page.look.cover)" mode="aspectFill" />
         <image v-if="page.look.logo" class="judging-logo" :src="asset(page.look.logo)" mode="aspectFit" />
-        <text class="judging-kicker">{{ page.title }} · {{ roleLabels[page.role] }}</text>
+        <text class="judging-kicker"
+          >{{ page.title }} · {{ page.roleLabel ?? judgingRoleLabel({}, page.role) }}</text
+        >
         <text class="judging-heading">{{ page.look.heading }}</text>
         <text>{{ page.look.intro }}</text>
       </view>
@@ -56,7 +58,7 @@
 import { computed, ref } from "vue";
 import BallotPanel from "./BallotPanel.vue";
 import { onLoad, onUnload } from "@dcloudio/uni-app";
-import { defaultJudgingConfig, judgingStyle, roleLabels } from "@conference/shared";
+import { defaultJudgingConfig, judgingStyle, judgingRoleLabel } from "@conference/shared";
 import type { Answers, ScoreReceipt, ScoringView } from "@conference/shared";
 import { ensureAuthenticatedUser } from "@/services/auth";
 import { bindWechatPhone } from "@/services/profile";

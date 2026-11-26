@@ -1,4 +1,12 @@
-import { defaultJudgingConfig, rehearsalUserId, roleLabels, type JudgingConfig } from "@conference/shared";
+import {
+  baseJudgeRole,
+  defaultJudgingConfig,
+  judgeRoles,
+  judgingRoleLabel,
+  judgingRoles,
+  rehearsalUserId,
+  type JudgingConfig
+} from "@conference/shared";
 import { readExternalCheckinWorkbook } from "../../utils/external-checkin-sheet";
 export type Section = "rooms" | "teachers" | "judges" | "sessions" | "merits";
 export type Field = {
@@ -67,7 +75,9 @@ export const spec: Record<Section, { label: string; fields: Field[] }> = {
 };
 export const sections = Object.keys(spec) as Section[];
 export type Row = Record<string, any>;
-export function emptyRow(section: Section): Row {
+export function emptyRow(section: Section, c: JudgingConfig): Row {
+  const roles = judgingRoles(c);
+  const initialRole = (roles.find((r) => baseJudgeRole(r.id) === "experience") ?? roles[0])?.id ?? "";
   return Object.fromEntries(
     spec[section].fields.map((f) => [
       f.key,
@@ -78,13 +88,13 @@ export function emptyRow(section: Section): Row {
           : f.kind === "stage"
             ? "class"
             : f.kind === "role"
-              ? "experience"
+              ? initialRole
               : ""
     ])
   );
 }
 export function displayField(f: Field, v: any, c: JudgingConfig): string {
-  if (f.kind === "role") return roleLabels[v as keyof typeof roleLabels] || v;
+  if (f.kind === "role") return v ? judgingRoleLabel(c, v) || v : "";
   if (f.kind === "stage") return v === "ted" ? "TED" : "课堂";
   if (f.kind === "room") return c.rooms.find((r) => r.id === v)?.name || v || "—";
   if (f.kind === "teacher") return c.teachers.find((t) => t.id === v)?.name || v;
@@ -111,7 +121,7 @@ export async function prepareImport(file: File, current: JudgingConfig, selected
       const id = cells[indexes[0]]?.trim();
       if (!id || seen.has(id)) throw new Error(sheet.name + " 第 " + (i + 2) + " 行编号为空或重复");
       seen.add(id);
-      const record = { ...emptyRow(section), ...existing.get(id) };
+      const record = { ...emptyRow(section, next), ...existing.get(id) };
       fields.forEach((f, j) => {
         if (indexes[j] < 0) return;
         const v = (cells[indexes[j]] ?? "").trim();
@@ -119,9 +129,10 @@ export async function prepareImport(file: File, current: JudgingConfig, selected
           if (v === "" && f.kind === "num")
             throw new Error(sheet.name + " 第 " + (i + 2) + " 行缺少" + f.label);
           record[f.key] = v === "" ? null : Number(v);
-        } else if (f.kind === "role")
-          record[f.key] = Object.entries(roleLabels).find(([, label]) => label === v)?.[0] || v;
-        else if (f.kind === "stage") record[f.key] = v === "课堂" ? "class" : v === "TED" ? "ted" : v;
+        } else if (f.kind === "role") {
+          const roles = judgingRoles(next);
+          record[f.key] = (roles.find((r) => r.id === v) ?? roles.find((r) => r.label === v))?.id ?? v;
+        } else if (f.kind === "stage") record[f.key] = v === "课堂" ? "class" : v === "TED" ? "ted" : v;
         else record[f.key] = v;
       });
       existing.set(id, record);
@@ -137,7 +148,11 @@ export async function rosterTemplate(c: JudgingConfig) {
     book = x.utils.book_new();
   for (const k of sections) {
     const f = spec[k].fields.filter((field) => !field.legacy),
-      data = (c[k] as Row[]).map((row) => f.map((field) => row[field.key] ?? ""));
+      data = (c[k] as Row[]).map((row) =>
+        f.map((field) =>
+          field.kind === "role" ? displayField(field, row[field.key], c) : (row[field.key] ?? "")
+        )
+      );
     const ws = x.utils.aoa_to_sheet([f.map((v) => v.label), ...data]);
     ws["!cols"] = f.map(() => ({ wch: 22 }));
     x.utils.book_append_sheet(book, ws, spec[k].label);
@@ -162,7 +177,7 @@ export function schedule(c: JudgingConfig) {
     ];
   });
 }
-export function rehearsalRoster(eventId: string): JudgingConfig {
+export function rehearsalRoster(eventId: string, current: JudgingConfig): JudgingConfig {
   const c = defaultJudgingConfig();
   c.rooms = c.rooms.slice(0, 1);
   c.teachers = [
@@ -180,14 +195,21 @@ export function rehearsalRoster(eventId: string): JudgingConfig {
     }
   ];
   c.sessions = schedule(c);
-  c.judges = (["lecturer", "experience", "observer", "expert"] as const).map((role, i) => ({
-    id: "J0" + (i + 1),
-    name: i === 1 || i === 2 ? "林小雨" : i === 0 ? "陈晨" : "赵宁",
-    org: ["青苗教研室", "晨光舞蹈中心", "星禾艺术学校", "云帆教研室"][i],
-    role,
-    room: role === "expert" ? "" : "R1",
-    userId: rehearsalUserId(eventId, "J0" + (i + 1)),
-    phone: ""
-  }));
+  const roles = judgingRoles(current);
+  c.judges = judgeRoles.flatMap((base, i) => {
+    const role = roles.find((r) => baseJudgeRole(r.id) === base)?.id;
+    if (!role) return [];
+    return [
+      {
+        id: "J0" + (i + 1),
+        name: i === 1 || i === 2 ? "林小雨" : i === 0 ? "陈晨" : "赵宁",
+        org: ["青苗教研室", "晨光舞蹈中心", "星禾艺术学校", "云帆教研室"][i],
+        role,
+        room: base === "expert" ? "" : "R1",
+        userId: rehearsalUserId(eventId, "J0" + (i + 1)),
+        phone: ""
+      }
+    ];
+  });
   return c;
 }

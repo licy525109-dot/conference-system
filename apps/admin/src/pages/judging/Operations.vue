@@ -47,7 +47,9 @@
     <el-table :data="selected" max-height="380">
       <el-table-column prop="name" label="评委" />
       <el-table-column label="席别">
-        <template #default="{ row }">{{ roleLabels[row.role as JudgeRole] }}</template>
+        <template #default="{ row }">{{
+          row.roleLabel ?? judgingRoleLabel(event.config, row.role)
+        }}</template>
       </el-table-column>
       <el-table-column label="状态">
         <template #default="{ row }">{{ taskStatus[row.status] }} {{ row.present ? "· 已到" : "" }}</template>
@@ -75,7 +77,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { judgeRoles, roleLabels, type JudgeRole, type ScoringTask } from "@conference/shared";
+import { baseJudgeRole, judgingRoleLabel, judgingRoles, stageOf, type ScoringTask } from "@conference/shared";
 import { judgingApi, slotLabel, taskStatus, type EventDetail, type Operate } from "../../services/judging";
 const props = defineProps<{ event: EventDetail; operate: Operate }>();
 const tasks = ref<ScoringTask[]>([]),
@@ -105,21 +107,32 @@ const selected = computed(() =>
     (t) => (!status.value || t.status === status.value) && (t.name + t.judgeId).includes(keyword.value)
   )
 );
-const stats = computed(() =>
-  judgeRoles
-    .filter((r) => (current.value?.kind === "ted" ? r === "expert" : r !== "expert"))
-    .map((role) => {
-      const list = here.value.filter((t) => t.role === role);
-      return {
-        label: roleLabels[role],
-        capacity: role === "lecturer" ? 1 : role === "expert" ? list.length : (room.value?.[role] ?? 0),
-        assigned: list.length,
-        present: list.filter((t) => t.present).length,
-        received: list.filter((t) => t.receipt).length,
-        valid: list.filter((t) => t.status === "valid").length
-      };
-    })
-);
+const stats = computed(() => {
+  const roles = new Map(
+    judgingRoles(props.event.config)
+      .filter((r) => (stageOf(r.id) === "ted") === (current.value?.kind === "ted"))
+      .map((r) => [r.id, r.label])
+  );
+  for (const task of here.value)
+    roles.set(task.role, task.roleLabel ?? judgingRoleLabel(props.event.config, task.role));
+  const ids = [...roles.keys()];
+  return ids.map((role) => {
+    const list = here.value.filter((t) => t.role === role);
+    const base = baseJudgeRole(role);
+    const quota = base === "lecturer" ? 1 : base === "expert" ? list.length : (room.value?.[base] ?? 0);
+    return {
+      label: roles.get(role),
+      capacity:
+        base !== "expert" && ids.some((id) => id !== role && baseJudgeRole(id) === base)
+          ? "共用 " + quota
+          : quota,
+      assigned: list.length,
+      present: list.filter((t) => t.present).length,
+      received: list.filter((t) => t.receipt).length,
+      valid: list.filter((t) => t.status === "valid").length
+    };
+  });
+});
 async function load(quiet = false) {
   const id = props.event.id;
   try {
