@@ -28,23 +28,47 @@
     <text class="judging-note">{{ page.form.description }}</text>
     <form :key="page.session.id + ':' + page.formVersion" @submit="send">
       <view v-for="f in page.form.fields" :key="f.id" class="judging-field">
-        <text class="judging-field-label">{{ f.label }}{{ f.required ? " *" : "" }}</text>
+        <text class="judging-field-label"
+          >{{ f.label }}<text v-if="f.required" class="judging-required">必填</text></text
+        >
         <text v-if="f.hint" class="judging-note">{{ f.hint }}</text>
-        <text class="judging-note">{{ f.min }}–{{ f.max }} 分，步长 {{ f.step }}</text>
-        <input
-          v-if="!unseen[f.id]"
-          class="judging-input"
-          type="digit"
-          :name="f.id"
-          :aria-label="f.label"
-          placeholder="填写分数"
-        />
-        <text v-if="f.unseen !== 'forbid'" class="judging-link" @click="switchUnseen(f.id)">
-          {{ unseen[f.id] ? "已选未观察 · 重新评分" : "此项未观察" }}
-        </text>
+        <view class="judging-score-meta">
+          <text>本项得分</text>
+          <text class="judging-note">{{ f.min }}–{{ f.max }} 分，步长 {{ f.step }}</text>
+        </view>
+        <view v-if="inputs[f.id] !== 'unseen'" class="judging-score-box">
+          <input
+            v-model="inputs[f.id]"
+            class="judging-score-input"
+            type="digit"
+            inputmode="decimal"
+            :name="f.id"
+            :aria-label="f.label + '得分'"
+            :aria-describedby="issue?.fieldId === f.id ? 'judging-score-feedback' : undefined"
+            placeholder="请输入分数"
+            placeholder-class="judging-score-placeholder"
+            :disabled="sending"
+          />
+          <text class="judging-score-unit">分</text>
+        </view>
+        <button
+          v-if="f.unseen !== 'forbid'"
+          class="judging-unseen"
+          :disabled="sending"
+          :aria-pressed="inputs[f.id] === 'unseen'"
+          @click="inputs[f.id] = inputs[f.id] === 'unseen' ? '' : 'unseen'"
+        >
+          {{ inputs[f.id] === "unseen" ? "已选未观察 · 重新评分" : "此项未观察" }}
+        </button>
       </view>
-      <text v-if="validation || message" class="judging-note">{{ validation || message }}</text>
-      <button class="judging-submit" :disabled="sending" form-type="submit">
+      <text
+        v-if="message || issue"
+        id="judging-score-feedback"
+        class="judging-score-feedback"
+        aria-live="polite"
+        >{{ issue?.message || message }}</text
+      >
+      <button class="judging-submit judging-score-submit" :disabled="sending || !!issue" form-type="submit">
         {{ sending ? "正在提交…" : page.look.submit }}
       </button>
     </form>
@@ -55,37 +79,37 @@
   </view>
 </template>
 <script setup lang="ts">
-import { ref, watch } from "vue";
-import { submittedValues } from "./form-values";
-import type { Answers, ScoringView } from "@conference/shared";
+import { computed, ref, watch } from "vue";
+import {
+  ballotIssue,
+  scoreInputAnswers,
+  type Answers,
+  type ScoreInputs,
+  type ScoringView
+} from "@conference/shared";
 import { API_BASE_URL } from "@/config/app";
 const props = defineProps<{ page: ScoringView; sending: boolean; message: string }>();
 const emit = defineEmits<{ submit: [answers: Answers]; refresh: [] }>();
-const unseen = ref<Record<string, boolean>>({}),
-  validation = ref("");
-watch([() => props.page.session.id, () => props.page.formVersion, () => props.page.receipt?.id], () => {
-  unseen.value = {};
-  validation.value = "";
-});
-const asset = (url: string) => (url.startsWith("/") ? API_BASE_URL.replace(/\/api\/?$/, "") + url : url);
-function switchUnseen(id: string) {
-  unseen.value[id] = !unseen.value[id];
-}
-
-function send(event: Event) {
-  if (props.sending || props.page.receipt) return;
-  validation.value = "";
-  const entries = submittedValues(event);
-  const answers: Answers = {};
-  for (const f of props.page.form.fields) {
-    const v = unseen.value[f.id] ? "unseen" : entries[f.id];
-    if ((v === undefined || v === "") && f.required) {
-      validation.value = "请完成" + f.label;
-      return;
-    }
-    answers[f.id] = v === "unseen" ? v : v == null || v === "" ? null : Number(v);
+const inputs = ref<ScoreInputs>({});
+const answers = computed(() => scoreInputAnswers(props.page.form, inputs.value));
+const issue = computed(() => ballotIssue(props.page.form, answers.value));
+watch(
+  [
+    () => props.page.session.id,
+    () => props.page.formVersion,
+    () => props.page.role,
+    () => props.page.receipt?.id
+  ],
+  () => {
+    inputs.value = {};
   }
-
-  emit("submit", answers);
+);
+const asset = (url: string) => (url.startsWith("/") ? API_BASE_URL.replace(/\/api\/?$/, "") + url : url);
+function send() {
+  if (props.sending || !props.page.open || props.page.receipt || issue.value) return;
+  emit("submit", answers.value);
 }
 </script>
+<style scoped>
+@import "../../../../../packages/shared/src/judging-surface.css";
+</style>

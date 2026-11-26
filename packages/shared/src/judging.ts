@@ -212,6 +212,51 @@ export interface JudgingControl {
   ties: TieOrder[];
 }
 export type Answers = Record<string, number | null | "unseen">;
+export type ScoreInputs = Record<string, string | number | null | undefined>;
+
+export function scoreInputAnswers(form: Rubric, inputs: ScoreInputs): Answers {
+  const answers: Answers = {};
+  for (const { id } of form.fields) {
+    const raw = inputs[id];
+    if (raw === "unseen") answers[id] = raw;
+    else if (raw == null || String(raw).trim() === "") answers[id] = null;
+    else answers[id] = Number(raw);
+  }
+  return answers;
+}
+
+export function ballotIssue(
+  form: Rubric,
+  answers: Record<string, unknown>,
+  purpose: "submission" | "correction" = "submission"
+): { fieldId: string; message: string } | null {
+  let scored = false;
+  for (const f of form.fields) {
+    const value = answers[f.id];
+    if (value == null || value === "") {
+      if (f.required) return { fieldId: f.id, message: "请填写「" + f.label + "」的分数" };
+      continue;
+    }
+    if (value === "unseen") {
+      if (f.unseen === "forbid") return { fieldId: f.id, message: f.label + "必须评分" };
+      continue;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value))
+      return { fieldId: f.id, message: "请为「" + f.label + "」输入有效分数" };
+    if (value < f.min || value > f.max)
+      return { fieldId: f.id, message: f.label + "的分数范围是 " + f.min + "–" + f.max + " 分" };
+    const units = Math.round(value * 100);
+    if (
+      Math.abs(value * 100 - units) > 0.000001 ||
+      (units - Math.round(f.min * 100)) % Math.round(f.step * 100) !== 0
+    )
+      return { fieldId: f.id, message: f.label + "的计分步长是 " + f.step + " 分，最多保留两位小数" };
+    scored = true;
+  }
+  if (!scored && purpose === "submission")
+    return { fieldId: form.fields[0]?.id ?? "", message: "请至少填写一项分数后再提交" };
+  return null;
+}
 export interface ScoringRow {
   id: string;
   name: string;

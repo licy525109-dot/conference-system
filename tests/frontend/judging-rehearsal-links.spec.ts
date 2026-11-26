@@ -66,5 +66,9 @@ test("opening a second rehearsal link in the same tab replaces the seat and its 
   await page.goto("/#/pages/judging/score?event=sample&session=ted&practice=expert");
   await expect(page.getByText("模拟席位 · 模拟专家席", { exact: true })).toBeVisible();
   await expect(page.getByText(config.look.receipt, { exact: true })).toHaveCount(0);
-  await expect(page.getByText(config.look.submit, { exact: true })).toBeVisible();
+  const submit = page.locator(".judging-score-submit");
+  await expect(submit).toHaveAttribute("disabled", /.*/);
+  await expect(page.locator(".judging-score-box")).toHaveCSS("border-top-width", "2px");
+  await page.getByRole("spinbutton").fill("12.5");
+  await expect(submit).not.toHaveAttribute("disabled", /.*/);
 });

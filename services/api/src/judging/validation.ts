@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import {
   awardFieldOptions,
+  ballotIssue,
   baseJudgeRole,
   coverFits,
   coverPositions,
@@ -356,12 +357,15 @@ export function validateStart(c: JudgingConfig, rehearsal: boolean) {
 }
 export function evaluate(
   form: Rubric,
-  raw: unknown
+  raw: unknown,
+  purpose: "submission" | "correction" = "submission"
 ): { answers: Answers; units: number | null; status: string } {
   const source = object(raw),
     answers: Answers = {};
   if (Object.keys(source).some((k) => !form.fields.some((f) => f.id === k)))
     fail("提交的题目与评分表版本不符");
+  const issue = ballotIssue(form, source, purpose);
+  if (issue) fail(issue.message);
   let sum = 0,
     seenMax = 0,
     cap = 0,
@@ -371,23 +375,17 @@ export function evaluate(
       max = Math.round(f.max * 100);
     cap += max;
     if (v === "unseen") {
-      if (f.unseen === "forbid") fail(f.label + " 必须评分");
       answers[f.id] = "unseen";
       if (f.unseen === "review") pending = true;
       continue;
     }
     if (v == null || v === "") {
-      if (f.required) fail("请先完成：" + f.label);
       answers[f.id] = null;
       pending = true;
       continue;
     }
-    const n = points(v, f.label, f.max),
-      u = Math.round(n * 100),
-      lo = Math.round(f.min * 100);
-    if (u < lo || (u - lo) % Math.round(f.step * 100) !== 0) fail(f.label + " 不符合允许范围或步长");
-    answers[f.id] = n;
-    sum += u;
+    answers[f.id] = v;
+    sum += Math.round(v * 100);
     seenMax += max;
   }
   const units = !pending && seenMax ? Math.round((sum * cap) / seenMax) : null;
