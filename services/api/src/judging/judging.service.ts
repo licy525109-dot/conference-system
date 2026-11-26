@@ -46,6 +46,8 @@ import {
   evaluate,
   fail,
   key,
+  legacyAwardTargets,
+  num,
   object,
   points,
   str,
@@ -57,10 +59,13 @@ import {
 type Tx = Prisma.TransactionClient;
 const deletedPhase = "DELETED";
 const json = (data: unknown) => JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
-function config(e: JudgingEvent): JudgingConfig {
+function config(
+  e: JudgingEvent
+): JudgingConfig & { awardTargets: NonNullable<JudgingConfig["awardTargets"]> } {
   const stored = e.config as unknown as JudgingConfig;
   return {
     ...stored,
+    awardTargets: stored.awardTargets ?? legacyAwardTargets(e.rehearsal),
     roleOptions: judgingRoles(stored),
     look: { ...stored.look, entry: { ...defaultEntryDesign, ...stored.look.entry } }
   };
@@ -252,12 +257,22 @@ export class JudgingService {
     permit(a, "judging:config");
     if (a.conferenceScopeMode !== "ALL") throw new ForbiddenException("新建赛事需要全局授权");
     const b = object(raw);
-    if (typeof b.rehearsal !== "boolean") fail("请选择正式赛或联排");
+    if (b.rehearsal !== undefined && typeof b.rehearsal !== "boolean") fail("赛事类型无效");
+    const rehearsal = b.rehearsal === true;
+    const legacyRequest =
+      b.rehearsal !== undefined && b.roomCount === undefined && b.roundsPerRoom === undefined;
+    const initial = legacyRequest
+      ? defaultJudgingConfig()
+      : defaultJudgingConfig(
+          num(b.roomCount === undefined ? 1 : b.roomCount, "教室数量", 1, 50, true),
+          num(b.roundsPerRoom === undefined ? 1 : b.roundsPerRoom, "每间教室的课堂轮数", 1, 250, true)
+        );
+    initial.awardTargets = legacyRequest ? legacyAwardTargets(rehearsal) : { merits: null, schools: null };
     const e = await this.db.judgingEvent.create({
       data: {
         title: str(b.title, "赛事名称"),
-        rehearsal: b.rehearsal,
-        config: json(defaultJudgingConfig()),
+        rehearsal,
+        config: json(initial),
         control: json(defaultJudgingControl()),
         staffIds: [a.id]
       }
@@ -732,11 +747,12 @@ export class JudgingService {
             const tasks = scoringTasks(c, state, ballots);
             if (tasks.some((t) => ["waiting", "makeup", "pending"].includes(t.status)))
               fail("还有待交、待补或待核原单，请先处理或登记弃评");
-            if (
-              !e.rehearsal &&
-              (c.merits.length !== 19 || new Set(c.teachers.map((t) => t.orgId)).size !== 13)
-            )
-              fail("请核对 19 名优秀奖和 13 所教学示范校");
+            const targets = c.awardTargets;
+            if (targets.merits !== null && c.merits.length !== targets.merits)
+              fail("请核对优秀奖名单，当前 " + c.merits.length + " 人，本场设置为 " + targets.merits + " 人");
+            const schools = new Set(c.teachers.map((t) => t.orgId)).size;
+            if (targets.schools !== null && schools !== targets.schools)
+              fail("请核对教学示范校，当前 " + schools + " 所，本场设置为 " + targets.schools + " 所");
             if (action === "send") {
               data.phase = "SUBMITTED";
             } else {

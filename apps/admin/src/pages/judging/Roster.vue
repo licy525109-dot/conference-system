@@ -1,13 +1,19 @@
 <template>
   <div class="j-tools">
-    <el-radio-group v-model="section">
+    <el-radio-group v-model="section" aria-label="名单与排场">
       <el-radio-button v-for="k in sections" :key="k" :value="k">
-        {{ spec[k].label }} {{ config[k].length }}
+        {{ k === "rooms" ? "教室与轮次" : spec[k].label }} {{ config[k].length }}
       </el-radio-button>
     </el-radio-group>
   </div>
   <div class="j-tools">
-    <el-input v-model="search" placeholder="按编号、姓名或机构搜索" clearable style="width: 235px" />
+    <el-input
+      v-if="config[section].length"
+      v-model="search"
+      :placeholder="'搜索' + spec[section].label"
+      clearable
+      style="width: 185px"
+    />
     <el-button @click="rosterTemplate(config)">下载名单模板</el-button>
     <template v-if="editable">
       <RegistrationSource
@@ -19,12 +25,19 @@
       <el-button type="primary" plain :disabled="needsType" @click="edit()"
         >添加{{ spec[section].label }}</el-button
       >
-      <el-button v-if="section === 'sessions'" @click="arrange">按抽签顺序排场</el-button>
+      <el-button v-if="section === 'sessions'" @click="arrange">按选手顺序排场</el-button>
       <el-button v-if="rehearsal && !config.teachers.length" @click="demo">载入单室联排样本</el-button>
     </template>
   </div>
   <input ref="file" hidden type="file" accept=".xlsx,.xls,.csv,.tsv" @change="read" />
-  <p v-if="needsType" class="j-note">请先在「评分表与规则」新增评委类型，再分配名单。</p>
+  <p v-if="section === 'rooms' || section === 'sessions'" class="j-note">
+    共 <strong>{{ capacity }}</strong> 个课堂时段，已录入 {{ config.teachers.length }} 位选手。{{
+      section === "rooms"
+        ? "每间教室可以设置不同的课堂轮数。"
+        : "排场会为每位选手安排一场课堂和一场 TED，空位可保留。"
+    }}
+  </p>
+  <p v-else-if="needsType" class="j-note">请先在「评分表与规则」新增评委类型，再分配名单。</p>
   <p v-else-if="section === 'judges'" class="j-note">
     每位评委使用独立编号。姓名可以相同，请填写各自的机构，方便本人扫码后辨认。
   </p>
@@ -36,7 +49,25 @@
       :min-width="f.key === 'topic' ? 160 : 94"
       show-overflow-tooltip
     >
-      <template #default="{ row }">{{ displayField(f, row[f.key], config) }}</template>
+      <template #default="{ row }">
+        <template v-if="f.key === 'rounds'">
+          <el-input-number
+            v-if="editable"
+            :model-value="classroomRounds(row, config.sessions)"
+            :aria-label="row.name + '课堂轮数'"
+            :min="1"
+            :max="250"
+            :step-strictly="true"
+            :value-on-clear="1"
+            controls-position="right"
+            size="small"
+            style="width: 96px"
+            @update:model-value="setRounds(row, $event)"
+          />
+          <span v-else>{{ classroomRounds(row, config.sessions) }}</span>
+        </template>
+        <template v-else>{{ displayField(f, row[f.key], config) }}</template>
+      </template>
     </el-table-column>
     <el-table-column v-if="editable" label="操作" fixed="right" width="107">
       <template #default="{ row }">
@@ -61,7 +92,9 @@
           <el-input-number
             v-if="f.kind === 'num' || f.kind === 'optionalNum'"
             v-model="row[f.key]"
-            :min="0"
+            :min="f.key === 'rounds' || f.key === 'round' ? 1 : 0"
+            :max="f.key === 'rounds' || f.key === 'round' ? 250 : undefined"
+            :step-strictly="f.key === 'rounds' || f.key === 'round'"
             :value-on-clear="null"
           />
           <el-select
@@ -99,9 +132,9 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { judgingRoles, type JudgingConfig } from "@conference/shared";
+import { classroomRounds, judgingRoles, type JudgingConfig, type JudgingRoom } from "@conference/shared";
 import { judgingApi } from "../../services/judging";
 import ImageField from "./ImageField.vue";
 import {
@@ -121,7 +154,7 @@ import RegistrationSource from "./RegistrationSource.vue";
 import { useAdminSession } from "../../stores/admin-session";
 const { hasPermission } = useAdminSession();
 const props = defineProps<{ config: JudgingConfig; id: string; editable: boolean; rehearsal: boolean }>();
-const section = ref<Section>("judges"),
+const section = ref<Section>("rooms"),
   search = ref(""),
   row = ref<Row>({}),
   original = ref(""),
@@ -129,6 +162,15 @@ const section = ref<Section>("judges"),
   file = ref<HTMLInputElement>(),
   importing = ref(false);
 const roles = computed(() => judgingRoles(props.config));
+function setRounds(room: JudgingRoom, value: number | null | undefined) {
+  if (typeof value === "number") room.rounds = value;
+}
+const capacity = computed(() =>
+  props.config.rooms.reduce((sum, room) => sum + classroomRounds(room, props.config.sessions), 0)
+);
+watch(section, () => {
+  search.value = "";
+});
 const needsType = computed(() => section.value === "judges" && !roles.value.length);
 const preview = ref<{
   next: JudgingConfig;
@@ -145,6 +187,22 @@ const filtered = computed(() =>
 function edit(current?: Row) {
   original.value = current?.id || "";
   row.value = { ...emptyRow(section.value, props.config), ...current };
+  if (section.value === "rooms") {
+    if (current) row.value.rounds = classroomRounds(current as JudgingRoom, props.config.sessions);
+    else {
+      let number = props.config.rooms.length + 1;
+      const used = new Set(props.config.rooms.map((r) => r.id));
+      while (used.has("R" + number)) number++;
+      const last = props.config.rooms.at(-1);
+      Object.assign(row.value, {
+        id: "R" + number,
+        name: number + " 号教室",
+        rounds: last ? classroomRounds(last, props.config.sessions) : 1,
+        experience: last?.experience ?? 16,
+        observer: last?.observer ?? 16
+      });
+    }
+  }
   if (!current && section.value === "judges") {
     const used = new Set(props.config.judges.map((j) => j.id));
     let number = 1;
@@ -165,6 +223,10 @@ function options(f: Field) {
 function apply() {
   const rows = props.config[section.value] as Row[],
     r = { ...row.value };
+  if (section.value === "rooms" && (!Number.isInteger(r.rounds) || r.rounds < 1 || r.rounds > 250)) {
+    ElMessage.warning("请填写 1 至 250 的整数轮数");
+    return;
+  }
   if (section.value === "judges" && !roles.value.some((option) => option.id === r.role)) {
     ElMessage.warning("请选择本赛事的评委类型");
     return;
@@ -183,6 +245,13 @@ function apply() {
   editing.value = false;
 }
 async function remove(r: Row) {
+  if (
+    section.value === "rooms" &&
+    (props.config.sessions.some((s) => s.room === r.id) || props.config.judges.some((j) => j.room === r.id))
+  ) {
+    ElMessage.warning("请先将该教室的场次和评委移至其他教室，再移除教室");
+    return;
+  }
   try {
     await ElMessageBox.confirm("从当前草稿移除 " + r.id + "？", "移除记录");
     const a = props.config[section.value] as Row[];
@@ -194,9 +263,10 @@ async function remove(r: Row) {
 }
 async function arrange() {
   try {
+    const next = schedule(props.config);
     if (props.config.sessions.length)
       await ElMessageBox.confirm("将按当前选手顺序覆盖草稿排场。", "重新排场");
-    props.config.sessions = schedule(props.config);
+    props.config.sessions = next;
     ElMessage.success("已生成课堂和 TED 场次，请核对抽签结果");
   } catch (e) {
     if (e instanceof Error) ElMessage.error(e.message);

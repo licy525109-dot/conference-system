@@ -1,11 +1,13 @@
 import {
   baseJudgeRole,
+  classroomRounds,
   defaultJudgingConfig,
   judgeRoles,
   judgingRoleLabel,
   judgingRoles,
   rehearsalUserId,
-  type JudgingConfig
+  type JudgingConfig,
+  type JudgingRoom
 } from "@conference/shared";
 import { readExternalCheckinWorkbook } from "../../utils/external-checkin-sheet";
 export type Section = "rooms" | "teachers" | "judges" | "sessions" | "merits";
@@ -22,6 +24,7 @@ export const spec: Record<Section, { label: string; fields: Field[] }> = {
     fields: [
       { key: "id", label: "教室编号" },
       { key: "name", label: "教室名称" },
+      { key: "rounds", label: "课堂轮数", aliases: ["轮数", "轮次"], kind: "num" },
       { key: "experience", label: "体验席配额", kind: "num" },
       { key: "observer", label: "观察席配额", kind: "num" }
     ]
@@ -78,19 +81,16 @@ export type Row = Record<string, any>;
 export function emptyRow(section: Section, c: JudgingConfig): Row {
   const roles = judgingRoles(c);
   const initialRole = (roles.find((r) => baseJudgeRole(r.id) === "experience") ?? roles[0])?.id ?? "";
+  const defaults: Partial<Record<NonNullable<Field["kind"]>, string | number | null>> = {
+    num: 1,
+    optionalNum: null,
+    stage: "class",
+    role: initialRole
+  };
   return Object.fromEntries(
-    spec[section].fields.map((f) => [
-      f.key,
-      f.kind === "num"
-        ? 1
-        : f.kind === "optionalNum"
-          ? null
-          : f.kind === "stage"
-            ? "class"
-            : f.kind === "role"
-              ? initialRole
-              : ""
-    ])
+    spec[section].fields
+      .filter((f) => f.key !== "rounds")
+      .map((f) => [f.key, f.kind && f.kind in defaults ? defaults[f.kind] : ""])
   );
 }
 export function displayField(f: Field, v: any, c: JudgingConfig): string {
@@ -149,9 +149,10 @@ export async function rosterTemplate(c: JudgingConfig) {
   for (const k of sections) {
     const f = spec[k].fields.filter((field) => !field.legacy),
       data = (c[k] as Row[]).map((row) =>
-        f.map((field) =>
-          field.kind === "role" ? displayField(field, row[field.key], c) : (row[field.key] ?? "")
-        )
+        f.map((field) => {
+          if (field.key === "rounds") return classroomRounds(row as JudgingRoom, c.sessions);
+          return field.kind === "role" ? displayField(field, row[field.key], c) : (row[field.key] ?? "");
+        })
       );
     const ws = x.utils.aoa_to_sheet([f.map((v) => v.label), ...data]);
     ws["!cols"] = f.map(() => ({ wch: 22 }));
@@ -161,19 +162,50 @@ export async function rosterTemplate(c: JudgingConfig) {
 }
 export function schedule(c: JudgingConfig) {
   if (!c.rooms.length) throw new Error("请先设置教室");
-  const times = ["09:00–10:00", "10:15–11:15", "11:30–12:30"];
+  if (!c.teachers.length) throw new Error("请先添加选手，再生成排场");
+  const rooms = c.rooms.map((room) => ({ id: room.id, rounds: classroomRounds(room, c.sessions) }));
+  if (rooms.some((room) => !Number.isInteger(room.rounds) || room.rounds < 1 || room.rounds > 250))
+    throw new Error("请为每间教室填写 1 至 250 的整数轮数");
+  const capacity = rooms.reduce((sum, room) => sum + room.rounds, 0);
+  if (c.teachers.length > capacity)
+    throw new Error(
+      "当前可排 " + capacity + " 位，名单有 " + c.teachers.length + " 位选手，请增加教室或课堂轮数"
+    );
+  const slots: { room: string; round: number }[] = [];
+  for (let round = 1; slots.length < c.teachers.length; round++) {
+    for (const room of rooms) if (round <= room.rounds) slots.push({ room: room.id, round });
+  }
+  const existing = new Map(c.sessions.map((s) => [s.kind + "/" + s.teacher, s.id]));
+  const usedIds = new Set(c.sessions.map((s) => s.id));
+  function sessionId(kind: string, teacher: string) {
+    const saved = existing.get(kind + "/" + teacher);
+    if (saved) return saved;
+    const candidate = kind + "-" + teacher;
+    const id =
+      candidate.length <= 64 && !usedIds.has(candidate) ? candidate : kind + "-" + crypto.randomUUID();
+    usedIds.add(id);
+    return id;
+  }
+  const times = new Map(c.sessions.map((s) => [[s.kind, s.room, s.round].join("/"), s.time]));
   return c.teachers.flatMap((t, i) => {
-    const round = Math.floor(i / c.rooms.length) + 1;
+    const { room, round } = slots[i];
     return [
       {
-        id: "class-" + t.id,
+        id: sessionId("class", t.id),
         teacher: t.id,
         kind: "class" as const,
-        room: c.rooms[i % c.rooms.length].id,
+        room,
         round,
-        time: times[round - 1] || ""
+        time: times.get(["class", room, round].join("/")) || ""
       },
-      { id: "ted-" + t.id, teacher: t.id, kind: "ted" as const, room: "", round: i + 1, time: "14:00–17:00" }
+      {
+        id: sessionId("ted", t.id),
+        teacher: t.id,
+        kind: "ted" as const,
+        room: "",
+        round: i + 1,
+        time: times.get("ted//" + (i + 1)) || ""
+      }
     ];
   });
 }

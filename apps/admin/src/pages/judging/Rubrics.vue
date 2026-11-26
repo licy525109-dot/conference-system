@@ -48,42 +48,80 @@
         <el-button @click="add">添加评分项</el-button>
         <strong>题目满分合计 {{ sum }} / {{ maxPoints[stageOf(role)] }}</strong>
       </div>
-      <el-checkbox v-model="config.approvedForms">本届正式评分细则已由业务方核对</el-checkbox>
+      <el-checkbox v-model="config.approvedForms">已核对本场评分细则</el-checkbox>
     </el-form>
-    <el-form label-position="top" :disabled="rulesLocked">
-      <h3>有效份数与精度</h3>
-      <div class="j-rulegrid">
-        <label v-for="s in stages" :key="s">
-          {{ stageNames[s] }}最低份数
-          <el-input-number v-model="config.minimum[s]" :min="1" :max="1500" />
-        </label>
-        <label>
-          显示小数位
-          <el-input-number v-model="config.display" :min="0" :max="4" />
-        </label>
-        <label>
-          同分比较小数位
-          <el-input-number v-model="config.precision" :min="0" :max="6" />
-        </label>
-      </div>
-      <h3>颁奖公布</h3>
-      <div class="j-tools">
-        <label>
-          最早公布日期
-          <el-date-picker
-            v-model="config.publicDay"
-            type="date"
-            value-format="YYYY-MM-DD"
-            :clearable="false"
-          />
-        </label>
-        <el-checkbox-group v-model="config.publicFields">
-          <el-checkbox v-for="(label, k) in awardFieldOptions" :key="k" :value="k" :disabled="k === 'name'">
-            {{ label }}
-          </el-checkbox>
-        </el-checkbox-group>
-      </div>
-    </el-form>
+    <el-collapse>
+      <el-collapse-item title="更多设置 · 有效份数、颁奖与公布" name="scoring-settings">
+        <el-form label-position="top" :disabled="rulesLocked">
+          <h3>有效份数与精度</h3>
+          <div class="j-rulegrid">
+            <label v-for="s in stages" :key="s">
+              {{ stageNames[s] }}最低份数
+              <el-input-number v-model="config.minimum[s]" :min="1" :max="1500" />
+            </label>
+            <label>
+              显示小数位
+              <el-input-number v-model="config.display" :min="0" :max="4" />
+            </label>
+            <label>
+              同分比较小数位
+              <el-input-number v-model="config.precision" :min="0" :max="6" />
+            </label>
+          </div>
+          <h3>颁奖公布</h3>
+          <template v-if="config.awardTargets">
+            <p class="j-note">按实际名单颁奖。如果本场有规定名额，可填写数量，送审时系统会核对。</p>
+            <div class="j-rulegrid">
+              <label
+                >优秀奖核对人数
+                <el-input-number
+                  v-model="config.awardTargets.merits"
+                  aria-label="优秀奖核对人数"
+                  placeholder="按名单"
+                  :min="0"
+                  :max="500"
+                  :step-strictly="true"
+                  :value-on-clear="null"
+                />
+              </label>
+              <label
+                >示范校核对数量
+                <el-input-number
+                  v-model="config.awardTargets.schools"
+                  aria-label="示范校核对数量"
+                  placeholder="按名单"
+                  :min="0"
+                  :max="150"
+                  :step-strictly="true"
+                  :value-on-clear="null"
+                />
+              </label>
+            </div>
+          </template>
+          <div class="j-tools">
+            <label>
+              最早公布日期
+              <el-date-picker
+                v-model="config.publicDay"
+                type="date"
+                value-format="YYYY-MM-DD"
+                :clearable="false"
+              />
+            </label>
+            <el-checkbox-group v-model="config.publicFields">
+              <el-checkbox
+                v-for="(label, k) in awardFieldOptions"
+                :key="k"
+                :value="k"
+                :disabled="k === 'name'"
+              >
+                {{ label }}
+              </el-checkbox>
+            </el-checkbox-group>
+          </div>
+        </el-form>
+      </el-collapse-item>
+    </el-collapse>
   </section>
 </template>
 <script setup lang="ts">
