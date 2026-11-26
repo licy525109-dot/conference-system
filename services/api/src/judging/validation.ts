@@ -167,7 +167,8 @@ export function validateConfig(
   value: unknown,
   rehearsal: boolean,
   previousEntry?: JudgingEntryDesign,
-  saved?: Pick<JudgingConfig, "roleOptions" | "rubrics" | "rooms" | "awardTargets" | "guidance">
+  saved?: Pick<JudgingConfig, "roleOptions" | "rubrics" | "rooms" | "awardTargets" | "guidance"> &
+    Partial<Pick<JudgingConfig, "sessions">>
 ): JudgingConfig {
   const c = object(value),
     submittedForms = object(c.rubrics),
@@ -230,6 +231,8 @@ export function validateConfig(
         true
       );
     if (!teacherIds.has(teacher) || !["class", "ted"].includes(r.kind)) fail("教师或场次类型有误");
+    const period = r.period === undefined ? saved?.sessions?.find((s) => s.id === id)?.period : r.period;
+    if (period !== undefined && period !== "am" && period !== "pm") fail("场别请选择上午场或下午场");
     const room = r.kind === "class" ? key(r.room, "教室编号") : "";
     if (r.kind === "class") {
       const classroom = roomsById.get(room);
@@ -258,6 +261,7 @@ export function validateConfig(
       id,
       teacher,
       kind: r.kind as "class" | "ted",
+      ...(period !== undefined && { period }),
       room,
       round,
       time: str(r.time, "场次时间", 80, false)

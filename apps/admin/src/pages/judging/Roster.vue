@@ -33,8 +33,8 @@
   <p v-if="section === 'rooms' || section === 'sessions'" class="j-note">
     共 <strong>{{ capacity }}</strong> 个课堂时段，已录入 {{ config.teachers.length }} 位选手。{{
       section === "rooms"
-        ? "选「全部轮次」的教室会在开始现场评分时一并开放，其余教室由场控逐轮开放。"
-        : "排场会为每位选手安排一场课堂和一场 TED，空位可保留。"
+        ? "选「全部轮次」的教室按上下午分别开放。开始现场评分时开放首场，后续由场控在对应场别开放。"
+        : "自动排场默认上午课堂、下午 TED。可在「场别」列调整，保存后按场别收分与复核。"
     }}
   </p>
   <p v-else-if="needsType" class="j-note">请先在「评分表与规则」新增评委类型，再分配名单。</p>
@@ -76,6 +76,18 @@
           <option value="one">逐轮开放</option>
           <option value="all">全部轮次</option>
         </select>
+        <template v-else-if="f.kind === 'period'">
+          <select
+            v-if="editable"
+            class="room-mode"
+            :aria-label="row.id + '场别'"
+            :value="sessionPeriod(row)"
+            @change="row.period = ($event.target as HTMLSelectElement).value"
+          >
+            <option v-for="p in judgingPeriods" :key="p" :value="p">{{ periodNames[p] }}</option>
+          </select>
+          <span v-else>{{ periodNames[sessionPeriod(row)] }}</span>
+        </template>
         <template v-else>{{ displayField(f, row[f.key], config) }}</template>
       </template>
     </el-table-column>
@@ -128,6 +140,13 @@
             <el-option label="逐轮开放" :value="false" />
             <el-option label="全部轮次" :value="true" />
           </el-select>
+          <el-select
+            v-else-if="f.kind === 'period'"
+            :model-value="row.period || (row.kind === 'ted' ? 'pm' : 'am')"
+            @update:model-value="row.period = $event"
+          >
+            <el-option v-for="p in judgingPeriods" :key="p" :value="p" :label="periodNames[p]" />
+          </el-select>
           <template v-else-if="f.kind === 'image' && editing">
             <ImageField
               :key="id + '/' + original"
@@ -172,7 +191,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { classroomRounds, judgingRoles, type JudgingConfig, type JudgingRoom } from "@conference/shared";
+import {
+  classroomRounds,
+  judgingPeriods,
+  judgingRoles,
+  periodNames,
+  sessionPeriod,
+  type JudgingConfig,
+  type JudgingRoom
+} from "@conference/shared";
 import { judgingApi, judgingImageUrl } from "../../services/judging";
 import ImageField from "./ImageField.vue";
 import {

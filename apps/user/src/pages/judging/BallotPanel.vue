@@ -9,8 +9,8 @@
       />
       <view>
         <text class="judging-note">
-          {{ page.session.room }} · 第 {{ page.session.round }}
-          {{ page.session.kind === "ted" ? "位" : "轮" }}　{{ page.session.time }}
+          {{ periodNames[sessionPeriod(page.session)] }} · {{ page.session.room }} · 第
+          {{ page.session.round }} {{ page.session.kind === "ted" ? "位" : "轮" }}　{{ page.session.time }}
         </text>
         <text class="judging-name">{{ page.teacher.name }}</text>
         <text v-if="page.look.showOrg" class="judging-note">{{ page.teacher.org }}</text>
@@ -75,7 +75,12 @@
     </form>
   </view>
   <view v-else class="judging-panel">
-    <text>场控尚未开放本场评分，或本场已经截止。</text>
+    <text v-if="page.session.reviewStatus"
+      >{{ periodNames[sessionPeriod(page.session)] }}评分已结束，{{
+        page.session.reviewStatus === "confirmed" ? "已完成复核" : "正在复核"
+      }}。</text
+    >
+    <text v-else>场控尚未开放本场评分，或本场已经截止。</text>
     <button @click="$emit('refresh')">刷新场次</button>
   </view>
 </template>
@@ -83,6 +88,8 @@
 import { computed, ref, watch } from "vue";
 import {
   ballotIssue,
+  periodNames,
+  sessionPeriod,
   scoreInputAnswers,
   type Answers,
   type ScoreInputs,

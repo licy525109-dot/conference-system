@@ -1,12 +1,29 @@
 <template>
+  <div v-if="periods.length" class="j-tools">
+    <el-radio-group v-model="view" aria-label="选择复核场别">
+      <el-radio-button v-for="p in periods" :key="p" :value="p">{{ periodNames[p] }}复核</el-radio-button>
+      <el-radio-button value="all">全天成绩</el-radio-button>
+    </el-radio-group>
+  </div>
   <div class="j-tools">
     <el-button @click="load">刷新内部成绩</el-button>
     <template v-if="canExport">
-      <el-button @click="exportData('ballots')">导出原始评分明细</el-button>
-      <el-button @click="exportData('review')">导出成绩复核对照表</el-button>
+      <el-button @click="exportData('ballots')"
+        >导出{{ view === "all" ? "原始" : periodNames[view] }}评分明细</el-button
+      >
+      <el-button v-if="view === 'all'" @click="exportData('review')">导出成绩复核对照表</el-button>
     </template>
   </div>
-  <el-table :data="result?.rows || []" border max-height="530" @row-click="selectRow">
+  <PeriodReviewPanel
+    v-if="view !== 'all' && result"
+    :period="view"
+    :event="event"
+    :result="result"
+    :can-adjust="allowed('judging:adjust')"
+    :operate="operate"
+    @teacher="teacher = $event"
+  />
+  <el-table v-if="view === 'all'" :data="result?.rows || []" border max-height="530" @row-click="selectRow">
     <el-table-column prop="name" label="教师" fixed min-width="94" />
     <el-table-column v-for="x in columns" :key="x.key" :label="x.label" :min-width="x.width || 84">
       <template #default="{ row }">{{ score(row[x.key]) }}</template>
@@ -31,7 +48,7 @@
       </template>
     </el-table-column>
   </el-table>
-  <el-collapse v-if="result" class="j-award-detail">
+  <el-collapse v-if="result && view === 'all'" class="j-award-detail">
     <el-collapse-item :title="'优秀奖名单 · ' + result.merits.length + ' 人'" name="merits">
       <el-table :data="result.merits" max-height="300">
         <el-table-column prop="name" label="教师" />
@@ -46,12 +63,16 @@
   </el-collapse>
   <div class="j-tools">
     <el-select v-model="teacher" placeholder="选择教师查看原单" clearable filterable style="width: 220px">
-      <el-option v-for="t in event.config.teachers" :key="t.id" :value="t.id" :label="t.name" />
+      <el-option v-for="t in teachers" :key="t.id" :value="t.id" :label="t.name" />
     </el-select>
     <span>{{ filtered.length }} 份原单</span>
   </div>
   <el-table :data="filtered" max-height="300">
-    <el-table-column prop="sessionKey" label="场次" />
+    <el-table-column label="场次" min-width="175"
+      ><template #default="{ row }">{{
+        sessionLabels.get(row.sessionKey) || row.sessionKey
+      }}</template></el-table-column
+    >
     <el-table-column label="评委">
       <template #default="{ row }">{{ judgeName(row.judgeKey) }}</template>
     </el-table-column>
@@ -74,18 +95,22 @@
     </el-table-column>
     <el-table-column label="明细">
       <template #default="{ row }">
-        <el-button link @click="openBallot(row)">查看{{ canEdit ? " / 更正" : "" }}</el-button>
+        <el-button link @click="openBallot(row)">查看{{ editableBallot(row) ? " / 更正" : "" }}</el-button>
       </template>
     </el-table-column>
   </el-table>
-  <div class="j-tools">
+  <div v-if="view === 'all'" class="j-tools">
     <el-button
       v-if="allowed('judging:adjust') && event.phase === 'REVIEW'"
+      :disabled="!allReviewed"
       type="primary"
       @click="action('send')"
     >
       将整份名单送交本人确认
     </el-button>
+    <span v-if="event.phase === 'REVIEW' && !allReviewed" class="j-note"
+      >各场评分复核完成后，可送交全天名单。</span
+    >
     <el-button
       v-if="allowed('judging:confirm') && event.phase === 'SUBMITTED' && event.confirmerId === adminId"
       type="primary"
@@ -114,6 +139,7 @@
               row.detail?.reason ||
               row.detail?.after?.reason ||
               row.detail?.teacher ||
+              (row.detail?.period && periodNames[row.detail.period as JudgingPeriod]) ||
               row.detail?.session ||
               "—"
             }}
@@ -141,7 +167,7 @@
         <strong>{{ f.label }}</strong>
         　原填 {{ showAnswer(ballot.answers[f.id]) }}　现用
         {{ showAnswer((ballot.correction?.answers || ballot.answers)[f.id]) }}
-        <div v-if="canEdit">
+        <div v-if="editableBallot(ballot)">
           <el-input-number
             v-if="editAnswers[f.id] !== 'unseen'"
             :model-value="numberAnswer(f.id)"
@@ -159,14 +185,19 @@
           </el-button>
         </div>
       </div>
-      <template v-if="canEdit">
+      <template v-if="editableBallot(ballot)">
         <el-checkbox v-model="voided">将本单列为无效</el-checkbox>
         <el-input v-model="reason" type="textarea" placeholder="更正或作废原因" />
       </template>
     </template>
     <template #footer>
       <el-button @click="ballotOpen = false">关闭</el-button>
-      <el-button v-if="canEdit" type="primary" :disabled="!reason.trim()" @click="commitBallot">
+      <el-button
+        v-if="ballot && editableBallot(ballot)"
+        type="primary"
+        :disabled="!reason.trim()"
+        @click="commitBallot"
+      >
         保存更正记录
       </el-button>
     </template>
@@ -187,11 +218,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { judgingRoleLabel, type Answers, type ScoringRow, type JudgeRole } from "@conference/shared";
+import {
+  judgingRoleLabel,
+  periodNames,
+  periodStatus,
+  scheduledPeriods,
+  sessionPeriod,
+  type Answers,
+  type ScoringRow,
+  type JudgeRole,
+  type JudgingPeriod
+} from "@conference/shared";
+import PeriodReviewPanel from "./PeriodReviewPanel.vue";
 import {
   judgingApi,
   downloadJudgingBook,
   phaseNames,
+  slotLabel,
   type EventDetail,
   type Operate,
   type ReviewData,
@@ -202,7 +245,27 @@ const props = defineProps<{
   operate: Operate;
   allowed: (s: string) => boolean;
   adminId: string;
+  initialPeriod?: JudgingPeriod;
 }>();
+const periods = computed(() => scheduledPeriods(props.event.config.sessions));
+const view = ref<"all" | JudgingPeriod>(
+  props.initialPeriod ??
+    periods.value.find(
+      (p) => periodStatus(props.event.phase, props.event.periodReviews?.[p]) === "reviewing"
+    ) ??
+    "all"
+);
+const sessions = computed(() => new Map(props.event.config.sessions.map((s) => [s.id, s])));
+const sessionLabels = computed(
+  () => new Map(props.event.config.sessions.map((s) => [s.id, slotLabel(s, props.event.config)]))
+);
+const scopeSessions = computed(() =>
+  props.event.config.sessions.filter((s) => view.value === "all" || sessionPeriod(s) === view.value)
+);
+const teachers = computed(() => {
+  const ids = new Set(scopeSessions.value.map((s) => s.teacher));
+  return props.event.config.teachers.filter((t) => view.value === "all" || ids.has(t.id));
+});
 const result = ref<ReviewData | null>(null),
   teacher = ref(""),
   chosen = ref<ScoringRow>(),
@@ -215,10 +278,18 @@ const result = ref<ReviewData | null>(null),
   ballotOpen = ref(false),
   editAnswers = ref<Answers>({}),
   voided = ref(false);
+const editRevision = ref<{ period: JudgingPeriod; periodVersion?: number; observedRevision: number }>();
+const allReviewed = computed(() =>
+  periods.value.every((p) => result.value?.periodReviews?.[p]?.status === "confirmed")
+);
+watch(view, () => {
+  teacher.value = "";
+  ballotOpen.value = false;
+});
 const columns = [
   { key: "professional", label: "专业 /40" },
   { key: "audience", label: "大众 /30" },
-  { key: "morning", label: "上午 /70" },
+  { key: "morning", label: "课堂 /70" },
   { key: "ted", label: "TED /30" },
   { key: "system", label: "系统核算", width: 98 },
   { key: "total", label: "最终总分", width: 98 }
@@ -237,6 +308,10 @@ const actions: Record<string, string> = {
   gate: "场次开关",
   attendance: "出勤或补交",
   finish: "截止收分",
+  "period-close": "结束分场评分",
+  "period-resume": "恢复分场收分",
+  "period-approve": "完成分场复核",
+  "period-reopen": "重新复核",
   adjust: "调整总分",
   correction: "更正原单",
   tie: "同分裁定",
@@ -252,9 +327,19 @@ const canExport = computed(() => props.allowed("judging:export")),
   canEdit = computed(
     () => props.allowed("judging:adjust") && ["REVIEW", "SUBMITTED"].includes(props.event.phase)
   );
-const filtered = computed(() =>
-  (result.value?.ballots || []).filter((b) => !teacher.value || b.teacherKey === teacher.value)
-);
+const filtered = computed(() => {
+  const ids = new Set(scopeSessions.value.map((s) => s.id));
+  return (result.value?.ballots || []).filter(
+    (b) => ids.has(b.sessionKey) && (!teacher.value || b.teacherKey === teacher.value)
+  );
+});
+function editableBallot(b: ReviewBallot) {
+  const s = sessions.value.get(b.sessionKey),
+    data = result.value;
+  if (!s || !data || !props.allowed("judging:adjust")) return false;
+  const status = periodStatus(data.phase, data.periodReviews?.[sessionPeriod(s)]);
+  return status === "reviewing" || (data.phase === "SUBMITTED" && status === "historical");
+}
 const score = (n: number | null | undefined) => (n == null ? "—" : n.toFixed(props.event.config.display));
 const judgeName = (id: string) => props.event.config.judges.find((j) => j.id === id)?.name || id;
 const selectRow = (r: ScoringRow) => {
@@ -264,7 +349,7 @@ async function load() {
   const id = props.event.id;
   try {
     const r = await judgingApi.results(id);
-    if (id === props.event.id) result.value = r;
+    if (id === props.event.id && (!result.value || r.revision >= result.value.revision)) result.value = r;
   } catch (e) {
     ElMessage.error((e as Error).message);
   }
@@ -291,6 +376,14 @@ async function commitTie() {
   if (await act("tie", { ids: tieIds.value, reason: reason.value })) tied.value = false;
 }
 function openBallot(b: ReviewBallot) {
+  const s = sessions.value.get(b.sessionKey);
+  if (!s || !result.value) return;
+  const period = sessionPeriod(s);
+  editRevision.value = {
+    period,
+    periodVersion: result.value.periodReviews?.[period]?.version,
+    observedRevision: result.value.revision
+  };
   ballot.value = b;
   editAnswers.value = { ...(b.correction?.answers || b.answers) };
   reason.value = "";
@@ -302,7 +395,8 @@ const numberAnswer = (key: string) =>
 const showAnswer = (v: unknown) => (v == null ? "空白" : v === "unseen" ? "未观察" : v);
 async function commitBallot() {
   if (
-    await act("correction", {
+    await props.operate("correction", {
+      ...editRevision.value,
       ballotId: ballot.value?.id,
       answers: editAnswers.value,
       void: voided.value,
@@ -330,22 +424,27 @@ async function revision() {
 }
 async function exportData(kind: string) {
   try {
+    const selected = view.value;
+    const sessionIds = new Set(scopeSessions.value.map((s) => s.id));
     const r = await judgingApi.export(props.event.id, kind, props.event.edition);
     const rows =
       kind === "ballots"
-        ? r.map((b: any) => ({
-            教师: b.teacherName,
-            场次: b.sessionKey,
-            评委: b.judgeName,
-            席别: b.roleLabel ?? judgingRoleLabel(props.event.config, b.role as JudgeRole),
-            量表版本: b.rubric.version,
-            评分细则: b.rubric,
-            提交时间: b.createdAt,
-            原始逐项: b.answers,
-            原始分: b.units === null ? null : b.units / 100,
-            原始状态: b.status,
-            更正单: b.correction
-          }))
+        ? r
+            .filter((b: ReviewBallot) => selected === "all" || sessionIds.has(b.sessionKey))
+            .map((b: any) => ({
+              教师: b.teacherName,
+              场别: periodNames[sessionPeriod(sessions.value.get(b.sessionKey)!)],
+              场次: b.sessionKey,
+              评委: b.judgeName,
+              席别: b.roleLabel ?? judgingRoleLabel(props.event.config, b.role as JudgeRole),
+              量表版本: b.rubric.version,
+              评分细则: b.rubric,
+              提交时间: b.createdAt,
+              原始逐项: b.answers,
+              原始分: b.units === null ? null : b.units / 100,
+              原始状态: b.status,
+              更正单: b.correction
+            }))
         : r.rows.map((s: ScoringRow) => ({
             教师: s.name,
             机构: s.org,
@@ -353,7 +452,7 @@ async function exportData(kind: string) {
             大众: s.audience,
             TED: s.ted,
             有效份数: s.counts,
-            上午: s.morning,
+            课堂合计: s.morning,
             系统核算: s.system,
             拟定或确认总分: s.total,
             初排名: s.initialRank,
@@ -364,9 +463,12 @@ async function exportData(kind: string) {
             版本: r.edition,
             状态: phaseNames[r.phase]
           }));
-    await downloadJudgingBook(props.event.title + (kind === "ballots" ? "-原始评分明细" : "-成绩复核对照"), [
-      { name: "内部复核", rows }
-    ]);
+    await downloadJudgingBook(
+      props.event.title +
+        (selected === "all" ? "" : "-" + periodNames[selected]) +
+        (kind === "ballots" ? "-原始评分明细" : "-成绩复核对照"),
+      [{ name: "内部复核", rows }]
+    );
   } catch (e) {
     ElMessage.error((e as Error).message);
   }

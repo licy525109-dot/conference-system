@@ -95,7 +95,12 @@
       <section v-else-if="tab === 'live' && can('judging:floor')" class="j-tabs">
         <h3>现场收分</h3>
         <p class="j-note">选择要收分的场次并开放评分。已扫码的评委会在手机上看到自己负责的评分表。</p>
-        <Operations :event="event" :operate="operate" />
+        <Operations
+          :event="event"
+          :operate="operate"
+          :can-review="can('judging:results')"
+          @review="openPeriodReview"
+        />
       </section>
       <el-tabs v-else v-model="tab" class="j-tabs">
         <el-tab-pane v-if="group === 'prep' && can('judging:config')" label="名单与排场" name="roster">
@@ -148,6 +153,8 @@
         <el-tab-pane v-if="group === 'results' && can('judging:results')" label="成绩与复核" name="results">
           <Review
             v-if="tab === 'results'"
+            :key="event.id"
+            :initial-period="selectedReview?.event === event.id ? selectedReview.period : undefined"
             :event="event"
             :operate="operate"
             :allowed="can"
@@ -341,6 +348,7 @@ import {
   awardFieldOptions,
   defaultEntryDesign,
   defaultJudgingGuidance,
+  type JudgingPeriod,
   type AwardField,
   type JudgingConfig
 } from "@conference/shared";
@@ -378,6 +386,12 @@ const tab = ref("home"),
   accounts = ref<{ id: string; username: string; displayName: string | null }[]>([]),
   fields = ref<AwardField[]>([]),
   handoverOpen = ref(false);
+const selectedReview = ref<{ event: string; period: JudgingPeriod }>();
+function openPeriodReview(period: JudgingPeriod) {
+  if (!event.value) return;
+  selectedReview.value = { event: event.value.id, period };
+  tab.value = "results";
+}
 const resultsTab = computed(() => (can("judging:results") ? "results" : "awards"));
 const navigation = computed(() => [
   { label: "操作首页", group: "home", tab: "home" },

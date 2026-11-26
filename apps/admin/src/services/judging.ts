@@ -4,11 +4,14 @@ import type {
   Correction,
   JudgingConfig,
   JudgingSession,
+  PeriodReviews,
+  RoomPeriodModes,
   Rubric,
   ScoringRow,
   ScoringTask
 } from "@conference/shared";
 import { apiRequest } from "./api";
+import { periodNames, sessionPeriod } from "@conference/shared";
 import { API_BASE_URL } from "../config";
 export const judgingH5Origin = new URL(
   import.meta.env.VITE_JUDGING_H5_ORIGIN ||
@@ -26,6 +29,8 @@ export interface EventSummary {
   publishedEdition: number | null;
 }
 export interface EventDetail extends EventSummary {
+  periodReviews?: PeriodReviews;
+  roomPeriodModes?: RoomPeriodModes;
   entryCode: string | null;
   config: JudgingConfig;
   confirmerId: string | null;
@@ -48,6 +53,12 @@ export interface ReviewBallot {
   correction: Correction | null;
 }
 export interface ReviewData {
+  phase: string;
+  gates: Record<string, string>;
+  periodReviews: PeriodReviews;
+  periodTasks: (Pick<ScoringTask, "judgeId" | "name" | "roleLabel" | "status" | "receipt"> & {
+    sessionId: string;
+  })[];
   revision: number;
   merits: JudgingConfig["merits"];
   schools: { id: string; name: string }[];
@@ -98,6 +109,8 @@ export const judgingApi = {
       revision: number;
       gates: Record<string, string>;
       allRoundRooms?: string[];
+      periodReviews?: PeriodReviews;
+      roomPeriodModes?: RoomPeriodModes;
       phase: string;
       tasks: ScoringTask[];
     }>(base + "/" + id + "/progress"),
@@ -137,6 +150,8 @@ export const taskStatus: Record<string, string> = {
   void: "已作废"
 };
 export const slotLabel = (s: JudgingSession, c: JudgingConfig) =>
+  periodNames[sessionPeriod(s)] +
+  " · " +
   (s.kind === "ted"
     ? "TED 第 " + s.round + " 位"
     : (c.rooms.find((r) => r.id === s.room)?.name || s.room) + " · 第 " + s.round + " 轮") +

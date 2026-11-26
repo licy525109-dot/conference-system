@@ -102,6 +102,12 @@ test("an operator creates a schedule, imports teachers and adjusts one classroom
     ["R2", 4]
   ]);
   expect(config!.sessions.filter((s) => s.kind === "ted")).toHaveLength(5);
+  expect(config!.sessions.every((s) => s.period === (s.kind === "ted" ? "pm" : "am"))).toBe(true);
+  const moved = page.getByRole("combobox", { name: "class-T0场别" });
+  await moved.selectOption({ label: "下午场" });
+  await page.getByRole("button", { name: "按选手顺序排场" }).click();
+  await page.getByRole("dialog", { name: "重新排场" }).locator(".el-button--primary").click();
+  await expect(moved).toHaveValue("pm");
   expect(config!.rooms[1].allRoundsOpen).toBe(true);
   expect(config!.rooms[0].allRoundsOpen).toBeFalsy();
   expect(config!.teachers[0].photo).toBe("/uploads/materials/test-photo.png");
@@ -115,6 +121,7 @@ test("an operator creates a schedule, imports teachers and adjusts one classroom
     instructions: "请先核对选手姓名。",
     rules: "本赛事按表内题目逐项给分。"
   });
+  expect(config!.sessions.find((s) => s.id === "class-T0")?.period).toBe("pm");
   await page.getByRole("tab", { name: "名单与排场" }).click();
   await page.reload();
   await expect(page.getByRole("spinbutton", { name: "2 号教室课堂轮数" })).toHaveValue("5");
