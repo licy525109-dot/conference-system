@@ -8,6 +8,7 @@
       <div class="j-tools">
         <el-select
           :model-value="event?.id"
+          :disabled="busy || loading"
           @change="select"
           placeholder="选择赛事"
           filterable
@@ -20,12 +21,23 @@
             :value="item.id"
           />
         </el-select>
-        <el-button v-if="canCreate" type="primary" @click="creating = true">新建赛事</el-button>
+        <el-button v-if="canManageEvents" type="primary" :disabled="busy" @click="creating = true">
+          新建赛事
+        </el-button>
+        <el-button
+          v-if="event && canManageEvents"
+          type="danger"
+          plain
+          :disabled="busy || loading"
+          @click="removeEvent"
+        >
+          删除赛事
+        </el-button>
       </div>
     </header>
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
-    <el-empty v-if="!event" description="暂无获授权的赛事">
-      <el-button v-if="canCreate" @click="creating = true">创建第一场赛事</el-button>
+    <el-empty v-if="!event && !loading && !error" description="暂无获授权的赛事">
+      <el-button v-if="canManageEvents" @click="creating = true">创建第一场赛事</el-button>
     </el-empty>
     <template v-if="event && draft">
       <section class="j-overview">
@@ -321,13 +333,13 @@ import {
 } from "../../services/judging";
 import Roster from "./Roster.vue";
 import EntryCard from "./EntryCard.vue";
-import { routeQuery } from "../../router";
+import { navigateTo, routeQuery } from "../../router";
 import Appearance from "./Appearance.vue";
 import Rubrics from "./Rubrics.vue";
 import Operations from "./Operations.vue";
 import Review from "./Review.vue";
 const { admin, hasPermission: can } = useAdminSession(),
-  canCreate = computed(() => can("judging:config") && admin.value?.conferenceScopeMode === "ALL");
+  canManageEvents = computed(() => can("judging:config") && admin.value?.conferenceScopeMode === "ALL");
 const events = ref<EventSummary[]>([]),
   event = ref<EventDetail | null>(null),
   draft = ref<JudgingConfig | null>(null),
@@ -430,6 +442,14 @@ async function read(id: string, keep = false) {
   confirmer.value = data.confirmerId || "";
   fields.value = [...data.config.publicFields];
 }
+async function loadEvents(preferred?: string) {
+  events.value = await judgingApi.list();
+  const selected =
+    events.value.find((e) => e.id === preferred) ||
+    events.value.find((e) => e.phase === "LIVE") ||
+    events.value[0];
+  if (selected) await read(selected.id);
+}
 async function discard() {
   if (!dirty.value) return true;
   try {
@@ -453,6 +473,39 @@ async function select(id: string) {
 }
 async function refresh() {
   if (event.value) await select(event.value.id);
+}
+async function removeEvent() {
+  const target = event.value;
+  if (!target || !canManageEvents.value || busy.value || loading.value) return;
+  const kind = target.rehearsal ? "联排测试" : "正式赛事";
+  const unsaved = dirty.value ? "当前未保存的修改也会丢失。" : "";
+  busy.value = true;
+  try {
+    const confirmed = await ElMessageBox.confirm(
+      `确定删除「${target.title}」（${kind} · ${phaseNames[target.phase]}）吗？删除后，赛事将从列表移除，评分二维码和已公布的颁奖链接均会失效。已交评分和锁定版本将留档。${unsaved}`,
+      "确认删除赛事",
+      { type: "warning", confirmButtonText: "删除赛事", cancelButtonText: "取消", confirmButtonType: "danger" }
+    ).catch(() => false);
+    if (!confirmed) return;
+    loading.value = true;
+    await judgingApi.change(target.id, target.revision, { action: "delete" });
+    events.value = events.value.filter((e) => e.id !== target.id);
+    event.value = null;
+    draft.value = null;
+    tab.value = "home";
+    error.value = "";
+    if (routeQuery.value.event === target.id && window.location.hash.startsWith("#/judging?")) {
+      navigateTo("/judging");
+    }
+    ElMessage.success(`已删除「${target.title}」`);
+    await loadEvents(routeQuery.value.event);
+  } catch (e) {
+    error.value = (e as Error).message;
+    ElMessage.error(error.value);
+  } finally {
+    busy.value = false;
+    loading.value = false;
+  }
 }
 async function create() {
   if (busy.value) return;
@@ -582,15 +635,8 @@ watch(tab, async (t) => {
 onMounted(async () => {
   loading.value = true;
   try {
-    events.value = await judgingApi.list();
-    const selected =
-      events.value.find((e) => e.id === routeQuery.value.event) ||
-      events.value.find((e) => e.phase === "LIVE") ||
-      events.value[0];
-    if (selected) {
-      await read(selected.id);
-      if (routeQuery.value.tab === "look" && can("judging:config")) tab.value = "look";
-    }
+    await loadEvents(routeQuery.value.event);
+    if (event.value && routeQuery.value.tab === "look" && can("judging:config")) tab.value = "look";
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
