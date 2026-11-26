@@ -325,13 +325,9 @@ test(
           await change("gate", { session: sid, open: false });
         }
         assert.equal((await service.mobile(id, "C5", asUser(first))).formVersion, old + 1);
-        for (let i = 0; i < 15; i++) {
-          const sid = "S" + i;
-          await change("gate", { session: sid, open: true });
-          if (i === 0) await assert.rejects(change("gate", { session: "S1", open: true }), /上一位/);
-          await handIn(sid);
-          await change("gate", { session: sid, open: false });
-        }
+        await change("gate", { session: "S0", open: true, scope: "group" });
+        for (let i = 0; i < 15; i++) await handIn("S" + i);
+        await change("gate", { session: "S0", open: false, scope: "group" });
         assert.equal(attempted + 1, 510);
         assert.equal(await db.judgingBallot.count({ where: { eventId: id } }), 510);
         assert.equal(
@@ -529,8 +525,9 @@ test(
           await update("entry-open");
           const entry = "/judging/" + created.id + "/entry/" + (await detail()).entryCode;
           await update("start");
+          await update("gate", { session: "S0", open: true, scope: "group" });
           for (const s of cc.sessions) {
-            await update("gate", { session: s.id, open: true });
+            if (s.kind === "class") await update("gate", { session: s.id, open: true });
             for (const judge of cc.judges.filter((j) => assigned(s, j))) {
               const { ticket } = await call(entry + "/identify", undefined, { name: judge.name });
               const { page } = await call(entry + "/desk", ticket);
@@ -540,8 +537,9 @@ test(
                 answers: { score: s.teacher === "T0" ? 28 : 27 }
               });
             }
-            await update("gate", { session: s.id, open: false });
+            if (s.kind === "class") await update("gate", { session: s.id, open: false });
           }
+          await update("gate", { session: "S0", open: false, scope: "group" });
           await update("finish");
           await update("send");
           await update("confirm", {}, signer.token);
@@ -549,6 +547,120 @@ test(
           const final = await service.export(created.id, "awards", 1, cfg.admin);
           assert.deepEqual([final.teachers.length, final.merits.length, final.schools.length], [2, 0, 2]);
           await call("/judging/" + created.id + "/published", undefined, undefined, 404);
+        }
+      );
+      await t.test(
+        "classroom gates, unrestricted TED selection, published guidance and scoped teacher uploads",
+        async () => {
+          const sample = await call("/admin/judging", cfg.token, {
+            title: "开放范围联测",
+            roomCount: 2,
+            roundsPerRoom: 3
+          });
+          events.push(sample.id);
+          const path = "/admin/judging/" + sample.id;
+          const detail = () => call(path, cfg.token);
+          const act = async (
+            action: string,
+            args: Record<string, unknown> = {},
+            token = cfg.token,
+            status = 201
+          ) =>
+            call(path + "/actions", token, { action, revision: (await detail()).revision, ...args }, status);
+          const cc: JudgingConfig = (await detail()).config;
+          cc.rooms[0].allRoundsOpen = true;
+          cc.teachers = c.teachers
+            .filter((t) => ["T0", "T5", "T10", "T1", "T6"].includes(t.id))
+            .map((t) => ({ ...t, photo: "", poster: "" }));
+          cc.sessions = c.sessions.filter((s) => cc.teachers.some((t) => t.id === s.teacher));
+          cc.sessions.find((s) => s.id === "S10")!.round = 501;
+          cc.judges = c.judges.filter((j) => ["PR1", "PR2", "R1D0", "R2D0", "E0"].includes(j.id));
+          cc.guidance = { instructions: "请核对选手及教室。", rules: "按本场课堂和演讲规则评分。" };
+          cc.approvedForms = true;
+          await act("access", { staffIds: [editor.admin.id, floor.admin.id] });
+          const photo = new FormData();
+          const file = await readFile("apps/user/src/pages/judging/paper-stage.jpg");
+          photo.set("file", new Blob([file], { type: "image/jpeg" }), "teacher.jpg");
+          const response = await fetch(origin + "/api" + path + "/design-images", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + editor.token },
+            body: photo
+          });
+          assert.equal(response.status, 201);
+          cc.teachers[0].photo = (await response.json()).data.url;
+          assert.deepEqual(
+            await readFile(resolve(uploads, cc.teachers[0].photo.slice("/uploads/".length))),
+            file
+          );
+          await act("config", { title: sample.title, config: cc }, editor.token);
+          await act("entry-open", {}, floor.token);
+          const entry = "/judging/" + sample.id + "/entry/" + (await detail()).entryCode;
+          assert.deepEqual((await call(entry)).guidance, cc.guidance);
+          const ticket = async (id: string) =>
+            (await call(entry + "/identify", undefined, { name: cc.judges.find((j) => j.id === id)!.name }))
+              .ticket;
+          const a = await ticket("R1D0"),
+            b = await ticket("R2D0"),
+            expert = await ticket("E0");
+          const desk = async (t: string, sid: string) => (await call(entry + "/desk?session=" + sid, t)).page;
+          await act("start", {}, floor.token);
+          for (const sid of ["C0", "C5", "C10"]) assert.equal((await desk(a, sid)).open, true);
+          assert.equal((await desk(b, "C1")).open, false);
+          assert.equal((await desk(a, "C0")).teacher.photo, cc.teachers[0].photo);
+          assert.equal((await desk(a, "C0")).teacher.poster, "");
+          await call(entry + "/desk?session=C1", a, undefined, 403);
+          const submit = async (t: string, sid: string, score: number, status = 201) =>
+            call(
+              entry + "/sessions/" + sid + "/submit",
+              t,
+              { formVersion: (await desk(t, sid)).formVersion, answers: { score } },
+              status
+            );
+          assert.ok(
+            (await desk(expert, "S10")).tasks.every((t: { status: string }) => t.status === "待开放或已截止")
+          );
+          await act("gate", { session: "S0", open: true }, floor.token, 400);
+          await act(
+            "attendance",
+            { session: "S0", judge: "E0", kind: "makeup", reason: "提前申请" },
+            floor.token,
+            400
+          );
+          await submit(expert, "S10", 26, 409);
+          for (const sid of ["C10", "C0", "C5"]) await submit(a, sid, 24.5);
+          await act("gate", { session: "C1", open: true }, floor.token);
+          await act("gate", { session: "C6", open: true }, floor.token, 400);
+          await act("room-mode", { session: "C1", allRoundsOpen: true }, editor.token, 403);
+          await act("room-mode", { session: "C1", allRoundsOpen: true }, floor.token);
+          assert.equal((await desk(b, "C6")).open, true);
+          await act("room-mode", { session: "C1", allRoundsOpen: false }, floor.token);
+          assert.equal((await desk(b, "C1")).open, true);
+          assert.equal((await desk(b, "C6")).open, false);
+          await submit(b, "C6", 12, 409);
+          const updated = { instructions: "请核对当前选手。", rules: "请按新版场次细则评分。" };
+          await act(
+            "forms",
+            { rubrics: cc.rubrics, sameAudienceForm: true, approvedForms: true, guidance: updated },
+            editor.token
+          );
+          assert.deepEqual((await call(entry)).guidance, updated);
+          assert.deepEqual((await desk(a, "C5")).guidance, cc.guidance);
+          await act("gate", { session: "S0", scope: "group", open: true }, floor.token);
+          assert.deepEqual((await desk(expert, "S10")).guidance, updated);
+          assert.equal((await desk(expert, "S10")).session.round, 501);
+          assert.ok(
+            (await desk(expert, "S10")).tasks.every((t: { status: string }) => t.status === "评分中")
+          );
+          for (const sid of ["S10", "S0", "S5"]) await submit(expert, sid, 26);
+          assert.equal(await db.judgingBallot.count({ where: { eventId: sample.id } }), 6);
+          await act("gate", { session: "S1", scope: "group", open: false }, floor.token);
+          await submit(expert, "S1", 26, 409);
+          assert.ok((await desk(expert, "S0")).receipt);
+          await act("gate", { session: "C0", scope: "group", open: false }, floor.token);
+          assert.equal((await desk(b, "C1")).open, true);
+          await act("gate", { session: "C1", scope: "group", open: false }, floor.token);
+          await act("finish", {}, floor.token);
+          await act("gate", { session: "S0", scope: "group", open: true }, floor.token, 409);
         }
       );
       await t.test(
@@ -657,7 +769,7 @@ test(
           await update("entry-open");
           const published = await call(route, cfg.token);
           const entry = prefix + published.entryCode;
-          assert.deepEqual(Object.keys(await call(entry)).sort(), ["look", "rehearsal", "title"]);
+          assert.deepEqual(Object.keys(await call(entry)).sort(), ["guidance", "look", "rehearsal", "title"]);
           const identify = (name: string, number?: string, code = 201) =>
             call(entry + "/identify", undefined, { name, number }, code);
           await identify("林", undefined, 404);
@@ -790,7 +902,7 @@ test(
           const entry = "/judging/" + sample.id + "/entry/" + (await detail()).entryCode;
           const tedJudge = cc.judges.find((j) => j.role === ted)!;
           const tedSeat = await call(entry + "/identify", undefined, { name: tedJudge.name });
-          await edit("gate", { session: "S0", open: true });
+          await edit("gate", { session: "S0", open: true, scope: "group" });
           const tedDesk = await call(entry + "/desk?session=S0", tedSeat.ticket);
           assert.equal(tedDesk.judge.roleLabel, "演讲评委团");
           assert.equal(tedDesk.page.form.title, "演讲表现评分表");

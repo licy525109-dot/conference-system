@@ -9,6 +9,7 @@
       v-else-if="!desk"
       :title="info.title"
       :look="info.look"
+      :guidance="info.guidance"
       :busy="busy"
       :choices="choices"
       :matched-name="matchedName"
@@ -35,6 +36,12 @@
         </view>
         <button class="guest-link" :disabled="sending || busy" @click="signOut">切换姓名</button>
       </view>
+      <ScoringTasks
+        v-if="desk.page && desk.page.tasks.length > 1"
+        :page="desk.page"
+        :disabled="sending || busy"
+        @select="refresh($event)"
+      />
       <BallotPanel
         v-if="desk.page"
         :page="desk.page"
@@ -46,12 +53,13 @@
       <view v-else class="judging-panel">
         <text class="judging-name">等待分配场次</text>
         <text class="judging-note">场控分配并开放评分后，这里会显示你的评分表。</text>
+        <JudgingGuide :guidance="info.guidance" compact />
         <button @click="refresh()">刷新场次</button>
       </view>
       <text v-if="message && (!desk.page?.open || desk.page.receipt)" class="judging-note guest-error">
         {{ message }}
       </text>
-      <view v-if="desk.page?.look.showProgress && desk.page.tasks.length" class="judging-panel">
+      <view v-if="desk.page?.look.showProgress && desk.page.tasks.length === 1" class="judging-panel">
         <text class="judging-name">我的评审任务</text>
         <button
           v-for="task in desk.page.tasks"
@@ -77,6 +85,7 @@ import {
   type Answers,
   type GuestDesk,
   type GuestChoice,
+  type JudgingGuidance,
   type JudgingLook
 } from "@conference/shared";
 import { guestScoring } from "@/services/judging-guest";
@@ -84,7 +93,11 @@ import { ApiRequestError } from "@/services/request";
 import { API_BASE_URL } from "@/config/app";
 import BallotPanel from "./BallotPanel.vue";
 import EntryWelcome from "./EntryWelcome.vue";
-const info = ref<{ title: string; rehearsal: boolean; look: JudgingLook } | null>(null),
+import JudgingGuide from "./JudgingGuide.vue";
+import ScoringTasks from "./ScoringTasks.vue";
+const info = ref<{ title: string; rehearsal: boolean; look: JudgingLook; guidance?: JudgingGuidance } | null>(
+    null
+  ),
   desk = ref<GuestDesk | null>(null);
 const matchedName = ref(""),
   choices = ref<GuestChoice[]>([]),

@@ -148,7 +148,12 @@
         </fieldset>
       </el-form>
     </section>
-    <EntryDesignPreview v-if="section === 'entry'" :look="config.look" :title="title" />
+    <EntryDesignPreview
+      v-if="section === 'entry'"
+      :look="config.look"
+      :guidance="config.guidance"
+      :title="title"
+    />
     <section v-else class="j-preview">
       <div class="preview-tools">
         <strong>手机预览与试填</strong>
@@ -196,6 +201,12 @@
           <span class="judging-topic">
             {{ (stageOf(role) === "ted" ? teacher?.speech : teacher?.topic) || "课程或演讲题目" }}
           </span>
+          <div class="trial-guide">
+            <strong>评审说明</strong>
+            <p>{{ config.guidance.instructions }}</p>
+            <strong>评分规则</strong>
+            <p>{{ config.guidance.rules }}</p>
+          </div>
         </div>
         <div v-if="!received" class="judging-panel">
           <strong class="judging-name">{{ form.title }} · {{ maxPoints[stageOf(role)] }} 分</strong>
@@ -343,6 +354,18 @@ function tryForm() {
 </script>
 <style scoped>
 @import "../../../../../packages/shared/src/judging-surface.css";
+.trial-guide {
+  border-top: 1px solid #dbe2df;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+.trial-guide p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.94em;
+  line-height: 1.6;
+  margin: 3px 0 10px;
+}
 .appearance {
   display: grid;
   grid-template-columns: minmax(290px, 365px) minmax(0, 1fr);

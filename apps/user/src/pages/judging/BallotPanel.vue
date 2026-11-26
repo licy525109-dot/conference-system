@@ -17,6 +17,7 @@
       </view>
     </view>
     <text class="judging-topic">{{ page.teacher.topic }}</text>
+    <JudgingGuide :guidance="page.guidance" />
   </view>
   <view v-if="page.receipt" class="judging-panel">
     <text class="judging-name">{{ page.look.receipt }}</text>
@@ -88,6 +89,7 @@ import {
   type ScoringView
 } from "@conference/shared";
 import { API_BASE_URL } from "@/config/app";
+import JudgingGuide from "./JudgingGuide.vue";
 const props = defineProps<{ page: ScoringView; sending: boolean; message: string }>();
 const emit = defineEmits<{ submit: [answers: Answers]; refresh: [] }>();
 const inputs = ref<ScoreInputs>({});

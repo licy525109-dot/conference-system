@@ -62,6 +62,30 @@ test("legacy events have four types and an explicitly empty draft stays empty", 
     /名称重复/
   );
 });
+test("older editors preserve published guidance and each room's scoring mode", () => {
+  const c = defaultJudgingConfig(2, 3);
+  const archived = {
+    ...c,
+    guidance: { instructions: "本场说明", rules: "本场规则" },
+    rooms: c.rooms.map((room, i) => ({ ...room, allRoundsOpen: i === 0 }))
+  };
+  const { guidance, ...legacy } = c;
+  assert.equal(validateConfig(legacy, false).guidance.instructions, guidance.instructions);
+  const saved = validateConfig(legacy, false, undefined, archived);
+  assert.deepEqual(saved.guidance, archived.guidance);
+  assert.deepEqual(
+    saved.rooms.map((r) => r.allRoundsOpen),
+    [true, false]
+  );
+  assert.throws(
+    () => validateConfig({ ...c, rooms: [{ ...c.rooms[0], allRoundsOpen: "true" }] }, false),
+    /全部轮次/
+  );
+  assert.throws(
+    () => validateConfig({ ...c, guidance: { instructions: "a", rules: " " } }, false),
+    /评分规则/
+  );
+});
 
 test("blank, zero and unseen scores retain distinct meanings", () => {
   const f = defaultJudgingConfig().rubrics.experience.fields[0];

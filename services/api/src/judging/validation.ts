@@ -6,6 +6,7 @@ import {
   coverFits,
   coverPositions,
   defaultEntryDesign,
+  defaultJudgingGuidance,
   entryLayouts,
   entryTypefaces,
   isJudgeRoleId,
@@ -166,7 +167,7 @@ export function validateConfig(
   value: unknown,
   rehearsal: boolean,
   previousEntry?: JudgingEntryDesign,
-  saved?: Pick<JudgingConfig, "roleOptions" | "rubrics" | "rooms" | "awardTargets">
+  saved?: Pick<JudgingConfig, "roleOptions" | "rubrics" | "rooms" | "awardTargets" | "guidance">
 ): JudgingConfig {
   const c = object(value),
     submittedForms = object(c.rubrics),
@@ -182,11 +183,15 @@ export function validateConfig(
   const activeRoles = new Set<string>(roleOptions.map((r) => r.id));
   const rooms = rows(c.rooms, "教室", 50, (r) => {
     const id = key(r.id, "教室编号");
-    const rounds = r.rounds === undefined ? saved?.rooms.find((room) => room.id === id)?.rounds : r.rounds;
+    const previous = saved?.rooms.find((room) => room.id === id);
+    const rounds = r.rounds === undefined ? previous?.rounds : r.rounds;
+    const allRoundsOpen =
+      r.allRoundsOpen === undefined ? previous?.allRoundsOpen : bool(r.allRoundsOpen, "全部轮次开放");
     return {
       id,
       name: str(r.name, "教室名"),
       ...(rounds !== undefined && { rounds: num(rounds, "课堂轮数", 1, 250, true) }),
+      ...(allRoundsOpen !== undefined && { allRoundsOpen }),
       experience: num(r.experience, "体验配额", 0, 500, true),
       observer: num(r.observer, "观察配额", 0, 500, true)
     };
@@ -217,7 +222,13 @@ export function validateConfig(
   const sessions = rows(c.sessions, "场次", 350, (r) => {
     const id = key(r.id, "场次编号"),
       teacher = key(r.teacher, "教师编号"),
-      round = num(r.round, "轮次或顺序", 1, 250, true);
+      round = num(
+        r.round,
+        r.kind === "ted" ? "TED 出场顺序" : "课堂轮次",
+        1,
+        r.kind === "ted" ? Number.MAX_SAFE_INTEGER : 250,
+        true
+      );
     if (!teacherIds.has(teacher) || !["class", "ted"].includes(r.kind)) fail("教师或场次类型有误");
     const room = r.kind === "class" ? key(r.room, "教室编号") : "";
     if (r.kind === "class") {
@@ -304,8 +315,14 @@ export function validateConfig(
     c.publicFields.some((f: unknown) => typeof f !== "string" || !Object.hasOwn(awardFieldOptions, f))
   )
     fail("公开字段须包含姓名并从允许的字段中选择");
+  const guidance =
+    c.guidance === undefined ? (saved?.guidance ?? defaultJudgingGuidance) : object(c.guidance);
   return {
     look: validateLook(c.look, previousEntry),
+    guidance: {
+      instructions: str(guidance.instructions, "评审说明", 4000),
+      rules: str(guidance.rules, "评分规则", 4000)
+    },
     rooms,
     teachers,
     sessions,

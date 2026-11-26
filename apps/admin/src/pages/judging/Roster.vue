@@ -33,7 +33,7 @@
   <p v-if="section === 'rooms' || section === 'sessions'" class="j-note">
     共 <strong>{{ capacity }}</strong> 个课堂时段，已录入 {{ config.teachers.length }} 位选手。{{
       section === "rooms"
-        ? "每间教室可以设置不同的课堂轮数。"
+        ? "选「全部轮次」的教室会在开始现场评分时一并开放，其余教室由场控逐轮开放。"
         : "排场会为每位选手安排一场课堂和一场 TED，空位可保留。"
     }}
   </p>
@@ -46,7 +46,7 @@
       v-for="f in visible"
       :key="f.key"
       :label="f.label"
-      :min-width="f.key === 'topic' ? 160 : 94"
+      :min-width="f.key === 'topic' ? 160 : f.kind === 'roundMode' ? 138 : 94"
       show-overflow-tooltip
     >
       <template #default="{ row }">
@@ -66,6 +66,16 @@
           />
           <span v-else>{{ classroomRounds(row, config.sessions) }}</span>
         </template>
+        <select
+          v-else-if="editable && f.kind === 'roundMode'"
+          class="room-mode"
+          :value="row.allRoundsOpen ? 'all' : 'one'"
+          :aria-label="row.name + '评分开放方式'"
+          @change="row.allRoundsOpen = ($event.target as HTMLSelectElement).value === 'all'"
+        >
+          <option value="one">逐轮开放</option>
+          <option value="all">全部轮次</option>
+        </select>
         <template v-else>{{ displayField(f, row[f.key], config) }}</template>
       </template>
     </el-table-column>
@@ -81,19 +91,28 @@
     :title="(original ? '编辑' : '添加') + spec[section].label"
     width="min(640px,94vw)"
     append-to-body
+    destroy-on-close
   >
     <el-form label-position="top">
       <div class="j-pair">
         <el-form-item
           v-for="f in spec[section].fields.filter((field) => !field.legacy)"
           :key="f.key"
-          :label="f.kind === 'image' ? f.label + '（选填）' : f.label"
+          :label="
+            f.kind === 'image'
+              ? f.label + '（选填）'
+              : f.key === 'round'
+                ? row.kind === 'ted'
+                  ? 'TED 出场顺序'
+                  : '课堂轮次'
+                : f.label
+          "
         >
           <el-input-number
             v-if="f.kind === 'num' || f.kind === 'optionalNum'"
             v-model="row[f.key]"
             :min="f.key === 'rounds' || f.key === 'round' ? 1 : 0"
-            :max="f.key === 'rounds' || f.key === 'round' ? 250 : undefined"
+            :max="f.key === 'rounds' || (f.key === 'round' && row.kind !== 'ted') ? 250 : undefined"
             :step-strictly="f.key === 'rounds' || f.key === 'round'"
             :value-on-clear="null"
           />
@@ -105,14 +124,33 @@
           >
             <el-option v-for="o in options(f)" :key="o.id" :value="o.id" :label="o.name" />
           </el-select>
-          <ImageField v-else-if="f.kind === 'image'" v-model="row[f.key]" />
+          <el-select v-else-if="f.kind === 'roundMode'" v-model="row[f.key]">
+            <el-option label="逐轮开放" :value="false" />
+            <el-option label="全部轮次" :value="true" />
+          </el-select>
+          <template v-else-if="f.kind === 'image' && editing">
+            <ImageField
+              :key="id + '/' + original"
+              v-model="row[f.key]"
+              :event-id="id"
+              upload-label="本地上传照片"
+              @uploading="uploadingPhoto = $event"
+            />
+            <small class="j-note">JPG、PNG 或 WebP，最大 2 MB</small>
+            <img
+              v-if="row[f.key]"
+              class="teacher-photo-preview"
+              :src="judgingImageUrl(row[f.key])"
+              alt="选手照片预览"
+            />
+          </template>
           <el-input v-else v-model="row[f.key]" :disabled="!!original && f.key === 'id'" />
         </el-form-item>
       </div>
     </el-form>
     <template #footer>
       <el-button @click="editing = false">取消</el-button>
-      <el-button type="primary" @click="apply">应用到草稿</el-button>
+      <el-button type="primary" :disabled="uploadingPhoto" @click="apply">应用到草稿</el-button>
     </template>
   </el-dialog>
   <el-dialog v-model="importing" title="导入预览" width="min(680px,94vw)" append-to-body>
@@ -135,7 +173,7 @@
 import { computed, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { classroomRounds, judgingRoles, type JudgingConfig, type JudgingRoom } from "@conference/shared";
-import { judgingApi } from "../../services/judging";
+import { judgingApi, judgingImageUrl } from "../../services/judging";
 import ImageField from "./ImageField.vue";
 import {
   spec,
@@ -159,6 +197,7 @@ const section = ref<Section>("rooms"),
   row = ref<Row>({}),
   original = ref(""),
   editing = ref(false),
+  uploadingPhoto = ref(false),
   file = ref<HTMLInputElement>(),
   importing = ref(false);
 const roles = computed(() => judgingRoles(props.config));
@@ -185,6 +224,7 @@ const filtered = computed(() =>
     spec[section.value].fields.filter((f) => !f.legacy && f.kind !== "image").slice(0, 8)
   );
 function edit(current?: Row) {
+  uploadingPhoto.value = false;
   original.value = current?.id || "";
   row.value = { ...emptyRow(section.value, props.config), ...current };
   if (section.value === "rooms") {
@@ -303,3 +343,22 @@ function accept() {
   importing.value = false;
 }
 </script>
+<style scoped>
+.room-mode {
+  width: 100%;
+  min-height: 30px;
+  padding: 3px 5px;
+  border: 1px solid var(--el-border-color);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  border-radius: var(--el-border-radius-base);
+  font: inherit;
+}
+.teacher-photo-preview {
+  width: 64px;
+  height: 76px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+</style>

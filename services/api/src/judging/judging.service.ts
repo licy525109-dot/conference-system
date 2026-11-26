@@ -4,6 +4,7 @@ import {
   assigned,
   baseJudgeRole,
   defaultEntryDesign,
+  defaultJudgingGuidance,
   defaultJudgingConfig,
   defaultJudgingControl,
   rehearsalUserId,
@@ -65,6 +66,7 @@ function config(
   const stored = e.config as unknown as JudgingConfig;
   return {
     ...stored,
+    guidance: stored.guidance ?? { ...defaultJudgingGuidance },
     awardTargets: stored.awardTargets ?? legacyAwardTargets(e.rehearsal),
     roleOptions: judgingRoles(stored),
     look: { ...stored.look, entry: { ...defaultEntryDesign, ...stored.look.entry } }
@@ -72,11 +74,18 @@ function config(
 }
 function freezeSessionForms(c: JudgingConfig, state: JudgingControl, sessionId: string) {
   state.sessionForms[sessionId] ??= {
+    guidance: c.guidance,
     rubrics: c.rubrics,
     roleOptions: c.roleOptions,
     sameAudienceForm: c.sameAudienceForm,
     formVersion: c.formVersion
   };
+}
+function setScoringGates(c: JudgingConfig, state: JudgingControl, sessions: JudgingSession[], open: boolean) {
+  for (const session of sessions) {
+    if (open) freezeSessionForms(c, state, session.id);
+    state.gates[session.id] = open ? "open" : "closed";
+  }
 }
 function transferLiveRoles(c: JudgingConfig, state: JudgingControl, raw: unknown) {
   const transfers = object(raw ?? {});
@@ -404,6 +413,7 @@ export class JudgingService {
         return {
           revision: e.revision,
           gates: state.gates,
+          allRoundRooms: c.rooms.filter((room) => room.allRoundsOpen).map((room) => room.id),
           phase: e.phase,
           tasks: scoringTasks(c, state, ballots).map((t) => ({
             ...t,
@@ -494,6 +504,7 @@ export class JudgingService {
       access: "config",
       start: "floor",
       gate: "floor",
+      "room-mode": "floor",
       attendance: "floor",
       finish: "floor",
       correction: "adjust",
@@ -543,6 +554,7 @@ export class JudgingService {
             {
               ...c,
               judges: transferLiveRoles(c, state, b.roleTransfers),
+              guidance: b.guidance === undefined ? c.guidance : b.guidance,
               roleOptions: b.roleOptions ?? c.roleOptions,
               rubrics: b.roleOptions === undefined ? { ...c.rubrics, ...object(b.rubrics) } : b.rubrics,
               sameAudienceForm: b.sameAudienceForm,
@@ -552,6 +564,8 @@ export class JudgingService {
           );
           if (!e.rehearsal && !next.approvedForms) fail("正式评分表须先确认细则");
           c.rubrics = next.rubrics;
+          c.guidance = next.guidance;
+          for (const frozen of Object.values(state.sessionForms)) frozen.guidance ??= c.guidance;
           c.roleOptions = next.roleOptions;
           c.judges = next.judges;
           c.sameAudienceForm = next.sameAudienceForm;
@@ -611,34 +625,60 @@ export class JudgingService {
         } else if (action === "start") {
           phase(e, "SETUP");
           validateStart(c, e.rehearsal);
+          const rooms = new Set(c.rooms.filter((room) => room.allRoundsOpen).map((room) => room.id));
+          setScoringGates(
+            c,
+            state,
+            c.sessions.filter((s) => s.kind === "class" && rooms.has(s.room)),
+            true
+          );
           data.phase = "LIVE";
+        } else if (action === "room-mode") {
+          phase(e, "LIVE");
+          const s = sessionOf(c, b.session);
+          const room = c.rooms.find((r) => s.kind === "class" && r.id === s.room);
+          if (!room || typeof b.allRoundsOpen !== "boolean") fail("请选择教室和评分开放方式");
+          if (!!room.allRoundsOpen !== b.allRoundsOpen) {
+            room.allRoundsOpen = b.allRoundsOpen;
+            const sessions = c.sessions.filter((x) => x.kind === "class" && x.room === room.id);
+            if (room.allRoundsOpen) setScoringGates(c, state, sessions, true);
+            else
+              setScoringGates(
+                c,
+                state,
+                sessions.filter((x) => x.id !== s.id && state.gates[x.id] === "open"),
+                false
+              );
+            data.config = json(c);
+          }
+          evidence = { room: room.id, allRoundsOpen: room.allRoundsOpen, session: s.id };
         } else if (action === "gate") {
           phase(e, "LIVE");
           const s = sessionOf(c, b.session);
           if (typeof b.open !== "boolean") fail("请选择开关状态");
-          if (
-            b.open &&
-            s.kind === "class" &&
-            c.sessions.some(
-              (x) => x.kind === "class" && x.room === s.room && x.id !== s.id && state.gates[x.id] === "open"
-            )
-          )
+          if (b.scope !== undefined && b.scope !== "group") fail("无效的评分开放范围");
+          const group = c.sessions.filter((x) => x.kind === s.kind && x.room === s.room);
+          const parallel = s.kind === "ted" || c.rooms.some((r) => r.id === s.room && r.allRoundsOpen);
+          if (parallel && b.scope !== "group")
+            fail(
+              s.kind === "ted"
+                ? "请在现场收分使用「开放全部 TED」或「截止全部 TED」"
+                : "请按本教室全部轮次统一开放或截止"
+            );
+          if (b.scope === "group" && b.open && !parallel) fail("请先为本教室开启全部轮次评审");
+          if (b.open && !parallel && group.some((x) => x.id !== s.id && state.gates[x.id] === "open"))
             fail("请先截止本教室上一场");
-          if (
-            b.open &&
-            s.kind === "ted" &&
-            c.sessions.some((x) => x.kind === "ted" && x.id !== s.id && state.gates[x.id] === "open")
-          )
-            fail("请先截止上一位 TED 选手");
-          if (b.open) freezeSessionForms(c, state, s.id);
-          state.gates[s.id] = b.open ? "open" : "closed";
-          evidence = { session: s.id, open: b.open };
+          const targets = b.scope === "group" ? group : [s];
+          setScoringGates(c, state, targets, b.open);
+          evidence = { session: s.id, open: b.open, ...(b.scope && { sessions: targets.map((x) => x.id) }) };
         } else if (action === "attendance") {
           phase(e, "LIVE", "REVIEW");
           const s = sessionOf(c, b.session),
             j = c.judges.find((j) => j.id === b.judge);
           if (!j || !assigned(s, j) || !["absent", "makeup", "present"].includes(b.kind))
             fail("无效的应评任务");
+          if (b.kind === "makeup" && s.kind === "ted" && !state.sessionForms[s.id])
+            fail("请先开放全部 TED，再为个别专家登记补交");
           if (
             await tx.judgingBallot.findUnique({
               where: { eventId_sessionKey_judgeKey: { eventId: id, sessionKey: s.id, judgeKey: j.id } }
@@ -657,7 +697,7 @@ export class JudgingService {
           evidence = { session: s.id, judge: j.id, kind: b.kind, reason: state.exceptions[k]?.reason };
         } else if (action === "finish") {
           phase(e, "LIVE");
-          if (c.sessions.some((s) => state.gates[s.id] !== "closed")) fail("请逐场截止所有课堂与 TED 评分");
+          if (c.sessions.some((s) => state.gates[s.id] !== "closed")) fail("请先截止全部课堂与 TED 评分");
           for (const k of Object.keys(state.exceptions))
             if (state.exceptions[k].kind === "makeup") delete state.exceptions[k];
           data.phase = "REVIEW";
@@ -787,7 +827,8 @@ export class JudgingService {
   async entryInfo(id: string, code: string) {
     const e = await getEvent(this.db, id);
     requireGuestEntry(control(e).guestEntry, code);
-    return { title: e.title, rehearsal: e.rehearsal, look: config(e).look };
+    const c = config(e);
+    return { title: e.title, rehearsal: e.rehearsal, look: c.look, guidance: c.guidance };
   }
   async identify(id: string, code: string, raw: unknown) {
     const e = await getEvent(this.db, id);
@@ -854,6 +895,7 @@ export class JudgingService {
       title: e.title,
       rehearsal: e.rehearsal,
       look: c.look,
+      guidance: frozen?.guidance ?? c.guidance,
       teacher: {
         name: teacher.name,
         org: teacher.org,

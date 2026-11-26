@@ -1,11 +1,21 @@
 <template>
   <section>
+    <h3>选手与评委共用说明</h3>
+    <el-form label-position="top" :disabled="disabled" class="j-pair">
+      <el-form-item label="评审说明"
+        ><el-input v-model="config.guidance.instructions" type="textarea" :rows="3" maxlength="4000"
+      /></el-form-item>
+      <el-form-item label="评分规则"
+        ><el-input v-model="config.guidance.rules" type="textarea" :rows="3" maxlength="4000"
+      /></el-form-item>
+    </el-form>
+    <p class="j-note">选手扫码即可查看这两段文字。评委进入评分表后也能查看本场说明和规则。</p>
     <RoleOptions v-model="role" :config="config" :disabled="disabled" :live="live" />
     <el-empty v-if="!form || !role" description="请先新增评委类型" />
     <el-form v-else label-position="top" :disabled="disabled">
       <div class="j-pair">
         <el-form-item label="评分表标题"><el-input v-model="form.title" /></el-form-item>
-        <el-form-item label="评分说明">
+        <el-form-item label="本评分表说明">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
       </div>

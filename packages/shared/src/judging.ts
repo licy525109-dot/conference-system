@@ -29,6 +29,7 @@ export interface JudgingRoom {
   id: string;
   name: string;
   rounds?: number;
+  allRoundsOpen?: boolean;
   experience: number;
   observer: number;
 }
@@ -86,6 +87,14 @@ export interface Rubric {
   description: string;
   fields: RubricField[];
 }
+export interface JudgingGuidance {
+  instructions: string;
+  rules: string;
+}
+export const defaultJudgingGuidance: Readonly<JudgingGuidance> = {
+  instructions: "选手可在此查看本场规则。评委请输入名单上的姓名，核对选手、教室和场次后评分。",
+  rules: "请按每题标明的范围和步长评分。至少填写一项有效分数，并完成必填项后提交。"
+};
 export const entryLayouts = ["spread", "poster", "minimal"] as const;
 export const entryTypefaces = ["serif", "sans"] as const;
 export const coverPositions = ["top", "center", "bottom"] as const;
@@ -156,6 +165,7 @@ export const awardFieldOptions = {
 export type AwardField = keyof typeof awardFieldOptions;
 export interface JudgingConfig {
   look: JudgingLook;
+  guidance: JudgingGuidance;
   rooms: JudgingRoom[];
   teachers: JudgingTeacher[];
   sessions: JudgingSession[];
@@ -199,6 +209,7 @@ export interface SessionForms extends Pick<
   "rubrics" | "sameAudienceForm" | "formVersion" | "roleOptions"
 > {
   judgeRoles?: Record<string, JudgeRole>;
+  guidance?: JudgingGuidance;
 }
 export const roleForSession = (snapshot: SessionForms | undefined, judge: Judge): JudgeRole =>
   snapshot?.judgeRoles?.[judge.id] ?? judge.role;
@@ -326,6 +337,7 @@ export interface ScoringView {
   title: string;
   rehearsal: boolean;
   look: JudgingLook;
+  guidance?: JudgingGuidance;
   teacher: { name: string; org: string; photo: string; poster: string; topic: string };
   session: { id: string; room: string; round: number; time: string; kind: "class" | "ted" };
   role: JudgeRole;
@@ -369,6 +381,7 @@ export function defaultJudgingConfig(roomCount = 5, rounds?: number): JudgingCon
     roleOptions.map(({ id }) => [id, defaultJudgingRubric(id)])
   ) as JudgingConfig["rubrics"];
   return {
+    guidance: { ...defaultJudgingGuidance },
     look: {
       entry: { ...defaultEntryDesign },
       heading: "现场评审",

@@ -1,5 +1,12 @@
 import { request, requestWithBearer } from "./request";
-import type { Answers, GuestDesk, GuestIdentification, JudgingLook, ScoreReceipt } from "@conference/shared";
+import type {
+  Answers,
+  GuestDesk,
+  GuestIdentification,
+  JudgingGuidance,
+  JudgingLook,
+  ScoreReceipt
+} from "@conference/shared";
 
 export function guestScoring(event: string, code: string) {
   const path = "/judging/" + encodeURIComponent(event) + "/entry/" + encodeURIComponent(code);
@@ -18,7 +25,10 @@ export function guestScoring(event: string, code: string) {
   return {
     signedIn: () => Boolean(ticket),
     remember,
-    info: () => request<{ title: string; rehearsal: boolean; look: JudgingLook }>(path, { auth: false }),
+    info: () =>
+      request<{ title: string; rehearsal: boolean; look: JudgingLook; guidance?: JudgingGuidance }>(path, {
+        auth: false
+      }),
     identify: (name: string, number?: string) =>
       request<GuestIdentification>(path + "/identify", {
         method: "POST",

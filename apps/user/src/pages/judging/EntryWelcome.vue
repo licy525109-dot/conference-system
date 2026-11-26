@@ -46,13 +46,21 @@
           </button>
         </form>
         <text v-if="message" role="status" aria-live="polite" class="je-status">{{ message }}</text>
+        <JudgingGuide :guidance="guidance" compact />
       </view>
     </view>
   </view>
 </template>
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { defaultEntryDesign, judgingStyle, type GuestChoice, type JudgingLook } from "@conference/shared";
+import {
+  defaultEntryDesign,
+  judgingStyle,
+  type GuestChoice,
+  type JudgingGuidance,
+  type JudgingLook
+} from "@conference/shared";
+import JudgingGuide from "./JudgingGuide.vue";
 import { API_BASE_URL } from "@/config/app";
 import { submittedValues } from "./form-values";
 import paperStage from "./paper-stage.jpg";
@@ -60,6 +68,7 @@ import paperStage from "./paper-stage.jpg";
 const props = defineProps<{
   title: string;
   look: JudgingLook;
+  guidance?: JudgingGuidance;
   busy: boolean;
   choices: GuestChoice[];
   matchedName: string;
