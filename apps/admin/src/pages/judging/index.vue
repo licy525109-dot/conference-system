@@ -17,11 +17,11 @@
           <el-option
             v-for="item in events"
             :key="item.id"
-            :label="(item.rehearsal ? '联排 · ' : '') + item.title"
+            :label="(item.rehearsal ? '内部 · ' : '') + item.title"
             :value="item.id"
           />
         </el-select>
-        <el-button v-if="canManageEvents" type="primary" :disabled="busy" @click="creating = true">
+        <el-button v-if="canManageEvents" type="primary" :disabled="busy" @click="openCreate">
           新建赛事
         </el-button>
         <el-button
@@ -37,14 +37,14 @@
     </header>
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
     <el-empty v-if="!event && !loading && !error" description="暂无获授权的赛事">
-      <el-button v-if="canManageEvents" @click="creating = true">创建第一场赛事</el-button>
+      <el-button v-if="canManageEvents" @click="openCreate">创建第一场赛事</el-button>
     </el-empty>
     <template v-if="event && draft">
       <section class="j-overview">
         <div>
           <div class="j-overline">
-            <span class="j-mode">{{ event.rehearsal ? "联排测试" : "正式赛事" }}</span>
-            <span>{{ phaseNames[event.phase] }}</span>
+            <span class="j-mode">{{ phaseNames[event.phase] }}</span>
+            <span v-if="event.rehearsal">仅内部使用</span>
           </div>
           <h2>{{ event.title }}</h2>
         </div>
@@ -112,7 +112,7 @@
             <el-button v-if="setup" @click="check">检查配置</el-button>
             <span v-if="dirty" class="j-note">草稿有未保存修改</span>
           </div>
-          <Roster :config="draft" :id="event.id" :editable="setup" :rehearsal="event.rehearsal" />
+          <Roster :key="event.id" :config="draft" :id="event.id" :editable="setup" :rehearsal="event.rehearsal" />
           <div v-if="['LIVE', 'REVIEW'].includes(event.phase)" class="j-tools">
             <el-button @click="handoverOpen = true">补录颁奖与复赛资料</el-button>
           </div>
@@ -181,7 +181,8 @@
               </el-table-column>
             </el-table>
           </template>
-          <template v-if="can('judging:publish')">
+          <p v-if="event.rehearsal" class="j-note">本场成绩仅供内部使用。</p>
+          <template v-else-if="can('judging:publish')">
             <h3>对外公布</h3>
             <p>可公布日期为 {{ event.config.publicDay }} 起。请选择本次公开字段并手动发布。</p>
             <el-checkbox-group v-model="fields">
@@ -197,7 +198,7 @@
             <div class="j-tools">
               <el-button
                 type="primary"
-                :disabled="event.rehearsal || event.phase !== 'LOCKED'"
+                :disabled="event.phase !== 'LOCKED'"
                 @click="publish"
               >
                 公布本版名单
@@ -239,7 +240,7 @@
               </el-select>
             </el-form-item>
             <el-form-item
-              :label="event.rehearsal ? '联排最终确认人' : '最终确认人 · 王红丽老师本人实名后台账号'"
+              :label="event.rehearsal ? '最终确认人' : '最终确认人 · 王红丽老师本人实名后台账号'"
             >
               <el-select v-model="confirmer" clearable filterable style="width: min(440px, 100%)">
                 <el-option
@@ -277,13 +278,26 @@
       </template>
     </el-dialog>
     <el-dialog v-model="creating" title="新建赛事" width="min(470px,94vw)">
-      <el-form label-position="top">
-        <el-form-item label="赛事名称"><el-input v-model="title" maxlength="120" /></el-form-item>
-        <el-radio-group v-model="rehearsal">
-          <el-radio :value="true">联排测试</el-radio>
-          <el-radio :value="false">正式赛事</el-radio>
-        </el-radio-group>
-        <p>联排与正式赛事使用独立名单、原单和成绩版本。</p>
+      <el-form label-position="top" @submit.prevent="create">
+        <el-form-item label="赛事名称">
+          <el-input v-model="title" aria-label="赛事名称" placeholder="请输入赛事名称" maxlength="120" />
+        </el-form-item>
+        <div class="j-pair">
+          <el-form-item label="教室数量">
+            <el-input-number v-model="roomCount" aria-label="教室数量" :min="1" :max="50" step-strictly :value-on-clear="1" />
+          </el-form-item>
+          <el-form-item label="每间教室的课堂轮数">
+            <el-input-number
+              v-model="roundsPerRoom"
+              aria-label="每间教室的课堂轮数"
+              :min="1"
+              :max="250"
+              step-strictly
+              :value-on-clear="1"
+            />
+          </el-form-item>
+        </div>
+        <p class="j-note">共 {{ roomCount * roundsPerRoom }} 个课堂时段。创建后可单独调整每间教室的轮数。</p>
       </el-form>
       <template #footer>
         <el-button @click="creating = false">取消</el-button>
@@ -354,8 +368,9 @@ const events = ref<EventSummary[]>([]),
   busy = ref(false),
   error = ref(""),
   creating = ref(false),
-  title = ref("绘本舞蹈教师赛课总决赛 · 杭州站"),
-  rehearsal = ref(true);
+  title = ref(""),
+  roomCount = ref(1),
+  roundsPerRoom = ref(1);
 const tab = ref("home"),
   staff = ref<string[]>([]),
   confirmer = ref(""),
@@ -380,9 +395,9 @@ const nextStep = computed(() => {
   if (!e) return null;
   if (e.phase === "SETUP" && can("judging:config") && (!e.config.judges.length || !e.config.sessions.length))
     return {
-      title: "准备评委名单和场次",
-      detail: "填写评委的姓名、编号、机构与身份，再安排每场由哪位教师参赛。",
-      button: "填写名单与排场",
+      title: "准备本场名单和排场",
+      detail: "设置教室和课堂轮数，录入选手与评委，再按名单顺序生成场次。",
+      button: "打开名单与排场",
       tab: "roster"
     };
   if (["SETUP", "LIVE"].includes(e.phase) && can("judging:floor"))
@@ -483,12 +498,12 @@ async function refresh() {
 async function removeEvent() {
   const target = event.value;
   if (!target || !canManageEvents.value || busy.value || loading.value) return;
-  const kind = target.rehearsal ? "联排测试" : "正式赛事";
+  const phase = (target.rehearsal ? "仅内部使用 · " : "") + phaseNames[target.phase];
   const unsaved = dirty.value ? "当前未保存的修改也会丢失。" : "";
   busy.value = true;
   try {
     const confirmed = await ElMessageBox.confirm(
-      `确定删除「${target.title}」（${kind} · ${phaseNames[target.phase]}）吗？删除后，赛事将从列表移除，评分二维码和已公布的颁奖链接均会失效。已交评分和锁定版本将留档。${unsaved}`,
+      `确定删除「${target.title}」（${phase}）吗？删除后，赛事将从列表移除，评分二维码和已公布的颁奖链接均会失效。已交评分和锁定版本将留档。${unsaved}`,
       "确认删除赛事",
       { type: "warning", confirmButtonText: "删除赛事", cancelButtonText: "取消", confirmButtonType: "danger" }
     ).catch(() => false);
@@ -513,15 +528,23 @@ async function removeEvent() {
     loading.value = false;
   }
 }
+function openCreate() {
+  title.value = "";
+  roomCount.value = 1;
+  roundsPerRoom.value = 1;
+  creating.value = true;
+}
 async function create() {
-  if (busy.value) return;
+  if (!title.value.trim() || busy.value) return;
   busy.value = true;
   try {
-    const e = await judgingApi.create(title.value, rehearsal.value);
-    events.value = await judgingApi.list();
-    await read(e.id);
+    if (!(await discard())) return;
+    const e = await judgingApi.create(title.value.trim(), roomCount.value, roundsPerRoom.value);
+    events.value = [e, ...events.value.filter((item) => item.id !== e.id)];
     creating.value = false;
-    tab.value = "home";
+    await read(e.id);
+    tab.value = "roster";
+    if (window.location.hash.startsWith("#/judging")) navigateTo("/judging", { event: e.id, tab: "roster" });
     ElMessage.success("赛事已创建");
   } catch (e) {
     ElMessage.error((e as Error).message);
@@ -650,7 +673,8 @@ onMounted(async () => {
   loading.value = true;
   try {
     await loadEvents(routeQuery.value.event);
-    if (event.value && routeQuery.value.tab === "look" && can("judging:config")) tab.value = "look";
+    if (event.value && ["look", "roster"].includes(routeQuery.value.tab || "") && can("judging:config"))
+      tab.value = routeQuery.value.tab!;
   } catch (e) {
     error.value = (e as Error).message;
   } finally {

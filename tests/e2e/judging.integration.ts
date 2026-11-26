@@ -490,6 +490,67 @@ test(
         await assert.rejects(service.published(event.id), /尚未公布/);
       });
       await t.test(
+        "an event created without a mode scores and locks two teachers with independently configured classroom rounds",
+        async () => {
+          await call("/admin/judging", cfg.token, { title: "无效轮数", roomCount: 2, roundsPerRoom: 0 }, 400);
+          const created = await call("/admin/judging", cfg.token, {
+            title: "两室赛课",
+            roomCount: 2,
+            roundsPerRoom: 4
+          });
+          events.push(created.id);
+          const path = "/admin/judging/" + created.id;
+          const detail = () => call(path, cfg.token);
+          const update = async (action: string, body: Record<string, unknown> = {}, token = cfg.token) => {
+            const { revision } = await detail();
+            return call(path + "/actions", token, { action, revision, reviewedRevision: revision, ...body });
+          };
+          const event = await detail();
+          const cc: JudgingConfig = event.config;
+          assert.equal(event.rehearsal, false);
+          assert.deepEqual(
+            cc.rooms.map((r) => r.rounds),
+            [4, 4]
+          );
+          assert.deepEqual(cc.awardTargets, { merits: null, schools: null });
+          cc.rooms[0].rounds = 1;
+          cc.teachers = c.teachers.slice(0, 2);
+          cc.judges = c.judges.filter((j) => ["PR1", "PR2", "R1D0", "R2D0", "E0"].includes(j.id));
+          cc.sessions = c.sessions
+            .filter((s) => cc.teachers.some((t) => t.id === s.teacher))
+            .map((s) => (s.id === "C1" ? { ...s, round: 4 } : s));
+          cc.approvedForms = true;
+          const invalid = structuredClone(cc);
+          invalid.rooms[1].rounds = 3;
+          await call(path + "/preview-config", cfg.token, invalid, 400);
+          await update("config", { title: event.title, config: cc });
+          await update("access", { staffIds: [signer.admin.id], confirmerId: signer.admin.id });
+          await update("entry-open");
+          const entry = "/judging/" + created.id + "/entry/" + (await detail()).entryCode;
+          await update("start");
+          for (const s of cc.sessions) {
+            await update("gate", { session: s.id, open: true });
+            for (const judge of cc.judges.filter((j) => assigned(s, j))) {
+              const { ticket } = await call(entry + "/identify", undefined, { name: judge.name });
+              const { page } = await call(entry + "/desk", ticket);
+              assert.equal(page.session.round, s.round);
+              await call(entry + "/sessions/" + s.id + "/submit", ticket, {
+                formVersion: page.formVersion,
+                answers: { score: s.teacher === "T0" ? 28 : 27 }
+              });
+            }
+            await update("gate", { session: s.id, open: false });
+          }
+          await update("finish");
+          await update("send");
+          await update("confirm", {}, signer.token);
+          assert.equal((await detail()).phase, "LOCKED");
+          const final = await service.export(created.id, "awards", 1, cfg.admin);
+          assert.deepEqual([final.teachers.length, final.merits.length, final.schools.length], [2, 0, 2]);
+          await call("/judging/" + created.id + "/published", undefined, undefined, 404);
+        }
+      );
+      await t.test(
         "rehearsal staff may submit exclusively for assigned synthetic seats, with the real gates, receipts and audit",
         async () => {
           let e = await service.create({ title: "浏览器模拟席位测试", rehearsal: true }, cfg.admin);

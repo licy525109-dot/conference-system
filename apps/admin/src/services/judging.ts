@@ -88,7 +88,8 @@ export const judgingApi = {
         encodeURIComponent(keyword)
     ),
   list: () => apiRequest<EventSummary[]>(base),
-  create: (title: string, rehearsal: boolean) => post<EventSummary>(base, { title, rehearsal }),
+  create: (title: string, roomCount: number, roundsPerRoom: number) =>
+    post<EventSummary>(base, { title, roomCount, roundsPerRoom }),
   detail: (id: string) => apiRequest<EventDetail>(base + "/" + id),
   accounts: () =>
     apiRequest<{ id: string; username: string; displayName: string | null }[]>(base + "/accounts"),

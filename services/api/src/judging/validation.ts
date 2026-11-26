@@ -158,11 +158,14 @@ export function validateRubric(value: unknown, role: JudgeRole): Rubric {
     fields
   };
 }
+export function legacyAwardTargets(rehearsal: boolean) {
+  return rehearsal ? { merits: null, schools: null } : { merits: 19, schools: 13 };
+}
 export function validateConfig(
   value: unknown,
   rehearsal: boolean,
   previousEntry?: JudgingEntryDesign,
-  saved?: Pick<JudgingConfig, "roleOptions" | "rubrics">
+  saved?: Pick<JudgingConfig, "roleOptions" | "rubrics" | "rooms" | "awardTargets">
 ): JudgingConfig {
   const c = object(value),
     submittedForms = object(c.rubrics),
@@ -176,12 +179,17 @@ export function validateConfig(
   });
   if (new Set(roleOptions.map((r) => r.label)).size !== roleOptions.length) fail("评委类型名称重复");
   const activeRoles = new Set<string>(roleOptions.map((r) => r.id));
-  const rooms = rows(c.rooms, "教室", 50, (r) => ({
-    id: key(r.id, "教室编号"),
-    name: str(r.name, "教室名"),
-    experience: num(r.experience, "体验配额", 0, 500, true),
-    observer: num(r.observer, "观察配额", 0, 500, true)
-  }));
+  const rooms = rows(c.rooms, "教室", 50, (r) => {
+    const id = key(r.id, "教室编号");
+    const rounds = r.rounds === undefined ? saved?.rooms.find((room) => room.id === id)?.rounds : r.rounds;
+    return {
+      id,
+      name: str(r.name, "教室名"),
+      ...(rounds !== undefined && { rounds: num(rounds, "课堂轮数", 1, 250, true) }),
+      experience: num(r.experience, "体验配额", 0, 500, true),
+      observer: num(r.observer, "观察配额", 0, 500, true)
+    };
+  });
   const teachers = rows(c.teachers, "选手", 150, (r) => ({
     id: key(r.id, "教师编号"),
     name: str(r.name, "姓名", 50),
@@ -200,7 +208,7 @@ export function validateConfig(
       fail("同一机构编号对应多个名称：" + t.orgId);
     orgNames.set(t.orgId, t.org);
   }
-  const roomIds = new Set(rooms.map((r) => r.id)),
+  const roomsById = new Map(rooms.map((r) => [r.id, r])),
     teacherIds = new Set(teachers.map((t) => t.id));
   const slots = new Set<string>(),
     teacherSlots = new Set<string>(),
@@ -211,7 +219,19 @@ export function validateConfig(
       round = num(r.round, "轮次或顺序", 1, 250, true);
     if (!teacherIds.has(teacher) || !["class", "ted"].includes(r.kind)) fail("教师或场次类型有误");
     const room = r.kind === "class" ? key(r.room, "教室编号") : "";
-    if (r.kind === "class" && !roomIds.has(room)) fail("教室不存在");
+    if (r.kind === "class") {
+      const classroom = roomsById.get(room);
+      if (!classroom) fail("教室不存在");
+      if (classroom.rounds !== undefined && round > classroom.rounds)
+        fail(
+          classroom.name +
+            "设置了 " +
+            classroom.rounds +
+            " 轮，已有场次排在第 " +
+            round +
+            " 轮，请调整轮数或重新排场"
+        );
+    }
     const slot = [r.kind, room, round].join("/"),
       assigned = [r.kind, teacher].join("/");
     if (slots.has(slot) || teacherSlots.has(assigned)) fail("同一时段教室或教师重复排场");
@@ -219,7 +239,7 @@ export function validateConfig(
     teacherSlots.add(assigned);
     if (room) {
       const topic = room + "/" + teachers.find((t) => t.id === teacher)!.topic.trim();
-      if (topics.has(topic)) fail("同室三轮课题应互异");
+      if (topics.has(topic)) fail("同一教室内各轮的课题应互异");
       topics.add(topic);
     }
     return {
@@ -244,7 +264,7 @@ export function validateConfig(
       identities.add(bucket);
     }
     const room = stageOf(role) === "ted" ? "" : key(r.room, "教室编号");
-    if (room && !roomIds.has(room)) fail("分配教室不存在");
+    if (room && !roomsById.has(room)) fail("分配教室不存在");
     return {
       id: key(r.id, "评委编号"),
       name: str(r.name, "姓名", 50),
@@ -261,6 +281,14 @@ export function validateConfig(
     org: str(r.org, "机构")
   }));
   if (merits.some((m) => teacherIds.has(m.id))) fail("优秀奖名单与总决赛教师编号重复");
+  const targets =
+    c.awardTargets === undefined
+      ? (saved?.awardTargets ?? legacyAwardTargets(rehearsal))
+      : object(c.awardTargets);
+  const awardTargets = {
+    merits: targets.merits === null ? null : num(targets.merits, "优秀奖核对人数", 0, 500, true),
+    schools: targets.schools === null ? null : num(targets.schools, "示范校核对数量", 0, 150, true)
+  };
   const day = str(c.publicDay, "允许公布日期", 10);
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
@@ -282,6 +310,7 @@ export function validateConfig(
     sessions,
     judges,
     merits,
+    awardTargets,
     roleOptions,
     rubrics: Object.fromEntries(
       roleOptions.map(({ id }) => [id, validateRubric(forms[id], id)])
@@ -303,11 +332,11 @@ export function validateConfig(
 }
 export function validateStart(c: JudgingConfig, rehearsal: boolean) {
   if (!c.teachers.length || !c.rooms.length || !c.judges.length) fail("先补齐教室、选手和评委名单");
-  if (!rehearsal && (c.teachers.length !== 15 || c.rooms.length !== 5 || !c.approvedForms))
-    fail("正式赛需要 15 位教师、5 间教室和已确认的正式评分表");
+  if (!rehearsal && !c.approvedForms) fail("请在「评分表与规则」核对并确认本场评分细则");
   for (const t of c.teachers)
     if (c.sessions.filter((s) => s.teacher === t.id).length !== 2) fail(t.name + " 缺少课堂或 TED 场次");
   for (const r of c.rooms) {
+    if (!c.sessions.some((s) => s.kind === "class" && s.room === r.id)) continue;
     const js = c.judges.filter((j) => j.room === r.id);
     if (js.filter((j) => stageOf(j.role) === "professional").length !== 1)
       fail(r.name + " 需分配一位按专业分计分的讲师");
@@ -319,8 +348,6 @@ export function validateStart(c: JudgingConfig, rehearsal: boolean) {
     if (js.filter((j) => stageOf(j.role) === "audience").length < c.minimum.audience)
       fail(r.name + " 大众名单人数低于最低有效份数");
     if (c.minimum.professional > 1) fail(r.name + " 仅分配一位专业分评委，专业最低有效份数应为 1");
-    if (!rehearsal && [1, 2, 3].some((n) => !c.sessions.some((s) => s.room === r.id && s.round === n)))
-      fail(r.name + " 必须排齐三轮");
   }
   if (c.judges.filter((j) => stageOf(j.role) === "ted").length < c.minimum.ted)
     fail("TED 分评委人数低于最低有效份数，请补齐采用 TED 计分的评委");

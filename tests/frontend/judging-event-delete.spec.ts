@@ -50,11 +50,11 @@ test("an operator confirms the selected event, keeps its neighbor and can delete
   scope = "ALL";
   await page.reload();
   await page.locator(".j-header").getByText(live.title, { exact: true }).click();
-  await page.getByRole("option", { name: "联排 · " + trial.title }).click();
+  await page.getByRole("option", { name: "内部 · " + trial.title }).click();
   await expect(page.getByRole("heading", { name: trial.title })).toBeVisible();
   await remove.click();
   await expect(dialog).toContainText(trial.title);
-  await expect(dialog).toContainText("联排测试 · 已锁定");
+  await expect(dialog).toContainText("仅内部使用 · 已锁定");
   await dialog.getByRole("button", { name: "取消" }).click();
   await expect(page.getByRole("heading", { name: trial.title })).toBeVisible();
   expect(deleted).toEqual([]);
@@ -66,7 +66,7 @@ test("an operator confirms the selected event, keeps its neighbor and can delete
   expect(deleted).toEqual([trial.id]);
   await remove.click();
   await expect(dialog).toContainText(live.title);
-  await expect(dialog).toContainText("正式赛事 · 现场评分");
+  await expect(dialog).toContainText("（现场评分）");
   await dialog.getByRole("button", { name: "删除赛事" }).click();
   await expect(page.getByRole("button", { name: "创建第一场赛事" })).toBeVisible();
   await expect(page).toHaveURL(/#\/judging$/);

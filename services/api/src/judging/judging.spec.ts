@@ -1,9 +1,38 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { defaultJudgingConfig, defaultJudgingControl, awardLabels } from "@conference/shared";
+import {
+  classroomRounds,
+  defaultJudgingConfig,
+  defaultJudgingControl,
+  awardLabels
+} from "@conference/shared";
 import type { JudgingTeacher, Rubric } from "@conference/shared";
 import { calculate, type BallotRecord } from "./results";
 import { evaluate, validateConfig, validateLook, validateRubric } from "./validation";
+
+test("legacy schedules keep their rounds and older editors preserve explicit room limits and award targets", () => {
+  const config = defaultJudgingConfig();
+  const room = config.rooms[0];
+  assert.equal(classroomRounds(room, []), 3);
+  assert.equal(
+    classroomRounds(room, [{ id: "c", kind: "class", teacher: "t", room: room.id, round: 5, time: "" }]),
+    5
+  );
+  const stored = validateConfig(
+    { ...config, rooms: [{ ...room, rounds: 4 }], awardTargets: { merits: 0, schools: 2 } },
+    false
+  );
+  const oldPayload = { ...config, rooms: [room] };
+  const updated = validateConfig(oldPayload, false, undefined, stored);
+  assert.equal(updated.rooms[0].rounds, 4);
+  assert.deepEqual(updated.awardTargets, { merits: 0, schools: 2 });
+  assert.deepEqual(validateConfig(oldPayload, false).awardTargets, { merits: 19, schools: 13 });
+  assert.deepEqual(validateConfig(oldPayload, true).awardTargets, { merits: null, schools: null });
+  assert.throws(
+    () => validateConfig({ ...oldPayload, rooms: [{ ...room, rounds: 1.5 }] }, false),
+    /课堂轮数/
+  );
+});
 
 test("legacy events have four types and an explicitly empty draft stays empty", () => {
   const legacy = defaultJudgingConfig();

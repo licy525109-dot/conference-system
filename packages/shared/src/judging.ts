@@ -28,6 +28,7 @@ export const stageOf = (role: JudgeRole): Stage => {
 export interface JudgingRoom {
   id: string;
   name: string;
+  rounds?: number;
   experience: number;
   observer: number;
 }
@@ -50,6 +51,11 @@ export interface JudgingSession {
   room: string;
   round: number;
   time: string;
+}
+export function classroomRounds(room: JudgingRoom, sessions: JudgingSession[]): number {
+  if (room.rounds !== undefined) return room.rounds;
+  const scheduled = sessions.filter((s) => s.kind === "class" && s.room === room.id);
+  return scheduled.length ? Math.max(...scheduled.map((s) => s.round)) : 3;
 }
 export interface Judge {
   id: string;
@@ -155,6 +161,7 @@ export interface JudgingConfig {
   sessions: JudgingSession[];
   judges: Judge[];
   merits: Merit[];
+  awardTargets?: { merits: number | null; schools: number | null };
   roleOptions?: JudgingRoleOption[];
   rubrics: Record<JudgeRole, Rubric>;
   sameAudienceForm: boolean;
@@ -301,7 +308,7 @@ export function defaultJudgingRubric(role: JudgeRole, label = roleLabels[baseJud
       {
         id: "score",
         label: "综合评价",
-        hint: "联排示例，正式赛前请录入经确认的评分细则。",
+        hint: "请根据本场评分细则打分。",
         min: 0,
         max: maxPoints[stageOf(role)],
         step: 0.5,
@@ -311,7 +318,7 @@ export function defaultJudgingRubric(role: JudgeRole, label = roleLabels[baseJud
     ]
   };
 }
-export function defaultJudgingConfig(): JudgingConfig {
+export function defaultJudgingConfig(roomCount = 5, rounds?: number): JudgingConfig {
   const roleOptions = judgingRoles({});
   const rubrics = Object.fromEntries(
     roleOptions.map(({ id }) => [id, defaultJudgingRubric(id)])
@@ -332,9 +339,10 @@ export function defaultJudgingConfig(): JudgingConfig {
       showOrg: true,
       showProgress: true
     },
-    rooms: Array.from({ length: 5 }, (_, i) => ({
+    rooms: Array.from({ length: roomCount }, (_, i) => ({
       id: "R" + (i + 1),
       name: i + 1 + " 号教室",
+      ...(rounds !== undefined && { rounds }),
       experience: 16,
       observer: 16
     })),
