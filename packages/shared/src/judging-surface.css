@@ -79,7 +79,98 @@
 }
 .judging-field-label {
   display: block;
+  font-size: 1.08em;
+  font-weight: 650;
+}
+.judging-required {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--judging-accent);
+}
+.judging-score-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 12px 0 6px;
   font-weight: 600;
+}
+.judging-score-meta .judging-note {
+  font-weight: 400;
+}
+.judging-score-box {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  border: 2px solid var(--judging-accent);
+  border-radius: 10px;
+  background: var(--judging-card);
+}
+.judging-score-box:focus-within {
+  outline: 2px solid var(--judging-accent);
+  outline-offset: 2px;
+}
+.judging-score-input {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  height: 58px;
+  min-height: 58px;
+  padding: 0 46px 0 14px;
+  margin: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--judging-text);
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.judging-score-placeholder,
+.judging-score-input::placeholder {
+  color: var(--judging-text);
+  opacity: 0.63;
+  font-size: 19px;
+  font-weight: 450;
+}
+.judging-score-unit {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--judging-accent);
+  font-size: 17px;
+  font-weight: 600;
+}
+.judging-unseen {
+  display: block;
+  max-width: 100%;
+  width: fit-content;
+  min-height: 44px;
+  padding: 6px 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--judging-accent);
+  font: inherit;
+  font-size: 0.86em;
+  line-height: 1.5;
+  text-align: left;
+}
+.judging-unseen::after {
+  border: 0;
+}
+.judging-score-feedback {
+  display: block;
+  margin: 8px 0;
+  color: var(--judging-text);
+  font-size: 0.9em;
+  line-height: 1.5;
 }
 .judging-input {
   box-sizing: border-box;
@@ -108,6 +199,14 @@
 }
 .judging-submit[disabled] {
   opacity: 0.55;
+}
+.judging-submit.judging-score-submit {
+  min-height: 48px;
+}
+.judging-submit.judging-score-submit[disabled] {
+  background: #e6eae8;
+  color: #535f59;
+  opacity: 1;
 }
 .judging-link {
   display: block;

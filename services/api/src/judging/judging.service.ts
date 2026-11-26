@@ -703,7 +703,7 @@ export class JudgingService {
             const result =
               b.void === true
                 ? { units: null, answers: ballot.answers as Answers, status: "void" }
-                : evaluate(ballot.rubric as unknown as Rubric, b.answers);
+                : evaluate(ballot.rubric as unknown as Rubric, b.answers, "correction");
             const fix = { ...result, reason, actor: a.id, at: new Date().toISOString() };
             state.corrections[ballot.id] = fix;
             if (state.adjustments[ballot.teacherKey]) state.adjustments[ballot.teacherKey].recheck = true;

@@ -201,26 +201,51 @@
           <strong class="judging-name">{{ form.title }} · {{ maxPoints[stageOf(role)] }} 分</strong>
           <small class="judging-note">{{ form.description }}</small>
           <div v-for="f in form.fields" :key="f.id" class="judging-field">
-            <label class="judging-field-label">{{ f.label }}{{ f.required ? " *" : "" }}</label>
-            <small class="judging-note">{{ f.hint }}　{{ f.min }}–{{ f.max }} 分，步长 {{ f.step }}</small>
-            <input
-              v-if="answers[f.id] !== 'unseen'"
-              type="number"
-              class="judging-input"
-              v-model="answers[f.id]"
-              :min="f.min"
-              :max="f.max"
-              :step="f.step"
-            />
+            <label :for="'trial-score-' + f.id" class="judging-field-label"
+              >{{ f.label }}<span v-if="f.required" class="judging-required">必填</span></label
+            >
+            <small v-if="f.hint" class="judging-note">{{ f.hint }}</small>
+            <div class="judging-score-meta">
+              <span>本项得分</span>
+              <small class="judging-note">{{ f.min }}–{{ f.max }} 分，步长 {{ f.step }}</small>
+            </div>
+            <div v-if="inputs[f.id] !== 'unseen'" class="judging-score-box">
+              <input
+                :id="'trial-score-' + f.id"
+                v-model="inputs[f.id]"
+                type="number"
+                inputmode="decimal"
+                class="judging-score-input"
+                placeholder="请输入分数"
+                :aria-label="f.label + '得分'"
+                :aria-describedby="issue?.fieldId === f.id ? 'trial-score-feedback' : undefined"
+                :min="f.min"
+                :max="f.max"
+                :step="f.step"
+              />
+              <span class="judging-score-unit">分</span>
+            </div>
             <button
               v-if="f.unseen !== 'forbid'"
-              class="trial-link"
-              @click="answers[f.id] = answers[f.id] === 'unseen' ? null : 'unseen'"
+              type="button"
+              class="judging-unseen"
+              :aria-pressed="inputs[f.id] === 'unseen'"
+              @click="inputs[f.id] = inputs[f.id] === 'unseen' ? '' : 'unseen'"
             >
-              {{ answers[f.id] === "unseen" ? "已选未观察 · 重新评分" : "此项未观察" }}
+              {{ inputs[f.id] === "unseen" ? "已选未观察 · 重新评分" : "此项未观察" }}
             </button>
           </div>
-          <button class="judging-submit" @click="tryForm">{{ config.look.submit }}</button>
+          <span v-if="issue" id="trial-score-feedback" class="judging-score-feedback" aria-live="polite">{{
+            issue.message
+          }}</span>
+          <button
+            type="button"
+            class="judging-submit judging-score-submit"
+            :disabled="!!issue"
+            @click="tryForm"
+          >
+            {{ config.look.submit }}
+          </button>
         </div>
         <div v-else class="judging-panel">
           <strong class="judging-name">{{ config.look.receipt }}</strong>
@@ -239,8 +264,9 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
 import {
+  ballotIssue,
+  scoreInputAnswers,
   judgingStyle,
   judgingPalettes,
   judgingRoles,
@@ -250,7 +276,7 @@ import {
   stageOf,
   type JudgingConfig,
   type JudgeRole,
-  type Answers
+  type ScoreInputs
 } from "@conference/shared";
 import ImageField from "./ImageField.vue";
 import EntryDesignPreview from "./EntryDesignPreview.vue";
@@ -291,10 +317,13 @@ const colors = [
 ] as const;
 const roles = computed(() => judgingRoles(props.config)),
   role = ref<JudgeRole>(),
-  answers = ref<Answers>({}),
+  inputs = ref<ScoreInputs>({}),
   received = ref(false),
   form = computed(() => role.value && rubricFor(props.config, role.value)),
   teacher = computed(() => props.config.teachers[0]);
+const issue = computed(() =>
+  form.value ? ballotIssue(form.value, scoreInputAnswers(form.value, inputs.value)) : null
+);
 watch(
   roles,
   (list) => {
@@ -303,28 +332,12 @@ watch(
   { immediate: true }
 );
 function reset() {
-  answers.value = {};
+  inputs.value = {};
   received.value = false;
 }
 watch([role, form], reset, { deep: true });
 function tryForm() {
-  if (!form.value) return;
-  for (const f of form.value.fields) {
-    const v = answers.value[f.id];
-    if ((v == null || String(v) === "") && f.required) {
-      ElMessage.warning("请填写：" + f.label);
-      return;
-    }
-    if (
-      typeof v === "number" &&
-      (v < f.min ||
-        v > f.max ||
-        (Math.round(v * 100) - Math.round(f.min * 100)) % Math.round(f.step * 100) !== 0)
-    ) {
-      ElMessage.warning("请按范围及步长填写：" + f.label);
-      return;
-    }
-  }
+  if (!form.value || issue.value) return;
   received.value = true;
 }
 </script>

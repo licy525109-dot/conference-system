@@ -4,6 +4,7 @@ import {
   classroomRounds,
   defaultJudgingConfig,
   defaultJudgingControl,
+  scoreInputAnswers,
   awardLabels
 } from "@conference/shared";
 import type { JudgingTeacher, Rubric } from "@conference/shared";
@@ -77,7 +78,7 @@ test("blank, zero and unseen scores retain distinct meanings", () => {
   assert.equal(evaluate(form, { a: 5, b: null }).status, "pending");
   assert.equal(evaluate(form, { a: "unseen", b: 20 }).units, null);
   assert.equal(evaluate(form, { a: 8, b: "unseen" }).units, 2400);
-  assert.throws(() => evaluate(form, { b: 8 }), /请先完成/);
+  assert.throws(() => evaluate(form, { b: 8 }), /请填写「综合评价」的分数/);
   assert.throws(() => evaluate(form, { a: 5.1, b: 10 }), /步长/);
   assert.throws(() => evaluate(form, { a: 11, b: 10 }), /范围/);
   assert.throws(() => evaluate(form, { a: 5, c: 3 }), /版本/);
@@ -85,6 +86,25 @@ test("blank, zero and unseen scores retain distinct meanings", () => {
     () => evaluate({ ...form, fields: [{ ...f, unseen: "forbid" }] }, { score: "unseen" }),
     /必须评分/
   );
+});
+test("a new ballot needs an actual score, including zero, even if every field permits skipping", () => {
+  const form = defaultJudgingConfig().rubrics.experience;
+  const optional = { ...form, fields: form.fields.map((f) => ({ ...f, required: false })) };
+  for (const value of [undefined, null, "", "   "]) {
+    const answers = scoreInputAnswers(form, { score: value });
+    assert.deepEqual(answers, { score: null });
+    assert.throws(() => evaluate(form, answers), /请填写/);
+    assert.throws(() => evaluate(optional, answers), /至少填写一项分数/);
+  }
+  for (const value of ["  ", "0", NaN, Infinity, false]) {
+    assert.throws(() => evaluate(optional, { score: value }), /有效分数/);
+  }
+  for (const value of [0, "0", " 0 "]) {
+    assert.equal(evaluate(form, scoreInputAnswers(form, { score: value })).units, 0);
+  }
+  assert.equal(evaluate(form, scoreInputAnswers(form, { score: "12.5" })).units, 1250);
+  assert.throws(() => evaluate(form, { score: "unseen" }), /至少填写一项分数/);
+  assert.equal(evaluate(form, { score: "unseen" }, "correction").status, "pending");
 });
 test("formal public date, appearance and template caps are validated by the server", () => {
   const c = defaultJudgingConfig();

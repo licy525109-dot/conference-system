@@ -701,6 +701,11 @@ test(
           await call(entry + "/sessions/C0/submit", firstSeat, payload, 409);
           await call(entry + "/sessions/C5/submit", expert, payload, 403);
           await call(entry + "/sessions/C5/submit", firstSeat, { ...payload, formVersion: 0 }, 409);
+          for (const answers of [{}, { score: null }, { score: "" }, { score: "  " }, { score: "unseen" }]) {
+            await call(entry + "/sessions/C5/submit", firstSeat, { ...payload, answers }, 400);
+          }
+          assert.equal(await db.judgingBallot.count({ where: { eventId: sample.id } }), 0);
+          assert.equal((await view(firstSeat)).page.receipt, null);
           const submit = (ticket: string) => call(entry + "/sessions/C5/submit", ticket, payload);
           const [receipt, again] = await Promise.all([submit(firstSeat), submit(firstSeat)]);
           assert.deepEqual(again, receipt);
