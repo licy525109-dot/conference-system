@@ -87,7 +87,7 @@
         <el-form-item
           v-for="f in spec[section].fields.filter((field) => !field.legacy)"
           :key="f.key"
-          :label="f.label"
+          :label="f.kind === 'image' ? f.label + '（选填）' : f.label"
         >
           <el-input-number
             v-if="f.kind === 'num' || f.kind === 'optionalNum'"

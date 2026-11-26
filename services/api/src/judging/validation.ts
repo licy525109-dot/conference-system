@@ -352,8 +352,6 @@ export function validateStart(c: JudgingConfig, rehearsal: boolean) {
   }
   if (c.judges.filter((j) => stageOf(j.role) === "ted").length < c.minimum.ted)
     fail("TED 分评委人数低于最低有效份数，请补齐采用 TED 计分的评委");
-  if (!rehearsal && c.teachers.some((t) => !t.photo && !t.poster))
-    fail("正式评分需要每位教师的照片或入围海报");
 }
 export function evaluate(
   form: Rubric,
