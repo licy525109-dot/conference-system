@@ -152,7 +152,12 @@
     <p>{{ chosen?.name }}　系统核算 {{ score(chosen?.system) }}　当前最终 {{ score(chosen?.total) }}</p>
     <el-form label-position="top">
       <el-form-item label="调整后的百分制总分">
-        <el-input-number v-model="value" :min="0" :max="100" :precision="2" />
+        <el-input-number
+          v-model="value"
+          :min="0"
+          :max="100"
+          :precision="event.config.scoringPlan === 'withQualifiers' ? 4 : 2"
+        />
       </el-form-item>
       <el-form-item label="调整或重新核对的原因"><el-input v-model="reason" type="textarea" /></el-form-item>
     </el-form>
@@ -185,6 +190,10 @@
           </el-button>
         </div>
       </div>
+      <p v-if="ballot.rubric.feedbackPrompt">
+        <strong>{{ ballot.rubric.feedbackPrompt }}</strong
+        ><br />{{ ballot.answers[feedbackKey] || "未填写" }}
+      </p>
       <template v-if="editableBallot(ballot)">
         <el-checkbox v-model="voided">将本单列为无效</el-checkbox>
         <el-input v-model="reason" type="textarea" placeholder="更正或作废原因" />
@@ -220,6 +229,8 @@ import { computed, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   judgingRoleLabel,
+  feedbackKey,
+  stageCaps,
   periodNames,
   periodStatus,
   scheduledPeriods,
@@ -286,14 +297,18 @@ watch(view, () => {
   teacher.value = "";
   ballotOpen.value = false;
 });
-const columns = [
+const caps = computed(() => stageCaps(props.event.config.scoringPlan));
+const columns = computed(() => [
+  ...(props.event.config.scoringPlan === "withQualifiers"
+    ? [{ key: "qualifying", label: "初复赛折合 /10", width: 125 }]
+    : []),
   { key: "professional", label: "专业 /40" },
-  { key: "audience", label: "大众 /30" },
-  { key: "morning", label: "课堂 /70" },
+  { key: "audience", label: "大众 /" + caps.value.audience },
+  { key: "morning", label: "课堂 /" + (caps.value.professional + caps.value.audience) },
   { key: "ted", label: "TED /30" },
   { key: "system", label: "系统核算", width: 98 },
   { key: "total", label: "最终总分", width: 98 }
-];
+]);
 const actions: Record<string, string> = {
   access: "人员授权",
   config: "保存配置",
@@ -441,6 +456,7 @@ async function exportData(kind: string) {
               评分细则: b.rubric,
               提交时间: b.createdAt,
               原始逐项: b.answers,
+              ...(b.rubric.feedbackPrompt && { 选填反馈: b.answers[feedbackKey] ?? "" }),
               原始分: b.units === null ? null : b.units / 100,
               原始状态: b.status,
               更正单: b.correction
@@ -448,6 +464,11 @@ async function exportData(kind: string) {
         : r.rows.map((s: ScoringRow) => ({
             教师: s.name,
             机构: s.org,
+            ...(props.event.config.scoringPlan === "withQualifiers" && {
+              初赛原分: s.preliminaryScore,
+              复赛原分: s.prior,
+              初复赛折合分: s.qualifying
+            }),
             专业: s.professional,
             大众: s.audience,
             TED: s.ted,

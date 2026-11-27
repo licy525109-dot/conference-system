@@ -14,7 +14,11 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
 }) => {
   const config = defaultJudgingConfig();
   config.guidance = { instructions: "请核对本场授课教师。", rules: "按照本场表格中的范围填写。" };
-  config.rubrics.observer_school = { ...config.rubrics.observer, title: "教研观察评分表" };
+  config.rubrics.observer_school = {
+    ...config.rubrics.observer,
+    title: "教研观察评分表",
+    feedbackPrompt: "你印象最深的是什么？"
+  };
   const lecturerField = config.rubrics.lecturer.fields[0];
   config.rubrics.lecturer.fields = [
     { ...lecturerField, id: "delivery", label: "课堂呈现", max: 20 },
@@ -70,7 +74,10 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
       }
       if (seat && url.pathname === path + "/sessions/C1/submit") {
         submissions++;
-        expect(req.postDataJSON()).toEqual({ formVersion: 1, answers: { score: 25 } });
+        expect(req.postDataJSON()).toEqual({
+          formVersion: 1,
+          answers: { score: 25, $feedback: "课堂反馈测试" }
+        });
         const receipt: ScoreReceipt = {
           id: randomUUID(),
           teacher: "许星禾",
@@ -138,6 +145,8 @@ test("one H5 link opens the named judge's ballot and distinguishes two guests wi
   await submit.dispatchEvent("click");
   await page.getByText("已选未观察 · 重新评分", { exact: true }).click();
   expect(submissions).toBe(0);
+  await page.locator(".judging-feedback-input").getByRole("textbox").fill("课堂反馈测试");
+  await expect(submit).toHaveAttribute("disabled", /.*/);
   await score.fill("25");
   await page.getByText(config.look.submit, { exact: true }).click();
   await expect(page.getByText(config.look.receipt, { exact: true })).toBeVisible();

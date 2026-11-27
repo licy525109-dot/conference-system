@@ -21,6 +21,9 @@ export const judgingRoleLabel = (c: Pick<JudgingConfig, "roleOptions">, id: Judg
 export type Stage = "professional" | "audience" | "ted";
 export const stages: Stage[] = ["professional", "audience", "ted"];
 export const maxPoints: Record<Stage, number> = { professional: 40, audience: 30, ted: 30 };
+export type ScoringPlan = "onsite" | "withQualifiers";
+const qualifierPlanCaps = { ...maxPoints, audience: 20 };
+export const stageCaps = (plan?: ScoringPlan) => (plan === "withQualifiers" ? qualifierPlanCaps : maxPoints);
 export const stageOf = (role: JudgeRole): Stage => {
   const base = baseJudgeRole(role);
   return base === "lecturer" ? "professional" : base === "expert" ? "ted" : "audience";
@@ -42,8 +45,14 @@ export interface JudgingTeacher {
   poster: string;
   topic: string;
   speech: string;
+  preliminaryScore?: number | null;
   prior: number | null;
   qualifierRank: number | null;
+}
+// Hundredths of each original score produce ten-thousandths of a final point.
+export function qualifyingUnits(t: Pick<JudgingTeacher, "preliminaryScore" | "prior">): number | null {
+  if (t.preliminaryScore == null || t.prior == null) return null;
+  return (Math.round(t.preliminaryScore * 100) + Math.round(t.prior * 100)) * 5;
 }
 export interface JudgingSession {
   id: string;
@@ -132,6 +141,7 @@ export interface RubricField {
   unseen: "forbid" | "review" | "prorate";
 }
 export interface Rubric {
+  feedbackPrompt?: string;
   title: string;
   description: string;
   fields: RubricField[];
@@ -213,6 +223,7 @@ export const awardFieldOptions = {
 };
 export type AwardField = keyof typeof awardFieldOptions;
 export interface JudgingConfig {
+  scoringPlan?: ScoringPlan;
   look: JudgingLook;
   guidance: JudgingGuidance;
   rooms: JudgingRoom[];
@@ -273,7 +284,9 @@ export interface JudgingControl {
   adjustments: Record<string, Adjustment>;
   ties: TieOrder[];
 }
-export type Answers = Record<string, number | null | "unseen">;
+// Numeric question IDs cannot contain "$".
+export const feedbackKey = "$feedback";
+export type Answers = Record<string, number | null | string>;
 export type ScoreInputs = Record<string, string | number | null | undefined>;
 
 export function scoreInputAnswers(form: Rubric, inputs: ScoreInputs): Answers {
@@ -284,6 +297,9 @@ export function scoreInputAnswers(form: Rubric, inputs: ScoreInputs): Answers {
     else if (raw == null || String(raw).trim() === "") answers[id] = null;
     else answers[id] = Number(raw);
   }
+  const feedback = inputs[feedbackKey];
+  if (form.feedbackPrompt && typeof feedback === "string" && feedback.trim())
+    answers[feedbackKey] = feedback.trim();
   return answers;
 }
 
@@ -326,6 +342,8 @@ export interface ScoringRow {
   org: string;
   prior: number | null;
   qualifierRank: number | null;
+  preliminaryScore?: number | null;
+  qualifying?: number | null;
   counts: Record<Stage, number>;
   sums: Record<Stage, number>;
   professional: number | null;
@@ -372,8 +390,7 @@ export interface GuestSeat {
 }
 export type GuestChoice = Pick<GuestSeat, "id" | "org">;
 export type GuestIdentification =
-  | { kind: "choose"; choices: GuestChoice[] }
-  | { kind: "ready"; ticket: string };
+  { kind: "choose"; choices: GuestChoice[] } | { kind: "ready"; ticket: string };
 export interface GuestDesk {
   judge: GuestSeat;
   page: ScoringView | null;
@@ -418,7 +435,11 @@ export const assigned = (s: JudgingSession, j: Judge) =>
   stageOf(j.role) === "ted" ? s.kind === "ted" : s.kind === "class" && s.room === j.room;
 export const rubricFor = (c: Pick<JudgingConfig, "rubrics" | "sameAudienceForm">, role: JudgeRole) =>
   c.rubrics[role === "observer" && c.sameAudienceForm && c.rubrics.experience ? "experience" : role];
-export function defaultJudgingRubric(role: JudgeRole, label = roleLabels[baseJudgeRole(role)]): Rubric {
+export function defaultJudgingRubric(
+  role: JudgeRole,
+  label = roleLabels[baseJudgeRole(role)],
+  plan?: ScoringPlan
+): Rubric {
   return {
     title: label + "评分表",
     description: "请核对本场教师，依照现场公布的细则评分。",
@@ -428,7 +449,7 @@ export function defaultJudgingRubric(role: JudgeRole, label = roleLabels[baseJud
         label: "综合评价",
         hint: "请根据本场评分细则打分。",
         min: 0,
-        max: maxPoints[stageOf(role)],
+        max: stageCaps(plan)[stageOf(role)],
         step: 0.5,
         required: true,
         unseen: "review"

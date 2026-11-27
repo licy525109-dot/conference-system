@@ -1,5 +1,20 @@
 <template>
   <section>
+    <h3>总分构成</h3>
+    <el-select
+      :model-value="config.scoringPlan ?? 'onsite'"
+      :disabled="rulesLocked || disabled"
+      aria-label="总分构成"
+      style="width: min(100%, 520px)"
+      @update:model-value="config.scoringPlan = $event"
+    >
+      <el-option value="onsite" label="专业 40 ＋ 大众 30 ＋ TED 30" />
+      <el-option value="withQualifiers" label="初复赛 10 ＋ 专业 40 ＋ 大众 20 ＋ TED 30" />
+    </el-select>
+    <p v-if="config.scoringPlan === 'withQualifiers'" class="j-note">
+      在「名单与排场 → 选手」填写初赛、复赛百分制原分。系统取平均值的 10%
+      计入全天成绩。体验席与观察席的有效评分合并取平均，满分 20 分。
+    </p>
     <h3>选手与评委共用说明</h3>
     <el-form label-position="top" :disabled="disabled" class="j-pair">
       <el-form-item label="评审说明"
@@ -28,7 +43,9 @@
         </div>
         <div class="j-pair">
           <el-form-item label="题目"><el-input v-model="f.label" /></el-form-item>
-          <el-form-item label="给评委的说明"><el-input v-model="f.hint" /></el-form-item>
+          <el-form-item label="给评委的说明"
+            ><el-input v-model="f.hint" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }"
+          /></el-form-item>
         </div>
         <div class="j-rulegrid">
           <label>
@@ -56,8 +73,11 @@
       </div>
       <div class="j-tools">
         <el-button @click="add">添加评分项</el-button>
-        <strong>题目满分合计 {{ sum }} / {{ maxPoints[stageOf(role)] }}</strong>
+        <strong>题目满分合计 {{ sum }} / {{ stageCaps(config.scoringPlan)[stageOf(role)] }}</strong>
       </div>
+      <el-form-item label="附加问题（选答，不计分）"
+        ><el-input v-model="form.feedbackPrompt" maxlength="160" placeholder="留空则隐藏"
+      /></el-form-item>
       <el-checkbox v-model="config.approvedForms">已核对本场评分细则</el-checkbox>
     </el-form>
     <el-collapse>
@@ -142,7 +162,7 @@ import {
   judgingRoles,
   stageOf,
   stages,
-  maxPoints,
+  stageCaps,
   rubricFor,
   type JudgeRole,
   type JudgingConfig

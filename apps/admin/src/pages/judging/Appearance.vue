@@ -209,7 +209,9 @@
           </div>
         </div>
         <div v-if="!received" class="judging-panel">
-          <strong class="judging-name">{{ form.title }} · {{ maxPoints[stageOf(role)] }} 分</strong>
+          <strong class="judging-name"
+            >{{ form.title }} · {{ stageCaps(config.scoringPlan)[stageOf(role)] }} 分</strong
+          >
           <small class="judging-note">{{ form.description }}</small>
           <div v-for="f in form.fields" :key="f.id" class="judging-field">
             <label :for="'trial-score-' + f.id" class="judging-field-label"
@@ -246,6 +248,15 @@
               {{ inputs[f.id] === "unseen" ? "已选未观察 · 重新评分" : "此项未观察" }}
             </button>
           </div>
+          <label v-if="form.feedbackPrompt" class="judging-field judging-field-label">
+            {{ form.feedbackPrompt }}（选填）
+            <textarea
+              v-model="inputs[feedbackKey]"
+              class="judging-feedback-input"
+              maxlength="1000"
+              placeholder="写下你的感受"
+            />
+          </label>
           <span v-if="issue" id="trial-score-feedback" class="judging-score-feedback" aria-live="polite">{{
             issue.message
           }}</span>
@@ -283,7 +294,8 @@ import {
   judgingRoles,
   judgingRoleLabel,
   rubricFor,
-  maxPoints,
+  feedbackKey,
+  stageCaps,
   stageOf,
   type JudgingConfig,
   type JudgeRole,

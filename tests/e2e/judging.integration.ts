@@ -1105,6 +1105,83 @@ test(
           assert.equal(result.rows.find((r: ScoringRow) => r.id === "T5").audience, 28);
         }
       );
+      await t.test(
+        "qualifier scores, two audience seats and both period reviews produce one confirmed total",
+        async () => {
+          const e = await call("/admin/judging", cfg.token, {
+            title: "四项计分测试",
+            roomCount: 1,
+            roundsPerRoom: 1
+          });
+          events.push(e.id);
+          const path = "/admin/judging/" + e.id;
+          const detail = () => call(path, cfg.token);
+          const update = async (action: string, data: Record<string, unknown> = {}, token = cfg.token) => {
+            const { revision } = await detail();
+            return call(path + "/actions", token, { action, revision, reviewedRevision: revision, ...data });
+          };
+          const plan: JudgingConfig = (await detail()).config;
+          plan.scoringPlan = "withQualifiers";
+          plan.approvedForms = true;
+          plan.display = plan.precision = 4;
+          plan.sameAudienceForm = false;
+          for (const role of ["observer", "experience"] as const) {
+            plan.rubrics[role].fields[0].max = 20;
+            plan.rubrics[role].feedbackPrompt = "课后反馈";
+          }
+          plan.teachers = [{ ...c.teachers[0], preliminaryScore: null, prior: 92.2 }];
+          plan.sessions = c.sessions.filter((s) => s.teacher === "T0");
+          plan.judges = c.judges.filter((j) => ["PR1", "R1D0", "R1D16", "E0"].includes(j.id));
+          await update("config", { title: e.title, config: plan });
+          await update("access", { staffIds: [signer.admin.id], confirmerId: signer.admin.id });
+          await update("entry-open");
+          const entry = "/judging/" + e.id + "/entry/" + (await detail()).entryCode;
+          await update("start");
+          await update("gate", { session: "C0", open: true });
+          async function submit(
+            j: Judge,
+            sid: string,
+            expectedMax: number,
+            score: number,
+            feedback?: string
+          ) {
+            const { ticket } = await call(entry + "/identify", undefined, { name: j.name });
+            const { page } = await call(entry + "/desk?session=" + sid, ticket);
+            assert.equal(page.max, expectedMax);
+            return call(entry + "/sessions/" + sid + "/submit", ticket, {
+              formVersion: page.formVersion,
+              answers: { score, ...(feedback && { $feedback: feedback }) }
+            });
+          }
+          const judge = (role: Judge["role"]) => plan.judges.find((j) => j.role === role)!;
+          await submit(judge("lecturer"), "C0", 40, 36);
+          await submit(judge("experience"), "C0", 20, 20, "课堂反馈");
+          await submit(judge("observer"), "C0", 20, 16);
+          await update("period-close", { period: "am" });
+          await update("period-approve", { period: "am" });
+          const morning = (await call(path + "/results", cfg.token)).rows[0];
+          assert.deepEqual([morning.morning, morning.qualifying, morning.system], [54, null, null]);
+          await update("handover", {
+            teachers: [{ id: "T0", preliminaryScore: 91.11, prior: 92.2, qualifierRank: null }],
+            merits: plan.merits
+          });
+          assert.equal((await call(path + "/results", cfg.token)).rows[0].qualifying, 9.1655);
+          await update("gate", { session: "S0", open: true, scope: "group" });
+          await submit(judge("expert"), "S0", 30, 27);
+          await update("period-close", { period: "pm" });
+          await update("period-approve", { period: "pm" });
+          await update("send");
+          await update("confirm", {}, signer.token);
+          assert.equal((await detail()).phase, "LOCKED");
+          const result = await call(path + "/results", cfg.token);
+          const row = result.rows[0];
+          assert.deepEqual([row.audience, row.ted, row.total, row.rank], [18, 27, 90.1655, 1]);
+          assert.equal(
+            result.ballots.find((b: { role: string }) => b.role === "experience").answers.$feedback,
+            "课堂反馈"
+          );
+        }
+      );
       await t.test("only a global editor can delete a locked event and its records stay on file", async () => {
         const current = await call(path, cfg.token);
         assert.equal(current.phase, "LOCKED");

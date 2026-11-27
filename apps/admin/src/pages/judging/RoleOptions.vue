@@ -76,6 +76,7 @@ import {
   judgingRoles,
   roleLabels,
   stageOf,
+  stageCaps,
   type BaseJudgeRole,
   type JudgeRole,
   type JudgingConfig
@@ -88,12 +89,12 @@ const current = computed(() => roles.value.find((r) => r.id === selected.value))
 const canShare = computed(
   () => roles.value.some((r) => r.id === "experience") && roles.value.some((r) => r.id === "observer")
 );
-const policyLabels: Record<BaseJudgeRole, string> = {
+const policyLabels = computed<Record<BaseJudgeRole, string>>(() => ({
   lecturer: "专业分 · 40 分（讲师席）",
-  experience: "大众分 · 30 分（体验席配额）",
-  observer: "大众分 · 30 分（观察席配额）",
+  experience: "大众分 · " + stageCaps(props.config.scoringPlan).audience + " 分（体验席配额）",
+  observer: "大众分 · " + stageCaps(props.config.scoringPlan).audience + " 分（观察席配额）",
   expert: "TED 分 · 30 分（主会场）"
-};
+}));
 const adding = ref(false),
   removing = ref(false);
 const name = ref(""),
@@ -129,7 +130,7 @@ function add() {
   const builtin = base.value;
   const restore = label === roleLabels[builtin] && !roles.value.some((r) => r.id === builtin);
   const id: JudgeRole = restore ? builtin : `${builtin}_${crypto.randomUUID()}`;
-  props.config.rubrics[id] = defaultJudgingRubric(id, label);
+  props.config.rubrics[id] = defaultJudgingRubric(id, label, props.config.scoringPlan);
   props.config.roleOptions = [...roles.value, { id, label }];
   for (const j of candidates.value) if (members.value.includes(j.id)) j.role = id;
   selected.value = id;

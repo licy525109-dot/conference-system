@@ -91,6 +91,13 @@
         <template v-else>{{ displayField(f, row[f.key], config) }}</template>
       </template>
     </el-table-column>
+    <el-table-column
+      v-if="section === 'teachers' && config.scoringPlan === 'withQualifiers'"
+      label="初复赛折合 /10"
+      min-width="126"
+    >
+      <template #default="{ row }">{{ weightedScore(row) }}</template>
+    </el-table-column>
     <el-table-column v-if="editable" label="操作" fixed="right" width="107">
       <template #default="{ row }">
         <el-button link type="primary" @click="edit(row)">编辑</el-button>
@@ -108,7 +115,7 @@
     <el-form label-position="top">
       <div class="j-pair">
         <el-form-item
-          v-for="f in spec[section].fields.filter((field) => !field.legacy)"
+          v-for="f in rosterFields(section, config)"
           :key="f.key"
           :label="
             f.kind === 'image'
@@ -193,6 +200,8 @@ import { computed, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   classroomRounds,
+  qualifyingUnits,
+  type JudgingTeacher,
   judgingPeriods,
   judgingRoles,
   periodNames,
@@ -209,6 +218,7 @@ import {
   displayField,
   prepareImport,
   rosterTemplate,
+  rosterFields,
   rehearsalRoster,
   schedule,
   type Section,
@@ -248,8 +258,14 @@ const filtered = computed(() =>
     (props.config[section.value] as Row[]).filter((o) => Object.values(o).join(" ").includes(search.value))
   ),
   visible = computed(() =>
-    spec[section.value].fields.filter((f) => !f.legacy && f.kind !== "image").slice(0, 8)
+    rosterFields(section.value, props.config)
+      .filter((f) => f.kind !== "image")
+      .slice(0, 8)
   );
+function weightedScore(t: JudgingTeacher) {
+  const n = qualifyingUnits(t);
+  return n === null ? "待补原分" : (n / 10000).toFixed(4);
+}
 function edit(current?: Row) {
   uploadingPhoto.value = false;
   original.value = current?.id || "";

@@ -15,7 +15,7 @@ import {
   roleForSession,
   rubricFor,
   stageOf,
-  maxPoints,
+  qualifyingUnits,
   needsScoreReview,
   periodNames,
   periodStatus,
@@ -72,6 +72,7 @@ function config(
   const stored = e.config as unknown as JudgingConfig;
   return {
     ...stored,
+    scoringPlan: stored.scoringPlan ?? "onsite",
     guidance: stored.guidance ?? { ...defaultJudgingGuidance },
     awardTargets: stored.awardTargets ?? legacyAwardTargets(e.rehearsal),
     roleOptions: judgingRoles(stored),
@@ -519,6 +520,10 @@ export class JudgingService {
       if (names.has(person.name)) warnings.push("重名请核对编号：" + person.name);
       names.add(person.name);
     }
+    if (c.scoringPlan === "withQualifiers") {
+      const missing = c.teachers.filter((t) => qualifyingUnits(t) === null);
+      if (missing.length) warnings.push("全天成绩待补初、复赛原分：" + missing.map((t) => t.name).join("、"));
+    }
     let readiness = "";
     try {
       validateStart(c, e.rehearsal);
@@ -644,7 +649,12 @@ export class JudgingService {
           if (!Array.isArray(b.teachers)) fail("复赛资料无效");
           const before = {
             merits: c.merits,
-            teachers: c.teachers.map((t) => ({ id: t.id, prior: t.prior, qualifierRank: t.qualifierRank }))
+            teachers: c.teachers.map((t) => ({
+              id: t.id,
+              preliminaryScore: t.preliminaryScore,
+              prior: t.prior,
+              qualifierRank: t.qualifierRank
+            }))
           };
           const records = new Map(
             b.teachers.map((t: unknown) => {
@@ -660,12 +670,22 @@ export class JudgingService {
               merits: b.merits,
               teachers: c.teachers.map((t) => ({
                 ...t,
+                preliminaryScore: Object.hasOwn(records.get(t.id)!, "preliminaryScore")
+                  ? records.get(t.id)!.preliminaryScore
+                  : t.preliminaryScore,
                 prior: records.get(t.id)!.prior,
                 qualifierRank: records.get(t.id)!.qualifierRank
               }))
             },
             e.rehearsal
           );
+          if (c.scoringPlan === "withQualifiers") {
+            const previously = new Map(c.teachers.map((t) => [t.id, qualifyingUnits(t)]));
+            for (const t of next.teachers) {
+              const adjustment = state.adjustments[t.id];
+              if (adjustment && qualifyingUnits(t) !== previously.get(t.id)) adjustment.recheck = true;
+            }
+          }
           c.teachers = next.teachers;
           c.merits = next.merits;
           state.ties = [];
@@ -894,7 +914,7 @@ export class JudgingService {
           } else if (action === "adjust") {
             const row = rows.find((r) => r.id === b.teacher);
             if (!row || row.system === null) fail("缺少有效分项，无法直接调整总分");
-            const value = points(b.value, "百分制总分"),
+            const value = points(b.value, "百分制总分", 100, c.scoringPlan === "withQualifiers" ? 4 : 2),
               reason = str(b.reason, "调分原因", 500);
             const valueInfo = {
               value,
@@ -1040,7 +1060,8 @@ export class JudgingService {
     const frozen = state.sessionForms[s.id],
       sessionForm = frozen ?? c,
       role = roleForSession(frozen, j),
-      ballot = bySeat.get(taskKey(s.id, j.id));
+      ballot = bySeat.get(taskKey(s.id, j.id)),
+      form = rubricFor(sessionForm, role);
     return {
       title: e.title,
       rehearsal: e.rehearsal,
@@ -1064,9 +1085,9 @@ export class JudgingService {
       },
       role,
       roleLabel: judgingRoleLabel(sessionForm, role),
-      form: rubricFor(sessionForm, role),
+      form,
       formVersion: sessionForm.formVersion,
-      max: maxPoints[stageOf(role)],
+      max: form.fields.reduce((sum, f) => sum + Math.round(f.max * 100), 0) / 100,
       open: isOpen(e, s, j),
       receipt: ballot ? receipt(ballot, c, s) : null,
       tasks
