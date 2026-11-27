@@ -1129,7 +1129,7 @@ test(
             plan.rubrics[role].fields[0].max = 20;
             plan.rubrics[role].feedbackPrompt = "课后反馈";
           }
-          plan.teachers = [{ ...c.teachers[0], preliminaryScore: 91.11, prior: 92.2 }];
+          plan.teachers = [{ ...c.teachers[0], preliminaryScore: null, prior: 92.2 }];
           plan.sessions = c.sessions.filter((s) => s.teacher === "T0");
           plan.judges = c.judges.filter((j) => ["PR1", "R1D0", "R1D16", "E0"].includes(j.id));
           await update("config", { title: e.title, config: plan });
@@ -1160,7 +1160,12 @@ test(
           await update("period-close", { period: "am" });
           await update("period-approve", { period: "am" });
           const morning = (await call(path + "/results", cfg.token)).rows[0];
-          assert.deepEqual([morning.morning, morning.qualifying, morning.system], [54, 9.1655, null]);
+          assert.deepEqual([morning.morning, morning.qualifying, morning.system], [54, null, null]);
+          await update("handover", {
+            teachers: [{ id: "T0", preliminaryScore: 91.11, prior: 92.2, qualifierRank: null }],
+            merits: plan.merits
+          });
+          assert.equal((await call(path + "/results", cfg.token)).rows[0].qualifying, 9.1655);
           await update("gate", { session: "S0", open: true, scope: "group" });
           await submit(judge("expert"), "S0", 30, 27);
           await update("period-close", { period: "pm" });

@@ -379,10 +379,6 @@ export function validateConfig(
 export function validateStart(c: JudgingConfig, rehearsal: boolean) {
   if (!c.teachers.length || !c.rooms.length || !c.judges.length) fail("先补齐教室、选手和评委名单");
   if (!rehearsal && !c.approvedForms) fail("请在「评分表与规则」核对并确认本场评分细则");
-  if (c.scoringPlan === "withQualifiers") {
-    const missing = c.teachers.filter((t) => t.preliminaryScore == null || t.prior == null);
-    if (missing.length) fail("请补齐选手初、复赛原分：" + missing.map((t) => t.name).join("、"));
-  }
   for (const t of c.teachers)
     if (c.sessions.filter((s) => s.teacher === t.id).length !== 2) fail(t.name + " 缺少课堂或 TED 场次");
   for (const r of c.rooms) {

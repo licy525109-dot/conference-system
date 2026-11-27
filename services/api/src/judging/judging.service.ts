@@ -520,6 +520,10 @@ export class JudgingService {
       if (names.has(person.name)) warnings.push("重名请核对编号：" + person.name);
       names.add(person.name);
     }
+    if (c.scoringPlan === "withQualifiers") {
+      const missing = c.teachers.filter((t) => qualifyingUnits(t) === null);
+      if (missing.length) warnings.push("全天成绩待补初、复赛原分：" + missing.map((t) => t.name).join("、"));
+    }
     let readiness = "";
     try {
       validateStart(c, e.rehearsal);
