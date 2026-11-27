@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes, pbkdf2Sync } from "node:crypto";
+import { randomBytes, pbkdf2Sync, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
@@ -819,7 +819,17 @@ test(
           const changeTrial = async (action: string, body: Record<string, unknown> = {}) => {
             e = await service.change(e.id, { action, revision: e.revision, ...body }, cfg.admin);
           };
+          cc.publicDay = "2026-11-01";
           await changeTrial("config", { title: "浏览器模拟席位测试", config: cc });
+          const copied = await call("/admin/judging", cfg.token, {
+            title: "沿用评委分工", copy: { sourceId: e.id, teachers: false, judges: true, handover: false }
+          });
+          events.push(copied.id);
+          const targetDetail = await call("/admin/judging/" + copied.id, cfg.token);
+          assert.equal(targetDetail.rehearsal, false);
+          assert.equal(targetDetail.config.publicDay, "2026-12-16");
+          assert.equal(targetDetail.config.judges.find((j: Judge) => j.id === sample.id).userId, "");
+          assert.deepEqual(targetDetail.config.teachers, []);
           await changeTrial("start");
           const route = (eventId: string, sid: string, seat: string) =>
             "/admin/judging/" + eventId + "/sessions/" + sid + "/rehearsal/" + seat;
@@ -1098,6 +1108,16 @@ test(
           );
           assert.equal(result.rows.find((r: ScoringRow) => r.id === "T0").ted, 29);
           assert.equal(result.rows.find((r: ScoringRow) => r.id === "T5").audience, 28);
+          const duplicated = await call("/admin/judging", cfg.token, {
+            title: "沿用自定义类型",
+            copy: { sourceId: sample.id, teachers: false, judges: true, handover: false }
+          });
+          events.push(duplicated.id);
+          const currentTypes = (await call(route, cfg.token)).config;
+          const copiedTypes = (await call("/admin/judging/" + duplicated.id, cfg.token)).config;
+          assert.deepEqual(copiedTypes.roleOptions, currentTypes.roleOptions);
+          assert.deepEqual(copiedTypes.rubrics, currentTypes.rubrics);
+          assert.deepEqual(copiedTypes.judges, currentTypes.judges);
         }
       );
       await t.test(
@@ -1186,13 +1206,126 @@ test(
           const result = await call(path + "/results", cfg.token);
           const row = result.rows[0];
           assert.deepEqual([row.audience, row.ted, row.total, row.rank], [18, 27, 90.1655, 1]);
+          const copy = await call("/admin/judging", cfg.token, {
+            title: "沿用资格赛资料", copy: { sourceId: e.id, teachers: true, judges: false, handover: true }
+          });
+          events.push(copy.id);
+          const duplicated = (await call("/admin/judging/" + copy.id, cfg.token)).config;
+          const original = (await detail()).config;
+          assert.equal(duplicated.scoringPlan, "withQualifiers");
+          assert.deepEqual(duplicated.teachers, original.teachers);
+          assert.deepEqual(duplicated.merits, original.merits);
+          assert.deepEqual(duplicated.rubrics, original.rubrics);
+          assert.deepEqual(duplicated.judges, []);
           assert.equal(
             result.ballots.find((b: { role: string }) => b.role === "experience").answers.$feedback,
             "课堂反馈"
           );
         }
       );
-      await t.test("only a global editor can delete a locked event and its records stay on file", async () => {
+      await t.test(
+        "scoped operators create and copy independent events using their authorized configurations",
+        async () => {
+          const base = "/admin/judging";
+          const source = await call(path, cfg.token);
+          const copy = { sourceId: id, teachers: true, judges: true, handover: false };
+          const request = { title: "新赛区", requestId: randomUUID(), copy };
+          const other = await admin("copyeditor", ["judging:view", "judging:config"]);
+          await call(base, undefined, request, 401);
+          await call(base, floor.token, request, 403);
+          await call(base, other.token, request, 403);
+          await call(
+            base,
+            editor.token,
+            { ...request, copy: { ...copy, teachers: false, handover: true } },
+            400
+          );
+
+          const blank = await call(base, other.token, {
+            title: "独立空白场",
+            roomCount: 2,
+            roundsPerRoom: 4
+          });
+          events.push(blank.id);
+          const empty = await call(base + "/" + blank.id, other.token);
+          assert.deepEqual(
+            empty.config.rooms.map((r: { rounds: number }) => r.rounds),
+            [4, 4]
+          );
+          await call(base + "/" + blank.id, editor.token, undefined, 403);
+          const [created, retry] = await Promise.all([
+            call(base, editor.token, request),
+            call(base, editor.token, request)
+          ]);
+          events.push(created.id);
+          assert.equal(created.id, retry.id);
+          const destination = base + "/" + created.id;
+          const fresh = await call(destination, cfg.token);
+          assert.deepEqual(
+            [fresh.phase, fresh.revision, fresh.edition, fresh.entryCode, fresh.publishedEdition],
+            ["SETUP", 1, 1, null, null]
+          );
+          assert.deepEqual(fresh.staffIds, [editor.admin.id]);
+          assert.deepEqual(fresh.editions, []);
+          assert.deepEqual(fresh.config.sessions, source.config.sessions);
+          assert.deepEqual(fresh.config.judges, source.config.judges);
+          for (const field of [
+            "look",
+            "guidance",
+            "minimum",
+            "awardTargets",
+            "rubrics",
+            "roleOptions",
+            "scoringPlan",
+            "publicDay",
+            "publicFields"
+          ])
+            assert.deepEqual(fresh.config[field], source.config[field], field);
+          assert.ok(
+            fresh.config.teachers.every(
+              (t: JudgingConfig["teachers"][number]) =>
+                t.preliminaryScore === null && t.prior === null && t.qualifierRank === null
+            )
+          );
+          assert.deepEqual(fresh.config.merits, []);
+          assert.equal(fresh.config.approvedForms, false);
+          assert.equal(fresh.config.formVersion, 1);
+          const record = await db.judgingEvent.findUniqueOrThrow({
+            where: { id: created.id },
+            include: { _count: { select: { ballots: true, audit: true } } }
+          });
+          assert.deepEqual(record.control, req("@conference/shared").defaultJudgingControl());
+          assert.deepEqual(record._count, { ballots: 0, audit: 1 });
+          await call(destination, other.token, undefined, 403);
+          await call(destination, floor.token, undefined, 403);
+          await call(destination + "/actions", cfg.token, { action: "entry-open", revision: 1 });
+          const ownCode = (await call(destination, editor.token)).entryCode;
+          assert.ok(source.entryCode && ownCode && source.entryCode !== ownCode);
+          await call("/judging/" + created.id + "/entry/" + source.entryCode, undefined, undefined, 404);
+          await call("/judging/" + created.id + "/entry/" + ownCode);
+          await call(destination + "/actions", editor.token, { action: "delete", revision: 2 });
+          await call("/judging/" + created.id + "/entry/" + ownCode, undefined, undefined, 404);
+          await call(base, editor.token, request, 409);
+          await call(base, editor.token, { ...request, copy: { ...copy, sourceId: created.id } }, 404);
+          await call("/judging/" + id + "/entry/" + source.entryCode);
+          assert.equal((await call(path, cfg.token)).revision, source.revision);
+
+          const template = await call(base, editor.token, {
+            title: "沿用规则",
+            copy: { ...copy, teachers: false, judges: false }
+          });
+          events.push(template.id);
+          const settings = (await call(base + "/" + template.id, editor.token)).config;
+          assert.deepEqual(
+            [settings.teachers, settings.judges, settings.sessions, settings.merits],
+            [[], [], [], []]
+          );
+          assert.ok(settings.rooms.every((r: { rounds: number }) => r.rounds === 3));
+          assert.deepEqual(settings.look, source.config.look);
+          assert.deepEqual(settings.rubrics, source.config.rubrics);
+        }
+      );
+      await t.test("authorized editors can delete their event and its locked records stay on file", async () => {
         const current = await call(path, cfg.token);
         assert.equal(current.phase, "LOCKED");
         const remove = (token: string | undefined, version: number, status: number) =>
@@ -1204,12 +1337,13 @@ test(
         assert.ok((await listed(editor.token)).includes(id));
         await remove(undefined, current.revision, 401);
         await remove(floor.token, current.revision, 403);
-        await remove(editor.token, current.revision, 403);
-        await remove(cfg.token, current.revision - 1, 409);
+        const other = await admin("deleteoutside", ["judging:view", "judging:config"]);
+        await remove(other.token, current.revision, 403);
+        await remove(editor.token, current.revision - 1, 409);
         assert.equal((await call("/judging/" + id + "/published")).edition, 2);
         const count = await db.judgingBallot.count({ where: { eventId: id } });
         assert.ok(count > 0);
-        await remove(cfg.token, current.revision, 201);
+        await remove(editor.token, current.revision, 201);
         await remove(cfg.token, current.revision, 404);
         assert.deepEqual(await listed(cfg.token), before.filter((other) => other !== id));
         assert.ok(!(await listed(editor.token)).includes(id));
@@ -1221,7 +1355,7 @@ test(
         assert.equal(await db.judgingEdition.count({ where: { eventId: id } }), 2);
         const logs = await db.judgingAudit.findMany({ where: { eventId: id, action: "delete" } });
         assert.equal(logs.length, 1);
-        assert.equal(logs[0].actor, cfg.admin.id);
+        assert.equal(logs[0].actor, editor.admin.id);
         assert.equal(logs[0].detail.previousPhase, "LOCKED");
       });
     } finally {

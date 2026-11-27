@@ -3,6 +3,7 @@ import type {
   Answers,
   Correction,
   JudgingConfig,
+  JudgingCopyOptions,
   JudgingSession,
   PeriodReviews,
   RoomPeriodModes,
@@ -98,8 +99,11 @@ export const judgingApi = {
         encodeURIComponent(keyword)
     ),
   list: () => apiRequest<EventSummary[]>(base),
-  create: (title: string, roomCount: number, roundsPerRoom: number) =>
-    post<EventSummary>(base, { title, roomCount, roundsPerRoom }),
+  create: (
+    input: { title: string; requestId: string } & (
+      { roomCount: number; roundsPerRoom: number } | { copy: JudgingCopyOptions }
+    )
+  ) => post<EventSummary>(base, input),
   detail: (id: string) => apiRequest<EventDetail>(base + "/" + id),
   accounts: () =>
     apiRequest<{ id: string; username: string; displayName: string | null }[]>(base + "/accounts"),

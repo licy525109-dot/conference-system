@@ -268,12 +268,48 @@
         <el-button type="primary" @click="awards(exportEdition)">下载 Excel</el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="creating" title="新建赛事" width="min(470px,94vw)">
-      <el-form label-position="top" @submit.prevent="create">
+    <el-dialog
+      v-model="creating"
+      title="新建赛事"
+      width="min(520px,94vw)"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!busy"
+      :show-close="!busy"
+    >
+      <el-form label-position="top" :disabled="busy" @submit.prevent="create">
+        <el-form-item v-if="events.length" label="创建方式">
+          <el-radio-group v-model="createMode" aria-label="创建方式">
+            <el-radio-button value="blank">从空白创建</el-radio-button>
+            <el-radio-button value="copy">复制已有赛事</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="createMode === 'copy'" label="来源赛事">
+          <el-select v-model="copyOptions.sourceId" aria-label="来源赛事" filterable>
+            <el-option
+              v-for="item in events"
+              :key="item.id"
+              :value="item.id"
+              :label="(item.rehearsal ? '内部 · ' : '') + item.title"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="赛事名称">
           <el-input v-model="title" aria-label="赛事名称" placeholder="请输入赛事名称" maxlength="120" />
         </el-form-item>
-        <div class="j-pair">
+        <template v-if="createMode === 'copy'">
+          <p class="j-note">自动复制已保存的教室轮次、评委类型、评分表、计分规则和手机页面。</p>
+          <el-form-item label="同时复制的资料">
+            <div class="j-copy-options">
+              <el-checkbox v-model="copyOptions.teachers">选手名单与排场</el-checkbox>
+              <el-checkbox v-model="copyOptions.judges">评委名单与教室分工</el-checkbox>
+              <el-checkbox v-model="copyOptions.handover" :disabled="!copyOptions.teachers">
+                初复赛成绩、晋级名次与优秀奖名单
+              </el-checkbox>
+            </div>
+          </el-form-item>
+          <p class="j-note">新赛事从赛前配置开始。开场前请核对评分细则，并发布本场专用二维码。</p>
+        </template>
+        <div v-else class="j-pair">
           <el-form-item label="教室数量">
             <el-input-number v-model="roomCount" aria-label="教室数量" :min="1" :max="50" step-strictly :value-on-clear="1" />
           </el-form-item>
@@ -288,11 +324,20 @@
             />
           </el-form-item>
         </div>
-        <p class="j-note">共 {{ roomCount * roundsPerRoom }} 个课堂时段。创建后可单独调整每间教室的轮数。</p>
+        <p v-if="createMode === 'blank'" class="j-note">
+          共 {{ roomCount * roundsPerRoom }} 个课堂时段。创建后可单独调整每间教室的轮数。
+        </p>
       </el-form>
       <template #footer>
-        <el-button @click="creating = false">取消</el-button>
-        <el-button type="primary" :disabled="!title.trim() || busy" @click="create">创建</el-button>
+        <el-button :disabled="busy" @click="creating = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="busy"
+          :disabled="!title.trim() || (createMode === 'copy' && !copyOptions.sourceId)"
+          @click="create"
+        >
+          {{ createMode === "copy" ? "复制并创建" : "创建" }}
+        </el-button>
       </template>
     </el-dialog>
     <el-dialog v-model="handoverOpen" title="补录初复赛成绩及颁奖资料" width="min(850px,94vw)" append-to-body>
@@ -348,6 +393,7 @@ import {
   defaultEntryDesign,
   defaultJudgingGuidance,
   type JudgingPeriod,
+  type JudgingCopyOptions,
   type AwardField,
   type JudgingConfig
 } from "@conference/shared";
@@ -366,8 +412,8 @@ import Appearance from "./Appearance.vue";
 import Rubrics from "./Rubrics.vue";
 import Operations from "./Operations.vue";
 import Review from "./Review.vue";
-const { admin, hasPermission: can } = useAdminSession(),
-  canManageEvents = computed(() => can("judging:config") && admin.value?.conferenceScopeMode === "ALL");
+const { hasPermission: can } = useAdminSession();
+const canManageEvents = computed(() => can("judging:config"));
 const events = ref<EventSummary[]>([]),
   event = ref<EventDetail | null>(null),
   draft = ref<JudgingConfig | null>(null),
@@ -376,6 +422,9 @@ const events = ref<EventSummary[]>([]),
   busy = ref(false),
   error = ref(""),
   creating = ref(false),
+  createMode = ref<"blank" | "copy">("blank"),
+  copyOptions = ref<JudgingCopyOptions>({ sourceId: "", teachers: true, judges: true, handover: false }),
+  requestId = ref(""),
   title = ref(""),
   roomCount = ref(1),
   roundsPerRoom = ref(1);
@@ -541,21 +590,45 @@ async function removeEvent() {
     loading.value = false;
   }
 }
+const suggestedTitle = computed(() => {
+  const source = createMode.value === "copy" && events.value.find((e) => e.id === copyOptions.value.sourceId);
+  return source ? source.title.slice(0, 116) + "（副本）" : "";
+});
+watch(suggestedTitle, (next, previous) => {
+  if (!title.value.trim() || title.value === previous) title.value = next;
+});
+watch(() => copyOptions.value.teachers, (selected) => {
+  if (!selected) copyOptions.value.handover = false;
+});
 function openCreate() {
+  if (!canManageEvents.value || busy.value) return;
+  createMode.value = "blank";
+  copyOptions.value = {
+    sourceId: event.value?.id || events.value[0]?.id || "",
+    teachers: true,
+    judges: true,
+    handover: false
+  };
+  requestId.value = crypto.getRandomValues(new Uint32Array(4)).join("-");
   title.value = "";
   roomCount.value = 1;
   roundsPerRoom.value = 1;
   creating.value = true;
 }
 async function create() {
-  if (!title.value.trim() || busy.value) return;
+  if (!canManageEvents.value || !title.value.trim() || busy.value) return;
+  if (createMode.value === "copy" && !copyOptions.value.sourceId) return;
   busy.value = true;
   try {
     if (!(await discard())) return;
-    const e = await judgingApi.create(title.value.trim(), roomCount.value, roundsPerRoom.value);
+    const options =
+      createMode.value === "copy"
+        ? { copy: copyOptions.value }
+        : { roomCount: roomCount.value, roundsPerRoom: roundsPerRoom.value };
+    const e = await judgingApi.create({ title: title.value.trim(), requestId: requestId.value, ...options });
     events.value = [e, ...events.value.filter((item) => item.id !== e.id)];
-    creating.value = false;
     await read(e.id);
+    creating.value = false;
     tab.value = "roster";
     if (window.location.hash.startsWith("#/judging")) navigateTo("/judging", { event: e.id, tab: "roster" });
     ElMessage.success("赛事已创建");

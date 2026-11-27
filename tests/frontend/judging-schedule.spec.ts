@@ -25,14 +25,19 @@ test("an operator creates a schedule, imports teachers and adjusts one classroom
       return ok({
         admin: {
           username: "ops",
-          conferenceScopeMode: "ALL",
+          conferenceScopeMode: "ASSIGNED",
           permissions: ["judging:view", "judging:config"]
         }
       });
     if (path === "/api/admin/judging") {
       if (route.request().method() === "GET") return ok(config ? [summary()] : []);
       const input = route.request().postDataJSON();
-      expect(input).toEqual({ title: "两室赛课", roomCount: 2, roundsPerRoom: 1 });
+      expect(input).toEqual({
+        title: "两室赛课",
+        roomCount: 2,
+        roundsPerRoom: 1,
+        requestId: expect.any(String)
+      });
       config = defaultJudgingConfig(input.roomCount, input.roundsPerRoom);
       return ok(summary());
     }
