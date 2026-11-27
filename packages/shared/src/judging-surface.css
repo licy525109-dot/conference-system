@@ -77,6 +77,20 @@
   padding-top: 13px;
   border-top: 1px solid #dbe2df;
 }
+.judging-panel .judging-note {
+  white-space: pre-line;
+}
+.judging-feedback-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 86px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #b8c4c0;
+  border-radius: 7px;
+  font: inherit;
+}
 .judging-field-label {
   display: block;
   font-size: 1.08em;

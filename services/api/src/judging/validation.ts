@@ -11,7 +11,8 @@ import {
   entryTypefaces,
   isJudgeRoleId,
   judgingRoles,
-  maxPoints,
+  feedbackKey,
+  stageCaps,
   stageOf,
   stages
 } from "@conference/shared";
@@ -22,7 +23,8 @@ import type {
   JudgingEntryDesign,
   JudgingLook,
   JudgingRoleOption,
-  Rubric
+  Rubric,
+  ScoringPlan
 } from "@conference/shared";
 
 export function fail(message: string): never {
@@ -49,9 +51,11 @@ export function num(v: unknown, label: string, min: number, max: number, integer
     fail(label + "数值超出范围");
   return v;
 }
-export function points(v: unknown, label: string, max = 100) {
+export function points(v: unknown, label: string, max = 100, digits: 2 | 4 = 2) {
   const n = num(v, label, 0, max);
-  if (Math.abs(n * 100 - Math.round(n * 100)) > 0.000001) fail(label + "最多支持两位小数");
+  const scaled = n * 10 ** digits;
+  if (Math.abs(scaled - Math.round(scaled)) > 0.000001)
+    fail(label + (digits === 4 ? "最多支持四位小数" : "最多支持两位小数"));
   return n;
 }
 function bool(v: unknown, label: string) {
@@ -131,9 +135,9 @@ function rows<T extends { id: string }>(
     }
   });
 }
-export function validateRubric(value: unknown, role: JudgeRole): Rubric {
+export function validateRubric(value: unknown, role: JudgeRole, plan?: ScoringPlan): Rubric {
   const r = object(value),
-    cap = maxPoints[stageOf(role)];
+    cap = stageCaps(plan)[stageOf(role)];
   const fields = rows(r.fields, "评分题目", 40, (f) => {
     const min = points(f.min, "最低分", cap),
       max = points(f.max, "最高分", cap),
@@ -154,7 +158,9 @@ export function validateRubric(value: unknown, role: JudgeRole): Rubric {
   });
   if (!fields.length || fields.reduce((n, f) => n + Math.round(f.max * 100), 0) !== cap * 100)
     fail("评分表各题的满分合计必须为 " + cap + " 分");
+  const feedbackPrompt = str(r.feedbackPrompt, "选填反馈题", 160, false);
   return {
+    ...(feedbackPrompt && { feedbackPrompt }),
     title: str(r.title, "评分表标题"),
     description: str(r.description, "评分说明", 1000, false),
     fields
@@ -168,12 +174,18 @@ export function validateConfig(
   rehearsal: boolean,
   previousEntry?: JudgingEntryDesign,
   saved?: Pick<JudgingConfig, "roleOptions" | "rubrics" | "rooms" | "awardTargets" | "guidance"> &
-    Partial<Pick<JudgingConfig, "sessions">>
+    Partial<Pick<JudgingConfig, "sessions" | "scoringPlan" | "teachers">>
 ): JudgingConfig {
   const c = object(value),
     submittedForms = object(c.rubrics),
     forms = c.roleOptions === undefined && saved ? { ...saved.rubrics, ...submittedForms } : submittedForms,
     minimum = object(c.minimum);
+  const scoringPlan = designOption(
+    c.scoringPlan ?? saved?.scoringPlan ?? "onsite",
+    ["onsite", "withQualifiers"] as const,
+    "总分构成"
+  );
+  const savedTeachers = new Map(saved?.teachers?.map((t) => [t.id, t]));
   const options = c.roleOptions === undefined ? judgingRoles(saved ?? {}) : c.roleOptions;
   const roleOptions = rows<JudgingRoleOption>(options, "评委类型", 1500, (r) => {
     const id = key(r.id, "类型编号");
@@ -206,7 +218,18 @@ export function validateConfig(
     poster: imageUrl(r.poster),
     topic: str(r.topic, "课题", 180),
     speech: str(r.speech, "演讲题目", 180),
-    prior: r.prior == null ? null : num(r.prior, "复赛成绩", 0, 10000),
+    preliminaryScore:
+      r.preliminaryScore === undefined
+        ? (savedTeachers.get(r.id)?.preliminaryScore ?? null)
+        : r.preliminaryScore === null
+          ? null
+          : points(r.preliminaryScore, "初赛原分"),
+    prior:
+      r.prior == null
+        ? null
+        : scoringPlan === "withQualifiers"
+          ? points(r.prior, "复赛原分")
+          : num(r.prior, "复赛成绩", 0, 10000),
     qualifierRank: r.qualifierRank == null ? null : num(r.qualifierRank, "晋级名次", 1, 10000, true)
   }));
   const orgNames = new Map<string, string>();
@@ -322,6 +345,7 @@ export function validateConfig(
   const guidance =
     c.guidance === undefined ? (saved?.guidance ?? defaultJudgingGuidance) : object(c.guidance);
   return {
+    scoringPlan,
     look: validateLook(c.look, previousEntry),
     guidance: {
       instructions: str(guidance.instructions, "评审说明", 4000),
@@ -335,7 +359,7 @@ export function validateConfig(
     awardTargets,
     roleOptions,
     rubrics: Object.fromEntries(
-      roleOptions.map(({ id }) => [id, validateRubric(forms[id], id)])
+      roleOptions.map(({ id }) => [id, validateRubric(forms[id], id, scoringPlan)])
     ) as JudgingConfig["rubrics"],
     sameAudienceForm:
       bool(c.sameAudienceForm, "观察席共用表") &&
@@ -355,6 +379,10 @@ export function validateConfig(
 export function validateStart(c: JudgingConfig, rehearsal: boolean) {
   if (!c.teachers.length || !c.rooms.length || !c.judges.length) fail("先补齐教室、选手和评委名单");
   if (!rehearsal && !c.approvedForms) fail("请在「评分表与规则」核对并确认本场评分细则");
+  if (c.scoringPlan === "withQualifiers") {
+    const missing = c.teachers.filter((t) => t.preliminaryScore == null || t.prior == null);
+    if (missing.length) fail("请补齐选手初、复赛原分：" + missing.map((t) => t.name).join("、"));
+  }
   for (const t of c.teachers)
     if (c.sessions.filter((s) => s.teacher === t.id).length !== 2) fail(t.name + " 缺少课堂或 TED 场次");
   for (const r of c.rooms) {
@@ -381,8 +409,16 @@ export function evaluate(
 ): { answers: Answers; units: number | null; status: string } {
   const source = object(raw),
     answers: Answers = {};
-  if (Object.keys(source).some((k) => !form.fields.some((f) => f.id === k)))
+  if (
+    Object.keys(source).some(
+      (k) => !(k === feedbackKey && form.feedbackPrompt) && !form.fields.some((f) => f.id === k)
+    )
+  )
     fail("提交的题目与评分表版本不符");
+  if (form.feedbackPrompt && source[feedbackKey] !== undefined) {
+    const feedback = str(source[feedbackKey], "评审反馈", 1000, false);
+    if (feedback) answers[feedbackKey] = feedback;
+  }
   const issue = ballotIssue(form, source, purpose);
   if (issue) fail(issue.message);
   let sum = 0,

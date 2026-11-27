@@ -119,7 +119,7 @@
           </div>
           <Roster :key="event.id" :config="draft" :id="event.id" :editable="setup" :rehearsal="event.rehearsal" />
           <div v-if="['LIVE', 'REVIEW'].includes(event.phase)" class="j-tools">
-            <el-button @click="handoverOpen = true">补录颁奖与复赛资料</el-button>
+            <el-button @click="handoverOpen = true">补录初复赛成绩与颁奖资料</el-button>
           </div>
         </el-tab-pane>
         <el-tab-pane v-if="group === 'prep' && can('judging:config')" label="评分页面设计" name="look">
@@ -311,13 +311,28 @@
         <el-button type="primary" :disabled="!title.trim() || busy" @click="create">创建</el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="handoverOpen" title="补录复赛成绩及颁奖资料" width="min(850px,94vw)" append-to-body>
+    <el-dialog v-model="handoverOpen" title="补录初复赛成绩及颁奖资料" width="min(850px,94vw)" append-to-body>
       <template v-if="draft">
         <el-table :data="draft.teachers" max-height="235">
           <el-table-column prop="name" label="选手" />
+          <el-table-column v-if="draft.scoringPlan === 'withQualifiers'" label="初赛原分 /100">
+            <template #default="{ row }"
+              ><el-input-number
+                v-model="row.preliminaryScore"
+                :min="0"
+                :max="100"
+                :precision="2"
+                :value-on-clear="null"
+            /></template>
+          </el-table-column>
           <el-table-column label="复赛成绩">
             <template #default="{ row }">
-              <el-input-number v-model="row.prior" :min="0" :max="10000" />
+              <el-input-number
+                v-model="row.prior"
+                :min="0"
+                :max="draft.scoringPlan === 'withQualifiers' ? 100 : 10000"
+                :value-on-clear="null"
+              />
             </template>
           </el-table-column>
           <el-table-column label="晋级名次">
@@ -631,6 +646,7 @@ async function handover() {
     await operate("handover", {
       teachers: draft.value?.teachers.map((t) => ({
         id: t.id,
+        preliminaryScore: t.preliminaryScore,
         prior: t.prior,
         qualifierRank: t.qualifierRank
       })),

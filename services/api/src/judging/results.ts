@@ -2,6 +2,7 @@ import {
   assigned,
   awardLabels,
   judgingRoleLabel,
+  qualifyingUnits,
   roleForSession,
   stageOf,
   stages,
@@ -82,11 +83,16 @@ export function calculate(c: JudgingConfig, control: JudgingControl, ballots: Ba
       d = val("audience"),
       ted = val("ted"),
       morning = p !== null && d !== null ? asNumber(add(ratio("professional"), ratio("audience"))) : null;
-    const ready = morning !== null && ted !== null,
-      systemRatio = stages.reduce((a, s) => add(a, ratio(s)), zero);
+    const withQualifiers = c.scoringPlan === "withQualifiers";
+    const qualifying = withQualifiers ? qualifyingUnits(t) : null;
+    const base: Ratio = qualifying === null ? zero : [BigInt(qualifying), 10000n];
+    const ready = morning !== null && ted !== null && (!withQualifiers || qualifying !== null),
+      systemRatio = stages.reduce((a, s) => add(a, ratio(s)), base);
     const system = ready ? asNumber(systemRatio) : null,
       adjustment = control.adjustments[t.id] ?? null;
-    const totalRatio: Ratio = adjustment ? [BigInt(Math.round(adjustment.value * 100)), 100n] : systemRatio;
+    const totalRatio: Ratio = adjustment
+      ? [BigInt(Math.round(adjustment.value * 10000)), 10000n]
+      : systemRatio;
     const parts = [ratio("professional"), ratio("ted"), ratio("audience")].map((v) =>
       rounded(v, c.precision)
     );
@@ -96,6 +102,10 @@ export function calculate(c: JudgingConfig, control: JudgingControl, ballots: Ba
       orgId: t.orgId,
       org: t.org,
       prior: t.prior,
+      ...(withQualifiers && {
+        preliminaryScore: t.preliminaryScore ?? null,
+        qualifying: qualifying === null ? null : qualifying / 10000
+      }),
       qualifierRank: t.qualifierRank,
       counts,
       sums,

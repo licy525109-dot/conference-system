@@ -156,6 +156,67 @@ test("entry designs support legacy JSON, partial updates and bounded form settin
     assert.throws(() => validateLook({ ...oldLook, entry: invalid }));
   }
 });
+test("carryover retains four decimal places, distinguishes missing from zero, and determines rank", () => {
+  const c = defaultJudgingConfig();
+  c.scoringPlan = "withQualifiers";
+  c.precision = 4;
+  c.teachers = [92.2, 92.19, null, 0].map((prior, i) => ({
+    id: String(i),
+    name: String(i),
+    orgId: "O",
+    org: "O",
+    photo: "",
+    poster: "",
+    topic: "课",
+    speech: "说",
+    preliminaryScore: i === 3 ? 0 : 91.11,
+    prior,
+    qualifierRank: null
+  }));
+  const ballots = c.teachers.flatMap((t) =>
+    ["lecturer", "observer", "expert"].map((role) => ({
+      id: t.id + role,
+      sessionKey: t.id,
+      teacherKey: t.id,
+      judgeKey: role,
+      role,
+      units: role === "lecturer" ? 4000 : role === "expert" ? 3000 : 2000,
+      status: "valid",
+      createdAt: new Date()
+    }))
+  );
+  const control = defaultJudgingControl();
+  const rows = calculate(c, control, ballots);
+  assert.deepEqual(
+    rows.map((r) => [r.id, r.qualifying, r.total, r.rank]),
+    [
+      ["0", 9.1655, 99.1655, 1],
+      ["1", 9.165, 99.165, 2],
+      ["3", 0, 90, 3],
+      ["2", null, null, null]
+    ]
+  );
+  control.adjustments["0"] = {
+    value: 99.1665,
+    before: 99.1655,
+    reason: "复核",
+    actor: "test",
+    at: "now",
+    recheck: false
+  };
+  assert.equal(calculate(c, control, ballots)[0].total, 99.1665);
+  const form = {
+    ...c.rubrics.experience,
+    feedbackPrompt: "反馈",
+    fields: [{ ...c.rubrics.experience.fields[0], max: 20 }]
+  };
+  assert.doesNotThrow(() => validateRubric(form, "experience", c.scoringPlan));
+  assert.throws(() => validateRubric(form, "experience"));
+  assert.throws(() => evaluate(form, { $feedback: "感受" }), /请填写/);
+  assert.throws(() => evaluate(form, { score: 10, $feedback: "字".repeat(1001) }));
+  assert.throws(() => evaluate(c.rubrics.expert, { score: 10, $feedback: "无此题" }));
+  assert.equal(evaluate(form, { score: 0, $feedback: "反馈" }).units, 0);
+});
 test("tie order uses professional, TED, audience and recorded adjudication independently of display rounding", () => {
   const c = defaultJudgingConfig(),
     state = defaultJudgingControl();

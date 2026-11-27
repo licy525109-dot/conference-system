@@ -62,6 +62,17 @@
           {{ inputs[f.id] === "unseen" ? "已选未观察 · 重新评分" : "此项未观察" }}
         </button>
       </view>
+      <view v-if="page.form.feedbackPrompt" class="judging-field">
+        <text class="judging-field-label">{{ page.form.feedbackPrompt }}（选填）</text>
+        <textarea
+          v-model="inputs[feedbackKey]"
+          class="judging-feedback-input"
+          :maxlength="1000"
+          :aria-label="page.form.feedbackPrompt"
+          placeholder="写下你的感受"
+          :disabled="sending"
+        />
+      </view>
       <text
         v-if="message || issue"
         id="judging-score-feedback"
@@ -88,6 +99,7 @@
 import { computed, ref, watch } from "vue";
 import {
   ballotIssue,
+  feedbackKey,
   periodNames,
   sessionPeriod,
   scoreInputAnswers,

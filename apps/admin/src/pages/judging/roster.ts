@@ -44,6 +44,7 @@ export const spec: Record<Section, { label: string; fields: Field[] }> = {
       { key: "speech", label: "TED题目" },
       { key: "photo", label: "照片", kind: "image" },
       { key: "poster", label: "入围海报", legacy: true },
+      { key: "preliminaryScore", label: "初赛原分", kind: "optionalNum" },
       { key: "prior", label: "复赛原分", kind: "optionalNum" },
       { key: "qualifierRank", label: "晋级名次", kind: "optionalNum" }
     ]
@@ -81,6 +82,10 @@ export const spec: Record<Section, { label: string; fields: Field[] }> = {
     ]
   }
 };
+export const rosterFields = (section: Section, config: JudgingConfig) =>
+  spec[section].fields.filter(
+    (f) => !f.legacy && (f.key !== "preliminaryScore" || config.scoringPlan === "withQualifiers")
+  );
 export const sections = Object.keys(spec) as Section[];
 export type Row = Record<string, any>;
 export function emptyRow(section: Section, c: JudgingConfig): Row {
@@ -164,7 +169,7 @@ export async function rosterTemplate(c: JudgingConfig) {
   const x = await import("xlsx"),
     book = x.utils.book_new();
   for (const k of sections) {
-    const f = spec[k].fields.filter((field) => !field.legacy),
+    const f = rosterFields(k, c),
       data = (c[k] as Row[]).map((row) =>
         f.map((field) => {
           if (field.key === "rounds") return classroomRounds(row as JudgingRoom, c.sessions);

@@ -29,8 +29,12 @@
       <el-table-column prop="received" label="已交 / 应交" width="110" />
       <el-table-column prop="valid" label="有效份数" width="90" />
       <el-table-column v-if="hasClass" prop="professional" label="专业 /40" />
-      <el-table-column v-if="hasClass" prop="audience" label="大众 /30" />
-      <el-table-column v-if="hasClass" prop="classScore" label="课堂 /70" />
+      <el-table-column v-if="hasClass" prop="audience" :label="'大众 /' + caps.audience" />
+      <el-table-column
+        v-if="hasClass"
+        prop="classScore"
+        :label="'课堂 /' + (caps.professional + caps.audience)"
+      />
       <el-table-column v-if="hasTed" prop="ted" label="TED /30" />
       <el-table-column width="120" label="原单">
         <template #default="{ row }"
@@ -68,6 +72,7 @@ import {
   periodStatus,
   periodProgressLabel,
   sessionPeriod,
+  stageCaps,
   type JudgingPeriod
 } from "@conference/shared";
 import { taskStatus, type EventDetail, type Operate, type ReviewData } from "../../services/judging";
@@ -90,6 +95,7 @@ const tasks = computed(() =>
 );
 const received = computed(() => tasks.value.filter((t) => t.receipt).length);
 const pending = computed(() => tasks.value.filter((t) => needsScoreReview(t.status)));
+const caps = computed(() => stageCaps(props.event.config.scoringPlan));
 const hasClass = computed(() => sessions.value.some((s) => s.kind === "class"));
 const hasTed = computed(() => sessions.value.some((s) => s.kind === "ted"));
 const score = (n: number | null | undefined) => (n == null ? "—" : n.toFixed(props.event.config.display));
