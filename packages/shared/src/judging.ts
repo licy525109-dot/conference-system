@@ -22,6 +22,7 @@ export type Stage = "professional" | "audience" | "ted";
 export const stages: Stage[] = ["professional", "audience", "ted"];
 export const maxPoints: Record<Stage, number> = { professional: 40, audience: 30, ted: 30 };
 export type ScoringPlan = "onsite" | "withQualifiers";
+export const earliestJudgingPublicDay = "2026-12-16";
 const qualifierPlanCaps = { ...maxPoints, audience: 20 };
 export const stageCaps = (plan?: ScoringPlan) => (plan === "withQualifiers" ? qualifierPlanCaps : maxPoints);
 export const stageOf = (role: JudgeRole): Stage => {
@@ -231,6 +232,12 @@ export const awardFieldOptions = {
   ted: "TED 分"
 };
 export type AwardField = keyof typeof awardFieldOptions;
+export interface JudgingCopyOptions {
+  sourceId: string;
+  teachers: boolean;
+  judges: boolean;
+  handover: boolean;
+}
 export interface JudgingConfig {
   scoringPlan?: ScoringPlan;
   look: JudgingLook;
@@ -505,7 +512,7 @@ export function defaultJudgingConfig(roomCount = 5, rounds?: number): JudgingCon
     minimum: { professional: 1, audience: 1, ted: 1 },
     precision: 2,
     display: 2,
-    publicDay: "2026-12-16",
+    publicDay: earliestJudgingPublicDay,
     publicFields: ["name", "org", "rank", "award"],
     formVersion: 1,
     approvedForms: false

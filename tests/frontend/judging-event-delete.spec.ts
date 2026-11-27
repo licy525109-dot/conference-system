@@ -9,7 +9,7 @@ test("an operator confirms the selected event, keeps its neighbor and can delete
   const live = { id: "live", title: "绘本舞蹈总决赛 · 正式场", phase: "LIVE", rehearsal: false };
   const trial = { id: "trial", title: "绘本舞蹈总决赛 · 锁版对照（模拟）", phase: "LOCKED", rehearsal: true };
   let events = [live, trial];
-  let scope = "ASSIGNED";
+  let mayConfigure = false;
   const deleted: string[] = [];
   await context.addInitScript((value) => localStorage.setItem("conference_admin_token", value), randomUUID());
   await context.route("**/api/**", async (route) => {
@@ -17,7 +17,11 @@ test("an operator confirms the selected event, keeps its neighbor and can delete
     const ok = (data: unknown) => route.fulfill({ json: { code: "OK", data } });
     if (path === "/api/admin/auth/me") {
       return ok({
-        admin: { username: "ops", conferenceScopeMode: scope, permissions: ["judging:view", "judging:config"] }
+        admin: {
+          username: "ops",
+          conferenceScopeMode: "ASSIGNED",
+          permissions: mayConfigure ? ["judging:view", "judging:config"] : ["judging:view"]
+        }
       });
     }
     if (path === "/api/admin/judging") return ok(events);
@@ -47,7 +51,8 @@ test("an operator confirms the selected event, keeps its neighbor and can delete
   const dialog = page.getByRole("dialog", { name: "确认删除赛事" });
   await expect(page.getByRole("heading", { name: live.title })).toBeVisible();
   await expect(remove).toHaveCount(0);
-  scope = "ALL";
+  await expect(page.getByRole("button", { name: "新建赛事" })).toHaveCount(0);
+  mayConfigure = true;
   await page.reload();
   await page.locator(".j-header").getByText(live.title, { exact: true }).click();
   await page.getByRole("option", { name: "内部 · " + trial.title }).click();

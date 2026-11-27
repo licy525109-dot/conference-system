@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type JudgingEvent } from "@prisma/client";
 import {
   assigned,
   baseJudgeRole,
+  classroomRounds,
+  earliestJudgingPublicDay,
   defaultEntryDesign,
   defaultJudgingGuidance,
   defaultJudgingConfig,
@@ -31,6 +34,7 @@ import type {
   JudgeRole,
   JudgingConfig,
   JudgingControl,
+  JudgingCopyOptions,
   JudgingPeriod,
   GuestDesk,
   JudgingSession,
@@ -79,6 +83,40 @@ function config(
     roleOptions: judgingRoles(stored),
     look: { ...stored.look, entry: { ...defaultEntryDesign, ...stored.look.entry } }
   };
+}
+function readCopyOptions(raw: unknown): JudgingCopyOptions {
+  const b = object(raw);
+  if (typeof b.teachers !== "boolean" || typeof b.judges !== "boolean" || typeof b.handover !== "boolean")
+    fail("请选择要复制的资料");
+  if (b.handover && !b.teachers) fail("复制赛前成绩与颁奖资料时，请同时选择选手与排场");
+  return {
+    sourceId: key(b.sourceId, "来源赛事"),
+    teachers: b.teachers,
+    judges: b.judges,
+    handover: b.handover
+  };
+}
+function copiedConfig(source: JudgingEvent, options: JudgingCopyOptions): JudgingConfig {
+  const c = config(source);
+  return validateConfig(
+    {
+      ...c,
+      rooms: c.rooms.map((r) => ({ ...r, rounds: classroomRounds(r, c.sessions) })),
+      teachers: options.teachers
+        ? c.teachers.map((t) =>
+            options.handover ? t : { ...t, preliminaryScore: null, prior: null, qualifierRank: null }
+          )
+        : [],
+      sessions: options.teachers ? c.sessions : [],
+      judges: options.judges
+        ? c.judges.map((j) => (j.userId?.startsWith("rehearsal:") ? { ...j, userId: "" } : j))
+        : [],
+      merits: options.handover ? c.merits : [],
+      publicDay: c.publicDay < earliestJudgingPublicDay ? earliestJudgingPublicDay : c.publicDay,
+      approvedForms: false
+    },
+    false
+  );
 }
 function freezeSessionForms(c: JudgingConfig, state: JudgingControl, sessionId: string) {
   state.sessionForms[sessionId] ??= {
@@ -288,29 +326,59 @@ export class JudgingService {
   }
   async create(raw: unknown, a: CurrentAdmin) {
     permit(a, "judging:config");
-    if (a.conferenceScopeMode !== "ALL") throw new ForbiddenException("新建赛事需要全局授权");
     const b = object(raw);
     if (b.rehearsal !== undefined && typeof b.rehearsal !== "boolean") fail("赛事类型无效");
-    const rehearsal = b.rehearsal === true;
-    const legacyRequest =
-      b.rehearsal !== undefined && b.roomCount === undefined && b.roundsPerRoom === undefined;
-    const initial = legacyRequest
-      ? defaultJudgingConfig()
-      : defaultJudgingConfig(
-          num(b.roomCount === undefined ? 1 : b.roomCount, "教室数量", 1, 50, true),
-          num(b.roundsPerRoom === undefined ? 1 : b.roundsPerRoom, "每间教室的课堂轮数", 1, 250, true)
-        );
-    initial.awardTargets = legacyRequest ? legacyAwardTargets(rehearsal) : { merits: null, schools: null };
-    const e = await this.db.judgingEvent.create({
-      data: {
-        title: str(b.title, "赛事名称"),
-        rehearsal,
-        config: json(initial),
-        control: json(defaultJudgingControl()),
-        staffIds: [a.id]
+    const title = str(b.title, "赛事名称");
+    const copy = b.copy === undefined ? null : readCopyOptions(b.copy);
+    const rehearsal = !copy && b.rehearsal === true;
+    const legacy =
+      !copy && b.rehearsal !== undefined && b.roomCount === undefined && b.roundsPerRoom === undefined;
+    const rooms =
+      copy || legacy ? undefined : num(b.roomCount === undefined ? 1 : b.roomCount, "教室数量", 1, 50, true);
+    const rounds =
+      copy || legacy
+        ? undefined
+        : num(b.roundsPerRoom === undefined ? 1 : b.roundsPerRoom, "每间教室的课堂轮数", 1, 250, true);
+    // A retry of the same form by the same operator must return the event already created.
+    let id: string | undefined;
+    if (b.requestId !== undefined) {
+      const request = key(b.requestId, "创建请求编号");
+      const input = JSON.stringify([a.id, request, title, copy, rehearsal, legacy, rooms, rounds]);
+      id = "event-" + createHash("sha256").update(input).digest("hex").slice(0, 40);
+    }
+    return this.db.$transaction(async (tx) => {
+      if (id) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
+        const existing = await tx.judgingEvent.findUnique({ where: { id } });
+        if (existing) {
+          scope(existing, a);
+          if (existing.phase === deletedPhase)
+            throw new ConflictException("这场赛事已删除，请重新打开「新建赛事」");
+          return summary(existing);
+        }
       }
+      let initial: JudgingConfig;
+      if (copy) {
+        const source = await getEvent(tx, copy.sourceId, true);
+        scope(source, a);
+        initial = copiedConfig(source, copy);
+      } else {
+        initial = defaultJudgingConfig(rooms, rounds);
+        initial.awardTargets = legacy ? legacyAwardTargets(rehearsal) : { merits: null, schools: null };
+      }
+      const e = await tx.judgingEvent.create({
+        data: {
+          id,
+          title,
+          rehearsal,
+          config: json(initial),
+          control: json(defaultJudgingControl()),
+          staffIds: [a.id]
+        }
+      });
+      await audit(tx, e, a, copy ? "copy" : "create", copy ?? {});
+      return summary(e);
     });
-    return summary(e);
   }
   async detail(id: string, a: CurrentAdmin) {
     const e = await getEvent(this.db, id);
@@ -566,8 +634,6 @@ export class JudgingService {
     };
     if (!Object.hasOwn(rights, action)) fail("未知操作");
     permit(a, "judging:" + rights[action]);
-    if (action === "delete" && a.conferenceScopeMode !== "ALL")
-      throw new ForbiddenException("删除赛事需要全局授权");
     return this.db.$transaction(
       async (tx) => {
         const e = await getEvent(tx, id, true);

@@ -308,6 +308,8 @@ const columns = computed(() => [
   { key: "total", label: "最终总分", width: 98 }
 ]);
 const actions: Record<string, string> = {
+  create: "新建赛事",
+  copy: "复制赛事",
   access: "人员授权",
   config: "保存配置",
   appearance: "手机页面",

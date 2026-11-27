@@ -1,6 +1,6 @@
 export const ADMIN_PERMISSIONS = [
   { code: "judging:view", name: "打开赛课评审工作台", group: "会议管理" },
-  { code: "judging:config", name: "配置评审名单、场次、量表和手机页面", group: "会议管理" },
+  { code: "judging:config", name: "新建、复制、删除赛事及配置名单、场次、量表和手机页面", group: "会议管理" },
   { code: "judging:floor", name: "现场开关和核对评审任务", group: "会议管理" },
   { code: "judging:results", name: "查看内部成绩及原单", group: "会议管理" },
   { code: "judging:adjust", name: "复核分场成绩、原单及调整总分", group: "会议管理" },
