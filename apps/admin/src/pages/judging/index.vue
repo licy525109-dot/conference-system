@@ -158,7 +158,6 @@
             :event="event"
             :operate="operate"
             :allowed="can"
-            :admin-id="admin?.id || ''"
           />
         </el-tab-pane>
         <el-tab-pane
@@ -169,7 +168,7 @@
           <h3>已确认的名单版本</h3>
           <el-empty
             v-if="!event.editions.length"
-            description="最终确认人锁定整份名单后，正式颁奖名单将在这里生成"
+            description="全天成绩锁定后，可在这里导出正式颁奖名单"
           />
           <template v-else>
             <el-table :data="event.editions">
@@ -231,10 +230,7 @@
           name="access"
         >
           <h3>本赛事后台账号</h3>
-          <p>
-            岗位权限来自「系统管理 →
-            角色权限」。会议授权账号还需要在这里加入赛事。正式确认人请先在观潮会集小程序验证手机号、填写实名，并在「绑定后台账号」中绑定本人账号。
-          </p>
+          <p>在这里选择本场工作人员。每人可操作的内容由「系统管理 → 角色权限」决定。</p>
           <el-form label-position="top">
             <el-form-item label="授权工作人员">
               <el-select v-model="staff" multiple filterable style="width: min(560px, 100%)">
@@ -246,22 +242,10 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item
-              :label="event.rehearsal ? '最终确认人' : '最终确认人 · 王红丽老师本人实名后台账号'"
-            >
-              <el-select v-model="confirmer" clearable filterable style="width: min(440px, 100%)">
-                <el-option
-                  v-for="a in accounts"
-                  :key="a.id"
-                  :value="a.id"
-                  :label="(a.displayName || a.username) + ' · ' + a.username"
-                />
-              </el-select>
-            </el-form-item>
             <el-button
               type="primary"
               :disabled="!['SETUP', 'LIVE', 'REVIEW'].includes(event.phase)"
-              @click="operate('access', { staffIds: staff, confirmerId: confirmer })"
+              @click="operate('access', { staffIds: staff })"
             >
               保存赛事授权
             </el-button>
@@ -397,7 +381,6 @@ const events = ref<EventSummary[]>([]),
   roundsPerRoom = ref(1);
 const tab = ref("home"),
   staff = ref<string[]>([]),
-  confirmer = ref(""),
   accounts = ref<{ id: string; username: string; displayName: string | null }[]>([]),
   fields = ref<AwardField[]>([]),
   handoverOpen = ref(false);
@@ -440,7 +423,7 @@ const nextStep = computed(() => {
   if (["REVIEW", "SUBMITTED"].includes(e.phase) && can("judging:results"))
     return {
       title: "核对本场成绩",
-      detail: "查看原始评分和待复核事项，核对后将名单交给最终确认人。",
+      detail: "完成各场评分复核后，在「全天成绩」确认并锁定排名和奖项。",
       button: "查看成绩与复核",
       tab: "results"
     };
@@ -491,7 +474,6 @@ async function read(id: string, keep = false) {
     draftTitle.value = data.title;
   }
   staff.value = [...data.staffIds];
-  confirmer.value = data.confirmerId || "";
   fields.value = [...data.config.publicFields];
 }
 async function loadEvents(preferred?: string) {

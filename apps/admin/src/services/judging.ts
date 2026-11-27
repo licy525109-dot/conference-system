@@ -33,7 +33,6 @@ export interface EventDetail extends EventSummary {
   roomPeriodModes?: RoomPeriodModes;
   entryCode: string | null;
   config: JudgingConfig;
-  confirmerId: string | null;
   staffIds: string[];
   gates: Record<string, string>;
   editions: { edition: number; confirmedAt: string; fields: AwardField[] }[];
@@ -138,7 +137,7 @@ export const phaseNames: Record<string, string> = {
   SETUP: "赛前配置",
   LIVE: "现场评分",
   REVIEW: "组委会复核",
-  SUBMITTED: "待本人确认",
+  SUBMITTED: "待锁定",
   LOCKED: "已锁定"
 };
 export const taskStatus: Record<string, string> = {

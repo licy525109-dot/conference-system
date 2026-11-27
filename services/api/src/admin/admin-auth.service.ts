@@ -94,8 +94,7 @@ export class AdminAuthService {
     }
 
     const admin = await this.buildCurrentAdmin(adminUser);
-    const namedJudgingConfirmer = admin.permissions?.includes("judging:confirm") && currentUser.realName === "王红丽" && currentUser.phoneVerifiedAt && !currentUser.openid.startsWith("mock_");
-    if (admin.conferenceScopeMode !== "ALL" && !namedJudgingConfirmer) throw new ForbiddenException("会议授权账号请使用后台授权会议工作台，暂不开放小程序全局管理入口");
+    if (admin.conferenceScopeMode !== "ALL") throw new ForbiddenException("会议授权账号请使用后台授权会议工作台，暂不开放小程序全局管理入口");
 
     const existingOpenidBinding = await this.prisma.adminWechatBinding.findUnique({
       where: { openid: currentUser.openid },

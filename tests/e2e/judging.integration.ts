@@ -107,21 +107,11 @@ test(
       const floor = await admin("floor", ["judging:view", "judging:floor"]);
       const editor = await admin("editor", ["judging:view", "judging:config"]);
       const outsider = await admin("other", ["judging:view", "judging:results"]);
-      const named = await db.user.create({
-        data: {
-          openid: "verified-" + suffix,
-          realName: "王红丽",
-          phone: "13900000001",
-          phoneVerifiedAt: new Date()
-        }
-      });
-      users.push(named.id);
       const createUserToken = (u: { id: string; openid: string }) =>
         req("./dist/auth/jwt.js").signJwt(
           { type: "user", sub: u.id, openid: u.openid, iat: Math.floor(Date.now() / 1000) },
           process.env.JWT_SECRET
         );
-      const namedToken = createUserToken(named);
       const c: JudgingConfig = defaultJudgingConfig();
       for (let i = 0; i < 15; i++) {
         const id = "T" + i,
@@ -208,20 +198,25 @@ test(
         }
         revision = (await service.detail(id, cfg.admin)).revision;
       }
-      await t.test("assigned accounts, real binding and user-only entry", async () => {
+      await t.test("event staff grants, legacy memberships and user-only entry", async () => {
         await call(path + "/results", undefined, undefined, 401);
         await call(path + "/results", createUserToken(identity), undefined, 401);
         await call(path + "/results", outsider.token, undefined, 403);
         await change("config", { title: "正式赛合成数据验收", config: c });
-        await assert.rejects(
-          change("access", { staffIds: [floor.admin.id], confirmerId: signer.admin.id }),
-          /实名/
-        );
-        await call("/admin/mobile/login-and-bind", namedToken, {
-          username: signer.admin.username,
-          password: pwd
+        // Pre-upgrade memberships must be visible in the staff list and individually revocable.
+        await db.judgingEvent.update({
+          where: { id },
+          data: { staffIds: [floor.admin.id], confirmerId: signer.admin.id }
         });
+        assert.deepEqual((await call(path, cfg.token)).staffIds.sort(), [
+          floor.admin.id, signer.admin.id
+        ].sort());
+        await call(path + "/results", signer.token);
+        await change("access", { staffIds: [floor.admin.id, editor.admin.id] });
+        await call(path + "/results", signer.token, undefined, 403);
+        // An older admin client can still send its separate staff grant.
         await change("access", { staffIds: [floor.admin.id, editor.admin.id], confirmerId: signer.admin.id });
+        assert.equal((await call(path, cfg.token)).confirmerId, null);
         await call(path + "/results", signer.token);
         await call(path + "/results", floor.token, undefined, 403);
         await call("/judging/" + id + "/published", undefined, undefined, 404);
@@ -423,7 +418,7 @@ test(
       await t.test("signature, embargo, deliberate publication, archived export and revision", async () => {
         // The app clock is the only substituted collaborator. Database, guards and controllers are real.
         service.publicationDay = () => "2026-12-15";
-        await assert.rejects(service.export(id, "awards", 1, cfg.admin), /本人确认/);
+        await assert.rejects(service.export(id, "awards", 1, cfg.admin), /已确认并锁定/);
         await assert.rejects(change("send", { reviewedRevision: revision }), /上午场、下午场/);
         await change("period-approve", { period: "am" });
         await assert.rejects(change("send", { reviewedRevision: revision }), /下午场/);
@@ -461,7 +456,7 @@ test(
         await change("adjust", { teacher: "T3", value: 90, reason: "修订核对" });
         assert.equal((await call(publicLink)).edition, 1);
         assert.deepEqual(await service.export(id, "awards", 1, cfg.admin), final);
-        await assert.rejects(service.export(id, "awards", 2, cfg.admin), /本人确认/);
+        await assert.rejects(service.export(id, "awards", 2, cfg.admin), /已确认并锁定/);
         await change("send", { reviewedRevision: revision });
         await change("confirm", { reviewedRevision: revision }, signer.admin);
         const v2 = await service.export(id, "awards", 2, cfg.admin);
@@ -830,7 +825,7 @@ test(
             "/admin/judging/" + eventId + "/sessions/" + sid + "/rehearsal/" + seat;
           const target = route(e.id, "C0", sample.id);
           await call(target, undefined, undefined, 401);
-          await call(target, namedToken, undefined, 401);
+          await call(target, createUserToken(identity), undefined, 401);
           await call(target, floor.token, undefined, 403);
           await changeTrial("access", { staffIds: [floor.admin.id, outsider.admin.id], confirmerId: null });
           await call(target, outsider.token, undefined, 403);
@@ -1133,7 +1128,10 @@ test(
           plan.sessions = c.sessions.filter((s) => s.teacher === "T0");
           plan.judges = c.judges.filter((j) => ["PR1", "R1D0", "R1D16", "E0"].includes(j.id));
           await update("config", { title: e.title, config: plan });
-          await update("access", { staffIds: [signer.admin.id], confirmerId: signer.admin.id });
+          const operator = await admin("dayreview", [
+            "judging:view", "judging:results", "judging:adjust", "judging:confirm"
+          ]);
+          await update("access", { staffIds: [operator.admin.id] });
           await update("entry-open");
           const entry = "/judging/" + e.id + "/entry/" + (await detail()).entryCode;
           await update("start");
@@ -1158,7 +1156,7 @@ test(
           await submit(judge("experience"), "C0", 20, 20, "课堂反馈");
           await submit(judge("observer"), "C0", 20, 16);
           await update("period-close", { period: "am" });
-          await update("period-approve", { period: "am" });
+          await update("period-approve", { period: "am" }, operator.token);
           const morning = (await call(path + "/results", cfg.token)).rows[0];
           assert.deepEqual([morning.morning, morning.qualifying, morning.system], [54, null, null]);
           await update("handover", {
@@ -1169,10 +1167,22 @@ test(
           await update("gate", { session: "S0", open: true, scope: "group" });
           await submit(judge("expert"), "S0", 30, 27);
           await update("period-close", { period: "pm" });
-          await update("period-approve", { period: "pm" });
-          await update("send");
-          await update("confirm", {}, signer.token);
+          const before = await detail();
+          const lock = (revision: number) => ({ action: "confirm", revision, reviewedRevision: revision });
+          await call(path + "/actions", operator.token, lock(before.revision), 400);
+          await update("period-approve", { period: "pm" }, operator.token);
+          const reviewed = await detail();
+          assert.equal(reviewed.phase, "REVIEW");
+          await call(path + "/actions", signer.token, lock(reviewed.revision), 403);
+          await call(path + "/actions", cfg.token, lock(reviewed.revision), 403);
+          await call(path + "/actions", operator.token, lock(before.revision), 409);
+          await call(path + "/actions", operator.token, lock(reviewed.revision));
+          await call(path + "/actions", operator.token, lock(reviewed.revision), 409);
           assert.equal((await detail()).phase, "LOCKED");
+          const edition = await db.judgingEdition.findUniqueOrThrow({
+            where: { eventId_edition: { eventId: e.id, edition: 1 } }
+          });
+          assert.equal(edition.confirmedBy, operator.admin.id);
           const result = await call(path + "/results", cfg.token);
           const row = result.rows[0];
           assert.deepEqual([row.audience, row.ted, row.total, row.rank], [18, 27, 90.1655, 1]);

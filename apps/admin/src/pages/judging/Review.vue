@@ -101,23 +101,16 @@
   </el-table>
   <div v-if="view === 'all'" class="j-tools">
     <el-button
-      v-if="allowed('judging:adjust') && event.phase === 'REVIEW'"
+      v-if="allowed('judging:confirm') && ['REVIEW', 'SUBMITTED'].includes(event.phase)"
       :disabled="!allReviewed"
       type="primary"
-      @click="action('send')"
+      @click="confirmResults"
     >
-      将整份名单送交本人确认
+      确认并锁定全天成绩
     </el-button>
-    <span v-if="event.phase === 'REVIEW' && !allReviewed" class="j-note"
-      >各场评分复核完成后，可送交全天名单。</span
-    >
-    <el-button
-      v-if="allowed('judging:confirm') && event.phase === 'SUBMITTED' && event.confirmerId === adminId"
-      type="primary"
-      @click="action('confirm')"
-    >
-      确认本版整份名单并锁定
-    </el-button>
+    <span v-if="event.phase === 'REVIEW' && !allReviewed" class="j-note">
+      完成各场评分复核后即可锁定全天成绩。
+    </span>
     <el-button v-if="allowed('judging:adjust') && event.phase === 'LOCKED'" @click="revision">
       建立修订版
     </el-button>
@@ -234,6 +227,7 @@ import {
   periodNames,
   periodStatus,
   scheduledPeriods,
+  unreviewedPeriods,
   sessionPeriod,
   type Answers,
   type ScoringRow,
@@ -255,7 +249,6 @@ const props = defineProps<{
   event: EventDetail;
   operate: Operate;
   allowed: (s: string) => boolean;
-  adminId: string;
   initialPeriod?: JudgingPeriod;
 }>();
 const periods = computed(() => scheduledPeriods(props.event.config.sessions));
@@ -290,9 +283,14 @@ const result = ref<ReviewData | null>(null),
   editAnswers = ref<Answers>({}),
   voided = ref(false);
 const editRevision = ref<{ period: JudgingPeriod; periodVersion?: number; observedRevision: number }>();
-const allReviewed = computed(() =>
-  periods.value.every((p) => result.value?.periodReviews?.[p]?.status === "confirmed")
-);
+const allReviewed = computed(() => {
+  const r = result.value;
+  return (
+    !!r &&
+    ["REVIEW", "SUBMITTED"].includes(r.phase) &&
+    !unreviewedPeriods(props.event.config.sessions, r.periodReviews, r.phase === "SUBMITTED").length
+  );
+});
 watch(view, () => {
   teacher.value = "";
   ballotOpen.value = false;
@@ -331,7 +329,7 @@ const actions: Record<string, string> = {
   correction: "更正原单",
   tie: "同分裁定",
   send: "送审",
-  confirm: "本人确认",
+  confirm: "锁定全天成绩",
   revise: "建立修订版",
   publish: "正式公布",
   "export-awards": "导出颁奖名单",
@@ -420,15 +418,15 @@ async function commitBallot() {
   )
     ballotOpen.value = false;
 }
-async function action(name: string) {
+async function confirmResults() {
+  if (!allReviewed.value || !result.value) return;
+  const revision = result.value.revision;
   try {
-    await ElMessageBox.confirm(
-      name === "send"
-        ? "送审整份排名与奖项？"
-        : "确认当前展示版本的系统分、最终分、调分原因、排名和奖项，并锁定整份名单？",
-      "名单确认"
-    );
-    await act(name, { reviewedRevision: result.value?.revision });
+    await ElMessageBox.confirm("锁定后会保存本版成绩、排名与奖项，后续更正需建立修订版。", "确认全天成绩", {
+      confirmButtonText: "确认锁定",
+      cancelButtonText: "返回核对"
+    });
+    await props.operate("confirm", { observedRevision: revision, reviewedRevision: revision });
   } catch {}
 }
 async function revision() {

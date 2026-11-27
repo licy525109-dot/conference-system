@@ -81,6 +81,15 @@ export interface PeriodReview {
   confirmedBy?: string;
 }
 export type PeriodReviews = Partial<Record<JudgingPeriod, PeriodReview>>;
+export function unreviewedPeriods(
+  sessions: JudgingSession[],
+  reviews: PeriodReviews | undefined,
+  submitted: boolean
+) {
+  // Older submitted editions predate period reviews and were already sent for confirmation.
+  if (submitted && !Object.keys(reviews ?? {}).length) return [];
+  return scheduledPeriods(sessions).filter((p) => reviews?.[p]?.status !== "confirmed");
+}
 export type RoomPeriodModes = Partial<Record<JudgingPeriod, Record<string, boolean>>>;
 export function periodStatus(phase: string, review?: PeriodReview) {
   if (review) return review.status;
