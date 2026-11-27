@@ -7,7 +7,7 @@ import {
   type PeriodReviews
 } from "../../packages/shared/src/judging";
 
-test("operators close, inspect and approve morning and afternoon separately before sending the final list", async ({
+test("operators close, inspect and approve morning and afternoon separately and directly lock the final results", async ({
   page,
   context
 }) => {
@@ -87,10 +87,19 @@ test("operators close, inspect and approve morning and afternoon separately befo
           id: "ops",
           username: "运营",
           conferenceScopeMode: "ALL",
-          permissions: ["judging:view", "judging:floor", "judging:results", "judging:adjust"]
+          permissions: [
+            "judging:view",
+            "judging:config",
+            "system:account",
+            "judging:floor",
+            "judging:results",
+            "judging:adjust",
+            "judging:confirm"
+          ]
         }
       });
     if (path === "/api/admin/judging") return ok([summary()]);
+    if (path.endsWith("/judging/accounts")) return ok([{ id: "ops", username: "运营", displayName: null }]);
     if (path.endsWith("/sample"))
       return ok({ ...summary(), gates, periodReviews, config: c, editions: [], staffIds: [] });
     if (path.endsWith("/progress")) return ok({ ...summary(), gates, periodReviews, tasks: tasks() });
@@ -111,7 +120,10 @@ test("operators close, inspect and approve morning and afternoon separately befo
         p = body.period as JudgingPeriod;
       expect(body.revision).toBe(revision);
       actions.push(body.action + "/" + (p || ""));
-      if (body.action === "gate") {
+      if (body.action === "access") {
+        expect(body.staffIds).toEqual([]);
+        expect(body).not.toHaveProperty("confirmerId");
+      } else if (body.action === "gate") {
         expect(body).toMatchObject({ session: "S1", scope: "group", open: true });
         gates.S1 = "open";
       } else if (body.action === "period-close") {
@@ -132,8 +144,12 @@ test("operators close, inspect and approve morning and afternoon separately befo
           confirmedBy: "运营",
           confirmedAt: new Date().toISOString()
         };
-      } else if (body.action === "send") phase = "SUBMITTED";
-      else throw new Error("Unexpected action " + body.action);
+      } else if (body.action === "confirm") {
+        expect(body.reviewedRevision).toBe(revision);
+        expect(periodReviews.am?.status).toBe("confirmed");
+        expect(periodReviews.pm?.status).toBe("confirmed");
+        phase = "LOCKED";
+      } else throw new Error("Unexpected action " + body.action);
       revision++;
       return ok(summary());
     }
@@ -153,6 +169,13 @@ test("operators close, inspect and approve morning and afternoon separately befo
     await page.getByRole("button", { name: "确认完成复核" }).click();
     await expect(page.getByRole("button", { name: "重新复核" + p })).toBeVisible();
   };
+  await nav.getByRole("button", { name: "赛前设置" }).click();
+  await page.getByRole("tab", { name: "工作人员授权" }).click();
+  const access = page.getByRole("tabpanel", { name: "工作人员授权" });
+  await expect(access.getByRole("combobox")).toHaveCount(1);
+  await expect(access).not.toContainText("最终确认人");
+  await access.getByRole("button", { name: "保存赛事授权" }).click();
+  await expect.poll(() => actions.includes("access/")).toBe(true);
   await nav.getByRole("button", { name: "现场收分" }).click();
   await expect(page.locator(".j-period-row").filter({ hasText: "上午场" })).toContainText("待结束收分");
   const afternoon = page.locator(".j-period-row").filter({ hasText: "下午场" });
@@ -171,22 +194,23 @@ test("operators close, inspect and approve morning and afternoon separately befo
   await close("下午场");
   const views = page.getByRole("radiogroup", { name: "选择复核场别" });
   await views.getByText("全天成绩", { exact: true }).click();
-  await expect(page.getByRole("button", { name: "将整份名单送交本人确认" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "确认并锁定全天成绩" })).toBeDisabled();
   await views.getByText("下午场复核", { exact: true }).click();
   await expect(page.getByText("上午讲师", { exact: true })).toHaveCount(0);
   await approve("下午场");
   await views.getByText("全天成绩", { exact: true }).click();
-  await page.getByRole("button", { name: "将整份名单送交本人确认" }).click();
-  await page.getByRole("dialog", { name: "名单确认" }).locator(".el-button--primary").click();
-  await expect.poll(() => phase).toBe("SUBMITTED");
+  await page.getByRole("button", { name: "确认并锁定全天成绩" }).click();
+  await page.getByRole("dialog", { name: "确认全天成绩" }).getByRole("button", { name: "确认锁定" }).click();
+  await expect.poll(() => phase).toBe("LOCKED");
   expect(actions).toEqual([
+    "access/",
     "gate/",
     "period-close/am",
     "correction/am",
     "period-approve/am",
     "period-close/pm",
     "period-approve/pm",
-    "send/"
+    "confirm/"
   ]);
 });
 

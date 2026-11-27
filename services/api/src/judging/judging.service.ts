@@ -20,6 +20,7 @@ import {
   periodNames,
   periodStatus,
   scheduledPeriods,
+  unreviewedPeriods,
   sessionPeriod,
   taskKey
 } from "@conference/shared";
@@ -249,23 +250,9 @@ function receipt(b: { id: string; createdAt: Date }, c: JudgingConfig, s: Judgin
     status: "received"
   };
 }
-async function requireNamedAccount(tx: Tx, id: string, rehearsal: boolean) {
-  const account = await tx.adminUser.findFirst({
-    where: {
-      id,
-      enabled: true,
-      ...(rehearsal
-        ? {}
-        : {
-            mobileBindings: {
-              some: { enabled: true, user: { realName: "王红丽", phoneVerifiedAt: { not: null } } }
-            }
-          })
-    },
-    select: { id: true }
-  });
-  if (!account)
-    fail(rehearsal ? "请选择启用的后台账号" : "请绑定已关联王红丽老师实名、已验证手机号的后台账号");
+// Older events granted this account access separately from the staff list.
+function eventStaffIds(e: JudgingEvent): string[] {
+  return e.confirmerId ? [...new Set([...e.staffIds, e.confirmerId])] : e.staffIds;
 }
 async function audit(tx: Tx, e: JudgingEvent, a: CurrentAdmin, action: string, detail: unknown) {
   await tx.judgingAudit.create({
@@ -336,7 +323,7 @@ export class JudgingService {
       ...summary(e),
       entryCode: floor || manage ? state.guestEntry?.code || null : null,
       confirmerId: e.confirmerId,
-      staffIds: allowed(a, "system:account") ? e.staffIds : [],
+      staffIds: allowed(a, "system:account") ? eventStaffIds(e) : [],
       config: manage
         ? c
         : {
@@ -699,15 +686,17 @@ export class JudgingService {
           permit(a, "system:account");
           if (a.conferenceScopeMode !== "ALL") throw new ForbiddenException("无赛事授权管理权限");
           phase(e, "SETUP", "LIVE", "REVIEW");
-          if (!Array.isArray(b.staffIds) || b.staffIds.length > 300) fail("无效授权名单");
-          const ids = [...new Set<string>(b.staffIds.map((v: unknown) => key(v, "后台账号")))];
+          const maxStaff = 301; // 300 staff plus the separate grant on older events.
+          if (!Array.isArray(b.staffIds) || b.staffIds.length > maxStaff) fail("无效授权名单");
+          // Accept the separate grant from older admin clients as ordinary event membership.
+          const members = b.confirmerId ? [...b.staffIds, b.confirmerId] : b.staffIds;
+          const ids = [...new Set<string>(members.map((v: unknown) => key(v, "后台账号")))];
+          if (ids.length > maxStaff) fail("无效授权名单");
           if ((await tx.adminUser.count({ where: { id: { in: ids }, enabled: true } })) !== ids.length)
             fail("授权名单中存在无效账号");
-          const confirmer = b.confirmerId ? key(b.confirmerId, "确认人") : null;
-          if (confirmer) await requireNamedAccount(tx, confirmer, e.rehearsal);
           data.staffIds = ids;
-          data.confirmerId = confirmer;
-          evidence = { previous: e.confirmerId, confirmer, staffIds: ids };
+          data.confirmerId = null;
+          evidence = { previousStaffIds: eventStaffIds(e), staffIds: ids };
         } else if (action === "start") {
           phase(e, "SETUP");
           validateStart(c, e.rehearsal);
@@ -878,11 +867,7 @@ export class JudgingService {
           evidence = { fields: b.fields };
         } else {
           if (action === "correction") phase(e, "LIVE", "REVIEW", "SUBMITTED");
-          else phase(e, ...(action === "confirm" ? ["SUBMITTED"] : ["REVIEW", "SUBMITTED"]));
-          if (action === "confirm") {
-            if (e.confirmerId !== a.id) throw new ForbiddenException("仅绑定的本人账号可确认");
-            await requireNamedAccount(tx, a.id, e.rehearsal);
-          }
+          else phase(e, "REVIEW", "SUBMITTED");
           const ballots = await tx.judgingBallot.findMany({ where: { eventId: id } }),
             rows = calculate(c, state, ballots);
           if (action === "correction") {
@@ -942,19 +927,17 @@ export class JudgingService {
             evidence = tie;
           } else {
             if (b.reviewedRevision !== e.revision) throw stale();
-            if (!e.confirmerId) fail("请先绑定最终确认账号");
             if (rows.some((r) => r.rank === null || r.adjustment?.recheck))
               fail("请先处理缺分、全同分或需重新核对的调分");
             const tasks = scoringTasks(c, state, ballots);
             if (tasks.some((t) => ["waiting", "makeup", "pending"].includes(t.status)))
               fail("还有待交、待补或待核原单，请先处理或登记弃评");
-            if (action === "send" || state.periodReviews) {
-              const missing = scheduledPeriods(c.sessions).filter(
-                (p) => state.periodReviews?.[p]?.status !== "confirmed"
-              );
-              if (missing.length)
-                fail("请先完成" + missing.map((p) => periodNames[p]).join("、") + "评分复核");
-            }
+            const missing = unreviewedPeriods(
+              c.sessions,
+              state.periodReviews,
+              action === "confirm" && e.phase === "SUBMITTED" && !state.periodReviews
+            );
+            if (missing.length) fail("请先完成" + missing.map((p) => periodNames[p]).join("、") + "评分复核");
             const targets = c.awardTargets;
             if (targets.merits !== null && c.merits.length !== targets.merits)
               fail("请核对优秀奖名单，当前 " + c.merits.length + " 人，本场设置为 " + targets.merits + " 人");
@@ -1164,7 +1147,7 @@ export class JudgingService {
         const saved = await tx.judgingEdition.findUnique({
           where: { eventId_edition: { eventId: id, edition } }
         });
-        if (!saved) fail("仅可导出已经本人确认的版本");
+        if (!saved) fail("仅可导出已确认并锁定的成绩版本");
         const snap = saved.snapshot as unknown as JudgingSnapshot;
         const fields = requested ?? snap.fields;
         if (!fields.includes("name") || fields.some((f) => !snap.fields.includes(f as AwardField)))
